@@ -26,13 +26,10 @@ services:
       - "8000:8000"
     environment:
       - SECRET_KEY=your-secret-key-here
-      - DOMAIN_NAME=192.168.1.1  # Your server IP or domain
+      - DOMAIN_NAME=192.168.1.1 # Your server IP or domain
     volumes:
-      - journiv_data:/data
+      - ./data:/data
     restart: unless-stopped
-
-volumes:
-  journiv_data:
 ```
 
 **Generate a secure SECRET_KEY:**
@@ -49,7 +46,7 @@ docker run -d \
   -p 8000:8000 \
   -e SECRET_KEY=your-secret-key-here \
   -e DOMAIN_NAME=192.168.1.1 \
-  -v journiv_data:/data \
+  -v $(pwd)/data:/data \
   --restart unless-stopped \
   swalabtech/journiv-app:latest
 ```
