@@ -7,6 +7,9 @@ Journiv is a self-hosted private journal. It features comprehensive journaling c
    &nbsp;&nbsp;&nbsp; <!-- adds visible gap -->
   <img src="https://github.com/user-attachments/assets/d236fdc3-a6da-496b-a51d-39ca77d9be44" height="400px"/>
 </p>
+<p align="center">
+Watch Demo at <a href="https://journiv.com/#demo">Journiv.com</a>
+</p>
 
 
 ## 🏁 Quick Start
