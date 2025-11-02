@@ -8,6 +8,7 @@ from typing import Optional
 from pydantic import BaseModel, validator
 
 from app.models.enums import PromptCategory
+from app.schemas.base import TimestampMixin
 
 
 class PromptBase(BaseModel):
@@ -35,7 +36,7 @@ class PromptBase(BaseModel):
         return normalized
 
 
-class PromptResponse(PromptBase):
+class PromptResponse(PromptBase, TimestampMixin):
     """Prompt response schema."""
 
     id: uuid.UUID
@@ -44,9 +45,6 @@ class PromptResponse(PromptBase):
     user_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class PromptCreate(PromptBase):

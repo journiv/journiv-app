@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, field_serializer
 
+from app.schemas.base import TimestampMixin
+
 
 class MoodBase(BaseModel):
     """Base mood schema."""
@@ -15,14 +17,11 @@ class MoodBase(BaseModel):
     category: str
 
 
-class MoodResponse(MoodBase):
+class MoodResponse(MoodBase, TimestampMixin):
     """Mood response schema."""
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class MoodLogBase(BaseModel):
@@ -42,7 +41,7 @@ class MoodLogUpdate(BaseModel):
     note: Optional[str] = None
 
 
-class MoodLogResponse(MoodLogBase):
+class MoodLogResponse(MoodLogBase, TimestampMixin):
     """Mood log response schema."""
     id: uuid.UUID
     user_id: uuid.UUID
@@ -56,6 +55,3 @@ class MoodLogResponse(MoodLogBase):
     def serialize_dates(self, v: Optional[date], _info) -> Optional[str]:
         """Serialize date to ISO format string."""
         return v.isoformat() if v else None
-
-    class Config:
-        from_attributes = True

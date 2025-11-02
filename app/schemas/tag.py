@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel, validator
 
+from app.schemas.base import TimestampMixin
+
 
 class TagBase(BaseModel):
     """Base tag schema."""
@@ -36,16 +38,13 @@ class TagUpdate(BaseModel):
         return v.strip().lower()
 
 
-class TagResponse(TagBase):
+class TagResponse(TagBase, TimestampMixin):
     """Tag response schema."""
     id: uuid.UUID
     user_id: uuid.UUID
     usage_count: int
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class EntryTagLinkBase(BaseModel):
@@ -59,10 +58,7 @@ class EntryTagLinkCreate(EntryTagLinkBase):
     pass
 
 
-class EntryTagLinkResponse(EntryTagLinkBase):
+class EntryTagLinkResponse(EntryTagLinkBase, TimestampMixin):
     """Entry tag link response schema."""
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
