@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel, validator
 
+from app.schemas.base import TimestampMixin
+
 
 class EntryBase(BaseModel):
     """Base entry schema."""
@@ -39,7 +41,7 @@ class EntryUpdate(BaseModel):
     is_pinned: Optional[bool] = None
 
 
-class EntryResponse(EntryBase):
+class EntryResponse(EntryBase, TimestampMixin):
     """Entry response schema."""
     id: uuid.UUID
     journal_id: uuid.UUID
@@ -50,20 +52,14 @@ class EntryResponse(EntryBase):
     created_at: datetime
     updated_at: datetime
 
-    class Config:
-        from_attributes = True
 
-
-class EntryPreviewResponse(BaseModel):
+class EntryPreviewResponse(TimestampMixin):
     """Entry preview schema for listings (truncated content)."""
     id: uuid.UUID
     title: str
     content: str  # Truncated by endpoint
     journal_id: uuid.UUID
     created_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 from app.models.enums import MediaType, UploadStatus
@@ -91,16 +87,13 @@ class EntryMediaCreate(EntryMediaBase):
     checksum: Optional[str] = None
 
 
-class EntryMediaResponse(EntryMediaBase):
+class EntryMediaResponse(EntryMediaBase, TimestampMixin):
     """Entry media response schema."""
     id: uuid.UUID
     entry_id: uuid.UUID
     created_at: datetime
     checksum: Optional[str] = None
     processing_error: Optional[str] = None
-
-    class Config:
-        from_attributes = True
 
     def model_dump(self, **kwargs):
         """Custom serialization to ensure enums are converted to strings."""

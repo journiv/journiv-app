@@ -8,6 +8,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from app.models.enums import JournalColor
+from app.schemas.base import TimestampMixin
 
 
 class JournalBase(BaseModel):
@@ -33,7 +34,7 @@ class JournalUpdate(BaseModel):
     is_archived: Optional[bool] = None
 
 
-class JournalResponse(JournalBase):
+class JournalResponse(JournalBase, TimestampMixin):
     """Journal response schema."""
     id: uuid.UUID
     user_id: uuid.UUID
@@ -43,6 +44,3 @@ class JournalResponse(JournalBase):
     last_entry_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True

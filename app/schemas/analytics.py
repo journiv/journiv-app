@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.schemas.base import TimestampMixin
+
 
 class WritingStreakBase(BaseModel):
     """Base writing streak schema."""
@@ -19,15 +21,12 @@ class WritingStreakBase(BaseModel):
     average_words_per_entry: float = 0.0
 
 
-class WritingStreakResponse(WritingStreakBase):
+class WritingStreakResponse(WritingStreakBase, TimestampMixin):
     """Writing streak response schema."""
     id: uuid.UUID
     user_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class AnalyticsSummary(BaseModel):

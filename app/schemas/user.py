@@ -7,6 +7,8 @@ from typing import Optional
 
 from pydantic import BaseModel, EmailStr, HttpUrl, validator
 
+from app.schemas.base import TimestampMixin
+
 
 class UserBase(BaseModel):
     """Base user schema."""
@@ -53,7 +55,7 @@ class UserUpdate(BaseModel):
         return v
 
 
-class UserResponse(UserBase):
+class UserResponse(UserBase, TimestampMixin):
     """User response schema."""
     id: uuid.UUID
     is_active: bool
@@ -62,9 +64,6 @@ class UserResponse(UserBase):
     time_zone: Optional[str] = "UTC"  # User's timezone from settings
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class UserSettingsBase(BaseModel):
@@ -101,11 +100,8 @@ class UserSettingsUpdate(BaseModel):
         return v
 
 
-class UserSettingsResponse(UserSettingsBase):
+class UserSettingsResponse(UserSettingsBase, TimestampMixin):
     """User settings response schema."""
     user_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
