@@ -53,7 +53,7 @@
 
   <script>
     // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = "3329162942";
+    const serviceWorkerVersion = "159848800";
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>
@@ -132,7 +132,7 @@
 
     if('serviceWorker' in navigator){
       window.addEventListener('load',()=>{
-        navigator.serviceWorker.register('flutter_service_worker.js?v=3329162942')
+        navigator.serviceWorker.register('flutter_service_worker.js?v=159848800')
           .then(r=>{
             console.log('Journiv service worker registered:',r.scope);
             r.onupdatefound=()=>{
