@@ -468,6 +468,8 @@ Need help or want to report an issue?
 
 ---
 
+[![Star History Chart](https://api.star-history.com/svg?repos=journiv/journiv-app&type=Date)](https://star-history.com/#journiv/journiv-app&Date)
+
 **Made with care for privacy-conscious journaling**
 
 Disclaimer:
