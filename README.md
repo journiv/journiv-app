@@ -2,15 +2,20 @@
 
 Journiv is a self-hosted private journal. It features comprehensive journaling capabilities including mood tracking, prompt-based journaling, media uploads, analytics, and advanced search with a clean and minimal UI.
 
-<p align="center">
+<div align="center">
+  <video
+    src="https://github.com/user-attachments/assets/e34f800d-b2d9-4fca-b3ee-c71e850ed1e9"
+    controls
+    width="640"
+    playsinline
+    preload="metadata">
+  </video>
+</div>
+<div align="center">
   <img src="https://github.com/user-attachments/assets/633b794b-3bea-47c6-921d-a33ea76506a8" height="400px" />
    &nbsp;&nbsp;&nbsp; <!-- adds visible gap -->
   <img src="https://github.com/user-attachments/assets/d236fdc3-a6da-496b-a51d-39ca77d9be44" height="400px"/>
-</p>
-<p align="center">
-Watch Demo at <a href="https://journiv.com/#demo">Journiv.com</a>
-</p>
-
+</div>
 
 ## 🏁 Quick Start
 
