@@ -10,9 +10,6 @@
   // Use shared development environment file
   "runArgs": ["--env-file", "${localWorkspaceFolder}/.env.dev"],
   
-  // Configure what happens when the container is created
-  "onCreateCommand": "pip install --no-cache-dir -r requirements/dev.txt",
-  
   // Post-start command to ensure directories exist
   "postStartCommand": "mkdir -p /data/media /data/logs",
   
