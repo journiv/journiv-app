@@ -12,10 +12,19 @@ Journiv is a self-hosted private journal. It features comprehensive journaling c
   </video>
 </div>
 <div align="center">
-  <img src="https://github.com/user-attachments/assets/633b794b-3bea-47c6-921d-a33ea76506a8" height="400px" />
-   &nbsp;&nbsp;&nbsp; <!-- adds visible gap -->
-  <img src="https://github.com/user-attachments/assets/d236fdc3-a6da-496b-a51d-39ca77d9be44" height="400px"/>
+  <a href="https://www.youtube.com/watch?v=nKoUh7VP-eE" target="_blank">
+    <img src="https://github.com/user-attachments/assets/9ff6c98f-88d5-4780-982a-d485f869d68c" height="400">
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="https://www.youtube.com/shorts/-cRwaPKltvQ" target="_blank">
+    <img src="https://github.com/user-attachments/assets/d236fdc3-a6da-496b-a51d-39ca77d9be44" height="400">
+  </a>
 </div>
+
+<p align="center">
+  👉 <a href="https://www.youtube.com/watch?v=nKoUh7VP-eE" target="_blank">Watch Web Demo</a> &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.youtube.com/shorts/-cRwaPKltvQ" target="_blank">Watch Mobile Demo</a>
+</p>
 
 ## 🏁 Quick Start
 
