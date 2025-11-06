@@ -2,6 +2,17 @@
 
 Journiv is a self-hosted private journal. It features comprehensive journaling capabilities including mood tracking, prompt-based journaling, media uploads, analytics, and advanced search with a clean and minimal UI.
 
+<p align="center">
+  <a href="https://discord.com/invite/CuEJ8qft46" target="_blank">
+    <img src="https://img.shields.io/badge/Join%20us%20on%20Discord-405DE6?style=for-the-badge&logo=discord&logoColor=white" alt="Join Journiv Discord">
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://www.reddit.com/r/Journiv/" target="_blank">
+    <img src="https://img.shields.io/badge/Join%20Reddit%20Community-FF4500?style=for-the-badge&logo=reddit&logoColor=white" alt="Join Journiv Reddit">
+  </a>
+</p>
+
+
 <div align="center">
   <video
     src="https://github.com/user-attachments/assets/e34f800d-b2d9-4fca-b3ee-c71e850ed1e9"
