@@ -3,8 +3,16 @@
 Journiv is a self-hosted private journal. It features comprehensive journaling capabilities including mood tracking, prompt-based journaling, media uploads, analytics, and advanced search with a clean and minimal UI.
 
 <p align="center">
+  <a href="https://journiv.com" target="_blank">
+    <img src="https://img.shields.io/badge/Visit%20Website-405DE6?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Visit Journiv Website">
+  </a>
+  &nbsp;&nbsp;
+  <a href="https://hub.docker.com/r/swalabtech/journiv-app" target="_blank">
+    <img src="https://img.shields.io/docker/pulls/swalabtech/journiv-app?style=for-the-badge&logo=docker&logoColor=white&color=2496ED" alt="Docker Pulls">
+  </a>
+  &nbsp;&nbsp;
   <a href="https://discord.com/invite/CuEJ8qft46" target="_blank">
-    <img src="https://img.shields.io/badge/Join%20us%20on%20Discord-405DE6?style=for-the-badge&logo=discord&logoColor=white" alt="Join Journiv Discord">
+    <img src="https://img.shields.io/badge/Join%20us%20on%20Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Join Journiv Discord">
   </a>
   &nbsp;&nbsp;
   <a href="https://www.reddit.com/r/Journiv/" target="_blank">
