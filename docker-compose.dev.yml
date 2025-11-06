@@ -15,7 +15,7 @@
 services:
   # Main application service (SQLite by default)
   app:
-    image: swalabtech/journiv-app:latest
+    build: .
     container_name: journiv-dev-sqlite
     ports:
       - "${APP_PORT:-8000}:${APP_PORT:-8000}"
