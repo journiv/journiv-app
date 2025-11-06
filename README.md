@@ -60,8 +60,9 @@ openssl rand -base64 32
 ```
 docker compose -f docker-compose.yml up -d
 ```
+---
 
-#### Docker Run
+#### Docker Run (If you are not using Docker Compose)
 ```bash
 docker run -d \
   --name journiv \
