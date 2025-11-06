@@ -39,11 +39,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - SECRET_KEY=your-secret-key-here
+      - SECRET_KEY=your-secret-key-here # Replace with a strong secret key
       - DOMAIN_NAME=192.168.1.1 # Your server IP or domain
     volumes:
-      - ./data:/data
+      - journiv_data:/data
     restart: unless-stopped
+
+volumes:
+  journiv_data:
 ```
 
 **Generate a secure SECRET_KEY:**
@@ -53,6 +56,11 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 openssl rand -base64 32
 ```
 
+**Run the container:**
+```
+docker compose -f docker-compose.yml up -d
+```
+
 #### Docker Run
 ```bash
 docker run -d \
@@ -60,7 +68,7 @@ docker run -d \
   -p 8000:8000 \
   -e SECRET_KEY=your-secret-key-here \
   -e DOMAIN_NAME=192.168.1.1 \
-  -v $(pwd)/data:/data \
+  -v journiv_data:/data \
   --restart unless-stopped \
   swalabtech/journiv-app:latest
 ```
