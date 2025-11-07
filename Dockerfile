@@ -72,12 +72,13 @@ COPY scripts/docker-entrypoint.sh scripts/docker-entrypoint.sh
 # Copy prebuilt Flutter web app
 COPY web/ web/
 
-# Non-root user and directories
-# Create /data directory with subdirectories for media and logs
-# Database file (journiv.db) will be created directly in /data/ by SQLite
+# Create non-root user and set up data directories
 RUN adduser -D -u 1000 appuser \
   && mkdir -p /data/media /data/logs \
   && chmod +x scripts/docker-entrypoint.sh \
+  # Fix permissions in case some directories gets copied as 700
+  && chmod -R a+rX /app \
+  && chmod -R a+rwX /data \
   && chown -R appuser:appuser /app /data
 
 USER appuser
