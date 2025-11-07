@@ -105,6 +105,11 @@ class Settings(BaseSettings):
     rate_limit_default_limits: Optional[List[str]] = None
     rate_limit_config: Optional[Dict[str, Dict[str, str]]] = None
 
+    # Should signups be disabled?
+    disable_signups: bool = Field(
+        default_factory=lambda: os.getenv("DISABLE_SIGNUPS", "false").lower() == "true"
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=False,

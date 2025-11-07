@@ -6,6 +6,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+from app.core.config import settings
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
@@ -419,3 +420,11 @@ class UserService:
             raise
 
         return user
+
+    def is_user_creation_enabled(self) -> bool:
+        """Check if user creation is enabled from app settings.
+
+        Returns:
+            bool: True if user creation is enabled, False otherwise.
+        """
+        return not settings.disable_signups
