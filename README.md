@@ -1,4 +1,15 @@
 # 📘 Journiv - Private Journal
+<p align="center">
+  <img src="https://img.shields.io/badge/status-beta-orange" alt="Status: Beta">
+  <img src="https://img.shields.io/badge/active%20development-yes-brightgreen" alt="Active Development">
+  <img src="https://img.shields.io/badge/backups-recommended-critical" alt="Backups Recommended">
+</p>
+
+> ⚠️ **Beta Software**
+>
+> Journiv is currently in **beta** and under **active development**. 
+> While the developers aims to keep data **backward-compatible**, breaking changes may still occur. Please **keep regular backups of your data** to avoid loss during updates.
+
 
 Journiv is a self-hosted private journal. It features comprehensive journaling capabilities including mood tracking, prompt-based journaling, media uploads, analytics, and advanced search with a clean and minimal UI.
 
@@ -19,7 +30,6 @@ Journiv is a self-hosted private journal. It features comprehensive journaling c
     <img src="https://img.shields.io/badge/Join%20Reddit%20Community-FF4500?style=for-the-badge&logo=reddit&logoColor=white" alt="Join Journiv Reddit">
   </a>
 </p>
-
 
 <div align="center">
   <video
