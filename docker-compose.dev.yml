@@ -23,8 +23,8 @@ services:
       # Enable migrations and seeding in worker (single Uvicorn process in dev mode)
       - SKIP_DB_INIT=false
       - SKIP_DATA_SEEDING=false
-      # Default to SQLite
-      - DATABASE_URL=sqlite:////data/journiv.db
+      # Default to SQLite in data directory under app root
+      - DATABASE_URL=sqlite:///./data/journiv.db
       # PostgreSQL override (optional)
       - POSTGRES_URL=${POSTGRES_URL:-}
       - POSTGRES_HOST=${POSTGRES_HOST:-}
@@ -32,9 +32,20 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       - POSTGRES_DB=${POSTGRES_DB:-}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      # Security
+      - SECRET_KEY=${SECRET_KEY:-}
+      # OIDC
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_ISSUER=${OIDC_ISSUER:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
+      - OIDC_SCOPES=${OIDC_SCOPES:-}
+      - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-}
+      - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
       # Application settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.1}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.4}
       - DEBUG=true
       - ENVIRONMENT=development
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
@@ -53,7 +64,7 @@ services:
       - LOG_FILE=${LOG_FILE:-}
       - MEDIA_ROOT=/data/media
       - LOG_DIR=/data/logs
-      - MAX_FILE_SIZE_MB=500
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-500}
       - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
     volumes:
@@ -78,9 +89,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    profiles:
-      - default
-      - sqlite
+      # No profiles for default SQLite development
 
   # PostgreSQL service (optional - for advanced users)
   postgres:
@@ -108,14 +117,18 @@ services:
       - SKIP_DB_INIT=false
       - SKIP_DATA_SEEDING=false
       # Use PostgreSQL
-      - POSTGRES_HOST=postgres
+      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_USER=${POSTGRES_USER:-journiv}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
       - POSTGRES_DB=${POSTGRES_DB:-journiv_dev}
-      - POSTGRES_PORT=5432
+      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+      # PostgreSQL override (optional)
+      - POSTGRES_URL=${POSTGRES_URL:-}
+      # Security
+      - SECRET_KEY=${SECRET_KEY:-}
       # Application settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.1}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.4}
       - DEBUG=true
       - ENVIRONMENT=development
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
@@ -134,7 +147,7 @@ services:
       - LOG_FILE=${LOG_FILE:-}
       - MEDIA_ROOT=/data/media
       - LOG_DIR=/data/logs
-      - MAX_FILE_SIZE_MB=500
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-500}
       - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
     volumes:

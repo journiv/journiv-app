@@ -15,11 +15,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, FileResponse, Response
 from starlette.staticfiles import StaticFiles
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
 from app.api.v1.api import api_router
 from app.core.config import settings
 from app.core.database import init_db
+from app.core.cache import create_cache
 from app.core.exceptions import (
     JournivAppException, UserNotFoundError, UserAlreadyExistsError,
     InvalidCredentialsError, JournalNotFoundError, EntryNotFoundError,
@@ -45,6 +47,10 @@ async def lifespan(app: FastAPI):
     try:
         init_db()
         log_info("Database initialization completed!")
+
+        # Initialize cache for OIDC state management
+        app.state.cache = create_cache(settings.redis_url)
+        log_info("Cache initialization completed!")
     except Exception as exc:
         log_error(exc)
         raise
@@ -174,6 +180,9 @@ CSPMiddlewareClass = create_csp_middleware(
     or ("/api/v1/security/csp-report" if settings.environment == "production" else None),
 )
 app.add_middleware(CSPMiddlewareClass)
+
+# Session Middleware (required for OIDC state management with Authlib)
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 
 # -----------------------------------------------------------------------------
 # General Middleware

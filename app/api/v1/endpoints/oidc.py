@@ -1,0 +1,321 @@
+"""
+OIDC authentication endpoints.
+"""
+import uuid
+from typing import Annotated
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
+from authlib.integrations.starlette_client import OAuthError
+from sqlmodel import Session
+
+from app.core.config import settings
+from app.core.database import get_session
+from app.core.oidc import oauth, build_pkce
+from app.core.security import create_access_token, create_refresh_token
+from app.core.logging_config import log_info, log_error, log_user_action, log_warning
+from app.schemas.auth import LoginResponse
+from app.services.user_service import UserService
+
+router = APIRouter(prefix="/auth/oidc", tags=["auth"])
+
+
+def register_oidc_provider():
+    """Register OIDC provider from discovery metadata."""
+    if settings.oidc_enabled:
+        try:
+            client_kwargs = {"scope": settings.oidc_scopes}
+
+            # Disable SSL verification for local development with self-signed certificates
+            # SECURITY WARNING: Never disable SSL verification in production!
+            if settings.oidc_disable_ssl_verify:
+                import ssl
+                # Create unverified SSL context for httpx
+                ssl_context = ssl.create_default_context()
+                ssl_context.check_hostname = False
+                ssl_context.verify_mode = ssl.CERT_NONE
+
+                client_kwargs["verify"] = ssl_context
+                log_warning(
+                    f"OIDC: SSL verification disabled for {settings.oidc_issuer} "
+                    "(development only - never use in production!)"
+                )
+
+            oauth.register(
+                name="journiv_oidc",
+                server_metadata_url=f"{settings.oidc_issuer}/.well-known/openid-configuration",
+                client_id=settings.oidc_client_id,
+                client_secret=settings.oidc_client_secret,
+                client_kwargs=client_kwargs,
+            )
+            log_info(f"OIDC provider registered: {settings.oidc_issuer}")
+        except Exception as exc:
+            log_error(f"Failed to register OIDC provider: {exc}")
+    else:
+        log_info("OIDC authentication is disabled")
+
+
+# Register provider immediately when module is imported
+register_oidc_provider()
+
+
+@router.get(
+    "/login",
+    responses={
+        404: {"description": "OIDC authentication is not enabled"},
+    }
+)
+async def oidc_login(request: Request):
+    """
+    Initiate OIDC login flow.
+
+    Redirects to the OIDC provider's authorization endpoint with PKCE challenge.
+    """
+    if not settings.oidc_enabled:
+        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+
+    # Generate state, nonce, and PKCE challenge
+    state = uuid.uuid4().hex
+    nonce = uuid.uuid4().hex
+    verifier, challenge = build_pkce()
+
+    # Store state, nonce, and verifier in cache with 180 second TTL
+    request.app.state.cache.set(
+        f"oidc:{state}",
+        {"nonce": nonce, "verifier": verifier},
+        ex=180
+    )
+
+    # Build redirect and authorize
+    redirect_uri = settings.oidc_redirect_uri
+    log_info(f"Initiating OIDC login with state={state}, redirect_uri={redirect_uri}")
+
+    return await oauth.journiv_oidc.authorize_redirect(
+        request,
+        redirect_uri=redirect_uri,
+        state=state,
+        code_challenge=challenge,
+        code_challenge_method="S256",
+        nonce=nonce,
+        prompt="login"
+    )
+
+
+@router.get(
+    "/callback",
+    responses={
+        400: {"description": "Invalid or expired state parameter, token exchange failed, invalid nonce, or missing OIDC claims"},
+        403: {"description": "User provisioning failed"},
+        404: {"description": "OIDC authentication is not enabled"},
+    }
+)
+async def oidc_callback(
+    request: Request,
+    session: Annotated[Session, Depends(get_session)]
+):
+    """
+    OIDC callback endpoint.
+
+    Handles the redirect from the OIDC provider, exchanges the authorization code for tokens,
+    validates the ID token, and creates a Journiv session with access and refresh tokens.
+    """
+    if not settings.oidc_enabled:
+        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+
+    # Verify state parameter
+    state = request.query_params.get("state")
+    cached_data = request.app.state.cache.get(f"oidc:{state}") if state else None
+
+    if not state or not cached_data:
+        log_error(f"Invalid or expired OIDC state: {state}")
+        raise HTTPException(status_code=400, detail="Invalid or expired state parameter")
+
+    try:
+        # Exchange authorization code for tokens
+        token = await oauth.journiv_oidc.authorize_access_token(
+            request,
+            code_verifier=cached_data["verifier"],
+        )
+    except OAuthError as exc:
+        log_error(f"OIDC token exchange failed: {exc.error}")
+        raise HTTPException(status_code=400, detail=f"OIDC authentication failed: {exc.error}")
+
+    # Extract claims from ID token or userinfo
+    id_token = token.get("id_token")
+    claims = token.get("userinfo") or token.get("id_token_claims") or {}
+
+    # Some providers require an explicit userinfo call
+    if not claims:
+        try:
+            claims = await oauth.journiv_oidc.userinfo(token=token)
+        except Exception as exc:
+            log_error(f"Failed to fetch OIDC userinfo: {exc}")
+            raise HTTPException(status_code=400, detail="Failed to retrieve user information")
+
+    # Verify nonce if present
+    if claims.get("nonce") and claims["nonce"] != cached_data["nonce"]:
+        log_error(f"OIDC nonce mismatch: expected {cached_data['nonce']}, got {claims.get('nonce')}")
+        raise HTTPException(status_code=400, detail="Invalid nonce")
+
+    # Extract user information
+    issuer = claims.get("iss") or oauth.journiv_oidc.server_metadata["issuer"]
+    subject = claims.get("sub")
+    email = claims.get("email")
+    name = claims.get("name") or claims.get("preferred_username")
+    picture = claims.get("picture")
+
+    if not subject:
+        log_error("OIDC claims missing 'sub' field")
+        raise HTTPException(status_code=400, detail="Invalid OIDC claims: missing subject")
+
+    # Get or create user from external identity
+    user_service = UserService(session)
+
+    try:
+        user = user_service.get_or_create_user_from_oidc(
+            issuer=issuer,
+            subject=subject,
+            email=email,
+            name=name,
+            picture=picture,
+            auto_provision=settings.oidc_auto_provision
+        )
+    except Exception as exc:
+        log_error(f"Failed to provision user from OIDC: {exc}")
+        raise HTTPException(status_code=403, detail=str(exc))
+
+    # Create Journiv access and refresh tokens
+    access_token = create_access_token(data={"sub": str(user.id)})
+    refresh_token = create_refresh_token(data={"sub": str(user.id)})
+
+    # Get user timezone
+    timezone = user_service.get_user_timezone(user.id)
+
+    # Build user payload with OIDC flag
+    user_payload = {
+        "id": str(user.id),
+        "email": user.email,
+        "name": user.name,
+        "is_active": user.is_active,
+        "time_zone": timezone,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+        "is_oidc_user": True  # Flag to indicate this user logged in via OIDC
+    }
+
+    # Create one-time login ticket (10 second TTL)
+    ticket = uuid.uuid4().hex
+    request.app.state.cache.set(
+        f"ticket:{ticket}",
+        {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "user": user_payload
+        },
+        ex=10
+    )
+
+    log_user_action(
+        user.email,
+        "logged in via OIDC",
+        request_id=getattr(request.state, 'request_id', None)
+    )
+
+    # Redirect to SPA with ticket
+    # If SPA uses hash routing (#/), adjust accordingly
+    base_url = str(request.base_url).rstrip("/")
+    finish_url = f"{base_url}/#/oidc-finish?ticket={ticket}"
+
+    log_info(f"OIDC login successful for {user.email}, redirecting to {finish_url}")
+
+    return RedirectResponse(url=finish_url)
+
+
+@router.post(
+    "/exchange",
+    response_model=LoginResponse,
+    responses={
+        400: {"description": "Invalid request body, missing ticket parameter, or invalid/expired ticket"},
+        404: {"description": "OIDC authentication is not enabled"},
+    }
+)
+async def oidc_exchange(request: Request):
+    """
+    Exchange one-time ticket for access/refresh tokens.
+
+    The SPA calls this endpoint with the ticket received from the callback redirect.
+    Tickets are single-use and expire after 10 seconds.
+    """
+    if not settings.oidc_enabled:
+        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid request body")
+
+    ticket = body.get("ticket")
+
+    if not ticket:
+        raise HTTPException(status_code=400, detail="Missing ticket parameter")
+
+    # Retrieve ticket data from cache
+    ticket_data = request.app.state.cache.get(f"ticket:{ticket}")
+
+    if not ticket_data:
+        log_error(f"Invalid or expired OIDC ticket: {ticket}")
+        raise HTTPException(status_code=400, detail="Invalid or expired ticket")
+
+    # Delete ticket after first use (one-time use)
+    request.app.state.cache.delete(f"ticket:{ticket}")
+
+    return LoginResponse(
+        access_token=ticket_data["access_token"],
+        refresh_token=ticket_data["refresh_token"],
+        token_type="bearer",
+        user=ticket_data["user"]
+    )
+
+
+@router.get(
+    "/logout",
+    responses={
+        404: {"description": "OIDC authentication is not enabled"},
+        500: {"description": "OIDC logout failed"},
+    }
+)
+async def oidc_logout(request: Request):
+    """
+    OIDC logout endpoint with Single Sign-Out (SSO).
+
+    Redirects to the OIDC provider's end_session_endpoint to clear the provider's session,
+    then redirects back to Journiv's post-logout page.
+    """
+    if not settings.oidc_enabled:
+        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+
+    try:
+        # Get provider metadata
+        metadata = oauth.journiv_oidc.server_metadata
+        end_session_endpoint = metadata.get("end_session_endpoint")
+
+        # Build post-logout redirect URI (where provider redirects back after logout)
+        base_url = str(request.base_url).rstrip("/")
+        post_logout_redirect_uri = f"{base_url}/#/login?logout=success"
+
+        if end_session_endpoint:
+            # Properly encode query parameters for OIDC logout URL
+            logout_params = urlencode({"post_logout_redirect_uri": post_logout_redirect_uri})
+            logout_url = f"{end_session_endpoint}?{logout_params}"
+
+            log_info(f"Redirecting to OIDC provider logout: {logout_url}")
+            return RedirectResponse(url=logout_url)
+        else:
+            # Provider doesn't support end_session_endpoint, just redirect to login
+            log_info("OIDC provider doesn't support end_session_endpoint, performing local logout")
+            return RedirectResponse(url=post_logout_redirect_uri)
+
+    except Exception as exc:
+        log_error(f"OIDC logout failed: {exc}")
+        raise HTTPException(status_code=500, detail="OIDC logout failed")

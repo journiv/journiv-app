@@ -1,8 +1,10 @@
 """
 User service for handling users and user settings.
 """
+import secrets
 import time
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -16,8 +18,9 @@ from app.core.exceptions import (
     UserSettingsNotFoundError,
 )
 from app.core.logging_config import log_error, log_warning, log_info
-from app.core.security import get_password_hash, verify_password
+from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token
 from app.models.user import User, UserSettings
+from app.models.external_identity import ExternalIdentity
 from app.schemas.user import UserCreate, UserUpdate, UserSettingsCreate, UserSettingsUpdate
 
 # Hash evaluated once to keep timing consistent for missing users
@@ -50,6 +53,16 @@ class UserService:
         """Get user by email."""
         statement = select(User).where(User.email == email)
         return self.session.exec(statement).first()
+
+    def is_oidc_user(self, user_id: str) -> bool:
+        """Check if user is an OIDC user by checking for ExternalIdentity."""
+        try:
+            user_uuid = uuid.UUID(user_id)
+            statement = select(ExternalIdentity).where(ExternalIdentity.user_id == user_uuid)
+            external_identity = self.session.exec(statement).first()
+            return external_identity is not None
+        except ValueError:
+            return False
 
     def create_user(self, user_data: UserCreate) -> User:
         """Create a new user."""
@@ -92,6 +105,13 @@ class UserService:
 
         # Handle password change if provided
         if user_data.current_password is not None and user_data.new_password is not None:
+            # Check if user is OIDC user - OIDC users cannot change password
+            if self.is_oidc_user(user_id):
+                log_warning(
+                    f"Password change rejected for OIDC user: {user.email}"
+                )
+                raise ValueError("Password cannot be changed for OIDC users. Please change your password through your OIDC provider.")
+
             # Verify current password
             if not verify_password(user_data.current_password, user.password):
                 log_warning(
@@ -240,3 +260,162 @@ class UserService:
         except Exception:
             pass
         return "UTC"
+
+    def get_or_create_user_from_oidc(
+        self,
+        *,
+        issuer: str,
+        subject: str,
+        email: Optional[str],
+        name: Optional[str],
+        picture: Optional[str],
+        auto_provision: bool
+    ) -> User:
+        """
+        Get or create user from OIDC authentication.
+
+        Finds existing external identity or creates a new user if auto-provisioning is enabled.
+
+        Args:
+            issuer: OIDC issuer URL
+            subject: OIDC subject identifier (unique per issuer)
+            email: User email from OIDC provider
+            name: User display name from OIDC provider
+            picture: User profile picture URL from OIDC provider
+            auto_provision: Whether to automatically create new users
+
+        Returns:
+            User: The authenticated user
+
+        Raises:
+            UnauthorizedError: If user not found and auto-provisioning is disabled
+        """
+        # Find existing ExternalIdentity by (issuer, subject)
+        statement = select(ExternalIdentity).where(
+            ExternalIdentity.issuer == issuer,
+            ExternalIdentity.subject == subject
+        )
+        external_identity = self.session.exec(statement).first()
+
+        if external_identity:
+            # Update last login time and profile information
+            external_identity.last_login_at = datetime.now(timezone.utc)
+            if email:
+                external_identity.email = email
+            if name:
+                external_identity.name = name
+            if picture:
+                external_identity.picture = picture
+
+            try:
+                self.session.add(external_identity)
+                self.session.commit()
+                self.session.refresh(external_identity)
+            except SQLAlchemyError as exc:
+                self.session.rollback()
+                log_error(exc, issuer=issuer, subject=subject)
+                raise
+
+            # Load and return the associated user
+            user = self.get_user_by_id(str(external_identity.user_id))
+            if not user:
+                raise UserNotFoundError(f"User {external_identity.user_id} not found for external identity")
+
+            log_info(f"OIDC login for existing user: {user.email}")
+            return user
+
+        # External identity not found - check if auto-provisioning is enabled
+        if not auto_provision:
+            log_warning(f"OIDC auto-provisioning disabled, rejecting new user from {issuer}")
+            raise UnauthorizedError(
+                "Your account is not registered. Please contact the administrator or "
+                "register with email/password first."
+            )
+
+        # Auto-provision: find or create user by email
+        user = None
+        if email:
+            user = self.get_user_by_email(email)
+
+        if not user:
+            # Create new user
+            if not email:
+                raise ValueError("Cannot auto-provision user without email")
+
+            # Generate a random password (user won't use it - OIDC only)
+            # TODO: Reconsider this approach - what is OIDC is down and user wants to reset password and login?
+            random_password = secrets.token_urlsafe(32)
+
+            user = User(
+                email=email,
+                password=get_password_hash(random_password),
+                name=name or email.split("@")[0],  # Use email prefix as default name
+                is_active=True
+            )
+
+            self.session.add(user)
+
+            try:
+                # Flush to assign user ID
+                self.session.flush()
+
+                # Create default user settings
+                self.create_user_settings(user.id, UserSettingsCreate(), commit=False)
+
+                # Commit user creation
+                self.session.commit()
+                self.session.refresh(user)
+
+                log_info(f"Auto-provisioned new user from OIDC: {user.email}")
+            except IntegrityError as exc:
+                self.session.rollback()
+                # Race condition: user was created between check and insert
+                user = self.get_user_by_email(email)
+                if not user:
+                    raise UserAlreadyExistsError("Failed to create user") from exc
+                log_info(f"User {email} created by another request, using existing user")
+            except SQLAlchemyError as exc:
+                self.session.rollback()
+                log_error(exc, email=email)
+                raise
+
+        # 4. Create ExternalIdentity linking OIDC account to user
+        external_identity = ExternalIdentity(
+            user_id=user.id,
+            issuer=issuer,
+            subject=subject,
+            email=email,
+            name=name,
+            picture=picture,
+            last_login_at=datetime.now(timezone.utc)
+        )
+
+        self.session.add(external_identity)
+
+        try:
+            self.session.commit()
+            self.session.refresh(external_identity)
+            log_info(f"Created external identity for {user.email} from {issuer}")
+        except IntegrityError as exc:
+            self.session.rollback()
+            # External identity already exists (race)
+            statement = select(ExternalIdentity).where(
+                ExternalIdentity.issuer == issuer,
+                ExternalIdentity.subject == subject
+            )
+            existing = self.session.exec(statement).first()
+            if existing:
+                log_info(f"External identity for {issuer}/{subject} created by another request")
+                # Update last login
+                existing.last_login_at = datetime.now(timezone.utc)
+                self.session.add(existing)
+                self.session.commit()
+            else:
+                log_error(exc, issuer=issuer, subject=subject)
+                raise
+        except SQLAlchemyError as exc:
+            self.session.rollback()
+            log_error(exc, issuer=issuer, subject=subject)
+            raise
+
+        return user
