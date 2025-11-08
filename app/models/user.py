@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from .mood import MoodLog
     from .tag import Tag
     from .analytics import WritingStreak
+    from .external_identity import ExternalIdentity
 
 
 class User(BaseModel, table=True):
@@ -62,6 +63,10 @@ class User(BaseModel, table=True):
     writing_streak: Optional["WritingStreak"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False}
+    )
+    external_identities: List["ExternalIdentity"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
     # Table constraints and indexes

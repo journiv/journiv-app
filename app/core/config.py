@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Journiv Service"
-    app_version: str = "0.1.0-beta.3"
+    app_version: str = "0.1.0-beta.4"
     debug: bool = False
     environment: str = "development"
     domain_name: str = ""
@@ -56,6 +56,19 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     algorithm: str = "HS256"
+
+    # OIDC Configuration
+    oidc_enabled: bool = False
+    oidc_issuer: str = "https://pocketid.example.com"
+    oidc_client_id: str = "journiv-app"
+    oidc_client_secret: str = "change_me"
+    oidc_redirect_uri: str = "https://localhost:8000/api/v1/auth/oidc/callback"
+    oidc_scopes: str = "openid email profile"
+    oidc_auto_provision: bool = True
+    oidc_disable_ssl_verify: bool = False  # Only for local development with self-signed certs
+
+    # Redis Configuration (for OIDC state/cache)
+    redis_url: Optional[str] = None  # e.g., "redis://localhost:6379/0"
 
     # CSP Configuration
     enable_csp: bool = True

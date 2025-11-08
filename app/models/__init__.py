@@ -3,6 +3,7 @@ from .analytics import WritingStreak
 from .base import BaseModel
 from .entry import Entry, EntryMedia
 from .entry_tag_link import EntryTagLink
+from .external_identity import ExternalIdentity
 from .journal import Journal
 from .mood import Mood, MoodLog
 from .prompt import Prompt
@@ -22,4 +23,5 @@ __all__ = [
     "Tag",
     "EntryTagLink",
     "WritingStreak",
+    "ExternalIdentity",
 ]

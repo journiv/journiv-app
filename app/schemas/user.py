@@ -62,6 +62,7 @@ class UserResponse(UserBase, TimestampMixin):
     profile_picture_url: Optional[HttpUrl] = None
     last_login_at: Optional[datetime] = None
     time_zone: Optional[str] = "UTC"  # User's timezone from settings
+    is_oidc_user: bool = False  # Whether user signed up via OIDC
     created_at: datetime
     updated_at: datetime
 

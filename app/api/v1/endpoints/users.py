@@ -42,9 +42,13 @@ async def get_current_user_info(
     user_service = UserService(session)
     timezone = user_service.get_user_timezone(current_user.id)
 
+    # Check if user is OIDC user using service method
+    is_oidc_user = user_service.is_oidc_user(str(current_user.id))
+
     # Create response with timezone from settings
     user_dict = current_user.model_dump()
     user_dict['time_zone'] = timezone
+    user_dict['is_oidc_user'] = is_oidc_user
 
     return UserResponse.model_validate(user_dict)
 
@@ -105,8 +109,13 @@ async def update_current_user(
 
     # Get timezone from settings
     timezone = user_service.get_user_timezone(updated_user.id)
+
+    # Check if user is OIDC user using service method
+    is_oidc_user = user_service.is_oidc_user(str(updated_user.id))
+
     user_dict = updated_user.model_dump()
     user_dict['time_zone'] = timezone
+    user_dict['is_oidc_user'] = is_oidc_user
 
     return UserResponse.model_validate(user_dict)
 
@@ -139,7 +148,7 @@ async def delete_current_user(
                 detail="Failed to delete user account"
             )
 
-        log_user_action(current_user.email, "Deleted user", request_id=None)
+        log_user_action(current_user.email, "Deleted user", request_id="")
 
         return DeleteResponse(message="User account deleted successfully")
 
