@@ -32,7 +32,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
         400: {"description": "Email already registered or invalid data"},
         429: {"description": "Too many requests"},
         500: {"description": "Internal server error"},
-        403: {"description": "Forbidden"},
+        403: {"description": "New user registration is disabled"},
     }
 )
 @auth_rate_limit("register")
@@ -49,7 +49,7 @@ async def register(
     try:
         user_service = UserService(session)
 
-        if not user_service.is_user_creation_enabled():
+        if user_service.is_user_creation_disabled():
             raise HTTPException(status_code=403, detail="User registration is disabled")
 
         # Check if user already exists

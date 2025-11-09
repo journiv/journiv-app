@@ -421,10 +421,10 @@ class UserService:
 
         return user
 
-    def is_user_creation_enabled(self) -> bool:
-        """Check if user creation is enabled from app settings.
+    def is_user_creation_disabled(self) -> bool:
+        """Check if user creation is disabled from app settings.
 
         Returns:
-            bool: True if user creation is enabled, False otherwise.
+            bool: True if user creation is disabled, False otherwise.
         """
-        return not settings.disable_signups
+        return settings.disable_signups
