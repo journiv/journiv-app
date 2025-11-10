@@ -17,14 +17,12 @@ services:
   app:
     build: .
     container_name: journiv-dev-sqlite
+    entrypoint: ["/app/scripts/docker-entrypoint-dev.sh"]
     ports:
       - "${APP_PORT:-8000}:${APP_PORT:-8000}"
     environment:
-      # Enable migrations and seeding in worker (single Uvicorn process in dev mode)
-      - SKIP_DB_INIT=false
-      - SKIP_DATA_SEEDING=false
-      # Default to SQLite in data directory under app root
-      - DATABASE_URL=sqlite:///./data/journiv.db
+      # SQLite database in data directory (mounted from host)
+      - DATABASE_URL=sqlite:///./journiv.db
       # PostgreSQL override (optional)
       - POSTGRES_URL=${POSTGRES_URL:-}
       - POSTGRES_HOST=${POSTGRES_HOST:-}
@@ -69,14 +67,12 @@ services:
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
     volumes:
       - .:/app
-      - ./data:/data
     deploy:
       resources:
         limits:
           memory: 512MB
         reservations:
           memory: 256MB
-    command: uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8000} --reload
     healthcheck:
       test:
         [
@@ -110,12 +106,10 @@ services:
   app-postgres:
     build: .
     container_name: journiv-dev-postgres-app
+    entrypoint: ["/app/scripts/docker-entrypoint-dev.sh"]
     ports:
       - "${APP_PORT:-8000}:${APP_PORT:-8000}"
     environment:
-      # Enable migrations and seeding in worker (single Uvicorn process in dev mode)
-      - SKIP_DB_INIT=false
-      - SKIP_DATA_SEEDING=false
       # Use PostgreSQL
       - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
       - POSTGRES_USER=${POSTGRES_USER:-journiv}
@@ -152,7 +146,6 @@ services:
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
     volumes:
       - .:/app
-      - ./data:/data
     depends_on:
       - postgres
     deploy:
@@ -161,7 +154,6 @@ services:
           memory: 512MB
         reservations:
           memory: 256MB
-    command: uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8000} --reload
     healthcheck:
       test:
         [
