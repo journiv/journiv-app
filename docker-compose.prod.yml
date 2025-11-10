@@ -48,7 +48,7 @@ services:
       - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
       # Application Settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.4}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
       - DEBUG=false
       - ENVIRONMENT=development
       - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
@@ -158,7 +158,7 @@ services:
       - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
       # Application Settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.4}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
       - DEBUG=false
       - ENVIRONMENT=development
       - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}

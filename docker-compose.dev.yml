@@ -45,7 +45,7 @@ services:
       - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
       # Application settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.4}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
       - DEBUG=true
       - ENVIRONMENT=development
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
@@ -128,7 +128,7 @@ services:
       - SECRET_KEY=${SECRET_KEY:-}
       # Application settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.4}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
       - DEBUG=true
       - ENVIRONMENT=development
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}

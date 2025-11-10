@@ -240,7 +240,7 @@ curl http://localhost:8000/api/v1/health
 {
   "status": "healthy",
   "database": "connected",
-  "version": "0.1.0-beta.4"
+  "version": "0.1.0-beta.5"
 }
 
 # Check memory usage
