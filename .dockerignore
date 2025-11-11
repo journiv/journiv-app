@@ -36,12 +36,13 @@ access.log
 
 # Local databases
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 data/
 db.sqlite3
 db.sqlite3-journal
-*.db
 
 # Alembic
 alembic/versions/__pycache__/
