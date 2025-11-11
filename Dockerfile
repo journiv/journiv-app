@@ -72,6 +72,9 @@ COPY scripts/docker-entrypoint.sh scripts/docker-entrypoint.sh
 # Copy prebuilt Flutter web app
 COPY web/ web/
 
+# Copy license
+COPY LICENSE.md .
+
 # Create non-root user and set up data directories
 RUN adduser -D -u 1000 appuser \
   && mkdir -p /data/media /data/logs \
