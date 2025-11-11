@@ -928,10 +928,13 @@ class MediaService:
         Raises:
             MediaNotFoundError: If file doesn't exist
         """
-        full_path = (self.media_root / media.file_path).resolve()
+        root = self.media_root.resolve()
+        full_path = (root / media.file_path).resolve()
 
         # Validate path to prevent directory traversal
-        if not str(full_path).startswith(str(self.media_root.resolve())):
+        try:
+            full_path.relative_to(root)
+        except ValueError:
             raise MediaNotFoundError("Invalid file path")
 
         if not full_path.exists():
@@ -954,10 +957,13 @@ class MediaService:
         if not media.thumbnail_path:
             raise MediaNotFoundError("Thumbnail not found")
 
-        full_path = (self.media_root / media.thumbnail_path).resolve()
+        root = self.media_root.resolve()
+        full_path = (root / media.thumbnail_path).resolve()
 
         # Validate path to prevent directory traversal
-        if not str(full_path).startswith(str(self.media_root.resolve())):
+        try:
+            full_path.relative_to(root)
+        except ValueError:
             raise MediaNotFoundError("Invalid thumbnail path")
 
         if not full_path.exists():
@@ -1037,7 +1043,10 @@ class MediaService:
                 start_str, end_str = range_val.split("-")
 
                 if not start_str:
-                    start = file_size - int(end_str)
+                    suffix_len = int(end_str)
+                    if suffix_len <= 0:
+                        raise ValueError("Invalid Range header")
+                    start = max(file_size - suffix_len, 0)
                     end = file_size - 1
                 elif not end_str:
                     start = int(start_str)

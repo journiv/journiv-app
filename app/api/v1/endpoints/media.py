@@ -209,7 +209,6 @@ async def delete_media(
 )
 async def get_media(
     media_id: uuid.UUID,
-    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(_get_db_session)],
     range_header: Optional[str] = Header(None, alias="range")

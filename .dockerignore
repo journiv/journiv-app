@@ -42,8 +42,6 @@ data/
 db.sqlite3
 db.sqlite3-journal
 *.db
-*.db-shm
-*.db-wal
 
 # Alembic
 alembic/versions/__pycache__/
