@@ -123,6 +123,8 @@ DOMAIN_NAME=your-server-ip-or-domain
 
 **Access Journiv:** Open `http://192.168.1.1:8000` (replace with your server IP) in your browser to start journaling!
 
+## Documentation
+
 Read the [docs](https://github.com/journiv/journiv-app/wiki/Journiv-Documentation) to learn more about Journiv and configuring it.
 
 
