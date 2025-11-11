@@ -5,10 +5,10 @@ echo "Ensuring data directories exist..."
 mkdir -p /data/media /data/logs
 
 echo "Running database migrations in entrypoint script..."
-alembic upgrade head || echo "Migration failed in entrypoint script, will fallback to create_all"
+alembic upgrade head
 
 echo "Seeding initial data in entrypoint script..."
-SKIP_DATA_SEEDING=false python -c "from app.core.database import seed_initial_data; seed_initial_data()" || echo "Data seeding failed, will retry in workers if needed"
+SKIP_DATA_SEEDING=false python -c "from app.core.database import seed_initial_data; seed_initial_data()"
 
 echo "Starting Gunicorn..."
 # Production uses 2 workers for optimal resource usage

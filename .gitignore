@@ -44,8 +44,6 @@ local.db
 db.sqlite3
 db.sqlite3-journal
 *.db
-*.db-shm
-*.db-wal
 
 # Coverage and test artifacts
 coverage.*
