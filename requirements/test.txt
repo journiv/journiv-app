@@ -6,7 +6,7 @@ pytest-mock==3.15.1
 pytest-httpx==0.35.0
 
 # HTTP testing
-httpx==0.28.0
+httpx==0.28.1
 fastapi-testclient==0.1.1
 
 # Database testing - using psycopg2-binary for compatibility
