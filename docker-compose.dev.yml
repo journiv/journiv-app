@@ -21,7 +21,7 @@ services:
     ports:
       - "${APP_PORT:-8000}:${APP_PORT:-8000}"
     environment:
-      # SQLite database in data directory (mounted from host)
+      # SQLite database in working dir itself to avoid all kind of file locking troubles
       - DATABASE_URL=sqlite:///./journiv.db
       # PostgreSQL override (optional)
       - POSTGRES_URL=${POSTGRES_URL:-}
@@ -67,6 +67,7 @@ services:
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
     volumes:
       - .:/app
+      - ./data:/data # map data to keep logs and media in a single directory
     deploy:
       resources:
         limits:
