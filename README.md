@@ -1,9 +1,4 @@
 # 📘 Journiv - Private Journal
-<p align="center">
-  <img src="https://img.shields.io/badge/status-beta-orange" alt="Status: Beta">
-  <img src="https://img.shields.io/badge/active%20development-yes-brightgreen" alt="Active Development">
-  <img src="https://img.shields.io/badge/backups-recommended-critical" alt="Backups Recommended">
-</p>
 
 > ⚠️ **Beta Software**
 >
@@ -12,6 +7,19 @@
 
 
 Journiv is a self-hosted private journal. It features comprehensive journaling capabilities including mood tracking, prompt-based journaling, media uploads, analytics, and advanced search with a clean and minimal UI.
+<p align="center">
+  <a href="https://journiv.substack.com/" target="_blank">
+    <img src="https://img.shields.io/badge/📬%20Subscribe%20to%20Journiv%20Latest%20Updates%20on%20Substack-1E1E1E?style=for-the-badge&logo=substack&logoColor=FF6719&labelColor=1E1E1E&color=FF6719" alt="Subscribe to Journiv Latest Updates on Substack">
+  </a>
+</p>
+
+---
+
+<p align="center">
+  <img src="https://img.shields.io/badge/status-beta-orange" alt="Status: Beta">
+  <img src="https://img.shields.io/badge/active%20development-yes-brightgreen" alt="Active Development">
+  <img src="https://img.shields.io/badge/backups-recommended-critical" alt="Backups Recommended">
+</p>
 
 <p align="center">
   <a href="https://journiv.com" target="_blank">
