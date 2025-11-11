@@ -6,7 +6,7 @@
 
 # Development conveniences for OIDC/Redis
 types-redis>=4.6.0  # Type stubs for mypy/pyright
-fakeredis>=2.23,<3  # In-memory Redis for development without real Redis
+fakeredis>=2.32,<3  # In-memory Redis for development without real Redis
 
 # Development Tools (optional - uncomment if needed)
 # black==23.11.0

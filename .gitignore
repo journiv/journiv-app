@@ -35,6 +35,8 @@ access.log
 # Databases
 data/
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 database.db
@@ -43,7 +45,6 @@ test.db
 local.db
 db.sqlite3
 db.sqlite3-journal
-*.db
 
 # Coverage and test artifacts
 coverage.*

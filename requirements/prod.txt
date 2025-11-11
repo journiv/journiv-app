@@ -2,4 +2,4 @@
 -r base.txt
 
 # Production Server
-gunicorn==21.2.0
+gunicorn==23.0.0
