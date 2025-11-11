@@ -1,9 +1,9 @@
 SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 Copyright (c) 2025 [Swalab Tech](https://github.com/swalabtech)
 
-Journiv is licensed under the PolyForm Noncommercial License 1.0.0.
-You may use, copy, and modify the code for personal or noncommercial purposes.
-For commercial licensing inquiries, visit https://github.com/swalabtech.
+Journiv is licensed under the PolyForm Noncommercial License 1.0.0 with supplemental terms below.
+You may use, copy, and modify the code for personal or noncommercial purposes. Commercial use of any kind requires a separate written
+license from the copyright holder. For commercial user/licensing inquiries, contact https://github.com/swalabtech.
 
 Do not remove or modify this license text.
 For the complete official terms, see https://polyformproject.org/licenses/noncommercial/1.0.0.
@@ -83,4 +83,61 @@ The **licensor** is the individual or entity offering these terms, and the **sof
 **Your licenses** are all the licenses granted to you for the software under these terms.
 
 **Use** means anything you do with the software requiring one of your licenses.
+
+---
+
+# Supplemental Terms for Journiv
+
+These supplemental terms restrict the permissions granted under
+the PolyForm Noncommercial License 1.0.0 as applied to Journiv.
+
+## 1. Contributor Assignment
+
+By submitting any code, documentation, translations, or other material
+("Contribution") to this project, you agree that:
+
+1. You assign all rights, title, and interest in your Contribution to
+   the project owner, [Swalab Tech](https://github.com/swalabtech).
+2. You retain no ownership or moral rights in the Contribution
+   to the extent permitted by law.
+3. The project owner may relicense the Contribution or the project
+   under any terms, including commercial licenses.
+4. You represent that your Contribution is an original work and that
+   you have the legal right to assign it.
+
+## 2. Excluded Components
+
+The prebuilt web client (the “Web Client”) contained in the `web/` directory of this
+repository or distributed with any official Journiv Docker image, including all associated
+compiled, minified, or packaged assets, is proprietary software owned and copyrighted by
+Swalab Tech. It is **not** licensed under the PolyForm Noncommercial License 1.0.0.
+
+Use of the Web Client is permitted only for personal, non-commercial self-hosting, testing,
+or evaluation in conjunction with the Journiv backend. Any other use, including, but not
+limited to, publicly hosting the Web Client as a service, offering it to third parties
+outside your immediate family or household, or integrating it into another product or
+service is strictly prohibited without the prior written consent of Swalab Tech.
+Personal use for yourself and your immediate family or household is expressly
+permitted.
+
+You may not copy, distribute, sublicense, sell, lease, lend, modify, adapt, translate,
+reverse-engineer, decompile, disassemble, or otherwise attempt to derive source code from
+the Web Client, nor may you create derivative works based upon it, except to the limited
+extent required for personal, non-commercial use in unmodified form.
+
+By downloading, using, deploying, or otherwise accessing the Web Client, you acknowledge
+that it remains the exclusive property of Swalab Tech and agree to these terms as a
+condition of such use. These terms form a binding agreement between you and Swalab Tech.
+All rights not expressly granted are reserved under applicable copyright law and
+international treaties.
+
+## 3. Precedence
+
+If there is any conflict between these supplemental terms and the PolyForm
+Noncommercial License 1.0.0, these supplemental terms take precedence.
+
+---
+
+**Note:** “Swalab Tech” refers to the creator and copyright holder of Journiv, identified by the GitHub handle [`swalabtech`](https://github.com/swalabtech).
+
 

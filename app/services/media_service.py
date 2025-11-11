@@ -892,3 +892,238 @@ class MediaService:
             # Unexpected error - log and return original path
             log_error(f"Failed to resolve thumbnail path {path}: {e}")
             return str(path)
+
+    def get_media_by_id(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> EntryMedia:
+        """Get media record by ID with ownership validation.
+
+        Args:
+            media_id: UUID of the media record
+            user_id: UUID of the user requesting the media
+            session: Database session
+
+        Returns:
+            EntryMedia record
+
+        Raises:
+            MediaNotFoundError: If media not found or user doesn't have access
+        """
+        statement = select(EntryMedia).join(Entry).join(Journal).where(
+            EntryMedia.id == media_id,
+            Journal.user_id == user_id,
+        )
+        media = session.exec(statement).first()
+        if not media:
+            raise MediaNotFoundError("Media not found")
+        return media
+
+    def get_media_file_path(self, media: EntryMedia) -> Path:
+        """Get the full file path for a media record with validation.
+
+        Args:
+            media: EntryMedia record
+
+        Returns:
+            Path object to the media file
+
+        Raises:
+            MediaNotFoundError: If file doesn't exist
+        """
+        full_path = (self.media_root / media.file_path).resolve()
+
+        # Validate path to prevent directory traversal
+        if not str(full_path).startswith(str(self.media_root.resolve())):
+            raise MediaNotFoundError("Invalid file path")
+
+        if not full_path.exists():
+            raise MediaNotFoundError("Media file not found")
+
+        return full_path
+
+    def get_media_thumbnail_path(self, media: EntryMedia) -> Path:
+        """Get the full thumbnail path for a media record with validation.
+
+        Args:
+            media: EntryMedia record
+
+        Returns:
+            Path object to the thumbnail file
+
+        Raises:
+            MediaNotFoundError: If thumbnail doesn't exist
+        """
+        if not media.thumbnail_path:
+            raise MediaNotFoundError("Thumbnail not found")
+
+        full_path = (self.media_root / media.thumbnail_path).resolve()
+
+        # Validate path to prevent directory traversal
+        if not str(full_path).startswith(str(self.media_root.resolve())):
+            raise MediaNotFoundError("Invalid thumbnail path")
+
+        if not full_path.exists():
+            raise MediaNotFoundError("Thumbnail not found")
+
+        return full_path
+
+    async def delete_media_by_id(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> None:
+        """Delete media by ID including database record and filesystem file.
+
+        Args:
+            media_id: UUID of the media to delete
+            user_id: UUID of the user requesting deletion
+            session: Database session
+
+        Raises:
+            MediaNotFoundError: If media not found or user doesn't have access
+        """
+        from app.services import entry_service as entry_service_module
+
+        # Get media record first to get file path
+        media = self.get_media_by_id(media_id, user_id, session)
+        file_path = media.file_path
+
+        # Delete database record using entry service
+        entry_service = entry_service_module.EntryService(session)
+        entry_service.delete_entry_media(media_id, user_id)
+
+        # Delete file from filesystem
+        try:
+            full_path = (self.media_root / file_path).resolve()
+            if full_path.exists() and str(full_path).startswith(str(self.media_root.resolve())):
+                await self.delete_media_file(str(full_path))
+        except Exception as e:
+            # Log error but don't fail since DB record is already deleted
+            log_error(f"Failed to delete media file: {e}")
+
+    def get_media_file_for_serving(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session, range_header: Optional[str] = None) -> Dict[str, Any]:
+        """Get media file information for serving with optional range support.
+
+        Args:
+            media_id: UUID of the media record
+            user_id: UUID of the user requesting the media
+            session: Database session
+            range_header: Optional Range header value
+
+        Returns:
+            Dict with file_path, file_size, content_type, and optional range info
+
+        Raises:
+            MediaNotFoundError: If media not found or user doesn't have access
+        """
+        import mimetypes
+
+        media = self.get_media_by_id(media_id, user_id, session)
+        full_path = self.get_media_file_path(media)
+
+        file_size = full_path.stat().st_size
+        content_type, _ = mimetypes.guess_type(str(full_path))
+        content_type = content_type or media.mime_type or "application/octet-stream"
+
+        result = {
+            "file_path": full_path,
+            "file_size": file_size,
+            "content_type": content_type,
+            "filename": media.original_filename or full_path.name,
+            "range_info": None,
+        }
+
+        # Parse range header if provided
+        if range_header:
+            try:
+                if not range_header.strip().startswith("bytes="):
+                    raise ValueError("Invalid range unit")
+
+                range_val = range_header.strip().split("=")[1]
+                start_str, end_str = range_val.split("-")
+
+                if not start_str:
+                    start = file_size - int(end_str)
+                    end = file_size - 1
+                elif not end_str:
+                    start = int(start_str)
+                    end = file_size - 1
+                else:
+                    start = int(start_str)
+                    end = int(end_str)
+
+                if start >= file_size or end >= file_size or start > end:
+                    raise ValueError("Range not satisfiable")
+
+                result["range_info"] = {
+                    "start": start,
+                    "end": end,
+                    "length": end - start + 1,
+                }
+            except Exception:
+                raise ValueError("Invalid Range header")
+
+        return result
+
+    async def process_entry_media(self, entry_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> int:
+        """Process all media files for an entry, generating thumbnails.
+
+        Args:
+            entry_id: UUID of the entry
+            user_id: UUID of the user
+            session: Database session
+
+        Returns:
+            Number of media files processed
+
+        Raises:
+            EntryNotFoundError: If entry not found or user doesn't have access
+        """
+        from app.services import entry_service as entry_service_module
+
+        entry_service = entry_service_module.EntryService(session)
+
+        # Verify entry belongs to user
+        entry = entry_service.get_entry_by_id(entry_id, user_id)
+
+        # Get entry media
+        media_list = entry_service.get_entry_media(entry_id, user_id)
+
+        processed_count = 0
+
+        # Process media files concurrently
+        async def process_single_media(media: EntryMedia) -> bool:
+            """Process a single media file and return True if successful."""
+            if not media.thumbnail_path:
+                try:
+                    full_path = self.get_media_file_path(media)
+
+                    # Run thumbnail generation in thread pool since it involves file I/O and subprocess calls
+                    loop = asyncio.get_event_loop()
+                    thumbnail_path = None
+                    if media.media_type == MediaType.IMAGE:
+                        thumbnail_path = await loop.run_in_executor(
+                            None, self._generate_thumbnail, str(full_path), MediaType.IMAGE
+                        )
+                    elif media.media_type == MediaType.VIDEO:
+                        thumbnail_path = await loop.run_in_executor(
+                            None, self._generate_thumbnail, str(full_path), MediaType.VIDEO
+                        )
+
+                    if thumbnail_path:
+                        media.thumbnail_path = self._relative_thumbnail_path(Path(thumbnail_path))
+                        session.add(media)
+                        return True
+                except Exception as e:
+                    log_error(f"Error processing media {media.id}: {e}",
+                             media_id=str(media.id), user_id=str(user_id))
+            return False
+
+        # Process all media concurrently
+        results = await asyncio.gather(
+            *[process_single_media(media) for media in media_list],
+            return_exceptions=True
+        )
+
+        # Count successful processing
+        for result in results:
+            if result is True:
+                processed_count += 1
+
+        # Commit all changes
+        session.commit()
+        return processed_count
