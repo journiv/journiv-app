@@ -113,10 +113,9 @@ class MediaService:
     ) -> Entry:
         statement = (
             select(Entry)
-            .join(Journal)
             .where(
                 Entry.id == entry_id,
-                Journal.user_id == user_id,
+                Entry.user_id == user_id,
             )
         )
         entry = session.exec(statement).first()
@@ -547,9 +546,9 @@ class MediaService:
         except ValueError:
             raise MediaNotFoundError("Invalid media ID format")
 
-        statement = select(EntryMedia).join(Entry).join(Journal).where(
+        statement = select(EntryMedia).join(Entry).where(
             EntryMedia.id == media_uuid,
-            Journal.user_id == uuid.UUID(user_id),
+            Entry.user_id == uuid.UUID(user_id),
         )
 
         media = self.session.exec(statement).first()
@@ -907,9 +906,9 @@ class MediaService:
         Raises:
             MediaNotFoundError: If media not found or user doesn't have access
         """
-        statement = select(EntryMedia).join(Entry).join(Journal).where(
+        statement = select(EntryMedia).join(Entry).where(
             EntryMedia.id == media_id,
-            Journal.user_id == user_id,
+            Entry.user_id == user_id,
         )
         media = session.exec(statement).first()
         if not media:

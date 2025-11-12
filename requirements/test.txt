@@ -1,16 +1,16 @@
 # Test dependencies
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
-pytest-mock==3.12.0
-pytest-httpx==0.24.0
+pytest==9.0.0
+pytest-asyncio==1.2.0
+pytest-cov==5.0.0
+pytest-mock==3.15.1
+pytest-httpx==0.35.0
 
 # HTTP testing
-httpx==0.25.2
+httpx==0.28.1
 fastapi-testclient==0.1.1
 
 # Database testing - using psycopg2-binary for compatibility
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
 
 # Authentication testing - ensure argon2 backend is available
 argon2-cffi==25.1.0

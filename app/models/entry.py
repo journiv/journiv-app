@@ -2,13 +2,14 @@
 Entry-related models.
 """
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional, TYPE_CHECKING
 
 from pydantic import field_validator
-from sqlalchemy import Column, ForeignKey, Enum as SAEnum, UniqueConstraint, String
+from sqlalchemy import Column, ForeignKey, Enum as SAEnum, UniqueConstraint, String, DateTime
 from sqlmodel import Field, Relationship, Index, CheckConstraint
 
+from app.core.time_utils import utc_now
 from .base import BaseModel
 from .enums import MediaType, UploadStatus
 
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from .prompt import Prompt
     from .mood import MoodLog
     from .tag import Tag
+    from .user import User
 
 # Import EntryTagLink from separate file to avoid circular imports
 from .entry_tag_link import EntryTagLink
@@ -41,11 +43,28 @@ class Entry(BaseModel, table=True):
             nullable=True
         )
     )
-    entry_date: date = Field(index=True, description="User's local date for this entry (calculated from user timezone)")  # Date of the journal entry (can be backdated/future-dated)
+    entry_date: date = Field(index=True, description="User's local date for this entry (calculated from stored timezone)")  # Date of the journal entry (can be backdated/future-dated)
+    entry_datetime_utc: datetime = Field(
+        default_factory=utc_now,
+        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
+        description="UTC timestamp representing when the entry occurred"
+    )
+    entry_timezone: str = Field(
+        default="UTC",
+        sa_column=Column(String(100), nullable=False, default="UTC"),
+        description="IANA timezone for the entry's local context"
+    )
     word_count: int = Field(default=0, ge=0, le=50000)  # Reasonable word count limit
     is_pinned: bool = Field(default=False)
     location: Optional[str] = Field(None, max_length=200)
     weather: Optional[str] = Field(None, max_length=100)
+    user_id: uuid.UUID = Field(
+        sa_column=Column(
+            ForeignKey("user.id", ondelete="CASCADE"),
+            nullable=False,
+            index=True
+        )
+    )
 
     # Relations
     journal: "Journal" = Relationship(back_populates="entries")
@@ -62,12 +81,14 @@ class Entry(BaseModel, table=True):
         back_populates="entries",
         link_model=EntryTagLink
     )
+    user: "User" = Relationship(back_populates="entries")
 
     # Table constraints and indexes
     __table_args__ = (
         Index('idx_entries_journal_date', 'journal_id', 'entry_date'),
         Index('idx_entries_created_at', 'created_at'),
         Index('idx_entries_prompt_id', 'prompt_id'),
+        Index('idx_entry_user_datetime', 'user_id', 'entry_datetime_utc'),
 
         # Constraints
         CheckConstraint('length(content) > 0', name='check_content_not_empty'),

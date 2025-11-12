@@ -2,13 +2,14 @@
 Mood-related models.
 """
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional, TYPE_CHECKING
 
 from pydantic import field_validator
-from sqlalchemy import Column, ForeignKey, Date
+from sqlalchemy import Column, ForeignKey, Date, DateTime, String
 from sqlmodel import Field, Relationship, Index, CheckConstraint
 
+from app.core.time_utils import utc_now
 from .base import BaseModel
 from .enums import MoodCategory
 
@@ -90,6 +91,16 @@ class MoodLog(BaseModel, table=True):
         sa_column=Column(Date, nullable=False, index=True),
         description="The date this mood represents (from entry or when logged)"
     )
+    logged_datetime_utc: datetime = Field(
+        default_factory=utc_now,
+        sa_column=Column(DateTime(timezone=True), nullable=False, index=True),
+        description="UTC timestamp when the mood was logged"
+    )
+    logged_timezone: str = Field(
+        default="UTC",
+        sa_column=Column(String(100), nullable=False, default="UTC"),
+        description="IANA timezone for the mood log context"
+    )
 
     # Relations
     user: "User" = Relationship(back_populates="mood_logs")
@@ -100,6 +111,7 @@ class MoodLog(BaseModel, table=True):
     __table_args__ = (
         # For fetching a user's mood history (e.g., a timeline)
         Index('idx_mood_logs_user_id_logged_date', 'user_id', 'logged_date'),
+        Index('idx_mood_logs_user_datetime', 'user_id', 'logged_datetime_utc'),
         # For analytics across all users (e.g., "moods logged on a date")
         Index('idx_mood_logs_logged_date', 'logged_date'),
         # For analytics on specific moods (e.g., "how many 'happy' logs exist")

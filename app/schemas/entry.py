@@ -15,6 +15,8 @@ class EntryBase(BaseModel):
     title: str
     content: str
     entry_date: Optional[date] = None  # Allows backdating/future-dating entries
+    entry_datetime_utc: Optional[datetime] = None
+    entry_timezone: Optional[str] = None
     location: Optional[str] = None
     weather: Optional[str] = None
 
@@ -36,6 +38,8 @@ class EntryUpdate(BaseModel):
     title: Optional[str] = None
     content: Optional[str] = None
     entry_date: Optional[date] = None
+    entry_datetime_utc: Optional[datetime] = None
+    entry_timezone: Optional[str] = None
     location: Optional[str] = None
     weather: Optional[str] = None
     is_pinned: Optional[bool] = None
@@ -47,8 +51,11 @@ class EntryResponse(EntryBase, TimestampMixin):
     journal_id: uuid.UUID
     prompt_id: Optional[uuid.UUID] = None
     entry_date: date  # Override to make it required in response
+    entry_datetime_utc: datetime
+    entry_timezone: str
     word_count: int
     is_pinned: bool
+    user_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
 
@@ -60,6 +67,9 @@ class EntryPreviewResponse(TimestampMixin):
     content: str  # Truncated by endpoint
     journal_id: uuid.UUID
     created_at: datetime
+    entry_date: date
+    entry_datetime_utc: datetime
+    entry_timezone: str
 
 
 from app.models.enums import MediaType, UploadStatus

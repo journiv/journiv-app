@@ -431,7 +431,10 @@ async def get_entries_by_tag(
                 title=entry.title or "Untitled",
                 content=(entry.content[:200] + "..." if len(entry.content or "") > 200 else entry.content or ""),
                 journal_id=entry.journal_id,
-                created_at=entry.created_at
+                created_at=entry.created_at,
+                entry_date=entry.entry_date,
+                entry_datetime_utc=entry.entry_datetime_utc,
+                entry_timezone=entry.entry_timezone
             )
             for entry in entries
         ]

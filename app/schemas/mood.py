@@ -28,6 +28,8 @@ class MoodLogBase(BaseModel):
     """Base mood log schema."""
     mood_id: uuid.UUID
     note: Optional[str] = None
+    logged_datetime_utc: Optional[datetime] = None
+    logged_timezone: Optional[str] = None
 
 
 class MoodLogCreate(MoodLogBase):
@@ -39,6 +41,8 @@ class MoodLogUpdate(BaseModel):
     """Mood log update schema."""
     mood_id: Optional[uuid.UUID] = None
     note: Optional[str] = None
+    logged_datetime_utc: Optional[datetime] = None
+    logged_timezone: Optional[str] = None
 
 
 class MoodLogResponse(MoodLogBase, TimestampMixin):
@@ -48,6 +52,8 @@ class MoodLogResponse(MoodLogBase, TimestampMixin):
     entry_id: Optional[uuid.UUID] = None
     created_at: datetime
     logged_date: date = Field(description="The date this mood represents")
+    logged_datetime_utc: datetime
+    logged_timezone: str
     mood: Optional[MoodResponse] = None
     entry_date: Optional[date] = Field(None, description="Date from associated entry if available (deprecated, use logged_date)")
 

@@ -99,23 +99,12 @@ class AnalyticsService:
             select(
                 func.count(Entry.id).label("entry_count"),
                 func.coalesce(func.sum(Entry.word_count), 0).label("total_words"),
-            )
-            .join(Journal, Entry.journal_id == Journal.id)
-            .where(
-                Journal.user_id == user_id,
+            ).where(
+                Entry.user_id == user_id,
             )
         ).first()
 
-        if isinstance(result, (int, float)):
-            total_entries = int(result or 0)
-            total_words = self.session.exec(
-                select(func.coalesce(func.sum(Entry.word_count), 0))
-                .join(Journal, Entry.journal_id == Journal.id)
-                .where(
-                    Journal.user_id == user_id,
-                )
-            ).first() or 0
-        elif result is None:
+        if result is None:
             total_entries = 0
             total_words = 0
         elif isinstance(result, tuple):
@@ -161,33 +150,32 @@ class AnalyticsService:
         # Get entries by day
         entries_by_day = self.session.exec(
             select(
-                func.date(Entry.created_at).label('entry_date'),
+                Entry.entry_date.label('entry_date'),
                 func.count(Entry.id).label('entry_count'),
                 func.sum(Entry.word_count).label('total_words')
             )
-            .join(Journal, Entry.journal_id == Journal.id)
             .where(
-                Journal.user_id == user_id,
-                func.date(Entry.created_at) >= start_date,
-                func.date(Entry.created_at) <= end_date
+                Entry.user_id == user_id,
+                Entry.entry_date >= start_date,
+                Entry.entry_date <= end_date
             )
-            .group_by(func.date(Entry.created_at))
-            .order_by(func.date(Entry.created_at))
+            .group_by(Entry.entry_date)
+            .order_by(Entry.entry_date)
         ).all()
 
         # Get mood patterns
         mood_patterns = self.session.exec(
             select(
-                func.date(MoodLog.created_at).label('mood_date'),
+                MoodLog.logged_date.label('mood_date'),
                 func.count(MoodLog.id).label('mood_count')
             )
             .where(
                 MoodLog.user_id == user_id,
-                func.date(MoodLog.created_at) >= start_date,
-                func.date(MoodLog.created_at) <= end_date
+                MoodLog.logged_date >= start_date,
+                MoodLog.logged_date <= end_date
             )
-            .group_by(func.date(MoodLog.created_at))
-            .order_by(func.date(MoodLog.created_at))
+            .group_by(MoodLog.logged_date)
+            .order_by(MoodLog.logged_date)
         ).all()
 
         # Get tag usage
@@ -198,12 +186,11 @@ class AnalyticsService:
             )
             .join(EntryTagLink, Tag.id == EntryTagLink.tag_id)
             .join(Entry, EntryTagLink.entry_id == Entry.id)
-            .join(Journal, Entry.journal_id == Journal.id)
             .where(
                 Tag.user_id == user_id,
-                Journal.user_id == user_id,
-                func.date(Entry.created_at) >= start_date,
-                func.date(Entry.created_at) <= end_date
+                Entry.user_id == user_id,
+                Entry.entry_date >= start_date,
+                Entry.entry_date <= end_date
             )
             .group_by(Tag.name)
             .order_by(func.count(EntryTagLink.entry_id).desc())
@@ -238,28 +225,22 @@ class AnalyticsService:
 
     def get_productivity_metrics(self, user_id: uuid.UUID) -> Dict[str, Any]:
         """Get productivity metrics for a user."""
-        now = datetime.now()
-        if now.tzinfo is None:
-            now = now.replace(tzinfo=timezone.utc)
-        else:
-            now = now.astimezone(timezone.utc)
+        now = utc_now()
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
         current_month_entries = self.session.exec(
             select(func.count(Entry.id))
-            .join(Journal, Entry.journal_id == Journal.id)
             .where(
-                Journal.user_id == user_id,
-                Entry.created_at >= month_start
+                Entry.user_id == user_id,
+                Entry.entry_datetime_utc >= month_start
             )
         ).first() or 0
 
         current_month_words = self.session.exec(
-            select(func.sum(Entry.word_count))
-            .join(Journal, Entry.journal_id == Journal.id)
+            select(func.coalesce(func.sum(Entry.word_count), 0))
             .where(
-                Journal.user_id == user_id,
-                Entry.created_at >= month_start
+                Entry.user_id == user_id,
+                Entry.entry_datetime_utc >= month_start
             )
         ).first() or 0
 
@@ -269,11 +250,10 @@ class AnalyticsService:
 
         last_month_entries = self.session.exec(
             select(func.count(Entry.id))
-            .join(Journal, Entry.journal_id == Journal.id)
             .where(
-                Journal.user_id == user_id,
-                Entry.created_at >= last_month_start,
-                Entry.created_at < month_start
+                Entry.user_id == user_id,
+                Entry.entry_datetime_utc >= last_month_start,
+                Entry.entry_datetime_utc < month_start
             )
         ).first() or 0
 
@@ -299,7 +279,7 @@ class AnalyticsService:
                 Journal.title,
                 func.count(Entry.id).label('entry_count'),
                 func.sum(Entry.word_count).label('total_words'),
-                func.max(Entry.created_at).label('last_entry')
+                func.max(Entry.entry_datetime_utc).label('last_entry')
             )
             .outerjoin(Entry, Journal.id == Entry.journal_id)
             .where(
