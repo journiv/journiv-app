@@ -9,6 +9,7 @@ from typing import Optional
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
+from app.core.config import settings
 
 from app.core.exceptions import (
     UserNotFoundError,
@@ -63,6 +64,13 @@ class UserService:
             return external_identity is not None
         except ValueError:
             return False
+
+    def is_signup_disabled(self) -> bool:
+        """Check if signup is disabled from app settings.
+        Returns:
+            bool: True if signup is disabled, False otherwise.
+        """
+        return settings.disable_signup
 
     def create_user(self, user_data: UserCreate) -> User:
         """Create a new user."""

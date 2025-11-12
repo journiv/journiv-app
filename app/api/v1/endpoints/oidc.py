@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuthError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.database import get_session
@@ -17,6 +17,7 @@ from app.core.security import create_access_token, create_refresh_token
 from app.core.logging_config import log_info, log_error, log_user_action, log_warning
 from app.schemas.auth import LoginResponse
 from app.services.user_service import UserService
+from app.models.external_identity import ExternalIdentity
 
 router = APIRouter(prefix="/auth/oidc", tags=["auth"])
 
@@ -168,6 +169,20 @@ async def oidc_callback(
     if not subject:
         log_error("OIDC claims missing 'sub' field")
         raise HTTPException(status_code=400, detail="Invalid OIDC claims: missing subject")
+
+    if settings.disable_signup:
+        statement = select(ExternalIdentity).where(
+            ExternalIdentity.issuer == issuer,
+            ExternalIdentity.subject == subject
+        )
+        external_identity = session.exec(statement).first()
+        if not external_identity:
+            log_warning(
+                "OIDC login rejected because signup is disabled",
+                issuer=issuer,
+                subject=subject
+            )
+            raise HTTPException(status_code=403, detail="Sign up is disabled")
 
     # Get or create user from external identity
     user_service = UserService(session)
