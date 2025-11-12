@@ -12,7 +12,7 @@ from app.api.dependencies import get_current_user
 from app.core.config import settings
 from app.core.database import get_session
 from app.core.exceptions import InvalidCredentialsError, UnauthorizedError
-from app.core.logging_config import log_user_action, log_error
+from app.core.logging_config import log_user_action, log_error, log_warning
 from app.core.rate_limiting import auth_rate_limit
 from app.core.security import create_access_token, create_refresh_token, verify_token
 from app.models.user import User
@@ -32,6 +32,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
         400: {"description": "Email already registered or invalid data"},
         429: {"description": "Too many requests"},
         500: {"description": "Internal server error"},
+        403: {"description": "Sign up is disabled"},
     }
 )
 @auth_rate_limit("register")
@@ -47,6 +48,13 @@ async def register(
     """
     try:
         user_service = UserService(session)
+
+        if user_service.is_signup_disabled():
+            log_warning(
+                "Email login rejected because signup is disabled",
+                user_email=user_data.email
+            )
+            raise HTTPException(status_code=403, detail="Sign up is disabled")
 
         # Check if user already exists
         existing_user = user_service.get_user_by_email(user_data.email)
