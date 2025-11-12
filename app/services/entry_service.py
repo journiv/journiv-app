@@ -83,14 +83,8 @@ class EntryService:
         return normalized_dt, timezone_name, derived_date
 
     def _refresh_entry_date(self, entry: Entry) -> None:
-        utc_dt = self._as_utc(entry.entry_datetime_utc)
+        utc_dt = ensure_utc(entry.entry_datetime_utc)
         entry.entry_date = self._derive_entry_date(utc_dt, entry.entry_timezone)
-
-    @staticmethod
-    def _as_utc(value: datetime) -> datetime:
-        if value.tzinfo is None:
-            return value.replace(tzinfo=ZoneInfo("UTC"))
-        return value.astimezone(ZoneInfo("UTC"))
 
     def create_entry(self, user_id: uuid.UUID, entry_data: EntryCreate) -> Entry:
         """Create a new entry in a journal.
@@ -240,7 +234,7 @@ class EntryService:
 
         if entry_data.entry_date is not None:
             timezone_name = entry.entry_timezone or "UTC"
-            base_dt = self._as_utc(entry.entry_datetime_utc)
+            base_dt = ensure_utc(entry.entry_datetime_utc)
             local_current = base_dt.astimezone(ZoneInfo(timezone_name))
             target_local = datetime.combine(entry_data.entry_date, local_current.time())
             entry.entry_datetime_utc = to_utc(target_local, timezone_name)
