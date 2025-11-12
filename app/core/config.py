@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     log_file: Optional[str] = None
     log_dir: str = "/data/logs"
 
+    # Disable signup
+    disable_signup: bool = Field(
+        default_factory=lambda: os.getenv("DISABLE_SIGNUP", "false").lower() == "true"
+    )
 
     # Rate limiting
     rate_limiting_enabled: bool = Field(
