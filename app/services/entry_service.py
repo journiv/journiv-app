@@ -2,15 +2,16 @@
 Entry service for managing journal entries.
 """
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select
+from zoneinfo import ZoneInfo
 
 from app.core.exceptions import EntryNotFoundError, JournalNotFoundError
 from app.core.logging_config import log_info, log_warning, log_error
-from app.core.time_utils import utc_now, local_date_for_user
+from app.core.time_utils import utc_now, local_date_for_user, ensure_utc, to_utc
 from app.models.entry import Entry, EntryMedia
 from app.models.entry_tag_link import EntryTagLink
 from app.models.journal import Journal
@@ -34,9 +35,9 @@ class EntryService:
         return min(limit, MAX_ENTRY_PAGE_LIMIT)
 
     def _get_owned_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, *, include_deleted: bool = False) -> Entry:
-        statement = select(Entry).join(Journal).where(
+        statement = select(Entry).where(
             Entry.id == entry_id,
-            Journal.user_id == user_id,
+            Entry.user_id == user_id,
         )
 
         entry = self.session.exec(statement).first()
@@ -53,6 +54,43 @@ class EntryService:
             self.session.rollback()
             log_error(exc)
             raise
+
+    @staticmethod
+    def _derive_entry_date(entry_datetime_utc: datetime, timezone_name: str) -> date:
+        """Determine the local date for an entry based on stored timezone."""
+        return local_date_for_user(entry_datetime_utc, timezone_name or "UTC")
+
+    def _normalize_entry_timestamp(
+        self,
+        *,
+        entry_date: Optional[date],
+        entry_datetime_utc: Optional[datetime],
+        entry_timezone: Optional[str],
+        fallback_timezone: str
+    ) -> tuple[datetime, str, date]:
+        timezone_name = (entry_timezone or fallback_timezone or "UTC").strip() or "UTC"
+
+        if entry_datetime_utc is not None:
+            normalized_dt = ensure_utc(entry_datetime_utc)
+        elif entry_date is not None:
+            local_now = datetime.now(ZoneInfo(timezone_name))
+            local_dt = datetime.combine(entry_date, local_now.time())
+            normalized_dt = to_utc(local_dt, timezone_name)
+        else:
+            normalized_dt = utc_now()
+
+        derived_date = self._derive_entry_date(normalized_dt, timezone_name)
+        return normalized_dt, timezone_name, derived_date
+
+    def _refresh_entry_date(self, entry: Entry) -> None:
+        utc_dt = self._as_utc(entry.entry_datetime_utc)
+        entry.entry_date = self._derive_entry_date(utc_dt, entry.entry_timezone)
+
+    @staticmethod
+    def _as_utc(value: datetime) -> datetime:
+        if value.tzinfo is None:
+            return value.replace(tzinfo=ZoneInfo("UTC"))
+        return value.astimezone(ZoneInfo("UTC"))
 
     def create_entry(self, user_id: uuid.UUID, entry_data: EntryCreate) -> Entry:
         """Create a new entry in a journal.
@@ -77,25 +115,29 @@ class EntryService:
         # Calculate word count
         word_count = len(entry_data.content.split()) if entry_data.content else 0
 
-        # Use provided entry_date or calculate from user's timezone
-        if entry_data.entry_date:
-            entry_date = entry_data.entry_date
-        else:
-            # Get user's timezone and calculate local date
-            from app.services.user_service import UserService
-            user_service = UserService(self.session)
-            user_tz = user_service.get_user_timezone(user_id)
-            entry_date = local_date_for_user(utc_now(), user_tz)
+        from app.services.user_service import UserService
+        user_service = UserService(self.session)
+        user_tz = user_service.get_user_timezone(user_id)
+
+        entry_dt_utc, entry_tz, entry_date = self._normalize_entry_timestamp(
+            entry_date=entry_data.entry_date,
+            entry_datetime_utc=entry_data.entry_datetime_utc,
+            entry_timezone=entry_data.entry_timezone,
+            fallback_timezone=user_tz
+        )
 
         entry = Entry(
             title=entry_data.title,
             content=entry_data.content,
             entry_date=entry_date,
+            entry_datetime_utc=entry_dt_utc,
+            entry_timezone=entry_tz,
             location=entry_data.location,
             weather=entry_data.weather,
             journal_id=entry_data.journal_id,
             prompt_id=entry_data.prompt_id,
-            word_count=word_count
+            word_count=word_count,
+            user_id=user_id
         )
 
         try:
@@ -123,7 +165,7 @@ class EntryService:
         try:
             from app.services.analytics_service import AnalyticsService
             analytics_service = AnalyticsService(self.session)
-            analytics_service.update_writing_streak(user_id, entry.created_at.date())
+            analytics_service.update_writing_streak(user_id, entry.entry_date)
         except Exception as exc:
             log_error(exc)
 
@@ -131,9 +173,9 @@ class EntryService:
 
     def get_entry_by_id(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Entry]:
         """Get an entry by ID, ensuring it belongs to the user."""
-        statement = select(Entry).join(Journal).where(
+        statement = select(Entry).where(
             Entry.id == entry_id,
-            Journal.user_id == user_id,
+            Entry.user_id == user_id,
         )
         return self.session.exec(statement).first()
 
@@ -158,7 +200,7 @@ class EntryService:
 
         statement = statement.order_by(
             Entry.is_pinned.desc(),
-            Entry.created_at.desc()
+            Entry.entry_datetime_utc.desc()
         ).offset(offset).limit(limit)
 
         return list(self.session.exec(statement))
@@ -170,9 +212,9 @@ class EntryService:
         offset: int = 0
     ) -> List[Entry]:
         """Get all entries for a user across all journals."""
-        statement = select(Entry).join(Journal).where(
-            Journal.user_id == user_id,
-        ).order_by(Entry.created_at.desc()).offset(offset).limit(limit)
+        statement = select(Entry).where(
+            Entry.user_id == user_id,
+        ).order_by(Entry.entry_datetime_utc.desc()).offset(offset).limit(limit)
 
         return list(self.session.exec(statement))
 
@@ -187,8 +229,25 @@ class EntryService:
             entry.content = entry_data.content
             # Recalculate word count
             entry.word_count = len(entry_data.content.split())
+        if entry_data.entry_timezone is not None:
+            tz_value = (entry_data.entry_timezone or "UTC").strip() or "UTC"
+            entry.entry_timezone = tz_value
+        timestamp_changed = False
+
+        if entry_data.entry_datetime_utc is not None:
+            entry.entry_datetime_utc = ensure_utc(entry_data.entry_datetime_utc)
+            timestamp_changed = True
+
         if entry_data.entry_date is not None:
-            entry.entry_date = entry_data.entry_date
+            timezone_name = entry.entry_timezone or "UTC"
+            base_dt = self._as_utc(entry.entry_datetime_utc)
+            local_current = base_dt.astimezone(ZoneInfo(timezone_name))
+            target_local = datetime.combine(entry_data.entry_date, local_current.time())
+            entry.entry_datetime_utc = to_utc(target_local, timezone_name)
+            timestamp_changed = True
+
+        if timestamp_changed or entry_data.entry_timezone is not None:
+            self._refresh_entry_date(entry)
         if entry_data.location is not None:
             entry.location = entry_data.location
         if entry_data.weather is not None:
@@ -278,15 +337,15 @@ class EntryService:
         offset: int = 0
     ) -> List[Entry]:
         """Search entries by content."""
-        statement = select(Entry).join(Journal).where(
-            Journal.user_id == user_id,
+        statement = select(Entry).where(
+            Entry.user_id == user_id,
             Entry.content.ilike(f"%{query}%")
         )
 
         if journal_id:
             statement = statement.where(Entry.journal_id == journal_id)
 
-        statement = statement.order_by(Entry.created_at.desc()).offset(offset).limit(limit)
+        statement = statement.order_by(Entry.entry_datetime_utc.desc()).offset(offset).limit(limit)
         return list(self.session.exec(statement))
 
     def get_entries_by_date_range(
@@ -297,8 +356,8 @@ class EntryService:
         journal_id: Optional[uuid.UUID] = None
     ) -> List[Entry]:
         """Get entries within a date range based on entry_date."""
-        statement = select(Entry).join(Journal).where(
-            Journal.user_id == user_id,
+        statement = select(Entry).where(
+            Entry.user_id == user_id,
             Entry.entry_date >= start_date,
             Entry.entry_date <= end_date
         )
@@ -306,7 +365,7 @@ class EntryService:
         if journal_id:
             statement = statement.where(Entry.journal_id == journal_id)
 
-        statement = statement.order_by(Entry.entry_date.desc())
+        statement = statement.order_by(Entry.entry_datetime_utc.desc())
         return list(self.session.exec(statement))
 
     def add_media_to_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, media_data: EntryMediaCreate) -> EntryMedia:
@@ -367,9 +426,9 @@ class EntryService:
             EntryNotFoundError: If media doesn't exist or doesn't belong to user's entry
         """
         # Get the media and verify it belongs to user's entry
-        statement = select(EntryMedia).join(Entry).join(Journal).where(
+        statement = select(EntryMedia).join(Entry).where(
             EntryMedia.id == media_id,
-            Journal.user_id == user_id,
+            Entry.user_id == user_id,
         )
         media = self.session.exec(statement).first()
 
@@ -387,4 +446,3 @@ class EntryService:
 
         log_info(f"Media hard-deleted for user {user_id}: {media.id}")
         return True
-

@@ -217,7 +217,7 @@ class JournalService:
         stats = self.session.exec(
             select(
                 func.count(Entry.id).label("count"),
-                func.max(Entry.created_at).label("last_created")
+                func.max(Entry.entry_datetime_utc).label("last_created")
             ).where(
                 Entry.journal_id == journal_id
             )

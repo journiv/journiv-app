@@ -228,11 +228,10 @@ class TagService:
         if not tag:
             raise TagNotFoundError("Tag not found")
 
-        from app.models.journal import Journal
-        statement = select(Entry).join(EntryTagLink).join(Journal, Entry.journal_id == Journal.id).where(
+        statement = select(Entry).join(EntryTagLink).where(
             EntryTagLink.tag_id == tag_id,
-            Journal.user_id == user_id,
-        ).order_by(Entry.created_at.desc()).offset(offset).limit(limit)
+            Entry.user_id == user_id,
+        ).order_by(Entry.entry_datetime_utc.desc()).offset(offset).limit(limit)
         return list(self.session.exec(statement))
 
     def get_tag_statistics(self, user_id: uuid.UUID) -> Dict[str, Any]:
@@ -318,11 +317,10 @@ class TagService:
         Returns all tags that are associated with the entry after the operation.
         """
         # Verify entry exists and belongs to user
-        from app.models.journal import Journal
         entry = self.session.exec(
-            select(Entry).join(Journal, Entry.journal_id == Journal.id).where(
+            select(Entry).where(
                 Entry.id == entry_id,
-                Journal.user_id == user_id,
+                Entry.user_id == user_id,
             )
         ).first()
 

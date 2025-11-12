@@ -340,8 +340,8 @@ class PromptService:
             return None
 
         # Check if user has already answered today's prompt
-        existing_entry_statement = select(Entry).join(Journal).where(
-            Journal.user_id == user_id,
+        existing_entry_statement = select(Entry).where(
+            Entry.user_id == user_id,
             Entry.prompt_id == daily_prompt.id,
             Entry.entry_date == today,
         )

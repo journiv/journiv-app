@@ -3,18 +3,18 @@ Mood service for handling mood-related operations.
 """
 import threading
 import uuid
-from datetime import datetime, date, timedelta, time, timezone
+from datetime import datetime, date, timedelta
 from typing import List, Optional, Dict, Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, select, func
 
 from app.core.exceptions import MoodNotFoundError, EntryNotFoundError
 from app.core.logging_config import log_error
-from app.core.time_utils import utc_now
+from app.core.time_utils import utc_now, local_date_for_user, ensure_utc, to_utc
 from app.models.entry import Entry
 from app.models.enums import MoodCategory
-from app.models.journal import Journal
 from app.models.mood import Mood, MoodLog
 from app.schemas.mood import MoodLogCreate, MoodLogUpdate
 
@@ -127,6 +127,34 @@ class MoodService:
             log_error(exc)
             raise
 
+    def _normalize_log_timestamp(
+        self,
+        *,
+        logged_date: Optional[date],
+        logged_datetime_utc: Optional[datetime],
+        logged_timezone: Optional[str],
+        fallback_timezone: str
+    ) -> tuple[datetime, str, date]:
+        timezone_name = (logged_timezone or fallback_timezone or "UTC").strip() or "UTC"
+
+        if logged_datetime_utc is not None:
+            normalized_dt = ensure_utc(logged_datetime_utc)
+        elif logged_date is not None:
+            local_now = datetime.now(ZoneInfo(timezone_name))
+            local_dt = datetime.combine(logged_date, local_now.time())
+            normalized_dt = to_utc(local_dt, timezone_name)
+        else:
+            normalized_dt = utc_now()
+
+        derived_date = local_date_for_user(normalized_dt, timezone_name)
+        return normalized_dt, timezone_name, derived_date
+
+    @staticmethod
+    def _as_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=ZoneInfo("UTC"))
+        return dt.astimezone(ZoneInfo("UTC"))
+
     # Mood Management (System moods)
     def get_all_moods(self) -> List[Mood]:
         """Get all system moods."""
@@ -187,40 +215,41 @@ class MoodService:
     def log_mood(self, user_id: uuid.UUID, mood_log_data: MoodLogCreate) -> MoodLog:
         """Log a mood for a user."""
         from app.services.user_service import UserService
-        from app.core.time_utils import local_date_for_user
-
         # Verify the mood exists
         mood = self.get_mood_by_id(mood_log_data.mood_id)
         if not mood:
             raise MoodNotFoundError("Mood not found")
 
-        # Determine the logged_date
-        logged_date = None
-
-        # If entry_id is provided, verify the entry belongs to the user and use its date
         if mood_log_data.entry_id:
             entry = self.session.exec(
-                select(Entry).join(Journal).where(
+                select(Entry).where(
                     Entry.id == mood_log_data.entry_id,
-                    Journal.user_id == user_id
+                    Entry.user_id == user_id
                 )
             ).first()
             if not entry:
                 raise EntryNotFoundError("Entry not found")
-            # Use the entry's date
+            logged_datetime_utc = self._as_utc(entry.entry_datetime_utc)
+            logged_timezone = entry.entry_timezone
             logged_date = entry.entry_date
         else:
-            # For standalone mood logs, use today's date in the user's timezone
             user_service = UserService(self.session)
             user_tz = user_service.get_user_timezone(user_id)
-            logged_date = local_date_for_user(utc_now(), user_tz)
+            logged_datetime_utc, logged_timezone, logged_date = self._normalize_log_timestamp(
+                logged_date=None,
+                logged_datetime_utc=mood_log_data.logged_datetime_utc,
+                logged_timezone=mood_log_data.logged_timezone,
+                fallback_timezone=user_tz
+            )
 
         mood_log = MoodLog(
             user_id=user_id,
             mood_id=mood_log_data.mood_id,
             entry_id=mood_log_data.entry_id,
             note=mood_log_data.note,
-            logged_date=logged_date
+            logged_date=logged_date,
+            logged_datetime_utc=logged_datetime_utc,
+            logged_timezone=logged_timezone
         )
 
         self.session.add(mood_log)
@@ -248,14 +277,12 @@ class MoodService:
             statement = statement.where(MoodLog.entry_id == entry_id)
 
         if start_date:
-            start_datetime = datetime.combine(start_date, time.min).replace(tzinfo=timezone.utc)
-            statement = statement.where(MoodLog.created_at >= start_datetime)
+            statement = statement.where(MoodLog.logged_date >= start_date)
 
         if end_date:
-            end_datetime = datetime.combine(end_date, time.max).replace(tzinfo=timezone.utc)
-            statement = statement.where(MoodLog.created_at <= end_datetime)
+            statement = statement.where(MoodLog.logged_date <= end_date)
 
-        statement = statement.order_by(MoodLog.created_at.desc()).offset(offset).limit(self._normalize_limit(limit))
+        statement = statement.order_by(MoodLog.logged_datetime_utc.desc()).offset(offset).limit(self._normalize_limit(limit))
         return list(self.session.exec(statement))
 
     def get_mood_log_by_id(self, mood_log_id: uuid.UUID, user_id: uuid.UUID) -> Optional[MoodLog]:
@@ -281,6 +308,19 @@ class MoodService:
 
         if mood_log_data.note is not None:
             mood_log.note = mood_log_data.note
+
+        if mood_log_data.logged_timezone is not None:
+            tz_value = (mood_log_data.logged_timezone or "UTC").strip() or "UTC"
+            mood_log.logged_timezone = tz_value
+        timestamp_changed = False
+
+        if mood_log_data.logged_datetime_utc is not None:
+            mood_log.logged_datetime_utc = ensure_utc(mood_log_data.logged_datetime_utc)
+            timestamp_changed = True
+
+        if timestamp_changed or mood_log_data.logged_timezone is not None:
+            base_dt = self._as_utc(mood_log.logged_datetime_utc)
+            mood_log.logged_date = local_date_for_user(base_dt, mood_log.logged_timezone)
 
         mood_log.updated_at = utc_now()
         self.session.add(mood_log)
@@ -311,10 +351,6 @@ class MoodService:
         if not start_date:
             start_date = end_date - timedelta(days=30)
 
-        # Convert dates to timezone-aware datetimes for comparison with created_at
-        start_datetime = datetime.combine(start_date, time.min).replace(tzinfo=timezone.utc)
-        end_datetime = datetime.combine(end_date, time.max).replace(tzinfo=timezone.utc)
-
         # Get mood counts
         mood_counts = list(self.session.exec(
             select(
@@ -325,8 +361,8 @@ class MoodService:
             .join(MoodLog, Mood.id == MoodLog.mood_id)
             .where(
                 MoodLog.user_id == user_id,
-                MoodLog.created_at >= start_datetime,
-                MoodLog.created_at <= end_datetime
+                MoodLog.logged_date >= start_date,
+                MoodLog.logged_date <= end_date
             )
             .group_by(Mood.id, Mood.name, Mood.category)
             .order_by(func.count(MoodLog.id).desc())
@@ -407,7 +443,7 @@ class MoodService:
             select(MoodLog)
             .join(Mood, MoodLog.mood_id == Mood.id)
             .where(MoodLog.user_id == user_id)
-            .order_by(MoodLog.logged_date.desc(), MoodLog.created_at.desc())
+            .order_by(MoodLog.logged_datetime_utc.desc())
             .limit(limit)
         )
         mood_logs = list(self.session.exec(statement))
