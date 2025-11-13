@@ -26,10 +26,11 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "Journiv Service"
-    app_version: str = "0.1.0-beta.5"
+    app_version: str = "0.1.0-beta.6"
     debug: bool = False
     environment: str = "development"
     domain_name: str = ""
+    domain_scheme: str = "http"
 
     # API
     api_v1_prefix: str = "/api/v1"
@@ -387,6 +388,44 @@ class Settings(BaseSettings):
                 ".mp4", ".avi", ".mov", ".webm",
                 ".mp3", ".wav", ".ogg", ".m4a", ".aac"
             ]
+        return v
+
+    @field_validator('domain_scheme')
+    @classmethod
+    def validate_domain_scheme(cls, v: str) -> str:
+        """Validate DOMAIN_SCHEME is either http or https."""
+        v = v.lower().strip()
+        if v not in ("http", "https"):
+            raise ValueError(
+                "DOMAIN_SCHEME must be either 'http' or 'https'. "
+                f"Got: {v}"
+            )
+        return v
+
+    @field_validator('domain_name')
+    @classmethod
+    def validate_domain_name(cls, v: str) -> str:
+        """Validate DOMAIN_NAME does not contain scheme or trailing slash."""
+        if not v:
+            return v
+
+        v = v.strip()
+
+        # Check for scheme prefix
+        if v.startswith("http://") or v.startswith("https://"):
+            raise ValueError(
+                "DOMAIN_NAME must not contain a scheme (http:// or https://). "
+                "Set the scheme separately using DOMAIN_SCHEME. "
+                f"Got: {v}"
+            )
+
+        # Remove trailing slash if present
+        if v.endswith("/"):
+            v = v.rstrip("/")
+            logger.warning(
+                f"DOMAIN_NAME had trailing slash removed: {v}"
+            )
+
         return v
 
     @field_validator('ffprobe_timeout', 'ffmpeg_timeout')

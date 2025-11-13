@@ -8,6 +8,7 @@
 #   DOMAIN_NAME - Needed when running in same-origin SPA mode (ENABLE_CORS=false)
 #
 # Optional Environment Variables:
+#   DOMAIN_SCHEME   - Protocol scheme for public URLs (http or https). Default: http. Use "https" when behind reverse proxy.
 #   APP_PORT        - Host port to expose (default 8000; container always listens on 8000)
 #   DATABASE_URL    - Override SQLite location (defaults to sqlite:////data/journiv.db)
 #   ENABLE_CORS     - true/false for cross-origin API access
@@ -25,6 +26,7 @@ services:
       - DATABASE_URL=${DATABASE_URL:-sqlite:////data/journiv.db}
       - SECRET_KEY=${SECRET_KEY}
       - DOMAIN_NAME=${DOMAIN_NAME:-}
+      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
       - ENABLE_CORS=${ENABLE_CORS:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-}
       - ALGORITHM=${ALGORITHM:-HS256}
@@ -34,7 +36,7 @@ services:
       - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
       - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=false
       - ENVIRONMENT=production
       - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}

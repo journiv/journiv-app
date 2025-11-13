@@ -9,6 +9,7 @@
 #   POSTGRES_PASSWORD (if not relying on defaults, strongly recommended to change in production).
 #
 # Optional Environment Variables:
+#   DOMAIN_SCHEME   - Protocol scheme for public URLs (http or https). Default: http. Use "https" when behind reverse proxy.
 #   APP_PORT, POSTGRES_USER, POSTGRES_DB, ENABLE_CORS, CORS_ORIGINS, MAX_FILE_SIZE_MB, LOG_LEVEL, etc.
 #   See .env.template for the complete list.
 
@@ -59,6 +60,7 @@ services:
       - POSTGRES_PORT=5432
       - SECRET_KEY=${SECRET_KEY}
       - DOMAIN_NAME=${DOMAIN_NAME:-}
+      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
       - ENABLE_CORS=${ENABLE_CORS:-false}
       - CORS_ORIGINS=${CORS_ORIGINS:-}
       - ALGORITHM=${ALGORITHM:-HS256}
@@ -68,7 +70,7 @@ services:
       - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
       - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=false
       - ENVIRONMENT=production
       - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}

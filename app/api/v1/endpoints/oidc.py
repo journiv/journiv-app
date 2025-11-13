@@ -19,7 +19,7 @@ from app.schemas.auth import LoginResponse
 from app.services.user_service import UserService
 from app.models.external_identity import ExternalIdentity
 
-router = APIRouter(prefix="/auth/oidc", tags=["auth"])
+router = APIRouter(prefix="/auth/oidc")
 
 
 def register_oidc_provider():
@@ -238,9 +238,14 @@ async def oidc_callback(
     )
 
     # Redirect to SPA with ticket
-    # If SPA uses hash routing (#/), adjust accordingly
-    base_url = str(request.base_url).rstrip("/")
-    finish_url = f"{base_url}/#/oidc-finish?ticket={ticket}"
+    # Use DOMAIN_SCHEME and DOMAIN_NAME from settings instead of request.base_url
+    # This ensures correct scheme (https) when running behind reverse proxy
+    if not settings.domain_name:
+        # Fallback to request.base_url if domain_name not configured
+        base_url = str(request.base_url).rstrip("/")
+        finish_url = f"{base_url}/#/oidc-finish?ticket={ticket}"
+    else:
+        finish_url = f"{settings.domain_scheme}://{settings.domain_name}/#/oidc-finish?ticket={ticket}"
 
     log_info(f"OIDC login successful for {user.email}, redirecting to {finish_url}")
 
@@ -316,8 +321,14 @@ async def oidc_logout(request: Request):
         end_session_endpoint = metadata.get("end_session_endpoint")
 
         # Build post-logout redirect URI (where provider redirects back after logout)
-        base_url = str(request.base_url).rstrip("/")
-        post_logout_redirect_uri = f"{base_url}/#/login?logout=success"
+        # Use DOMAIN_SCHEME and DOMAIN_NAME from settings instead of request.base_url
+        # This ensures correct scheme (https) when running behind reverse proxy
+        if not settings.domain_name:
+            # Fallback to request.base_url if domain_name not configured
+            base_url = str(request.base_url).rstrip("/")
+            post_logout_redirect_uri = f"{base_url}/#/login?logout=success"
+        else:
+            post_logout_redirect_uri = f"{settings.domain_scheme}://{settings.domain_name}/#/login?logout=success"
 
         if end_session_endpoint:
             # Properly encode query parameters for OIDC logout URL

@@ -6,7 +6,8 @@ services:
       - "8000:8000"
     environment:
       - SECRET_KEY=your-secret-key-here # Replace with a strong secret key
-      - DOMAIN_NAME=192.168.1.1 # Your server IP or domain
+      - DOMAIN_NAME=192.168.1.1 # Your server IP or domain (without http:// or https://. Do not include trailing slash)
+      - DOMAIN_SCHEME=http # Use "https" when behind reverse proxy with SSL/TLS
     volumes:
       - journiv_data:/data
     restart: unless-stopped

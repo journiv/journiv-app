@@ -19,7 +19,7 @@ services:
     container_name: journiv-dev-sqlite
     entrypoint: ["/app/scripts/docker-entrypoint-dev.sh"]
     ports:
-      - "${APP_PORT:-8000}:${APP_PORT:-8000}"
+      - "${APP_PORT:-8000}:8000"
     environment:
       # SQLite database in working dir itself to avoid all kind of file locking troubles
       - DATABASE_URL=sqlite:///./journiv.db
@@ -43,10 +43,11 @@ services:
       - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
       # Application settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=true
       - ENVIRONMENT=development
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
       - ENABLE_CORS=${ENABLE_CORS:-true}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
       - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
@@ -123,10 +124,11 @@ services:
       - SECRET_KEY=${SECRET_KEY:-}
       # Application settings
       - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=true
       - ENVIRONMENT=development
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
+      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
       - ENABLE_CORS=${ENABLE_CORS:-true}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
       - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
