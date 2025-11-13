@@ -68,7 +68,7 @@ def _render_uuid(type_: Uuid, autogen_context: AutogenContext) -> str:
 # ---------------------------------------------------------------------------
 def get_url() -> str:
     """Resolve the database URL Alembic should target."""
-    return settings.database_url
+    return settings.effective_database_url
 
 
 # ---------------------------------------------------------------------------

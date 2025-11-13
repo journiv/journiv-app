@@ -12,4 +12,4 @@ SKIP_DATA_SEEDING=false python -c "from app.core.database import seed_initial_da
 
 echo "Starting Uvicorn in development mode with hot reload..."
 # Development uses single Uvicorn process with --reload for hot reloading
-exec uvicorn app.main:app --host 0.0.0.0 --port ${APP_PORT:-8000} --reload
+exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload

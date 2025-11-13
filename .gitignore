@@ -160,11 +160,8 @@ docs/build/
 # DOCKER / DEPLOYMENT
 # ===============================================================
 docker-compose.override.yml
-.env
-.env.local
-.env.development
-.env.test
-.env.production
+.env*
+!.env.template # Exclude the template file from being ignored
 
 # Ignore local sqlite if mounted in volume
 /data/

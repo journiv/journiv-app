@@ -1,0 +1,116 @@
+# Journiv Production Docker Compose (PostgreSQL) - Recommended for multiple users use.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.postgres.yml up -d
+#
+# Required Environment Variables:
+#   SECRET_KEY      - Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+#   DOMAIN_NAME     - Needed when running in same-origin SPA mode (ENABLE_CORS=false).
+#   POSTGRES_PASSWORD (if not relying on defaults, strongly recommended to change in production).
+#
+# Optional Environment Variables:
+#   APP_PORT, POSTGRES_USER, POSTGRES_DB, ENABLE_CORS, CORS_ORIGINS, MAX_FILE_SIZE_MB, LOG_LEVEL, etc.
+#   See .env.template for the complete list.
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: journiv-postgres-db
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-journiv}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
+      - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - backend
+    restart: unless-stopped
+    cpus: "1.0"
+    mem_limit: 1g
+    mem_reservation: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-journiv} -d ${POSTGRES_DB:-journiv_prod}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  app:
+    image: swalabtech/journiv-app:latest
+    container_name: journiv-postgres-app
+    ports:
+      - "${APP_PORT:-8000}:8000" # Right side must remain 8000 (container port)
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_USER=${POSTGRES_USER:-journiv}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
+      - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
+      - POSTGRES_PORT=5432
+      - SECRET_KEY=${SECRET_KEY}
+      - DOMAIN_NAME=${DOMAIN_NAME:-}
+      - ENABLE_CORS=${ENABLE_CORS:-false}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+      - ALGORITHM=${ALGORITHM:-HS256}
+      - DISABLE_SIGNUP=${DISABLE_SIGNUP:-false}
+      - ENABLE_CSP=${ENABLE_CSP:-true}
+      - ENABLE_HSTS=${ENABLE_HSTS:-true}
+      - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
+      - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
+      - APP_NAME=${APP_NAME:-Journiv}
+      - APP_VERSION=${APP_VERSION:-0.1.0-beta.5}
+      - DEBUG=false
+      - ENVIRONMENT=production
+      - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
+      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+      - MEDIA_ROOT=/data/media
+      - LOG_DIR=/data/logs
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
+      - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FILE=${LOG_FILE:-}
+    volumes:
+      - app_data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+      - frontend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    cpus: "2.0"
+    mem_limit: 2g
+    mem_reservation: 512m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  app_data:
+  postgres_data:
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge

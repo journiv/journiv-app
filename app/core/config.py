@@ -255,11 +255,6 @@ class Settings(BaseSettings):
         env = info.data.get('environment', 'development')
 
         if url.startswith("sqlite"):
-            if env == 'production':
-                logger.warning(
-                    "Using SQLite in production. Ensure you understand the durability "
-                    "limitations and configure regular backups."
-                )
             return url
 
         if url.startswith(("postgresql", "postgres")):
@@ -419,6 +414,13 @@ class Settings(BaseSettings):
 
         if self.enable_cors and not self.cors_origins:
             errors.append("CORS_ORIGINS must be configured when CORS is enabled.")
+
+        # Check if SQLite is being used when PostgreSQL components are not configured
+        if self.database_url.startswith("sqlite") and not (self.postgres_url or (self.postgres_host and self.postgres_user and self.postgres_db)):
+            warnings.append(
+                "Using SQLite in production. Ensure you understand the durability "
+                "limitations and configure regular backups."
+            )
 
         # Security warnings
         if self.access_token_expire_minutes > 60:
