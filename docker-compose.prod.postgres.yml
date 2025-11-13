@@ -35,6 +35,16 @@ services:
       options:
         max-size: "50m"
         max-file: "5"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-journiv} -d ${POSTGRES_DB:-journiv_prod}",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   app:
     image: swalabtech/journiv-app:latest
@@ -74,7 +84,8 @@ services:
     volumes:
       - app_data:/data
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     networks:
       - backend
       - frontend
