@@ -67,8 +67,11 @@ async def register(
 
         # Get timezone from settings
         timezone = user_service.get_user_timezone(user.id)
+
+        # Password-registered users are never OIDC users
         user_dict = user.model_dump()
         user_dict['time_zone'] = timezone
+        user_dict['is_oidc_user'] = False
 
         return UserResponse.model_validate(user_dict)
     except HTTPException:

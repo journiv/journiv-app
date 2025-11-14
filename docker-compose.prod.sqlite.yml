@@ -40,7 +40,7 @@ services:
       # Core app configuration
       - SECRET_KEY=${SECRET_KEY}
       - DOMAIN_NAME=${DOMAIN_NAME:-}
-      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
+      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-https}
       - APP_NAME=${APP_NAME:-Journiv}
       - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=false
@@ -62,6 +62,7 @@ services:
       - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile}
       - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-true}
       - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
+      - OIDC_ALLOW_INSECURE_PROD=${OIDC_ALLOW_INSECURE_PROD:-false}
 
       # CORS
       - ENABLE_CORS=${ENABLE_CORS:-false}
@@ -94,7 +95,11 @@ services:
       - frontend
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      test:
+        [
+          "CMD-SHELL",
+          "curl -f $${DOMAIN_SCHEME:-https}://localhost:8000/api/v1/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

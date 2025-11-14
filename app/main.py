@@ -182,7 +182,12 @@ CSPMiddlewareClass = create_csp_middleware(
 app.add_middleware(CSPMiddlewareClass)
 
 # Session Middleware (required for OIDC state management with Authlib)
-app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key,
+    https_only=(settings.environment == "production"),
+    same_site="lax",  # required for OIDC redirects to keep cookies alive
+)
 
 # -----------------------------------------------------------------------------
 # General Middleware

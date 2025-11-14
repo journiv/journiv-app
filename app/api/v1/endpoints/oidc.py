@@ -31,6 +31,12 @@ def register_oidc_provider():
             # Disable SSL verification for local development with self-signed certificates
             # SECURITY WARNING: Never disable SSL verification in production!
             if settings.oidc_disable_ssl_verify:
+                if settings.environment == "production":
+                    raise ValueError(
+                        "OIDC_DISABLE_SSL_VERIFY cannot be enabled in production. "
+                        "SSL verification must be enabled for security."
+                    )
+
                 import ssl
                 # Create unverified SSL context for httpx
                 ssl_context = ssl.create_default_context()
@@ -219,7 +225,7 @@ async def oidc_callback(
         "is_oidc_user": True  # Flag to indicate this user logged in via OIDC
     }
 
-    # Create one-time login ticket (10 second TTL)
+    # Create one-time login ticket (60 second TTL)
     ticket = uuid.uuid4().hex
     request.app.state.cache.set(
         f"ticket:{ticket}",
@@ -228,7 +234,7 @@ async def oidc_callback(
             "refresh_token": refresh_token,
             "user": user_payload
         },
-        ex=10
+        ex=60
     )
 
     log_user_action(
@@ -265,7 +271,7 @@ async def oidc_exchange(request: Request):
     Exchange one-time ticket for access/refresh tokens.
 
     The SPA calls this endpoint with the ticket received from the callback redirect.
-    Tickets are single-use and expire after 10 seconds.
+    Tickets are single-use and expire after 60 seconds.
     """
     if not settings.oidc_enabled:
         raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")

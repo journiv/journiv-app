@@ -329,6 +329,10 @@ class UserService:
             if not user:
                 raise UserNotFoundError(f"User {external_identity.user_id} not found for external identity")
 
+            if not user.is_active:
+                log_warning(f"OIDC login rejected for inactive user: {user.email}")
+                raise UnauthorizedError("User account is inactive")
+
             log_info(f"OIDC login for existing user: {user.email}")
             return user
 
@@ -344,6 +348,9 @@ class UserService:
         user = None
         if email:
             user = self.get_user_by_email(email)
+            if user and not user.is_active:
+                log_warning(f"OIDC login rejected for inactive user: {email}")
+                raise UnauthorizedError("User account is inactive")
 
         if not user:
             # Create new user
