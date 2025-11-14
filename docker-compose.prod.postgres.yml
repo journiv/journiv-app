@@ -7,11 +7,6 @@
 #   SECRET_KEY      - Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
 #   DOMAIN_NAME     - Needed when running in same-origin SPA mode (ENABLE_CORS=false).
 #   POSTGRES_PASSWORD (if not relying on defaults, strongly recommended to change in production).
-#
-# Optional Environment Variables:
-#   DOMAIN_SCHEME   - Protocol scheme for public URLs (http or https). Default: http. Use "https" when behind reverse proxy.
-#   APP_PORT, POSTGRES_USER, POSTGRES_DB, ENABLE_CORS, CORS_ORIGINS, MAX_FILE_SIZE_MB, LOG_LEVEL, etc.
-#   See .env.template for the complete list.
 
 services:
   postgres:
@@ -23,8 +18,6 @@ services:
       - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
     networks:
       - backend
     restart: unless-stopped
@@ -47,46 +40,91 @@ services:
       retries: 5
       start_period: 10s
 
+  redis:
+    # Redis (Do not remove. Journiv runs with multiple workers which need to share state.)
+    image: redis:7
+    container_name: journiv-redis-cache
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
   app:
     image: swalabtech/journiv-app:latest
     container_name: journiv-postgres-app
     ports:
-      - "${APP_PORT:-8000}:8000" # Right side must remain 8000 (container port)
+      - "${APP_PORT:-8000}:8000" # Right side must remain 8000
     environment:
+      # Database
       - POSTGRES_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER:-journiv}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
       - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
       - POSTGRES_PORT=5432
+
+      # Redis (Do not remove. Journiv runs with multiple workers which need to share state.)
+      - REDIS_URL=redis://redis:6379/0
+
+      # Core app config
       - SECRET_KEY=${SECRET_KEY}
       - DOMAIN_NAME=${DOMAIN_NAME:-}
       - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
-      - ENABLE_CORS=${ENABLE_CORS:-false}
-      - CORS_ORIGINS=${CORS_ORIGINS:-}
-      - ALGORITHM=${ALGORITHM:-HS256}
-      - DISABLE_SIGNUP=${DISABLE_SIGNUP:-false}
-      - ENABLE_CSP=${ENABLE_CSP:-true}
-      - ENABLE_HSTS=${ENABLE_HSTS:-true}
-      - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
-      - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
       - APP_NAME=${APP_NAME:-Journiv}
       - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=false
       - ENVIRONMENT=production
       - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
+
+      # Auth & security
+      - DISABLE_SIGNUP=${DISABLE_SIGNUP:-false}
+      - ALGORITHM=${ALGORITHM:-HS256}
       - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
       - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
+
+      # OIDC Config (optional)
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_ISSUER=${OIDC_ISSUER:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile}
+      - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-true}
+      - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
+
+      # CORS (optional)
+      - ENABLE_CORS=${ENABLE_CORS:-false}
+      - CORS_ORIGINS=${CORS_ORIGINS:-}
+
+      # File storage
       - MEDIA_ROOT=/data/media
-      - LOG_DIR=/data/logs
       - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
       - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
+
+      # Logging
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LOG_FILE=${LOG_FILE:-}
+      - LOG_FILE=${LOG_FILE:-/data/logs/journiv.log}
+      - LOG_DIR=/data/logs
+
+      # CSP
+      - ENABLE_CSP=${ENABLE_CSP:-true}
+      - ENABLE_HSTS=${ENABLE_HSTS:-true}
+      - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
+      - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
+
     volumes:
       - app_data:/data
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - backend
@@ -110,6 +148,7 @@ services:
 volumes:
   app_data:
   postgres_data:
+  redis_data:
 
 networks:
   backend:

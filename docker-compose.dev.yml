@@ -1,80 +1,108 @@
 # Journiv Development Docker Compose
 #
-# Development Options:
-# 1. SQLite (default): docker-compose -f docker-compose.dev.yml up -d
-# 2. PostgreSQL: docker-compose -f docker-compose.dev.yml --profile postgres up -d
-#
-# This file is optimized for development with:
-# - Hot reload enabled
-# - Source code mounted as volumes
-# - Development-friendly settings
-# - Lower resource requirements
-# - Migrations run in worker (SKIP_DB_INIT=false) since using single Uvicorn process
-# - CORS enabled by default to support local Flutter/Web clients
+# Usage:
+#   SQLite (default):     docker compose -f docker-compose.dev.yml up -d
+#   PostgreSQL (optional): docker compose -f docker-compose.dev.yml --profile postgres up -d
 
 services:
-  # Main application service (SQLite by default)
+  redis:
+    image: redis:7
+    container_name: journiv-dev-redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # --------------------------------------------------------------------------
+  # Development app (SQLite)
+  # --------------------------------------------------------------------------
   app:
     build: .
-    container_name: journiv-dev-sqlite
+    container_name: journiv-dev-sqlite-app
     entrypoint: ["/app/scripts/docker-entrypoint-dev.sh"]
     ports:
       - "${APP_PORT:-8000}:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
     environment:
-      # SQLite database in working dir itself to avoid all kind of file locking troubles
+      # Redis (Do not remove. Journiv runs with multiple workers in dev mode too)
+      - REDIS_URL=redis://redis:6379/0
+      # SQLite (local file, avoids locking issues)
       - DATABASE_URL=sqlite:///./journiv.db
-      # PostgreSQL override (optional)
+
+      # PostgreSQL overrides (optional)
       - POSTGRES_URL=${POSTGRES_URL:-}
       - POSTGRES_HOST=${POSTGRES_HOST:-}
       - POSTGRES_USER=${POSTGRES_USER:-}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       - POSTGRES_DB=${POSTGRES_DB:-}
       - POSTGRES_PORT=${POSTGRES_PORT:-5432}
+
       # Security
-      - SECRET_KEY=${SECRET_KEY:-}
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+
       # OIDC
       - OIDC_ENABLED=${OIDC_ENABLED:-false}
       - OIDC_ISSUER=${OIDC_ISSUER:-}
       - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
       - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
       - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
-      - OIDC_SCOPES=${OIDC_SCOPES:-}
-      - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-}
-      - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
-      # Application settings
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile}
+      - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-true}
+      - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-true}
+
+      # App settings
       - APP_NAME=${APP_NAME:-Journiv}
       - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=true
       - ENVIRONMENT=development
       - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
       - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
-      - ENABLE_CORS=${ENABLE_CORS:-true}
+
+      # Dev-friendly CORS
+      - ENABLE_CORS=true
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
-      - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
-      - ALGORITHM=${ALGORITHM:-HS256}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
-      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      # CSP Configuration (Development - more permissive)
-      - ENABLE_CSP=${ENABLE_CSP:-true}
-      - ENABLE_HSTS=${ENABLE_HSTS:-false}
-      - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
-      - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LOG_FILE=${LOG_FILE:-}
+
+      # API settings
+      - API_V1_PREFIX=/api/v1
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=15
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+
+      # CSP (more permissive in dev)
+      - ENABLE_CSP=true
+      - ENABLE_HSTS=false
+      - ENABLE_CSP_REPORTING=true
+      - CSP_REPORT_URI=/api/v1/security/csp-report
+
+      # Storage & logging
       - MEDIA_ROOT=/data/media
       - LOG_DIR=/data/logs
-      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-500}
+      - MAX_FILE_SIZE_MB=500
+      - LOG_LEVEL=DEBUG
+      - LOG_FILE=
+
+      # Allowed media
       - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
+
     volumes:
       - .:/app
-      - ./data:/data # map data to keep logs and media in a single directory
+      - ./data:/data
+
     deploy:
       resources:
         limits:
           memory: 512MB
         reservations:
           memory: 256MB
+
     healthcheck:
       test:
         [
@@ -87,93 +115,116 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-      # No profiles for default SQLite development
 
-  # PostgreSQL service (optional - for advanced users)
+  # --------------------------------------------------------------------------
+  # Development PostgreSQL (optional)
+  # --------------------------------------------------------------------------
   postgres:
     image: postgres:15
     container_name: journiv-dev-postgres
+    # Expose the port to the host in dev mode for local development
+    ports:
+      - "5432:5432"
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-journiv}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
       - POSTGRES_DB=${POSTGRES_DB:-journiv_dev}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
     profiles:
       - postgres
 
-  # Application with PostgreSQL
+  # --------------------------------------------------------------------------
+  # Development app using PostgreSQL
+  # --------------------------------------------------------------------------
   app-postgres:
     build: .
     container_name: journiv-dev-postgres-app
     entrypoint: ["/app/scripts/docker-entrypoint-dev.sh"]
     ports:
-      - "${APP_PORT:-8000}:${APP_PORT:-8000}"
+      - "${APP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
     environment:
-      # Use PostgreSQL
-      - POSTGRES_HOST=${POSTGRES_HOST:-postgres}
+      # PostgreSQL
+      - POSTGRES_HOST=postgres
       - POSTGRES_USER=${POSTGRES_USER:-journiv}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
       - POSTGRES_DB=${POSTGRES_DB:-journiv_dev}
-      - POSTGRES_PORT=${POSTGRES_PORT:-5432}
-      # PostgreSQL override (optional)
+      - POSTGRES_PORT=5432
       - POSTGRES_URL=${POSTGRES_URL:-}
+
+      # Redis (Do not remove. Journiv runs with multiple workers in dev mode too)
+      - REDIS_URL=redis://redis:6379/0
+
       # Security
-      - SECRET_KEY=${SECRET_KEY:-}
-      # Application settings
+      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
+
+      # OIDC
+      - OIDC_ENABLED=${OIDC_ENABLED:-false}
+      - OIDC_ISSUER=${OIDC_ISSUER:-}
+      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
+      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
+      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
+      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile}
+      - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-true}
+      - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-true}
+
+      # Core app
       - APP_NAME=${APP_NAME:-Journiv}
       - APP_VERSION=${APP_VERSION:-0.1.0-beta.6}
       - DEBUG=true
       - ENVIRONMENT=development
-      - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
-      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
-      - ENABLE_CORS=${ENABLE_CORS:-true}
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
-      - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
-      - ALGORITHM=${ALGORITHM:-HS256}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
-      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-      # CSP Configuration (Development - more permissive)
-      - ENABLE_CSP=${ENABLE_CSP:-true}
-      - ENABLE_HSTS=${ENABLE_HSTS:-false}
-      - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
-      - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LOG_FILE=${LOG_FILE:-}
+      - DOMAIN_NAME=localhost
+      - DOMAIN_SCHEME=http
+
+      # CORS
+      - ENABLE_CORS=true
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080
+
+      # API + JWT
+      - API_V1_PREFIX=/api/v1
+      - ALGORITHM=HS256
+      - ACCESS_TOKEN_EXPIRE_MINUTES=15
+      - REFRESH_TOKEN_EXPIRE_DAYS=7
+
+      # CSP
+      - ENABLE_CSP=true
+      - ENABLE_HSTS=false
+      - ENABLE_CSP_REPORTING=true
+      - CSP_REPORT_URI=/api/v1/security/csp-report
+
+      # Storage + logging
       - MEDIA_ROOT=/data/media
       - LOG_DIR=/data/logs
-      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-500}
+      - MAX_FILE_SIZE_MB=500
+      - LOG_LEVEL=DEBUG
+      - LOG_FILE=
+
+      # Allowed media
       - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
       - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
+
     volumes:
       - .:/app
-    depends_on:
-      - postgres
+
     deploy:
       resources:
         limits:
           memory: 512MB
         reservations:
           memory: 256MB
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "curl",
-          "-f",
-          "http://localhost:${APP_PORT:-8000}/api/v1/health",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+
     profiles:
       - postgres
 
 volumes:
   postgres_data:
+  redis_data:
 
 networks:
   default:
