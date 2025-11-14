@@ -69,8 +69,9 @@ class Settings(BaseSettings):
     oidc_disable_ssl_verify: bool = False  # Only for local development with self-signed certs
     oidc_allow_insecure_prod: bool = False  # Allow OIDC over HTTP (INSECURE). Recommended only for advanced users in isolated homelabs. Default: false
 
-    # Redis Configuration (for OIDC state/cache)
-    redis_url: Optional[str] = None  # e.g., "redis://localhost:6379/0"
+    # Default for Docker quickstart (container name: redis)
+    redis_url: str = "redis://redis:6379/0"
+
 
     # CSP Configuration
     enable_csp: bool = True
