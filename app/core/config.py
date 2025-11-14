@@ -16,6 +16,9 @@ logger = logging.getLogger(__name__)
 # Insecure default that should never be used in production
 _INSECURE_DEFAULT_SECRET = "your-super-secret-key-change-in-production"
 DEFAULT_SQLITE_URL = "sqlite:////data/journiv.db"
+REDIS_OIDC_REQUIRED_MSG = (
+    "REDIS_URL must be provided when OIDC_ENABLED=true."
+)
 
 # Define the project root directory
 PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
@@ -69,8 +72,8 @@ class Settings(BaseSettings):
     oidc_disable_ssl_verify: bool = False  # Only for local development with self-signed certs
     oidc_allow_insecure_prod: bool = False  # Allow OIDC over HTTP (INSECURE). Recommended only for advanced users in isolated homelabs. Default: false
 
-    # Default for Docker quickstart (container name: redis)
-    redis_url: str = "redis://redis:6379/0"
+    # Redis Configuration (for OIDC state/cache) e.g., "redis://localhost:6379/0"
+    redis_url: Optional[str] = None
 
 
     # CSP Configuration
@@ -517,6 +520,14 @@ class Settings(BaseSettings):
             error_message = "Production configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
             raise ValueError(error_message)
 
+        return self
+
+    @model_validator(mode='after')
+    def validate_oidc_redis_requirement(self) -> 'Settings':
+        """Validate that Redis URL is provided when OIDC is enabled."""
+        if self.oidc_enabled:
+            if not self.redis_url or not self.redis_url.strip():
+                raise ValueError(REDIS_OIDC_REQUIRED_MSG)
         return self
 
     @model_validator(mode='after')

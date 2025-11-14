@@ -48,9 +48,9 @@ async def lifespan(app: FastAPI):
         init_db()
         log_info("Database initialization completed!")
 
-        # Initialize cache for OIDC state management
-        app.state.cache = create_cache(settings.redis_url)
-        log_info("Cache initialization completed!")
+        if settings.oidc_enabled:
+            app.state.cache = create_cache(settings.redis_url)
+            log_info("Cache initialization completed!")
     except Exception as exc:
         log_error(exc)
         raise
