@@ -1,8 +1,8 @@
 # Journiv Development Docker Compose
 #
 # Usage:
-#   SQLite (default):     docker compose -f docker-compose.dev.yml up -d
-#   PostgreSQL (optional): docker compose -f docker-compose.dev.yml --profile postgres up -d
+#   SQLite:     docker compose -f docker-compose.dev.yml --profile sqlite up -d
+#   PostgreSQL: docker compose -f docker-compose.dev.yml --profile postgres up -d
 
 services:
   redis:
@@ -97,15 +97,13 @@ services:
           memory: 256MB
 
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "curl -f $${DOMAIN_SCHEME:-http}://localhost:8000/api/v1/health",
-        ]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+    profiles:
+      - sqlite
 
   # --------------------------------------------------------------------------
   # Development PostgreSQL (optional)
@@ -221,6 +219,13 @@ services:
           memory: 512MB
         reservations:
           memory: 256MB
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
     profiles:
       - postgres
