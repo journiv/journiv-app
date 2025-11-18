@@ -208,7 +208,7 @@ class JournalService:
         Recalculate the entry count for a specific journal.
 
         This method counts the actual number of non-deleted entries in the journal
-        and updates the journal's entry_count field. Also updates last_entry_at.
+        and updates the journal's entry_count field. Also updates last_entry_at and total_words.
         """
         from app.models.entry import Entry
 
@@ -217,15 +217,18 @@ class JournalService:
         stats = self.session.exec(
             select(
                 func.count(Entry.id).label("count"),
+                func.sum(Entry.word_count).label("total_words"),
                 func.max(Entry.entry_datetime_utc).label("last_created")
             ).where(
                 Entry.journal_id == journal_id
             )
         ).first()
         entry_count = int(stats.count) if stats and stats.count is not None else 0
+        total_words = int(stats.total_words) if stats and stats.total_words is not None else 0
         last_created = stats.last_created if stats else None
 
         journal.entry_count = entry_count
+        journal.total_words = total_words
         journal.last_entry_at = last_created
         journal.updated_at = utc_now()
         try:
@@ -237,5 +240,5 @@ class JournalService:
             log_error(exc)
             raise
 
-        log_info(f"Journal entry count recalculated for {user_id}: {journal.id} -> {entry_count}")
+        log_info(f"Journal entry count recalculated for {user_id}: {journal.id} -> {entry_count} entries, {total_words} words")
         return journal
