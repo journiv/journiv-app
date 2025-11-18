@@ -62,6 +62,13 @@ jobs:
 
           echo "✅ Environment file created"
 
+      - name: Cleanup previous docker leftovers
+        run: |
+          echo "🧹 Cleaning up any previous Docker containers and volumes..."
+          APP_VERSION=latest docker compose -f docker-compose.prod.sqlite.yml down -v 2>/dev/null || true
+          docker volume prune -f || true
+          echo "✅ Cleanup complete"
+
       - name: Start Journiv with Docker Compose
         run: |
           echo "🚀 Starting Journiv services with APP_VERSION=latest..."
@@ -144,5 +151,6 @@ jobs:
         if: always()
         run: |
           echo "🧹 Cleaning up..."
-          APP_VERSION=latest docker compose -f docker-compose.prod.sqlite.yml down -v
+          APP_VERSION=latest docker compose -f docker-compose.prod.sqlite.yml down -v || true
+          docker volume prune -f || true
           echo "✅ Cleanup complete"
