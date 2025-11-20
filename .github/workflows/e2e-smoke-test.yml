@@ -86,6 +86,12 @@ jobs:
           export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
           COMPOSE_FILE="docker-compose.prod.${{ matrix.database }}.yml"
           APP_VERSION=latest docker compose -f $COMPOSE_FILE down -v 2>/dev/null || true
+
+          docker volume rm journiv-${{ matrix.database }}_app_data >/dev/null 2>&1 || true
+          docker volume rm journiv-${{ matrix.database }}_redis_data >/dev/null 2>&1 || true
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
+
           echo "✅ Cleanup complete"
 
       - name: Start Journiv with Docker Compose
@@ -185,4 +191,10 @@ jobs:
           export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
           COMPOSE_FILE="docker-compose.prod.${{ matrix.database }}.yml"
           APP_VERSION=latest docker compose -f $COMPOSE_FILE down -v || true
+
+          docker volume rm journiv-${{ matrix.database }}_app_data >/dev/null 2>&1 || true
+          docker volume rm journiv-${{ matrix.database }}_redis_data >/dev/null 2>&1 || true
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
+
           echo "✅ Cleanup complete"

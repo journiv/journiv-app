@@ -77,6 +77,8 @@ jobs:
             down -v 2>/dev/null || true
           # Remove CI volume explicitly if it exists
           docker volume ls -q | grep "^journiv-${{ matrix.database }}" | xargs -r docker volume rm || true
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
           docker volume prune -f || true
 
       # -------------------------------------------------------
@@ -299,6 +301,7 @@ jobs:
             down -v || true
 
           # Remove CI volume explicitly
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
           docker volume rm journiv_ci_data >/dev/null 2>&1 || true
 
           docker rmi swalabtech/journiv-app:${{ env.NEW_VERSION }} >/dev/null 2>&1 || true

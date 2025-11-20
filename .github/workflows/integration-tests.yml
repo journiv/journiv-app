@@ -92,6 +92,9 @@ jobs:
             -f docker-compose.override.ci.yml \
             down -v 2>/dev/null || true
 
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
+
           echo "✅ Cleanup complete"
 
       - name: Start Journiv with Docker Compose
@@ -198,5 +201,8 @@ jobs:
             -f docker-compose.prod.${{ matrix.database }}.yml \
             -f docker-compose.override.ci.yml \
             down -v || true
+
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
 
           echo "✅ Cleanup complete"
