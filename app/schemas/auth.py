@@ -35,13 +35,19 @@ class UserCreate(BaseModel):
     """User creation schema."""
     email: str
     password: str
-    name: Optional[str] = None
+    name: str
 
     @validator('email')
     def validate_email(cls, v):
         if v and '@' not in v:
             raise ValueError('Invalid email address')
         return v.lower().strip() if v else v
+
+    @validator('name')
+    def validate_name(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Name cannot be empty')
+        return v.strip()
 
 
 class UserLogin(BaseModel):

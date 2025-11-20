@@ -24,7 +24,14 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """User creation schema."""
+    name: str
     password: str
+
+    @validator('name')
+    def validate_name(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('Name cannot be empty')
+        return v.strip()
 
 
 class UserUpdate(BaseModel):

@@ -1,0 +1,16 @@
+# Docker Compose Override for OLD version in Upgrade Tests
+#
+# This override is used when starting OLD versions during upgrade testing.
+# Older versions may not have celery-worker service, so we scale it to 0.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.sqlite.yml \
+#     -f docker-compose.override.ci.yml \
+#     -f docker-compose.override.old-version.yml \
+#     up -d
+
+services:
+  # Don't start celery-worker for OLD versions (may not exist in old releases)
+  celery-worker:
+    deploy:
+      replicas: 0

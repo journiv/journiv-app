@@ -1,0 +1,208 @@
+name: Integration Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "requirements/**"
+      - "docker-compose*.yml"
+      - "Dockerfile"
+      - ".github/workflows/integration-tests.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "tests/**"
+      - "requirements/**"
+      - "docker-compose*.yml"
+      - "Dockerfile"
+      - ".github/workflows/integration-tests.yml"
+  workflow_dispatch:
+
+jobs:
+  integration-tests:
+    name: Integration Tests (${{ matrix.database }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        database: [sqlite, postgres]
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "requirements/*.txt"
+
+      - name: Install test dependencies
+        run: |
+          pip install -r requirements/base.txt
+          pip install -r requirements/test.txt
+
+      - name: Build Journiv Docker image
+        run: |
+          echo "🔨 Building Journiv Docker image..."
+          docker build -t swalabtech/journiv-app:latest .
+
+      - name: Create test environment file
+        run: |
+          echo "📝 Creating test environment configuration for ${{ matrix.database }}..."
+          cat > .env.test <<EOF
+          SECRET_KEY=test-secret-key-for-ci-only-not-for-production
+          DOMAIN_NAME=localhost
+          DOMAIN_SCHEME=http
+          APP_PORT=8000
+          ENVIRONMENT=production
+          DEBUG=false
+          CELERY_BROKER_URL=redis://redis:6379/0
+          CELERY_RESULT_BACKEND=redis://redis:6379/0
+          ENABLE_CORS=false
+          DISABLE_SIGNUP=false
+          RATE_LIMITING_ENABLED=false
+          EOF
+
+          if [ "${{ matrix.database }}" = "postgres" ]; then
+            cat >> .env.test <<EOF
+          POSTGRES_USER=journiv
+          POSTGRES_PASSWORD=test-password-ci-only
+          POSTGRES_DB=journiv_test
+          POSTGRES_HOST=postgres
+          POSTGRES_PORT=5432
+          EOF
+          else
+            echo "DATABASE_URL=sqlite:////data/journiv.db" >> .env.test
+          fi
+
+          echo "✅ Environment file created"
+
+      - name: Cleanup previous docker leftovers
+        run: |
+          echo "🧹 Cleaning up any previous Docker containers and volumes..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          APP_VERSION=latest docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            down -v 2>/dev/null || true
+
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
+
+          echo "✅ Cleanup complete"
+
+      - name: Start Journiv with Docker Compose
+        run: |
+          echo "🚀 Starting Journiv services with APP_VERSION=latest (${{ matrix.database }})..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          APP_VERSION=latest docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            --env-file .env.test up -d
+
+          echo "📋 Checking running containers..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          APP_VERSION=latest docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            ps
+
+      - name: Wait for Journiv to be healthy
+        run: |
+          echo "⏳ Waiting for Journiv backend to become healthy..."
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          SLEEP_TIME=2
+
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "  Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+
+            if curl -f -s http://localhost:8000/api/v1/health > /dev/null 2>&1; then
+              echo "✅ Journiv is healthy!"
+              break
+            fi
+
+            if [ $((ATTEMPT % 5)) -eq 0 ]; then
+              echo "📊 Container status:"
+              export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+              APP_VERSION=latest docker compose \
+                -f docker-compose.prod.${{ matrix.database }}.yml \
+                -f docker-compose.override.ci.yml \
+                ps
+            fi
+
+            sleep $SLEEP_TIME
+          done
+
+          if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
+            echo "❌ Journiv failed to become healthy after $MAX_ATTEMPTS attempts"
+            echo "📋 Final container status:"
+            export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+            APP_VERSION=latest docker compose \
+              -f docker-compose.prod.${{ matrix.database }}.yml \
+              -f docker-compose.override.ci.yml \
+              ps
+
+            echo "📋 Application logs:"
+            export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+            APP_VERSION=latest docker compose \
+              -f docker-compose.prod.${{ matrix.database }}.yml \
+              -f docker-compose.override.ci.yml \
+              logs app
+            exit 1
+          fi
+
+      - name: Run integration tests
+        run: |
+          echo "🧪 Running integration tests..."
+          python -m pytest tests/integration/ \
+            -v \
+            --tb=short \
+            --strict-markers \
+            --no-cov
+        env:
+          JOURNIV_API_BASE_URL: http://localhost:8000/api/v1
+          # Import/Export tests require Celery
+          CELERY_BROKER_URL: redis://redis:6379/0
+          CELERY_RESULT_BACKEND: redis://redis:6379/0
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          echo "📋 Full application logs:"
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          APP_VERSION=latest docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            logs app
+
+          if [ "${{ matrix.database }}" = "postgres" ]; then
+            echo "📋 Postgres logs:"
+            export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+            APP_VERSION=latest docker compose \
+              -f docker-compose.prod.${{ matrix.database }}.yml \
+              -f docker-compose.override.ci.yml \
+              logs postgres
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Final cleanup..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          APP_VERSION=latest docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            down -v || true
+
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
+
+          echo "✅ Cleanup complete"

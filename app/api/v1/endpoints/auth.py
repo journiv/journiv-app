@@ -115,13 +115,13 @@ async def login(
                 status_code=401,
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from None
         except UnauthorizedError:
             raise HTTPException(
                 status_code=401,
                 detail="User account is inactive",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from None
 
         # Create tokens
         access_token = create_access_token(data={"sub": str(user.id)})
@@ -266,13 +266,20 @@ async def login_for_access_token(
         user_service = UserService(session)
 
         # Authenticate user (OAuth2 uses 'username' field for email)
-        user = user_service.authenticate_user(form_data.username, form_data.password)
-        if not user:
+        try:
+            user = user_service.authenticate_user(form_data.username, form_data.password)
+        except InvalidCredentialsError:
             raise HTTPException(
                 status_code=401,
                 detail="Incorrect email or password",
                 headers={"WWW-Authenticate": "Bearer"},
-            )
+            ) from None
+        except UnauthorizedError:
+            raise HTTPException(
+                status_code=401,
+                detail="User account is inactive",
+                headers={"WWW-Authenticate": "Bearer"},
+            ) from None
 
         # Create tokens
         access_token = create_access_token(data={"sub": str(user.id)})

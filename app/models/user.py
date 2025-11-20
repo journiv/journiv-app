@@ -32,7 +32,7 @@ class User(BaseModel, table=True):
         sa_column=Column(String(255), unique=True, nullable=False)
     )
     password: str = Field(..., min_length=8)  # Hashed password
-    name: Optional[str] = Field(None, max_length=100)
+    name: str = Field(..., max_length=100, sa_column=Column(String(100), nullable=False))
     is_active: bool = Field(default=True)
     profile_picture_url: Optional[HttpUrl] = Field(
         default=None,
@@ -79,7 +79,7 @@ class User(BaseModel, table=True):
         # Index for quickly filtering active/inactive users.
         Index('idx_user_active', 'is_active'),
         # Constraints
-        CheckConstraint("name IS NULL OR length(name) > 0", name='check_name_not_empty'),
+        CheckConstraint("length(name) > 0", name='check_name_not_empty'),
     )
 
     @field_validator('email')
@@ -92,9 +92,9 @@ class User(BaseModel, table=True):
     @field_validator('name')
     @classmethod
     def validate_name(cls, v):
-        if v and len(v.strip()) == 0:
+        if not v or len(v.strip()) == 0:
             raise ValueError('Name cannot be empty')
-        return v.strip() if v else v
+        return v.strip()
 
 
 class UserSettings(TimestampMixin, table=True):

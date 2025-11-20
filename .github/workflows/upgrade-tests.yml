@@ -1,0 +1,323 @@
+name: Upgrade Tests
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/**"
+      - "tests/upgrade/**"
+      - "requirements/**"
+      - "docker-compose*.yml"
+      - "Dockerfile"
+      - "alembic/**"
+      - ".github/workflows/upgrade-tests.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - "tests/upgrade/**"
+      - "requirements/**"
+      - "docker-compose*.yml"
+      - "Dockerfile"
+      - "alembic/**"
+      - ".github/workflows/upgrade-tests.yml"
+  workflow_dispatch:
+    inputs:
+      old_version:
+        description: "Old version to upgrade from (Docker tag)"
+        required: false
+        default: "0.1.0-beta.6"
+
+env:
+  OLD_VERSION: ${{ github.event.inputs.old_version || '0.1.0-beta.6' }}
+  NEW_VERSION: ci-latest
+
+jobs:
+  upgrade-tests:
+    name: Upgrade Test (${{ matrix.database }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        database: [sqlite, postgres]
+      fail-fast: false
+
+    steps:
+      # -------------------------------------------------------
+      # Checkout
+      # -------------------------------------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------
+      # Python setup
+      # -------------------------------------------------------
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: "requirements/*.txt"
+
+      - name: Install test dependencies
+        run: |
+          pip install -r requirements/base.txt
+          pip install -r requirements/test.txt
+
+      # -------------------------------------------------------
+      # Clean previous stack and volumes
+      # -------------------------------------------------------
+      - name: Cleanup previous Docker state
+        run: |
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            -f docker-compose.override.old-version.yml \
+            down -v 2>/dev/null || true
+          # Remove CI volume explicitly if it exists
+          docker volume ls -q | grep "^journiv-${{ matrix.database }}" | xargs -r docker volume rm || true
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
+          docker volume prune -f || true
+
+      # -------------------------------------------------------
+      # Pull OLD version image
+      # -------------------------------------------------------
+      - name: Pull OLD version image
+        run: |
+          echo "Pulling OLD version: ${{ env.OLD_VERSION }}"
+          if ! docker pull swalabtech/journiv-app:${{ env.OLD_VERSION }}; then
+            echo "⚠️ Old version swalabtech/journiv-app:${{ env.OLD_VERSION }} not found. Skipping upgrade tests."
+            exit 0
+          fi
+
+          # Tag as :old so APP_VERSION=old works with compose
+          docker tag swalabtech/journiv-app:${{ env.OLD_VERSION }} swalabtech/journiv-app:old
+
+      # -------------------------------------------------------
+      # Create environment file (used for both OLD and NEW)
+      # -------------------------------------------------------
+      - name: Create environment file for upgrade tests
+        run: |
+          {
+            echo "SECRET_KEY=test-secret-key-for-ci-upgrade-test"
+            echo "DOMAIN_NAME=localhost"
+            echo "DOMAIN_SCHEME=http"
+            echo "APP_PORT=8000"
+            echo "ENVIRONMENT=production"
+            echo "DEBUG=false"
+            echo "ENABLE_CORS=false"
+            echo "DISABLE_SIGNUP=false"
+            echo "RATE_LIMITING_ENABLED=false"
+          } > .env.test
+
+          if [ "${{ matrix.database }}" = "postgres" ]; then
+            {
+              echo "POSTGRES_USER=journiv"
+              echo "POSTGRES_PASSWORD=test-password-ci-only"
+              echo "POSTGRES_DB=journiv_upgrade_test"
+              echo "POSTGRES_HOST=postgres"
+              echo "POSTGRES_PORT=5432"
+            } >> .env.test
+          else
+            echo "DATABASE_URL=sqlite:////data/journiv.db" >> .env.test
+          fi
+
+      # -------------------------------------------------------
+      # Start OLD version
+      # -------------------------------------------------------
+      - name: Start OLD version
+        run: |
+          echo "🚀 Starting OLD version (${{ env.OLD_VERSION }}) on ${{ matrix.database }}..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+
+          APP_VERSION=old docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            -f docker-compose.override.old-version.yml \
+            --env-file .env.test up -d
+
+          APP_VERSION=old docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            -f docker-compose.override.old-version.yml \
+            ps
+
+      - name: Wait for OLD version to be ready
+        run: |
+          echo "⏳ Waiting for OLD version to become healthy..."
+          MAX=40
+          i=0
+
+          while [ $i -lt $MAX ]; do
+            i=$((i+1))
+            if curl -f -s http://localhost:8000/api/v1/health >/dev/null 2>&1; then
+              echo "✅ OLD version is healthy"
+              exit 0
+            fi
+            echo "  Attempt $i/$MAX..."
+            sleep 2
+          done
+
+          echo "❌ OLD version failed to start"
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          APP_VERSION=old docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            -f docker-compose.override.old-version.yml \
+            logs app
+          exit 1
+
+      # -------------------------------------------------------
+      # Seed data into OLD version
+      # -------------------------------------------------------
+      - name: Seed data into OLD version
+        run: |
+          echo "🌱 Seeding data into OLD version..."
+          python -m pytest tests/upgrade/seed_old_data.py -v --tb=short --no-cov
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          JOURNIV_API_BASE_URL: http://localhost:8000/api/v1
+
+      # -------------------------------------------------------
+      # Stop OLD version, keep volumes
+      # -------------------------------------------------------
+      - name: Stop OLD version (preserve volumes)
+        run: |
+          echo "⏸️ Stopping OLD version (preserving data volumes)..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+
+          APP_VERSION=old docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            -f docker-compose.override.old-version.yml \
+            stop
+
+          APP_VERSION=old docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            -f docker-compose.override.old-version.yml \
+            rm -f
+
+          echo "✅ OLD version stopped, volumes preserved"
+
+      # -------------------------------------------------------
+      # Build NEW version image
+      # -------------------------------------------------------
+      - name: Build NEW version image
+        run: |
+          echo "🔨 Building NEW version image (tag: ${{ env.NEW_VERSION }})..."
+          docker build -t swalabtech/journiv-app:${{ env.NEW_VERSION }} .
+
+      # -------------------------------------------------------
+      # Start NEW version with preserved volumes
+      # -------------------------------------------------------
+      - name: Start NEW version with preserved data
+        run: |
+          echo "🚀 Starting NEW version (${{ env.NEW_VERSION }}) with preserved data on ${{ matrix.database }}..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+
+          APP_VERSION=${{ env.NEW_VERSION }} docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            --env-file .env.test up -d
+
+          APP_VERSION=${{ env.NEW_VERSION }} docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            ps
+
+      - name: Wait for NEW version to be ready
+        run: |
+          echo "⏳ Waiting for NEW version to become healthy..."
+          MAX=60
+          i=0
+
+          while [ $i -lt $MAX ]; do
+            i=$((i+1))
+            if curl -f -s http://localhost:8000/api/v1/health >/dev/null 2>&1; then
+              echo "✅ NEW version is healthy"
+              exit 0
+            fi
+            echo "  Attempt $i/$MAX..."
+            sleep 2
+          done
+
+          echo "❌ NEW version failed to start"
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+          APP_VERSION=${{ env.NEW_VERSION }} docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            logs app
+          exit 1
+
+      # -------------------------------------------------------
+      # Verify upgrade
+      # -------------------------------------------------------
+      - name: Verify upgrade - post-upgrade tests
+        run: |
+          echo "✅ Running post-upgrade verification tests..."
+          python -m pytest tests/upgrade/verify_after_upgrade.py -v --tb=short --no-cov
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+          JOURNIV_API_BASE_URL: http://localhost:8000/api/v1
+
+      # -------------------------------------------------------
+      # Logs on failure
+      # -------------------------------------------------------
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+
+          echo "📋 App logs:"
+          APP_VERSION=${{ env.NEW_VERSION }} docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            logs app || true
+
+          if [ "${{ matrix.database }}" = "postgres" ]; then
+            echo ""
+            echo "📋 Postgres logs:"
+            APP_VERSION=${{ env.NEW_VERSION }} docker compose \
+              -f docker-compose.prod.${{ matrix.database }}.yml \
+              -f docker-compose.override.ci.yml \
+              logs postgres || true
+          fi
+
+      # -------------------------------------------------------
+      # Cleanup
+      # -------------------------------------------------------
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "🧹 Cleaning up..."
+          export COMPOSE_PROJECT_NAME=journiv-${{ matrix.database }}
+
+          APP_VERSION=${{ env.NEW_VERSION }} docker compose \
+            -f docker-compose.prod.${{ matrix.database }}.yml \
+            -f docker-compose.override.ci.yml \
+            down -v || true
+
+          # Remove CI volume explicitly
+          docker volume rm journiv-${{ matrix.database }}_journiv_ci_data >/dev/null 2>&1 || true
+          docker volume rm journiv_ci_data >/dev/null 2>&1 || true
+
+          docker rmi swalabtech/journiv-app:${{ env.NEW_VERSION }} >/dev/null 2>&1 || true
+          echo "✅ Cleanup complete"
+
+      # -------------------------------------------------------
+      # Summary
+      # -------------------------------------------------------
+      - name: Upgrade test summary
+        if: success()
+        run: |
+          echo "╔════════════════════════════════════════════════╗"
+          echo "║   ✓ UPGRADE TEST PASSED                        ║"
+          echo "╠════════════════════════════════════════════════╣"
+          echo "║  Database: ${{ matrix.database }}              "
+          echo "║  Old Version: ${{ env.OLD_VERSION }}           "
+          echo "║  New Version: ${{ env.NEW_VERSION }}           "
+          echo "║  Status: Data preserved successfully           ║"
+          echo "╚════════════════════════════════════════════════╝"

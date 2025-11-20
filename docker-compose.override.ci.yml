@@ -1,0 +1,23 @@
+# Docker Compose Override for CI/CD Environments
+#
+# ⚠️ WARNING: DO NOT USE IN PRODUCTION ⚠️
+#
+#
+# Usage in CI workflows:
+#   docker compose -f docker-compose.prod.sqlite.yml -f docker-compose.override.ci.yml up -d
+#
+# Multiple -f flags merge the compose files, with later files overriding earlier ones.
+
+services:
+  app:
+    volumes:
+      - journiv_ci_data:/data
+    environment:
+      RATE_LIMITING_ENABLED: "false" # Disable rate limiting in CI tests
+
+  celery-worker:
+    volumes:
+      - journiv_ci_data:/data
+
+volumes:
+  journiv_ci_data:
