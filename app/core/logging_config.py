@@ -21,6 +21,92 @@ class LogCategory(str, Enum):
 
 DEFAULT_LOG_LEVEL = logging.INFO
 
+# Fields that should be masked in logs
+SENSITIVE_FIELDS = {
+    'password',
+    'currentpassword',
+    'newpassword',
+    'confirmpassword',
+    'token',
+    'accesstoken',
+    'refreshtoken',
+    'authorization',
+    'secret',
+    'secret_key',
+    'secretkey',
+    'api_key',
+    'apikey',
+    'database_url',
+    'databaseurl',
+    'postgres_password',
+    'postgrespassword',
+    'redis_url',
+    'redisurl',
+    'celery_broker_url',
+    'celerybrokerurl',
+    'oidc_client_secret',
+    'oidcclientsecret',
+}
+
+
+def _sanitize_data(data):
+    """
+    Sanitize data to mask sensitive fields, similar to frontend _sanitizeData.
+
+    Recursively processes dictionaries, lists, and strings to mask sensitive information.
+    For URLs, attempts to mask credentials in connection strings.
+
+    Args:
+        data: Data to sanitize (dict, list, str, or any other type)
+
+    Returns:
+        Sanitized version of the data with sensitive fields masked
+    """
+    if data is None:
+        return data
+
+    if isinstance(data, dict):
+        sanitized = {}
+        for key, value in data.items():
+            key_lower = str(key).lower()
+            # Check if key matches any sensitive field (case-insensitive)
+            if any(sensitive in key_lower for sensitive in SENSITIVE_FIELDS):
+                sanitized[key] = '***MASKED***'
+            else:
+                sanitized[key] = _sanitize_data(value)
+        return sanitized
+
+    if isinstance(data, list):
+        return [_sanitize_data(item) for item in data]
+
+    if isinstance(data, str):
+        # Check if it's a URL with credentials that should be sanitized
+        if '@' in data and '://' in data:
+            # Try to mask credentials in URLs (postgresql://, redis://, etc.)
+            try:
+                scheme_part, rest = data.split('://', 1)
+                if '@' in rest:
+                    user_pass, host_part = rest.rsplit('@', 1)
+                    if ':' in user_pass:
+                        user, _ = user_pass.split(':', 1)
+                        return f"{scheme_part}://{user}:***@{host_part}"
+                    return f"{scheme_part}://{user_pass}@{host_part}"
+            except (ValueError, IndexError):
+                pass
+
+        # Check if the entire string looks like a sensitive value
+        # (e.g., long random strings that might be tokens)
+        if len(data) > 32 and all(c.isalnum() or c in '-_' for c in data):
+            # Might be a token/secret, but don't mask short strings or normal text
+            # Only mask if it's a very long alphanumeric string
+            if len(data) > 64:
+                return '***MASKED***'
+
+        return data
+
+    # For other types, return as-is
+    return data
+
 
 def _resolve_log_level(level_value, default=DEFAULT_LOG_LEVEL):
     """Resolve string/integer log level inputs to a logging level."""
@@ -133,13 +219,15 @@ def _log_with_context(logger: logging.Logger, level: int, message: str, request_
         request_id: Optional request ID for context
         exc_info: Whether to include exception traceback
         **kwargs: Additional context to append to message (e.g., media_id, user_id)
+                   Sensitive fields will be automatically masked
     """
     # Build the log message with request ID
     log_message = f"[{request_id}] {message}" if request_id else message
 
-    # Append any extra context to the message
+    # Append any extra context to the message (with sanitization)
     if kwargs:
-        extra_context = ", ".join(f"{k}={v}" for k, v in kwargs.items())
+        sanitized_kwargs = _sanitize_data(kwargs)
+        extra_context = ", ".join(f"{k}={v}" for k, v in sanitized_kwargs.items())
         log_message = f"{log_message} ({extra_context})"
 
     # Call logger with only supported parameters

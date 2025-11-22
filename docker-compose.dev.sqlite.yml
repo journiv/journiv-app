@@ -26,31 +26,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      # Redis
+      # Docker-specific: service names
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-
-      # Keep it in current directory for dev convenience
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./journiv.db}
-
-      # Security
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
-
-      # Storage
-      - MEDIA_ROOT=/data/media
-      - EXPORT_DIR=/data/exports
-      - IMPORT_TEMP_DIR=/data/imports/temp
-
-      # Import/Export settings
-      - IMPORT_EXPORT_MAX_FILE_SIZE_MB=500
-      - EXPORT_CLEANUP_DAYS=7
-
-      # App settings
-      - APP_VERSION=${APP_VERSION:-main}
-      - ENVIRONMENT=development
-      - DEBUG=true
 
     volumes:
       - .:/app
@@ -72,69 +54,13 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    env_file:
+      - .env
     environment:
-      # Redis (Do not remove. Journiv runs with multiple workers in dev mode too)
+      # Docker-specific: service names
       - REDIS_URL=redis://redis:6379/0
-
-      # Database (SQLite)
-      - DATABASE_URL=sqlite:///./journiv.db
-
-      # Security
-      - SECRET_KEY=${SECRET_KEY:-dev-secret-key}
-
-      # OIDC
-      - OIDC_ENABLED=${OIDC_ENABLED:-false}
-      - OIDC_ISSUER=${OIDC_ISSUER:-}
-      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
-      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
-      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
-      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile}
-      - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-true}
-      - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
-      - OIDC_ALLOW_INSECURE_PROD=${OIDC_ALLOW_INSECURE_PROD:-false}
-
-      # App settings
-      - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-main}
-      - DEBUG=true
-      - ENVIRONMENT=development
-      - DOMAIN_NAME=${DOMAIN_NAME:-localhost}
-      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-http}
-
-      # Dev-friendly CORS
-      - ENABLE_CORS=true
-      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
-
-      # API settings
-      - API_V1_PREFIX=/api/v1
-      - ALGORITHM=HS256
-      - ACCESS_TOKEN_EXPIRE_MINUTES=15
-      - REFRESH_TOKEN_EXPIRE_DAYS=7
-
-      # CSP (more permissive in dev)
-      - ENABLE_CSP=true
-      - ENABLE_HSTS=false
-      - ENABLE_CSP_REPORTING=true
-      - CSP_REPORT_URI=/api/v1/security/csp-report
-
-      # Storage & logging
-      - MEDIA_ROOT=/data/media
-      - LOG_DIR=/data/logs
-      - MAX_FILE_SIZE_MB=500
-      - LOG_LEVEL=DEBUG
-      - LOG_FILE=
-
-      # Allowed media
-      - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
-      - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
-
-      # Import/Export
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - IMPORT_EXPORT_MAX_FILE_SIZE_MB=500
-      - EXPORT_CLEANUP_DAYS=7
-      - EXPORT_DIR=/data/exports
-      - IMPORT_TEMP_DIR=/data/imports/temp
 
     volumes:
       - .:/app

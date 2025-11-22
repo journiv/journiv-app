@@ -11,6 +11,11 @@ from typing import Dict, List, Optional
 from pydantic import field_validator, model_validator, ValidationInfo, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+try:
+    from sqlalchemy.engine import make_url
+except ImportError:
+    make_url = None
+
 logger = logging.getLogger(__name__)
 
 # Insecure default that should never be used in production
@@ -41,13 +46,14 @@ class Settings(BaseSettings):
     cors_origins: Optional[List[str]] = None
 
     # Database Configuration
-    # Primary database URL (defaults to SQLite)
+    # Database driver selection: "sqlite" (default) or "postgres"
+    db_driver: str = "sqlite"
+
+    # Primary database URL (defaults to SQLite, can be PostgreSQL URL when DB_DRIVER=postgres)
     database_url: str = DEFAULT_SQLITE_URL
 
-    # PostgreSQL override (optional - for advanced users)
-    postgres_url: Optional[str] = None
-
     # Individual PostgreSQL components (optional - used in Docker)
+    # When POSTGRES_PASSWORD is set, these components are used to construct the PostgreSQL URL
     postgres_user: Optional[str] = None
     postgres_password: Optional[str] = None
     postgres_db: Optional[str] = None
@@ -147,20 +153,49 @@ class Settings(BaseSettings):
 
     @property
     def effective_database_url(self) -> str:
-        """Get the effective database URL based on configuration hierarchy."""
-        # Priority 1: Explicit PostgreSQL URL
-        if self.postgres_url:
-            return self.postgres_url
+        """
+        Get the effective database URL based on DB_DRIVER and configuration.
 
-        # Priority 2: PostgreSQL components (Docker environment)
-        # Check PostgreSQL components BEFORE falling back to DATABASE_URL default
-        if self.postgres_host and self.postgres_user and self.postgres_db:
-            password = self.postgres_password or ""
-            port = self.postgres_port or 5432
-            return f"postgresql://{self.postgres_user}:{password}@{self.postgres_host}:{port}/{self.postgres_db}"
+        When DB_DRIVER=postgres:
+        - Either POSTGRES_PASSWORD (with components) OR DATABASE_URL (postgres URL) must be set
+        - Not both - validation will fail if both are specified
+        - If POSTGRES_PASSWORD is set, construct PostgreSQL URL from components
+        - If DATABASE_URL is a PostgreSQL URL, use it directly
 
-        # Priority 3: Explicit DATABASE_URL (could be SQLite or PostgreSQL)
-        # Only use this if PostgreSQL components are not set
+        When DB_DRIVER=sqlite:
+        - Use DATABASE_URL (defaults to SQLite)
+        """
+        if self.db_driver == "postgres":
+            has_postgres_password = self.postgres_password is not None and self.postgres_password.strip()
+            has_postgres_database_url = self._is_postgres_url(self.database_url)
+
+            # Check for mutual exclusivity (validation should catch this, but handle gracefully)
+            if has_postgres_password and has_postgres_database_url:
+                raise ValueError(
+                    "Cannot specify both POSTGRES_PASSWORD and DATABASE_URL (postgres) when DB_DRIVER=postgres. "
+                    "Use either POSTGRES_PASSWORD with or without components OR complete DATABASE_URL (postgres URL), not both."
+                )
+
+            # Use POSTGRES_PASSWORD to construct URL
+            if has_postgres_password:
+                host = self.postgres_host or "postgres"
+                user = self.postgres_user or "journiv"
+                default_db = "journiv_prod" if self.environment == "production" else "journiv_dev"
+                db = self.postgres_db or default_db
+                port = self.postgres_port or 5432
+                return f"postgresql://{user}:{self.postgres_password}@{host}:{port}/{db}"
+
+            # Use DATABASE_URL if it's a PostgreSQL URL
+            if has_postgres_database_url:
+                return self.database_url
+
+            # Neither specified (validation should have caught this, but handle gracefully)
+            raise ValueError(
+                "When DB_DRIVER=postgres, either POSTGRES_PASSWORD or DATABASE_URL (postgres URL) must be set. "
+                "Please configure one of these options."
+            )
+
+        # DB_DRIVER=sqlite: use DATABASE_URL (defaults to SQLite)
         return self.database_url
 
     @field_validator('secret_key')
@@ -297,36 +332,6 @@ class Settings(BaseSettings):
         )
         return url
 
-    @field_validator('postgres_url')
-    @classmethod
-    def validate_postgres_url(cls, v: Optional[str], info: ValidationInfo) -> Optional[str]:
-        """Validate PostgreSQL override URL."""
-        if not v or not v.strip():
-            return None
-
-        url = v.strip()
-        env = info.data.get('environment', 'development')
-
-        if not url.startswith(("postgresql", "postgres")):
-            raise ValueError(
-                "POSTGRES_URL must be a PostgreSQL URL (postgresql:// or postgres://)"
-            )
-
-        if env == 'production' and 'journiv_password' in url.lower():
-            raise ValueError(
-                "Default database password detected in production! "
-                "Set a secure POSTGRES_PASSWORD in .env"
-            )
-
-        # Check for localhost in production
-        if env == 'production' and ('localhost' in url or '127.0.0.1' in url):
-                    logger.warning(
-                "PostgreSQL URL contains localhost in production. "
-                "Ensure this is intentional."
-            )
-
-        return url
-
     @field_validator('postgres_port', mode='before')
     @classmethod
     def validate_postgres_port(cls, v) -> Optional[int]:
@@ -425,6 +430,70 @@ class Settings(BaseSettings):
             ]
         return v
 
+    @staticmethod
+    def _is_postgres_url(url: str) -> bool:
+        """Check if a URL is a PostgreSQL URL."""
+        if not url:
+            return False
+        url = url.strip()
+        if not url:
+            return False
+        return url.startswith(("postgresql://", "postgres://"))
+
+    @staticmethod
+    def _sanitize_url(url: str) -> str:
+        """
+        Sanitize a database URL by hiding credentials.
+
+        Returns a safe version of the URL with password masked, suitable for
+        logging and error messages. Falls back to manual masking if SQLAlchemy
+        URL parsing fails.
+        """
+        if not url:
+            return "<empty>"
+
+        url = url.strip()
+        if not url:
+            return "<empty>"
+
+        # Try to use SQLAlchemy's URL parser for proper sanitization
+        if make_url is not None:
+            try:
+                parsed = make_url(url)
+                return parsed.render_as_string(hide_password=True)
+            except Exception:
+                pass
+
+        # Fallback: manually mask password if present
+        # Pattern: scheme://user:password@host/path
+        if "@" in url and "://" in url:
+            try:
+                scheme_part, rest = url.split("://", 1)
+                if "@" in rest:
+                    user_pass, host_part = rest.rsplit("@", 1)
+                    if ":" in user_pass:
+                        user, _ = user_pass.split(":", 1)
+                        return f"{scheme_part}://{user}:***@{host_part}"
+                    return f"{scheme_part}://{user_pass}@{host_part}"
+            except (ValueError, IndexError):
+                pass
+
+        # If no credentials detected, return as-is (safe for SQLite)
+        return url
+
+    @field_validator('db_driver')
+    @classmethod
+    def validate_db_driver(cls, v: str) -> str:
+        """Validate DB_DRIVER is either sqlite or postgres."""
+        if isinstance(v, str):
+            v = v.lower().strip()
+        if v not in ("sqlite", "postgres"):
+            raise ValueError(
+                "DB_DRIVER must be either 'sqlite' or 'postgres'. "
+                f"Got: {v}"
+            )
+        return v
+
     @field_validator('domain_scheme')
     @classmethod
     def validate_domain_scheme(cls, v: str) -> str:
@@ -503,6 +572,62 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode='after')
+    def validate_db_driver_requirements(self) -> 'Settings':
+        """
+        Validate that required database configuration is provided when DB_DRIVER=postgres.
+
+        This validator ensures that when DB_DRIVER=postgres:
+        - Either a PostgreSQL DATABASE_URL or POSTGRES_PASSWORD is provided
+        - The effective database URL will be PostgreSQL
+        - Empty passwords are rejected
+
+        Runs before validate_production_settings to ensure DB_DRIVER is properly configured.
+        """
+        if self.db_driver != "postgres":
+            return self
+
+        # Check if postgres_password is explicitly set but empty
+        if self.postgres_password is not None and not self.postgres_password.strip():
+            raise ValueError(
+                "POSTGRES_PASSWORD cannot be empty when DB_DRIVER=postgres. "
+                "Please provide a valid password."
+            )
+
+        # Check if we have a PostgreSQL URL in DATABASE_URL
+        has_postgres_url = self._is_postgres_url(self.database_url)
+
+        # Check if we have PostgreSQL components (POSTGRES_PASSWORD)
+        has_postgres_components = (
+            self.postgres_password is not None and self.postgres_password.strip()
+        )
+
+        # Require exactly one: either POSTGRES_PASSWORD or DATABASE_URL (postgres), not both, not neither
+        if has_postgres_components and has_postgres_url:
+            raise ValueError(
+                "DB_DRIVER=postgres: Cannot specify both POSTGRES_PASSWORD and DATABASE_URL (postgres URL). "
+                "Use either POSTGRES_PASSWORD with components or without components OR complete DATABASE_URL (postgres URL), not both."
+            )
+
+        if not (has_postgres_url or has_postgres_components):
+            raise ValueError(
+                "DB_DRIVER=postgres requires either DATABASE_URL (with postgresql:// or postgres://) "
+                "or POSTGRES_PASSWORD to be set. "
+                "When using POSTGRES_PASSWORD, host, user, and db can use defaults."
+            )
+
+        # Verify that the effective database URL will be PostgreSQL
+        # This ensures consistency between DB_DRIVER setting and actual database connection
+        effective_url = self.effective_database_url
+        if not self._is_postgres_url(effective_url):
+            safe_url = self._sanitize_url(effective_url)
+            raise ValueError(
+                f"DB_DRIVER=postgres is set, but effective database URL is not PostgreSQL: {safe_url}. "
+                "Please configure PostgreSQL connection settings."
+            )
+
+        return self
+
+    @model_validator(mode='after')
     def validate_production_settings(self) -> 'Settings':
         """Comprehensive production validation."""
         if self.environment != "production":
@@ -540,8 +665,17 @@ class Settings(BaseSettings):
                     "Never disable SSL verification in production environments."
                 )
 
-        # Check if SQLite is being used when PostgreSQL components are not configured
-        if self.database_url.startswith("sqlite") and not (self.postgres_url or (self.postgres_host and self.postgres_user and self.postgres_db)):
+        # Check database configuration
+        if self.db_driver == "postgres":
+            # DB_DRIVER=postgres should already be validated, but double-check
+            if not self._is_postgres_url(self.effective_database_url):
+                errors.append(
+                    "DB_DRIVER=postgres is set but effective database URL is not PostgreSQL. "
+                    "This should have been caught by validation."
+                )
+        elif self.database_url.startswith("sqlite") and not (
+            self.postgres_host and self.postgres_user and self.postgres_db
+        ):
             warnings.append(
                 "Using SQLite in production. Ensure you understand the durability "
                 "limitations and configure regular backups."

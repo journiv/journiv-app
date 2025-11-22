@@ -19,10 +19,9 @@ logger = logging.getLogger(__name__)
 database_url = settings.effective_database_url
 database_type = settings.database_type
 
-try:
-    safe_database_url = make_url(database_url).render_as_string(hide_password=True)
-except Exception:
-    safe_database_url = database_url
+# Sanitize database URL for logging using logging_config sanitization
+from app.core.logging_config import _sanitize_data
+safe_database_url = _sanitize_data(database_url)
 
 logger.info(f"Using {database_type} database: {safe_database_url}")
 

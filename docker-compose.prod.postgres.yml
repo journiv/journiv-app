@@ -7,14 +7,13 @@
 #   SECRET_KEY      - Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
 #   DOMAIN_NAME     - Needed when running in same-origin SPA mode (ENABLE_CORS=false).
 #   POSTGRES_PASSWORD (if not relying on defaults, strongly recommended to change in production).
-#   APP_VERSION - Example: APP_VERSION=latest
 services:
   postgres:
     image: postgres:15
     container_name: journiv-postgres-db
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-journiv}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD} # must provide a password in .env file
       - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -60,34 +59,16 @@ services:
     image: swalabtech/journiv-app:${APP_VERSION:-latest}
     container_name: journiv-celery-worker
     command: celery -A app.core.celery_app worker --loglevel=info
+    env_file:
+      - .env
     environment:
-      # Database
+      # Docker-specific: service names
+      - DB_DRIVER=postgres
       - POSTGRES_HOST=postgres
-      - POSTGRES_USER=${POSTGRES_USER:-journiv}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
-      - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
-      - POSTGRES_PORT=5432
-
-      # Redis
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-
-      # Security
-      - SECRET_KEY=${SECRET_KEY}
-
-      # Storage
-      - MEDIA_ROOT=/data/media
-      - EXPORT_DIR=/data/exports
-      - IMPORT_TEMP_DIR=/data/imports/temp
-
-      # Import/Export settings
-      - IMPORT_EXPORT_MAX_FILE_SIZE_MB=${IMPORT_EXPORT_MAX_FILE_SIZE_MB:-500}
-      - EXPORT_CLEANUP_DAYS=${EXPORT_CLEANUP_DAYS:-7}
-
-      # App settings
-      - APP_VERSION=${APP_VERSION:-latest}
-      - ENVIRONMENT=production
 
     volumes:
       - app_data:/data
@@ -113,72 +94,18 @@ services:
     container_name: journiv-postgres-app
     ports:
       - "${APP_PORT:-8000}:8000" # Right side must remain 8000
+    env_file:
+      - .env
     environment:
-      # Database
+      # Docker-specific: service names
+      - DB_DRIVER=postgres
       - POSTGRES_HOST=postgres
-      - POSTGRES_USER=${POSTGRES_USER:-journiv}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-journiv_password}
-      - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
-      - POSTGRES_PORT=5432
-
-      # Redis (Do not remove. Journiv runs with multiple workers which need to share state.)
-      - REDIS_URL=redis://redis:6379/0
-
-      # Core app config
-      - SECRET_KEY=${SECRET_KEY}
-      - DOMAIN_NAME=${DOMAIN_NAME:-}
-      - DOMAIN_SCHEME=${DOMAIN_SCHEME:-https}
-      - APP_NAME=${APP_NAME:-Journiv}
-      - APP_VERSION=${APP_VERSION:-latest}
-      - DEBUG=false
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
       - ENVIRONMENT=production
-      - API_V1_PREFIX=${API_V1_PREFIX:-/api/v1}
-
-      # Auth & security
-      - DISABLE_SIGNUP=${DISABLE_SIGNUP:-false}
-      - ALGORITHM=${ALGORITHM:-HS256}
-      - ACCESS_TOKEN_EXPIRE_MINUTES=${ACCESS_TOKEN_EXPIRE_MINUTES:-15}
-      - REFRESH_TOKEN_EXPIRE_DAYS=${REFRESH_TOKEN_EXPIRE_DAYS:-7}
-
-      # OIDC Config (optional)
-      - OIDC_ENABLED=${OIDC_ENABLED:-false}
-      - OIDC_ISSUER=${OIDC_ISSUER:-}
-      - OIDC_CLIENT_ID=${OIDC_CLIENT_ID:-}
-      - OIDC_CLIENT_SECRET=${OIDC_CLIENT_SECRET:-}
-      - OIDC_REDIRECT_URI=${OIDC_REDIRECT_URI:-}
-      - OIDC_SCOPES=${OIDC_SCOPES:-openid email profile}
-      - OIDC_AUTO_PROVISION=${OIDC_AUTO_PROVISION:-true}
-      - OIDC_DISABLE_SSL_VERIFY=${OIDC_DISABLE_SSL_VERIFY:-false}
-      - OIDC_ALLOW_INSECURE_PROD=${OIDC_ALLOW_INSECURE_PROD:-false}
-
-      # CORS (optional)
-      - ENABLE_CORS=${ENABLE_CORS:-false}
-      - CORS_ORIGINS=${CORS_ORIGINS:-}
-
-      # File storage
-      - MEDIA_ROOT=/data/media
-      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
-      - ALLOWED_MEDIA_TYPES=image/jpeg,image/png,image/gif,image/webp,video/mp4,video/avi,video/mov,video/webm,audio/mpeg,audio/wav,audio/ogg,audio/m4a,audio/aac
-      - ALLOWED_FILE_EXTENSIONS=.jpg,.jpeg,.png,.gif,.webp,.mp4,.avi,.mov,.webm,.mp3,.wav,.ogg,.m4a,.aac
-
-      # Logging
-      - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - LOG_FILE=${LOG_FILE:-/data/logs/journiv.log}
-      - LOG_DIR=/data/logs
-
-      # CSP
-      - ENABLE_CSP=${ENABLE_CSP:-true}
-      - ENABLE_HSTS=${ENABLE_HSTS:-true}
-      - ENABLE_CSP_REPORTING=${ENABLE_CSP_REPORTING:-true}
-      - CSP_REPORT_URI=${CSP_REPORT_URI:-/api/v1/security/csp-report}
-
-      # Import/Export
+      - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - IMPORT_EXPORT_MAX_FILE_SIZE_MB=${IMPORT_EXPORT_MAX_FILE_SIZE_MB:-500}
-      - EXPORT_CLEANUP_DAYS=${EXPORT_CLEANUP_DAYS:-7}
-      - EXPORT_DIR=/data/exports
-      - IMPORT_TEMP_DIR=/data/imports/temp
+      - RATE_LIMIT_STORAGE_URI=redis://redis:6379/1
 
     volumes:
       - app_data:/data
