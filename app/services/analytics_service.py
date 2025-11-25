@@ -93,6 +93,34 @@ class AnalyticsService:
             log_info(f"Writing streak updated for user {user_id}")
         return streak
 
+    def recalculate_writing_streak_stats(self, user_id: uuid.UUID) -> Optional[WritingStreak]:
+        """
+        Recalculate writing streak statistics for a user.
+
+        This should be called when entries are deleted to ensure the cached
+        total_entries and total_words values are accurate.
+
+        Returns:
+            WritingStreak object if it exists, None otherwise
+        """
+        streak = self.get_writing_streak(user_id)
+        if not streak:
+            return None
+
+        self._update_entry_stats(user_id, streak)
+
+        try:
+            self.session.add(streak)
+            self.session.commit()
+            self.session.refresh(streak)
+        except SQLAlchemyError as exc:
+            self.session.rollback()
+            log_error(exc)
+            raise
+
+        log_info(f"Writing streak stats recalculated for user {user_id}")
+        return streak
+
     def _update_entry_stats(self, user_id: uuid.UUID, streak: WritingStreak):
         """Update total entries and words statistics."""
         result = self.session.exec(

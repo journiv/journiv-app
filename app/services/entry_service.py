@@ -342,6 +342,16 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
+        # Recalculate writing streak statistics after entry is deleted
+        # This ensures analytics reflect the correct entry counts
+        try:
+            from app.services.analytics_service import AnalyticsService
+            analytics_service = AnalyticsService(self.session)
+            analytics_service.recalculate_writing_streak_stats(user_id)
+        except Exception as exc:
+            # Log error but don't fail the deletion
+            log_warning(f"Failed to update writing streak stats after entry deletion: {exc}")
+
         log_info(f"Entry hard-deleted for user {user_id}: {entry_id}")
         return True
 

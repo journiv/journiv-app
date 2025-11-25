@@ -59,7 +59,7 @@ class UserService:
             # For SQLite, we can't use FOR UPDATE, so we just count
             # For PostgreSQL, we use FOR UPDATE to lock
             if 'sqlite' in str(self.session.bind.url).lower():
-                count = self.session.exec(select(func.count(User.id))).scalar_one()
+                count = self.session.exec(select(func.count(User.id))).one()
                 return count == 0
             else:
                 statement = select(User.id).limit(1).with_for_update()
@@ -74,7 +74,7 @@ class UserService:
         from sqlalchemy import func
         return self.session.exec(
             select(func.count(User.id)).where(User.role == UserRole.ADMIN)
-        ).scalar_one()
+        ).one()
 
     def can_delete_user(self, user_id: str) -> tuple[bool, Optional[str]]:
         """
