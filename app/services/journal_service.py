@@ -138,6 +138,16 @@ class JournalService:
             log_error(exc)
             raise
 
+        # Recalculate writing streak statistics after journal is deleted
+        # This ensures analytics reflect the correct entry counts
+        try:
+            from app.services.analytics_service import AnalyticsService
+            analytics_service = AnalyticsService(self.session)
+            analytics_service.recalculate_writing_streak_stats(user_id)
+        except Exception as exc:
+            # Log error but don't fail the deletion
+            log_warning(f"Failed to update writing streak stats after journal deletion: {exc}")
+
         log_info(f"Journal and related entries/media hard-deleted for {user_id}: {journal_id}")
         return True
 

@@ -93,6 +93,40 @@ class AnalyticsService:
             log_info(f"Writing streak updated for user {user_id}")
         return streak
 
+    def recalculate_writing_streak_stats(self, user_id: uuid.UUID) -> Optional[WritingStreak]:
+        """
+        Recalculate writing streak statistics for a user.
+
+        This should be called when entries are deleted to ensure the cached
+        total_entries, total_words, and streak metadata values are accurate.
+
+        Returns:
+            WritingStreak object if it exists, None otherwise
+        """
+        streak = self.get_writing_streak(user_id)
+        if not streak:
+            return None
+
+        self._update_entry_stats(user_id, streak)
+
+        streaks = self._recalculate_streak_metadata(user_id)
+        streak.current_streak = streaks['current_streak']
+        streak.longest_streak = streaks['longest_streak']
+        streak.last_entry_date = streaks['last_entry_date']
+        streak.streak_start_date = streaks['streak_start_date']
+
+        try:
+            self.session.add(streak)
+            self.session.commit()
+            self.session.refresh(streak)
+        except SQLAlchemyError as exc:
+            self.session.rollback()
+            log_error(exc)
+            raise
+
+        log_info(f"Writing streak stats recalculated for user {user_id}")
+        return streak
+
     def _update_entry_stats(self, user_id: uuid.UUID, streak: WritingStreak):
         """Update total entries and words statistics."""
         result = self.session.exec(
@@ -117,6 +151,63 @@ class AnalyticsService:
         streak.total_entries = total_entries
         streak.total_words = total_words
         streak.average_words_per_entry = total_words / total_entries if total_entries > 0 else 0.0
+
+    def _recalculate_streak_metadata(self, user_id: uuid.UUID) -> Dict[str, Any]:
+        """
+        Recalculate streak metadata from all user entries.
+
+        Streaks are based on UNIQUE days that have at least one entry.
+        Multiple entries on the same day count as one day for streak purposes.
+
+        Returns:
+            Dict with current_streak, longest_streak, last_entry_date, streak_start_date
+        """
+        entries = self.session.exec(
+            select(Entry).where(Entry.user_id == user_id).order_by(Entry.entry_date.desc())
+        ).all()
+
+        unique_dates = sorted(
+            {e.entry_date for e in entries if e.entry_date is not None},
+            reverse=True
+        )
+
+        if not unique_dates:
+            return {
+                'current_streak': 0,
+                'longest_streak': 0,
+                'last_entry_date': None,
+                'streak_start_date': None
+            }
+
+        last_entry_date = unique_dates[0]
+
+        current_streak = 1
+        streak_start_date = unique_dates[0]
+
+        for i in range(1, len(unique_dates)):
+            days_diff = (unique_dates[i - 1] - unique_dates[i]).days
+            if days_diff == 1:
+                current_streak += 1
+                streak_start_date = unique_dates[i]
+            else:
+                break
+
+        longest_streak = 1
+        current_longest = 1
+        for i in range(1, len(unique_dates)):
+            days_diff = (unique_dates[i - 1] - unique_dates[i]).days
+            if days_diff == 1:
+                current_longest += 1
+                longest_streak = max(longest_streak, current_longest)
+            else:
+                current_longest = 1
+
+        return {
+            'current_streak': current_streak,
+            'longest_streak': longest_streak,
+            'last_entry_date': last_entry_date,
+            'streak_start_date': streak_start_date
+        }
 
     def get_writing_analytics(self, user_id: uuid.UUID) -> Dict[str, Any]:
         """Get comprehensive writing analytics for a user."""

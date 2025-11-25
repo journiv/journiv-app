@@ -47,10 +47,18 @@ jobs:
           pip install -r requirements/base.txt
           pip install -r requirements/test.txt
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Build Journiv Docker image
-        run: |
-          echo "🔨 Building Journiv Docker image..."
-          docker build -t swalabtech/journiv-app:latest .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: swalabtech/journiv-app:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
 
       - name: Create test environment file
         run: |
@@ -166,12 +174,22 @@ jobs:
             -v \
             --tb=short \
             --strict-markers \
-            --no-cov
+            --no-cov \
+            --junit-xml=pytest-results-${{ matrix.database }}.xml
         env:
           JOURNIV_API_BASE_URL: http://localhost:8000/api/v1
           # Import/Export tests require Celery
           CELERY_BROKER_URL: redis://redis:6379/0
           CELERY_RESULT_BACKEND: redis://redis:6379/0
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.database }}
+          path: |
+            pytest-results-${{ matrix.database }}.xml
+            .pytest_cache/
 
       - name: Show logs on failure
         if: failure()
