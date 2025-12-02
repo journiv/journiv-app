@@ -29,7 +29,6 @@ def register_oidc_provider():
             client_kwargs = {"scope": settings.oidc_scopes}
 
             # Disable SSL verification for local development with self-signed certificates
-            # SECURITY WARNING: Never disable SSL verification in production!
             if settings.oidc_disable_ssl_verify:
                 if settings.environment == "production":
                     raise ValueError(
@@ -183,17 +182,25 @@ async def oidc_callback(
 
     # If not first user, check signup/auto-provision settings
     if not is_first and settings.disable_signup:
-        # Check if external identity already exists
+        # Check if external identity already exists (User is already OIDC-linked)
         statement = select(ExternalIdentity).where(
             ExternalIdentity.issuer == issuer,
             ExternalIdentity.subject == subject
         )
         external_identity = session.exec(statement).first()
-        if not external_identity:
+        
+        # Check if a local user (created by Admin UI) exists with this email
+        local_user_by_email = None
+        if email:
+            local_user_by_email = user_service.get_user_by_email(email)
+
+        # Only block login if NEITHER an OIDC identity NOR a local user exists.
+        if not external_identity and not local_user_by_email:
             log_warning(
                 "OIDC login rejected because signup is disabled",
                 issuer=issuer,
-                subject=subject
+                subject=subject,
+                user_email=email
             )
             raise HTTPException(status_code=403, detail="Sign up is disabled")
 
