@@ -10,6 +10,7 @@ from typing import Optional
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
+from sqlalchemy import func # <-- NEW IMPORT for case-insensitive lookup
 from app.core.config import settings
 
 from app.core.exceptions import (
@@ -131,8 +132,13 @@ class UserService:
             return None
 
     def get_user_by_email(self, email: str) -> Optional[User]:
-        """Get user by email."""
-        statement = select(User).where(User.email == email)
+        # 1. Normalize the input email (input from OIDC/auth endpoint is already lowercased, 
+        # but this is safe redundancy)
+        normalized_email = email.lower()
+        
+        # 2. Use func.lower() on the stored User.email for reliable case-insensitive lookup
+        statement = select(User).where(func.lower(User.email) == normalized_email)
+        
         return self.session.exec(statement).first()
 
     def is_oidc_user(self, user_id: str) -> bool:
@@ -162,6 +168,9 @@ class UserService:
         Returns:
             User: Created user
         """
+        # Normalize email before lookup and storage
+        user_data.email = user_data.email.lower()
+        
         # Check if user already exists
         existing_user = self.get_user_by_email(user_data.email)
         if existing_user:
@@ -288,7 +297,10 @@ class UserService:
 
     def authenticate_user(self, email: str, password: str) -> User:
         """Authenticate user with email and password."""
-        user = self.get_user_by_email(email)
+        # Normalize email for lookup
+        normalized_email = email.lower()
+        
+        user = self.get_user_by_email(normalized_email)
         if not user:
             # Perform dummy verify to keep timing consistent
             verify_password(password, _DUMMY_PASSWORD_HASH)
@@ -326,8 +338,8 @@ class UserService:
                 self.session.rollback()
                 log_error(exc)
                 raise
-        else:
-            self.session.flush()
+            else:
+                self.session.flush()
 
         return settings
 
@@ -460,6 +472,7 @@ class UserService:
         # Auto-provision: find or create user by email
         user = None
         if email:
+            # Email has already been lowercased in oidc.py
             user = self.get_user_by_email(email)
             if user and not user.is_active:
                 log_warning(f"OIDC login rejected for inactive user: {email}")
@@ -585,6 +598,9 @@ class UserService:
         Returns:
             User: Created user
         """
+        # Normalize email before lookup and storage
+        user_data.email = user_data.email.lower()
+        
         # Check if user already exists
         existing_user = self.get_user_by_email(user_data.email)
         if existing_user:
@@ -646,6 +662,10 @@ class UserService:
         if 'password' in update_data and update_data['password']:
             user.password = get_password_hash(update_data['password'])
             del update_data['password']
+            
+        # Normalize email if present in update data
+        if 'email' in update_data and update_data['email']:
+            update_data['email'] = update_data['email'].lower()
 
         # Update other fields
         for field, value in update_data.items():
