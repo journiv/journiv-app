@@ -175,6 +175,24 @@ async def oidc_callback(
         log_error("OIDC claims missing 'sub' field")
         raise HTTPException(status_code=400, detail="Invalid OIDC claims: missing subject")
 
+    # Robustly check the 'email_verified' claim, accepting boolean True or string "true".
+    # This handles providers that may send boolean values as strings (like the original Authentik issue).
+    email_verified_claim = claims.get('email_verified')
+    email_is_verified = email_verified_claim is True or email_verified_claim == "true"
+    
+    # Require email to be verified by the IDP before allowing account linking/login
+    if email and not email_is_verified:
+        log_error(f"OIDC login failed: Email {email} not verified by identity provider (Claim was: {email_verified_claim})", subject=subject)
+        raise HTTPException(
+            status_code=403, 
+            detail="Email not verified by identity provider"
+        )
+        
+    # Normalize email to lowercase immediately after security checks
+    # This ensures consistency for all subsequent database lookups and prevents case-sensitive errors.
+    if email:
+        email = email.lower()
+
     # Get or create user from external identity
     user_service = UserService(session)
 
@@ -374,4 +392,4 @@ async def oidc_logout(request: Request):
     except Exception as exc:
         log_error(f"OIDC logout failed: {exc}")
         raise HTTPException(status_code=500, detail="OIDC logout failed")
-        
+    
