@@ -302,8 +302,12 @@ class UserService:
         email: Optional[str],
         name: Optional[str],
         picture: Optional[str],
+        email_verified: bool,
         auto_provision: bool,
     ) -> User:
+        if not email_verified:
+            raise UnauthorizedError("Email not verified by identity provider")
+
         stmt = select(ExternalIdentity).where(
             ExternalIdentity.issuer == issuer,
             ExternalIdentity.subject == subject,
