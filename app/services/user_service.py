@@ -675,8 +675,8 @@ class UserService:
             del update_data['password']
             
         # Normalize email if present in update data
-        if 'email' in update_data and update_data['email']:
-            update_data['email'] = update_data['email'].lower()
+        if email := update_data.get('email'):
+            update_data['email'] = email.lower()
 
         # Update other fields
         for field, value in update_data.items():
