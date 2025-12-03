@@ -175,7 +175,7 @@ async def oidc_callback(
         log_error("OIDC claims missing 'sub' field")
         raise HTTPException(status_code=400, detail="Invalid OIDC claims: missing subject")
         
-    # SECURITY FIX: Require email to be verified by the IDP before allowing account linking/login
+    # Require email to be verified by the IDP before allowing account linking/login
     if email and not claims.get('email_verified', False):
         log_error(f"OIDC login failed: Email {email} not verified by identity provider.", subject=subject)
         raise HTTPException(
@@ -183,7 +183,7 @@ async def oidc_callback(
             detail="Email not verified by identity provider"
         )
         
-    # SECURITY FIX: Normalize email to lowercase for reliable case-insensitive comparison
+    # Normalize email to lowercase for reliable case-insensitive comparison
     if email:
         email = email.lower()
 
@@ -202,7 +202,7 @@ async def oidc_callback(
         )
         external_identity = session.exec(statement).first()
 
-        # FIX: Check if a local user (admin-created) exists with the same email.
+        # Check if a local user (admin-created) exists with the same email.
         # This allows existing users to log in/link SSO even if signup is disabled,
         # ensuring the admin's user management action is respected.
         local_user_by_email = None
