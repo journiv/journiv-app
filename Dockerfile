@@ -88,7 +88,12 @@ USER appuser
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:8000/api/v1/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+  CMD sh -c '\
+    if [ "${SERVICE_ROLE:-app}" = "celery-worker" ]; then \
+      celery -A app.core.celery_app inspect ping --timeout=5 | grep -q "pong"; \
+    else \
+      curl -f http://localhost:8000/api/v1/health; \
+    fi'
 
 CMD ["/app/scripts/docker-entrypoint.sh"]

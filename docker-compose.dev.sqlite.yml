@@ -30,6 +30,7 @@ services:
       - .env
     environment:
       # Docker-specific: service names
+      - SERVICE_ROLE=celery-worker
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -37,6 +38,13 @@ services:
     volumes:
       - .:/app
       - ./data:/data
+
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery_app inspect ping --timeout=5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
 
     deploy:
       resources:
@@ -58,6 +66,7 @@ services:
       - .env
     environment:
       # Docker-specific: service names
+      - SERVICE_ROLE=app
       - REDIS_URL=redis://redis:6379/0
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0

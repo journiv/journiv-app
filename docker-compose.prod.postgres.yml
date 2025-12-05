@@ -63,6 +63,7 @@ services:
       - .env
     environment:
       # Docker-specific: service names
+      - SERVICE_ROLE=celery-worker
       - DB_DRIVER=postgres
       - POSTGRES_HOST=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-}
@@ -80,6 +81,12 @@ services:
     networks:
       - backend
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.core.celery_app inspect ping --timeout=5 | grep -q pong"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
     cpus: "1.0"
     mem_limit: 1g
     mem_reservation: 256m
@@ -98,6 +105,7 @@ services:
       - .env
     environment:
       # Docker-specific: service names
+      - SERVICE_ROLE=app
       - DB_DRIVER=postgres
       - POSTGRES_HOST=postgres
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
