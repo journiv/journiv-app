@@ -325,7 +325,7 @@ class AnalyticsService:
                 Entry.user_id == user_id,
                 Entry.entry_datetime_utc >= month_start
             )
-        ).first() or 0
+        ).one() or 0
 
         current_month_words = self.session.exec(
             select(func.coalesce(func.sum(Entry.word_count), 0))
@@ -333,7 +333,7 @@ class AnalyticsService:
                 Entry.user_id == user_id,
                 Entry.entry_datetime_utc >= month_start
             )
-        ).first() or 0
+        ).one() or 0
 
         # Get last month stats for comparison
         last_month_end = month_start - timedelta(seconds=1)
@@ -346,7 +346,7 @@ class AnalyticsService:
                 Entry.entry_datetime_utc >= last_month_start,
                 Entry.entry_datetime_utc < month_start
             )
-        ).first() or 0
+        ).one() or 0
 
         # Calculate growth
         entry_growth = 0

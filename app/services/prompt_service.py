@@ -223,7 +223,7 @@ class PromptService:
             select(func.count(Entry.id)).where(
                 Entry.prompt_id == prompt_id,
             )
-        ).first() or 0
+        ).one() or 0
 
         if in_use:
             raise ValueError("Prompt is currently in use and cannot be deleted.")
@@ -319,7 +319,7 @@ class PromptService:
             Prompt.is_active == True,
             Prompt.user_id.is_(None),
         )
-        total_prompts = self.session.exec(count_statement).first()
+        total_prompts = self.session.exec(count_statement).one() or 0
 
         if total_prompts == 0:
             return None

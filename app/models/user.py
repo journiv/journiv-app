@@ -3,10 +3,10 @@ User-related models.
 """
 import uuid
 from datetime import datetime
-from typing import List, Optional, TYPE_CHECKING
+from typing import List, Optional, TYPE_CHECKING, Union
 
 from pydantic import field_validator, EmailStr, HttpUrl
-from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Column, ForeignKey, Enum as SQLAlchemyEnum, text
 from sqlmodel import Field, Relationship, Index, CheckConstraint, String
 
 from .base import BaseModel, TimestampMixin
@@ -33,7 +33,19 @@ class User(BaseModel, table=True):
     )
     password: str = Field(..., min_length=8)  # Hashed password
     name: str = Field(..., max_length=100, sa_column=Column(String(100), nullable=False))
-    role: UserRole = Field(default=UserRole.USER, sa_column=Column(String(20), nullable=False, server_default="user"))
+    role: UserRole = Field(
+        default=UserRole.USER,
+        sa_column=Column(
+            SQLAlchemyEnum(
+                UserRole,
+                name="user_role_enum",
+                native_enum=True,
+                values_callable=lambda x: [e.value for e in x]
+            ),
+            nullable=False,
+            server_default=text("'user'")
+        )
+    )
     is_active: bool = Field(default=True)
     profile_picture_url: Optional[HttpUrl] = Field(
         default=None,
@@ -82,6 +94,26 @@ class User(BaseModel, table=True):
         # Constraints
         CheckConstraint("length(name) > 0", name='check_name_not_empty'),
     )
+
+    @field_validator('role', mode='before')
+    @classmethod
+    def validate_role(cls, v: Union[str, UserRole]) -> UserRole:
+        """
+        Coerce string role values to UserRole enum.
+
+        This validator handles backward compatibility for databases where role
+        is stored as a string (VARCHAR) and ensures proper enum deserialization.
+        """
+        if isinstance(v, UserRole):
+            return v
+        if isinstance(v, str):
+            try:
+                return UserRole(v)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid role: {v}. Must be one of: {[r.value for r in UserRole]}"
+                ) from exc
+        raise ValueError(f"Role must be a string or UserRole enum, got {type(v)}")
 
     @field_validator('email')
     @classmethod

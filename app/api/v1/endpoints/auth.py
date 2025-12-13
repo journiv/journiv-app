@@ -146,9 +146,8 @@ async def login(
         timezone = user_service.get_user_timezone(user.id)
 
         # Convert user to dict for response
-        # Handle role - it might be an enum or already a string (from database)
-        # Using str() works for both cases since UserRole is a string enum
-        role_value = str(user.role)
+        # Use the enum value (e.g., "user" or "admin") instead of str() which gives "UserRole.USER"
+        role_value = user.role.value if hasattr(user.role, 'value') else user.role
 
         user_dict = {
             "id": str(user.id),

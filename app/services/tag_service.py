@@ -241,7 +241,7 @@ class TagService:
             select(func.count(Tag.id)).where(
                 Tag.user_id == user_id,
             )
-        ).first()
+        ).one() or 0
 
         # Tags with usage
         used_tags = self.session.exec(
@@ -249,7 +249,7 @@ class TagService:
                 Tag.user_id == user_id,
                 Tag.usage_count > 0,
             )
-        ).first()
+        ).one() or 0
 
         # Most used tag
         most_used_tag = self.session.exec(
@@ -263,7 +263,7 @@ class TagService:
             select(func.avg(Tag.usage_count)).where(
                 Tag.user_id == user_id,
             )
-        ).first() or 0
+        ).one_or_none() or 0
 
         return {
             'total_tags': total_tags,
