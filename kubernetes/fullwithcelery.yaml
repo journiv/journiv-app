@@ -1,0 +1,186 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: journiv-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: journiv-deployment
+  labels:
+    app: journiv
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: journiv
+  template:
+    metadata:
+      labels:
+        app: journiv
+    spec:
+      containers:
+        - name: journiv
+          image: swalabtech/journiv-app:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: SECRET_KEY
+              value: "myreallylongsecretkeygoeshere"
+            - name: DOMAIN_NAME
+              value: "journiv.example.com"
+            - name: DOMAIN_SCHEME
+              value: "https"
+            - name: DISABLE_SIGNUP
+              value: "true"
+            - name: REDIS_URL
+              value: "redis://redis-service:6379/0"
+            - name: CELERY_BROKER_URL
+              value: "redis://redis-service:6379/0"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://redis-service:6379/0"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: journiv-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: journiv-service
+spec:
+  selector:
+    app: journiv
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: journiv-ingress
+  annotations:
+    cert-manager.io/cluster-issuer: azuredns-tpkpw
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.org/client-max-body-size: "0"
+    kubernetes.io/ingress.class: nginx
+spec:
+  rules:
+    - host: journiv.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: journiv-service
+                port:
+                  number: 80
+  tls:
+    - hosts:
+        - journiv.example.com
+      secretName: journiv-tls
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis-deployment
+  labels:
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7
+          ports:
+            - containerPort: 6379
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+spec:
+  selector:
+    app: redis
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker-deployment
+  labels:
+    app: celery-worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: idjohnson/journiv:0.2
+          command: ["celery", "-A", "app.core.celery_app", "worker", "--loglevel=info"]
+          env:
+            - name: SECRET_KEY
+              value: "myreallylongsecretkeygoeshere"
+            - name: DOMAIN_NAME
+              value: "journiv.example.com"
+            - name: REDIS_URL
+              value: "redis://redis-service:6379/0"
+            - name: CELERY_BROKER_URL
+              value: "redis://redis-service:6379/0"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://redis-service:6379/0"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: journiv-data-pvc

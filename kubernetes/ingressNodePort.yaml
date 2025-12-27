@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: journiv
+spec:
+  ports:
+  - nodePort: 32655
+    port: 8000
+    protocol: TCP
+    targetPort: 8000
+  selector:
+    app: journiv
+  type: NodePort

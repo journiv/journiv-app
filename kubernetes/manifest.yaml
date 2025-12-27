@@ -1,0 +1,59 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: journiv-data-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: local-path
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: journiv-deployment
+  labels:
+    app: journiv
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: journiv
+  template:
+    metadata:
+      labels:
+        app: journiv
+    spec:
+      containers:
+        - name: journiv
+          image: swalabtech/journiv-app:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: SECRET_KEY
+              value: "mylongsecretkeyyoushouldchange"
+            - name: DOMAIN_NAME
+              value: "journiv.example.com"
+            - name: DOMAIN_SCHEME
+              value: "https"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: journiv-data-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: journiv-service
+spec:
+  selector:
+    app: journiv
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
