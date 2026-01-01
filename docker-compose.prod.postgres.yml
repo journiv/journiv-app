@@ -9,14 +9,14 @@
 #   POSTGRES_PASSWORD (if not relying on defaults, strongly recommended to change in production).
 services:
   postgres:
-    image: postgres:15
+    image: postgres:18.1
     container_name: journiv-postgres-db
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-journiv}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD} # must provide a password in .env file
       - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql
     networks:
       - backend
     restart: unless-stopped
@@ -41,7 +41,7 @@ services:
 
   redis:
     # Redis (Do not remove. Journiv runs with multiple workers which need to share state.)
-    image: redis:7
+    image: redis:8.4
     container_name: journiv-redis-cache
     restart: unless-stopped
     volumes:
