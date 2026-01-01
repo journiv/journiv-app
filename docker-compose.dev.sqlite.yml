@@ -7,7 +7,7 @@
 
 services:
   redis:
-    image: redis:7
+    image: redis:8.4
     container_name: journiv-dev-redis
     restart: unless-stopped
     volumes:

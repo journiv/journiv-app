@@ -35,7 +35,7 @@ httpx==0.28.1
 
 # OIDC / OAuth
 authlib==1.6.5
-redis==5.0.1
+redis==7.1
 itsdangerous==2.1.2  # Required by Authlib for session state management
 
 # Task Queue
