@@ -389,3 +389,89 @@ class TestDayOneImportE2E:
         assert response.status_code == 400
         error = response.json()
         assert "data.json" in error["detail"]
+
+    def test_dayone_import_handles_duplicate_media_in_entry(
+        self,
+        api_client: JournivApiClient,
+        api_user: ApiUser,
+    ):
+        """
+        Test that Day One import handles duplicate media within the same entry correctly.
+
+        When the same media file appears multiple times in a Day One entry,
+        the import should reuse the existing EntryMedia record instead of
+        creating duplicates, preventing unique constraint violations on (entry_id, checksum).
+
+        This test verifies the import completes successfully even with potential duplicates.
+        """
+        dayone_bytes = _load_dayone_fixture()
+
+        upload_response = api_client.upload_import(
+            api_user.access_token,
+            file_bytes=dayone_bytes,
+            filename="dayone_test_export.zip",
+            source_type="dayone",
+            expected=(202,),
+        )
+
+        assert upload_response.status_code == 202
+        job = upload_response.json()
+        job_id = job["id"]
+
+        # Wait for import to complete
+        completed_job = _wait_for_import_completion(
+            api_client,
+            api_user.access_token,
+            job_id,
+            timeout=60,
+        )
+
+        # Verify import completed successfully (not failed due to duplicate key error)
+        assert completed_job["status"] == "completed"
+        assert completed_job["progress"] == 100
+
+        # Verify no errors related to duplicate media
+        errors = completed_job.get("errors") or []
+        duplicate_errors = [
+            error for error in (errors if isinstance(errors, list) else [])
+            if "duplicate key" in str(error).lower() or "uq_entry_media_entry_checksum" in str(error)
+        ]
+        assert len(duplicate_errors) == 0, (
+            f"Import should not have duplicate key errors. Found: {duplicate_errors}"
+        )
+
+        # Verify entries were created and have media
+        result_data = completed_job.get("result_data", {})
+        assert result_data["entries_created"] > 0
+        assert result_data["media_files_imported"] > 0
+
+        # Verify entries can be fetched and have media attached
+        journals = api_client.list_journals(api_user.access_token)
+        assert len(journals) > 0
+
+        for journal in journals:
+            entries = api_client.list_entries(
+                api_user.access_token,
+                journal_id=journal["id"],
+            )
+            for entry in entries:
+                # Fetch media for each entry to verify no duplicates
+                entry_media_response = api_client.request(
+                    "GET",
+                    f"/entries/{entry['id']}/media",
+                    token=api_user.access_token,
+                    expected=(200,)
+                )
+                entry_media = entry_media_response.json()
+
+                # Verify no duplicate (entry_id, checksum) combinations
+                checksums_by_entry = {}
+                for media in entry_media:
+                    checksum = media.get("checksum")
+                    if checksum:
+                        if checksum in checksums_by_entry:
+                            pytest.fail(
+                                f"Found duplicate media with same checksum {checksum} "
+                                f"for entry {entry['id']}. This should not happen."
+                            )
+                        checksums_by_entry[checksum] = media

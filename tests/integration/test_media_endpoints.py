@@ -275,3 +275,66 @@ def test_shared_media_deletion_via_media_endpoint(
         "GET", f"/media/{media_b['id']}", token=api_user.access_token
     )
     assert missing_media_b.status_code == 404
+
+
+def test_duplicate_media_upload_same_entry(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    entry_factory,
+):
+    """
+    Test that uploading the same image multiple times to the same entry
+    reuses the existing EntryMedia record instead of creating duplicates.
+
+    This prevents unique constraint violations on (entry_id, checksum).
+    """
+    entry = entry_factory()
+
+    # Upload the same image twice to the same entry
+    image_bytes = sample_jpeg_bytes()
+    first_upload = api_client.upload_media(
+        api_user.access_token,
+        entry_id=entry["id"],
+        filename="test-image.jpg",
+        content=image_bytes,
+        content_type="image/jpeg",
+        alt_text="First upload",
+    )
+
+    # Upload the same image again to the same entry
+    second_upload = api_client.upload_media(
+        api_user.access_token,
+        entry_id=entry["id"],
+        filename="test-image.jpg",
+        content=image_bytes,
+        content_type="image/jpeg",
+        alt_text="Second upload",
+    )
+
+    # Both uploads should return the same media ID (reusing existing record)
+    assert first_upload["id"] == second_upload["id"], (
+        "Uploading the same image twice to the same entry should return "
+        "the same media ID (reusing existing EntryMedia record)"
+    )
+
+    # Verify the media record is accessible
+    media_response = api_client.get_media(api_user.access_token, first_upload["id"])
+    assert media_response.status_code == 200
+
+    # Verify only one media record exists for this entry
+    entry_media_response = api_client.request(
+        "GET",
+        f"/entries/{entry['id']}/media",
+        token=api_user.access_token,
+    )
+    assert entry_media_response.status_code == 200
+    entry_media = entry_media_response.json()
+    media_count = len(entry_media)
+    assert media_count == 1, (
+        f"Entry should have exactly 1 media record, but found {media_count}"
+    )
+    
+    # Verify the media ID matches what was returned from upload
+    assert entry_media[0]["id"] == first_upload["id"], (
+        "Media ID in entry media list should match the uploaded media ID"
+    )

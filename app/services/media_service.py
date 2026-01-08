@@ -15,7 +15,7 @@ import aiofiles
 import aiofiles.os
 import magic
 from fastapi import UploadFile
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select
 
 from app.core.config import get_settings
@@ -27,7 +27,7 @@ from app.core.exceptions import (
     FileValidationError,
     EntryNotFoundError
 )
-from app.core.logging_config import log_error, log_file_upload, log_warning
+from app.core.logging_config import log_error, log_file_upload, log_info, log_warning
 from app.models.entry import Entry, EntryMedia
 from app.models.enums import MediaType, UploadStatus
 from app.models.journal import Journal
@@ -488,7 +488,7 @@ class MediaService:
         # Check if EntryMedia record already exists for this entry and checksum
         # This prevents duplicate media within the same entry
         checksum = media_info.get("checksum")
-        if checksum:
+        if checksum and isinstance(checksum, str) and checksum.strip():
             existing_entry_media = db_session.exec(
                 select(EntryMedia).where(
                     EntryMedia.entry_id == entry_id,
@@ -497,9 +497,12 @@ class MediaService:
             ).first()
 
             if existing_entry_media:
-                logger.info(
-                    f"Media already associated with entry, returning existing record for user {user_id}, "
-                    f"entry {entry_id}, checksum {checksum[:16]}"
+                log_info(
+                    "Media already associated with entry, returning existing record",
+                    user_id=str(user_id),
+                    entry_id=str(entry_id),
+                    checksum=checksum[:16] if checksum else None,
+                    media_id=str(existing_entry_media.id)
                 )
                 full_file_path = self.media_storage_service.get_full_path(existing_entry_media.file_path)
                 return {
@@ -539,7 +542,11 @@ class MediaService:
                 height=existing_media.height,
                 duration=existing_media.duration,
             )
-            logger.info(f"Reused deduplicated media for user {user_id}, checksum {media_info['checksum'][:16]}")
+            log_info(
+                "Reused deduplicated media",
+                user_id=str(user_id),
+                checksum=media_info['checksum'][:16] if media_info.get('checksum') else None
+            )
         else:
             # Create new media record
             media_record = EntryMedia(
@@ -560,6 +567,42 @@ class MediaService:
             db_session.add(media_record)
             db_session.commit()
             db_session.refresh(media_record)
+        except IntegrityError as exc:
+            db_session.rollback()
+            # Check if this is the duplicate entry_media constraint violation
+            error_str = str(exc)
+            if "uq_entry_media_entry_checksum" in error_str:
+                # Race condition: media was created by concurrent request
+                checksum_value = media_info.get("checksum")
+                if checksum_value:
+                    existing = db_session.exec(
+                        select(EntryMedia).where(
+                            EntryMedia.entry_id == entry_id,
+                            EntryMedia.checksum == checksum_value
+                        )
+                    ).first()
+                    if existing:
+                        log_info(
+                            "Media already associated with entry (race condition), using existing record",
+                            user_id=str(user_id),
+                            entry_id=str(entry_id),
+                            checksum=checksum_value[:16] if len(checksum_value) >= 16 else checksum_value,
+                            media_id=str(existing.id)
+                        )
+                        full_file_path = self.media_storage_service.get_full_path(existing.file_path)
+                        return {
+                            "media_record": existing,
+                            "full_file_path": str(full_file_path),
+                        }
+                # If checksum is missing or existing record not found, log and re-raise
+                log_warning(
+                    "IntegrityError for entry_media constraint but existing record not found",
+                    user_id=str(user_id),
+                    entry_id=str(entry_id),
+                    checksum=checksum_value[:16] if checksum_value and len(checksum_value) >= 16 else None
+                )
+            # Re-raise if it's a different IntegrityError or existing record not found
+            raise
         except SQLAlchemyError as exc:
             db_session.rollback()
             log_error(exc)

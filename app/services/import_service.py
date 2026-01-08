@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.core.config import settings
 from app.core.logging_config import log_info, log_warning, log_error
@@ -789,6 +789,62 @@ class ImportService:
         self.db.add(mood_log)
         return True
 
+    def _handle_entry_media_race_condition(
+        self,
+        entry_id: UUID,
+        checksum: str,
+        user_id: UUID,
+        media_dto: MediaDTO,
+        source_md5: Optional[str],
+        record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
+        context: str = "race condition",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Handle race condition where EntryMedia was created by concurrent import.
+
+        Args:
+            entry_id: Entry ID
+            checksum: Media checksum
+            user_id: User ID
+            media_dto: Media DTO
+            source_md5: Source MD5 (for Day One imports)
+            record_mapping: Optional mapping function for external IDs
+            context: Context string for logging (e.g., "race condition", "race condition during deduplication")
+
+        Returns:
+            Result dict if existing EntryMedia found, None otherwise
+        """
+        existing_entry_media = (
+            self.db.query(EntryMedia)
+            .filter(
+                EntryMedia.entry_id == entry_id,
+                EntryMedia.checksum == checksum
+            )
+            .first()
+        )
+
+        if existing_entry_media:
+            log_info(
+                f"Media already associated with entry ({context}), using existing record",
+                checksum=checksum,
+                user_id=str(user_id),
+                entry_id=str(entry_id),
+                media_id=str(existing_entry_media.id)
+            )
+            if record_mapping and media_dto.external_id:
+                record_mapping("media", media_dto.external_id, existing_entry_media.id)
+
+            return {
+                "imported": False,
+                "deduplicated": True,
+                "stored_relative_path": existing_entry_media.file_path,
+                "stored_filename": Path(existing_entry_media.file_path).name,
+                "source_md5": source_md5,
+                "media_id": str(existing_entry_media.id),
+            }
+
+        return None
+
     def _import_media(
         self,
         entry_id: UUID,
@@ -859,6 +915,38 @@ class ImportService:
         # docs if behavior changes.
         source_md5 = source_path.stem if source_path.stem else None
 
+        # Early deduplication check: If checksum is provided in DTO (e.g., from Journiv export),
+        # check for existing EntryMedia before storing the file to avoid unnecessary I/O
+        if media_dto.checksum:
+            existing_entry_media = (
+                self.db.query(EntryMedia)
+                .filter(
+                    EntryMedia.entry_id == entry_id,
+                    EntryMedia.checksum == media_dto.checksum
+                )
+                .first()
+            )
+
+            if existing_entry_media:
+                log_info(
+                    "Media already associated with entry (early check), skipping duplicate",
+                    checksum=media_dto.checksum,
+                    user_id=str(user_id),
+                    entry_id=str(entry_id),
+                    media_id=str(existing_entry_media.id)
+                )
+                if record_mapping and media_dto.external_id:
+                    record_mapping("media", media_dto.external_id, existing_entry_media.id)
+
+                return {
+                    "imported": False,
+                    "deduplicated": True,
+                    "stored_relative_path": existing_entry_media.file_path,
+                    "stored_filename": Path(existing_entry_media.file_path).name,
+                    "source_md5": source_md5,
+                    "media_id": str(existing_entry_media.id),
+                }
+
         # Choose media subdirectory based on type
         media_type_str = media_dto.media_type.lower() if media_dto.media_type else "unknown"
         if media_type_str.startswith("image"):
@@ -876,14 +964,14 @@ class ImportService:
             user_id=str(user_id),
             media_type=media_type_dir,
             extension=source_path.suffix,
-            checksum=None  # Will be calculated by storage service
+            checksum=media_dto.checksum  # Use DTO checksum if available, otherwise will be calculated
         )
 
         # Track checksum for in-memory deduplication tracking
         existing_checksums.add(checksum)
 
         # Check if EntryMedia record already exists for this entry and checksum
-        # This prevents duplicate media within the same entry
+        # This prevents duplicate media within the same entry (handles cases where checksum wasn't in DTO)
         existing_entry_media = (
             self.db.query(EntryMedia)
             .filter(
@@ -946,7 +1034,31 @@ class ImportService:
                     created_at=media_dto.created_at,
                     updated_at=media_dto.updated_at,
                 )
-                self.db.add(media)
+                try:
+                    self.db.add(media)
+                    self.db.commit()
+                    self.db.refresh(media)
+                except IntegrityError as exc:
+                    self.db.rollback()
+                    # Race condition: EntryMedia was created by concurrent import
+                    if "uq_entry_media_entry_checksum" in str(exc):
+                        result = self._handle_entry_media_race_condition(
+                            entry_id=entry_id,
+                            checksum=checksum,
+                            user_id=user_id,
+                            media_dto=media_dto,
+                            source_md5=source_md5,
+                            record_mapping=record_mapping,
+                            context="race condition during deduplication"
+                        )
+                        if result:
+                            return result
+                    raise
+                except SQLAlchemyError as exc:
+                    self.db.rollback()
+                    log_error(exc, user_id=str(user_id), entry_id=str(entry_id), checksum=checksum)
+                    raise
+
                 if record_mapping and media_dto.external_id:
                     record_mapping("media", media_dto.external_id, media.id)
 
@@ -976,7 +1088,31 @@ class ImportService:
             checksum=checksum,
             file_size=full_path.stat().st_size,
         )
-        self.db.add(media)
+        
+        try:
+            self.db.add(media)
+            self.db.commit()
+            self.db.refresh(media)
+        except IntegrityError as exc:
+            self.db.rollback()
+            # Race condition: EntryMedia was created by concurrent import
+            if "uq_entry_media_entry_checksum" in str(exc):
+                result = self._handle_entry_media_race_condition(
+                    entry_id=entry_id,
+                    checksum=checksum,
+                    user_id=user_id,
+                    media_dto=media_dto,
+                    source_md5=source_md5,
+                    record_mapping=record_mapping,
+                    context="race condition"
+                )
+                if result:
+                    return result
+            raise
+        except SQLAlchemyError as exc:
+            self.db.rollback()
+            log_error(exc, user_id=str(user_id), entry_id=str(entry_id), checksum=checksum)
+            raise
 
         # Generate thumbnail for imported media
         if media.media_type in [MediaType.IMAGE, MediaType.VIDEO]:
