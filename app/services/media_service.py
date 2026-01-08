@@ -485,6 +485,28 @@ class MediaService:
         media_record = None
         db_session = self._get_session(session)
 
+        # Check if EntryMedia record already exists for this entry and checksum
+        # This prevents duplicate media within the same entry
+        checksum = media_info.get("checksum")
+        if checksum:
+            existing_entry_media = db_session.exec(
+                select(EntryMedia).where(
+                    EntryMedia.entry_id == entry_id,
+                    EntryMedia.checksum == checksum
+                )
+            ).first()
+
+            if existing_entry_media:
+                logger.info(
+                    f"Media already associated with entry, returning existing record for user {user_id}, "
+                    f"entry {entry_id}, checksum {checksum[:16]}"
+                )
+                full_file_path = self.media_storage_service.get_full_path(existing_entry_media.file_path)
+                return {
+                    "media_record": existing_entry_media,
+                    "full_file_path": str(full_file_path),
+                }
+
         # If file was deduplicated, try to find existing media with same checksum
         existing_media = None
         if media_info.get("was_deduplicated"):

@@ -882,6 +882,37 @@ class ImportService:
         # Track checksum for in-memory deduplication tracking
         existing_checksums.add(checksum)
 
+        # Check if EntryMedia record already exists for this entry and checksum
+        # This prevents duplicate media within the same entry
+        existing_entry_media = (
+            self.db.query(EntryMedia)
+            .filter(
+                EntryMedia.entry_id == entry_id,
+                EntryMedia.checksum == checksum
+            )
+            .first()
+        )
+
+        if existing_entry_media:
+            log_info(
+                "Media already associated with entry, skipping duplicate",
+                checksum=checksum,
+                user_id=str(user_id),
+                entry_id=str(entry_id),
+                media_id=str(existing_entry_media.id)
+            )
+            if record_mapping and media_dto.external_id:
+                record_mapping("media", media_dto.external_id, existing_entry_media.id)
+
+            return {
+                "imported": False,
+                "deduplicated": True,
+                "stored_relative_path": existing_entry_media.file_path,
+                "stored_filename": Path(existing_entry_media.file_path).name,
+                "source_md5": source_md5,
+                "media_id": str(existing_entry_media.id),
+            }
+
         # If deduplicated, find existing media and create reference
         if was_deduplicated:
             existing_media = (
