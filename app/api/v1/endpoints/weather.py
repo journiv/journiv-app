@@ -9,6 +9,7 @@ import httpx
 
 from app.api.dependencies import get_current_user
 from app.core.logging_config import log_error, log_warning, redact_coordinates
+from app.core.time_utils import normalize_timezone, to_utc
 from app.models.user import User
 from app.schemas.weather import (
     WeatherFetchRequest,
@@ -38,37 +39,46 @@ async def fetch_weather(
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     """
-    Fetch current weather data for given coordinates.
+    Fetch weather data for given coordinates and entry time.
 
-    Uses OpenWeather API. Requires WEATHER_API_KEY to be configured.
+    Uses OpenWeather API. Requires OPEN_WEATHER_API_KEY_25 or OPEN_WEATHER_API_KEY_30 to be configured.
     Returns structured error if weather service is not configured.
     """
     # Check if weather service is enabled
     if not WeatherService.is_enabled():
         return WeatherServiceDisabledResponse(
             enabled=False,
-            message="Weather service is not configured. Please set WEATHER_API_KEY in environment variables of your Journiv backend."
+            message="Weather service is not configured. Please set OPEN_WEATHER_API_KEY_25 or OPEN_WEATHER_API_KEY_30 in environment variables of your Journiv backend."
         )
 
     try:
-        weather_data = await WeatherService.fetch_weather(
+        entry_timezone = normalize_timezone(weather_request.entry_timezone)
+        entry_datetime_utc = None
+        if weather_request.entry_datetime_utc is not None:
+            entry_datetime_utc = to_utc(weather_request.entry_datetime_utc, entry_timezone)
+
+        weather_data, provider = await WeatherService.fetch_weather(
             weather_request.latitude,
-            weather_request.longitude
+            weather_request.longitude,
+            entry_datetime_utc,
         )
 
         if not weather_data:
+             # This happens if parsing fails or data is missing despite success status
+             # We treat it as service unavailable or data unavailable
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to parse weather data"
+                detail="Failed to retrieve weather data from provider."
             )
 
         return WeatherFetchResponse(
             weather=weather_data,
-            provider="openweather",
+            provider=provider,
             timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
         )
 
     except ValueError as e:
+        # Service raises ValueError for config issues or invalid coords
         error_message = str(e)
         log_warning(
             f"Weather service error: {error_message}",
@@ -80,33 +90,15 @@ async def fetch_weather(
             message=error_message
         )
     except httpx.HTTPStatusError as e:
+        # Detailed handling for specific HTTP errors
         if e.response.status_code == 401:
-            log_error(
-                e,
-                request_id=getattr(http_request.state, 'request_id', None),
-                **redact_coordinates(weather_request.latitude, weather_request.longitude) or {},
-                response_text=e.response.text
-            )
-            return WeatherServiceDisabledResponse(
+             return WeatherServiceDisabledResponse(
                 enabled=False,
                 message=(
-                    "Invalid OpenWeather API key. Please verify WEATHER_API_KEY is correct, "
-                    "activated, and has no extra whitespace. "
-                    "Get your API key at: https://openweathermap.org/api"
+                    "Invalid OpenWeather API key. Please check your backend configuration."
                 )
             )
-        log_error(
-            e,
-            request_id=getattr(http_request.state, 'request_id', None),
-            **redact_coordinates(weather_request.latitude, weather_request.longitude) or {},
-            status_code=e.response.status_code,
-            response_text=e.response.text
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Weather service temporarily unavailable. Please try again later."
-        )
-    except httpx.HTTPError as e:
+
         log_error(
             e,
             request_id=getattr(http_request.state, 'request_id', None),
@@ -114,7 +106,7 @@ async def fetch_weather(
         )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Weather service temporarily unavailable. Please try again later."
+            detail="Weather service temporarily unavailable."
         )
     except Exception as e:
         log_error(

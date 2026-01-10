@@ -1,22 +1,29 @@
 """
 Weather service for fetching weather data using OpenWeather API.
 """
-from typing import Optional, Any
+from datetime import datetime, timezone
+from typing import Optional, Tuple, Literal
+
 import httpx
 
 from app.schemas.weather import WeatherData
 from app.core.config import settings
 from app.core.logging_config import log_debug, log_info, log_warning, log_error
 from app.core.scoped_cache import ScopedCache
+from app.core.time_utils import ensure_utc, utc_now
 
 # Cache configuration
 CACHE_TTL_SECONDS = 30 * 60  # 30 minutes
+# Approx 1.1km precision for cache keys (2 decimal places)
+CACHE_COORD_PRECISION = 2
 
+WeatherProvider = Literal["openweather-current", "openweather-timemachine"]
 
 class WeatherService:
     """Service for fetching weather data using OpenWeather API."""
 
-    OPENWEATHER_URL = "https://api.openweathermap.org/data/2.5/weather"
+    OPENWEATHER_TIMEMACHINE_URL = "https://api.openweathermap.org/data/3.0/onecall/timemachine"
+    OPENWEATHER_CURRENT_URL = "https://api.openweathermap.org/data/2.5/weather"
     TIMEOUT = 10.0  # seconds
 
     _cache: Optional[ScopedCache] = None
@@ -29,206 +36,276 @@ class WeatherService:
         return cls._cache
 
     @classmethod
-    def get_api_key(cls) -> str:
-        """
-        Get and validate the Weather API key.
-
-        Returns:
-            Validated API key string
-
-        Raises:
-            ValueError: If API key is missing or empty
-        """
-        if not settings.weather_api_key or not settings.weather_api_key.strip():
-            raise ValueError(
-                "Weather service is not configured. Please set WEATHER_API_KEY in environment variables."
-            )
-        return settings.weather_api_key.strip()
-
-    @classmethod
     def is_enabled(cls) -> bool:
         """Check if weather service is enabled (API key configured)."""
-        try:
-            cls.get_api_key()
-            return True
-        except ValueError:
-            return False
+        return bool(settings.open_weather_api_key_25 or settings.open_weather_api_key_30)
 
     @classmethod
-    def _get_cache_key(cls, latitude: float, longitude: float) -> tuple[str, str]:
+    def _get_cache_key(
+        cls,
+        latitude: float,
+        longitude: float,
+        timestamp_utc: Optional[datetime],
+    ) -> Tuple[str, str]:
         """
-        Generate cache key components for ScopedCache.
+        Generate cache key components.
 
-        Rounds to 2 decimal places (~1.1km precision) to increase cache hits
-        for nearby locations.
+        Args:
+            latitude: GPS latitude
+            longitude: GPS longitude
+            timestamp_utc: UTC timestamp. If None, assumes current weather.
 
         Returns:
-            Tuple of (scope_id, cache_type) for use with ScopedCache
+            Tuple of (scope_id, cache_type)
         """
-        # Format coordinates as scope_id
-        coords = f"{round(latitude, 2)},{round(longitude, 2)}"
-        return (coords, "weather")
+        lat_rounded = round(latitude, CACHE_COORD_PRECISION)
+        lon_rounded = round(longitude, CACHE_COORD_PRECISION)
+        coords = f"{lat_rounded},{lon_rounded}"
+
+        if timestamp_utc is None:
+            return (coords, "weather-current")
+
+        timestamp_utc = ensure_utc(timestamp_utc)
+        # Bucket by hour for historic data to increase cache hit rate
+        bucket = int(timestamp_utc.timestamp()) // 3600 * 3600
+        return (f"{coords}@{bucket}", "weather-historic")
 
     @classmethod
-    def _get_from_cache(cls, latitude: float, longitude: float) -> Optional[WeatherData]:
-        """Get weather data from cache if available."""
+    def _get_from_cache(
+        cls,
+        latitude: float,
+        longitude: float,
+        timestamp_utc: Optional[datetime],
+    ) -> Optional[WeatherData]:
+        """Retrieve weather data from cache."""
         try:
-            scope_id, cache_type = cls._get_cache_key(latitude, longitude)
+            scope_id, cache_type = cls._get_cache_key(latitude, longitude, timestamp_utc)
             cache = cls._get_cache()
-            cached_data = cache.get(scope_id=scope_id, cache_type=cache_type)
+            cached_val = cache.get(scope_id=scope_id, cache_type=cache_type)
 
-            if cached_data is not None:
-                log_debug(f"Weather cache hit for ({latitude}, {longitude})")
-                # Extract and deserialize the result
-                result_data = cached_data.get("result")
-
-                if result_data is None:
-                    return None
-
-                # Deserialize WeatherData Pydantic model
-                return WeatherData(**result_data)
+            if cached_val:
+                log_debug(f"Weather cache hit for {scope_id}")
+                # Expecting cached_val to be a dict representation of WeatherData
+                return WeatherData.model_validate(cached_val)
 
             return None
         except Exception as e:
-            log_warning(f"Failed to get from cache: {e}")
+            # Don't let cache errors block the feature
+            log_warning(f"Weather cache retrieval failed: {e}")
             return None
 
     @classmethod
-    def _save_to_cache(cls, latitude: float, longitude: float, weather_data: WeatherData) -> None:
-        """Save weather data to cache with TTL."""
+    def _save_to_cache(
+        cls,
+        latitude: float,
+        longitude: float,
+        timestamp_utc: Optional[datetime],
+        weather_data: WeatherData,
+    ) -> None:
+        """Save weather data to cache."""
         try:
-            scope_id, cache_type = cls._get_cache_key(latitude, longitude)
+            scope_id, cache_type = cls._get_cache_key(latitude, longitude, timestamp_utc)
             cache = cls._get_cache()
 
-            # Serialize Pydantic model to dict for JSON storage
-            serialized_result = weather_data.model_dump()
-
-            # Wrap result in a dict for consistency
-            cache_data = {"result": serialized_result}
+            # cache.set expects a dict or basic type, assume logic handles serialization
             cache.set(
                 scope_id=scope_id,
                 cache_type=cache_type,
-                value=cache_data,
+                value=weather_data.model_dump(mode='json'),
                 ttl_seconds=CACHE_TTL_SECONDS
             )
             log_debug(f"Weather cached: {cache_type}:{scope_id}")
         except Exception as e:
-            log_warning(f"Failed to save to cache: {e}")
+            log_warning(f"Weather cache save failed: {e}")
 
     @classmethod
-    async def fetch_weather(cls, latitude: float, longitude: float) -> Optional[WeatherData]:
+    async def fetch_weather(
+        cls,
+        latitude: float,
+        longitude: float,
+        entry_datetime_utc: Optional[datetime] = None,
+    ) -> Tuple[Optional[WeatherData], WeatherProvider]:
         """
-        Fetch current weather data for given coordinates.
+        Fetch weather data for specific coordinates and optional time.
 
-        Uses 30-minute caching to reduce API calls and improve performance.
-
-        Args:
-            latitude: Latitude coordinate (-90 to 90)
-            longitude: Longitude coordinate (-180 to 180)
-
-        Returns:
-            WeatherData if successful, None otherwise
-
-        Raises:
-            ValueError: If weather service is not enabled or coordinates invalid
-            httpx.HTTPError: If the request fails
+        Logic:
+        1. Validates coordinates.
+        2. Determines if request is for "current" or "historic" weather.
+        3. Checks cache.
+        4. Calls appropriate OpenWeather API.
+        5. Caches and returns result.
         """
-        # Validate coordinates
-        if not (-90 <= latitude <= 90):
-            raise ValueError(f"Invalid latitude: {latitude} (must be -90 to 90)")
-        if not (-180 <= longitude <= 180):
-            raise ValueError(f"Invalid longitude: {longitude} (must be -180 to 180)")
+        cls._validate_coordinates(latitude, longitude)
 
-        # Validate API key
-        api_key = cls.get_api_key()
+        # Determine strict UTC timestamp for entry, if provided
+        target_dt = ensure_utc(entry_datetime_utc) if entry_datetime_utc else None
 
-        # Check cache first
-        cached_data = cls._get_from_cache(latitude, longitude)
-        if cached_data:
-            return cached_data
+        # Decide strategy: Current vs Historic
+        # If no date provided, or date is very close to now/future, use Current API
+        use_historic = False
+        if target_dt:
+            now = utc_now()
+            diff = (now - target_dt).total_seconds()
+            # If entry is over 1 hour old, treat as historic.
+            # This can be reduced if needed in future.
+            if diff > 3600:
+                use_historic = True
 
-        params = {
-            "lat": latitude,
-            "lon": longitude,
-            "appid": api_key,
-            "units": "metric",  # Celsius
-        }
+        # Check API Key Availability
+        api_key_25 = settings.open_weather_api_key_25
+        api_key_30 = settings.open_weather_api_key_30
 
+        if not api_key_25 and not api_key_30:
+            raise ValueError("Weather service not configured: No API keys found.")
+
+        provider: WeatherProvider
+        effective_dt: Optional[datetime] = target_dt if use_historic else None
+
+        if use_historic and api_key_30:
+            provider = "openweather-timemachine"
+            api_key = api_key_30
+        elif api_key_25:
+            # Fallback to current if not historic OR if historic but no 3.0 key
+            provider = "openweather-current"
+            api_key = api_key_25
+            effective_dt = None # For current weather, we don't cache by timestamp
+        elif api_key_30:
+             provider = "openweather-timemachine"
+             api_key = api_key_30
+             effective_dt = target_dt or utc_now() # Timemachine needs a time
+        else:
+            raise ValueError("Configuration error: Unreachable state.")
+
+        # Try Cache
+        cached = cls._get_from_cache(latitude, longitude, effective_dt)
+        if cached:
+            return cached, provider
+
+        # Fetch Live
         try:
-            async with httpx.AsyncClient(timeout=cls.TIMEOUT) as client:
-                response = await client.get(
-                    cls.OPENWEATHER_URL,
-                    params=params,
-                )
-                response.raise_for_status()
-                data = response.json()
+            if provider == "openweather-timemachine":
+                # effective_dt should be set if we got here
+                fetch_dt = effective_dt or utc_now()
+                data = await cls._fetch_timemachine(latitude, longitude, api_key, fetch_dt)
+            else:
+                data = await cls._fetch_current_weather(latitude, longitude, api_key)
 
-            weather_data = cls._parse_openweather_response(data)
-            if weather_data:
-                # Save to cache
-                cls._save_to_cache(latitude, longitude, weather_data)
-                log_info(f"Weather fetch for ({latitude}, {longitude}) successful")
-            return weather_data
+            if data:
+                cls._save_to_cache(latitude, longitude, effective_dt, data)
+                return data, provider
 
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 401:
-                log_error(
-                    f"OpenWeather API authentication failed for ({latitude}, {longitude}): "
-                    f"Invalid API key. Please verify WEATHER_API_KEY is correct and activated.",
-                    latitude=latitude,
-                    longitude=longitude,
-                    status_code=401
-                )
-                raise ValueError(
-                    "Invalid OpenWeather API key. Please verify WEATHER_API_KEY is correct, "
-                    "activated, and has no extra whitespace. "
-                    "Get your API key at: https://openweathermap.org/api"
-                ) from e
+            return None, provider
 
-            if e.response.status_code == 429:
-                log_error(
-                    "OpenWeather API rate limit exceeded (429).",
-                    latitude=latitude,
-                    longitude=longitude,
-                    status_code=429
-                )
-                raise
-
-            log_error(
-                f"OpenWeather API request failed for ({latitude}, {longitude}): "
-                f"Status {e.response.status_code}, {e.response.text}",
-                latitude=latitude,
-                longitude=longitude,
-                status_code=e.response.status_code
-            )
-            raise
         except httpx.HTTPError as e:
-            log_error(
-                f"OpenWeather API request failed for ({latitude}, {longitude}): {e}",
-                latitude=latitude,
-                longitude=longitude
-            )
-            raise
+             cls._handle_http_error(e, latitude, longitude)
+             raise # Re-raise after logging
+
+    @staticmethod
+    def _validate_coordinates(lat: float, lon: float) -> None:
+        if not (-90 <= lat <= 90):
+            raise ValueError(f"Invalid latitude: {lat}")
+        if not (-180 <= lon <= 180):
+            raise ValueError(f"Invalid longitude: {lon}")
 
     @classmethod
-    def _parse_openweather_response(cls, data: dict) -> Optional[WeatherData]:
-        """Parse OpenWeather API response into WeatherData."""
+    def _handle_http_error(cls, e: httpx.HTTPError, lat: float, lon: float) -> None:
+        """Centralized error logging."""
+        if isinstance(e, httpx.HTTPStatusError):
+            if e.response.status_code == 401:
+                log_error(f"OpenWeather 401 Unauthorized for {lat},{lon}. Check API Key.")
+                raise ValueError("Invalid OpenWeather API Key.") from e
+            elif e.response.status_code == 429:
+                log_error("OpenWeather 429 Rate Limit Exceeded.")
+
+            log_error(f"OpenWeather Request Failed: {e.response.status_code} - {e.response.text}")
+        else:
+            log_error(f"OpenWeather Connection Error: {e}")
+
+    @classmethod
+    async def _fetch_timemachine(
+        cls,
+        lat: float,
+        lon: float,
+        api_key: str,
+        dt: datetime,
+    ) -> Optional[WeatherData]:
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "dt": int(dt.timestamp()),
+            "appid": api_key,
+            "units": "metric",
+        }
+        async with httpx.AsyncClient(timeout=cls.TIMEOUT) as client:
+            resp = await client.get(cls.OPENWEATHER_TIMEMACHINE_URL, params=params)
+            resp.raise_for_status()
+            return cls._parse_timemachine_response(resp.json())
+
+    @classmethod
+    async def _fetch_current_weather(
+        cls,
+        lat: float,
+        lon: float,
+        api_key: str,
+    ) -> Optional[WeatherData]:
+        params = {
+            "lat": lat,
+            "lon": lon,
+            "appid": api_key,
+            "units": "metric",
+        }
+        async with httpx.AsyncClient(timeout=cls.TIMEOUT) as client:
+            resp = await client.get(cls.OPENWEATHER_CURRENT_URL, params=params)
+            resp.raise_for_status()
+            return cls._parse_current_response(resp.json())
+
+    @staticmethod
+    def _parse_timemachine_response(data: dict) -> Optional[WeatherData]:
+        try:
+            # 3.0 OneCall Timemachine returns 'data' list
+            items = data.get("data", [])
+            if not items:
+                return None
+
+            entry = items[0]
+            weather_list = entry.get("weather", [{}])
+            weather = weather_list[0] if weather_list else {}
+
+            temp_c = entry.get("temp")
+            if temp_c is None:
+                return None
+
+            return WeatherData(
+                temp_c=round(temp_c, 1),
+                temp_f=round((temp_c * 9/5) + 32, 1),
+                condition=weather.get("main", "Unknown"),
+                description=weather.get("description"),
+                humidity=entry.get("humidity"),
+                wind_speed=entry.get("wind_speed"),
+                pressure=entry.get("pressure"),
+                visibility=entry.get("visibility"),
+                icon=weather.get("icon"),
+                observed_at_utc=datetime.fromtimestamp(entry.get("dt", 0), tz=timezone.utc),
+            )
+        except Exception as e:
+            log_error(f"Error parsing timemachine response: {e}")
+            return None
+
+    @staticmethod
+    def _parse_current_response(data: dict) -> Optional[WeatherData]:
         try:
             main = data.get("main", {})
-            weather = data.get("weather", [{}])[0]
+            weather_list = data.get("weather", [{}])
+            weather = weather_list[0] if weather_list else {}
             wind = data.get("wind", {})
 
             temp_c = main.get("temp")
             if temp_c is None:
-                log_warning("Temperature not found in OpenWeather response")
                 return None
-
-            # Convert Celsius to Fahrenheit
-            temp_f = (temp_c * 9/5) + 32
 
             return WeatherData(
                 temp_c=round(temp_c, 1),
-                temp_f=round(temp_f, 1),
+                temp_f=round((temp_c * 9/5) + 32, 1),
                 condition=weather.get("main", "Unknown"),
                 description=weather.get("description"),
                 humidity=main.get("humidity"),
@@ -236,8 +313,8 @@ class WeatherService:
                 pressure=main.get("pressure"),
                 visibility=data.get("visibility"),
                 icon=weather.get("icon"),
+                observed_at_utc=datetime.fromtimestamp(data.get("dt", 0), tz=timezone.utc),
             )
-
-        except (KeyError, ValueError, TypeError) as e:
-            log_warning(f"Failed to parse OpenWeather response: {e}")
+        except Exception as e:
+            log_error(f"Error parsing current weather response: {e}")
             return None

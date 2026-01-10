@@ -1,7 +1,9 @@
 """
 Weather schemas for weather data fetching.
 """
+from datetime import datetime
 from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -9,6 +11,14 @@ class WeatherFetchRequest(BaseModel):
     """Request schema for weather data fetch."""
     latitude: float = Field(..., ge=-90, le=90, description="Latitude coordinate")
     longitude: float = Field(..., ge=-180, le=180, description="Longitude coordinate")
+    entry_datetime_utc: Optional[datetime] = Field(
+        None,
+        description="Entry timestamp in UTC (ISO format). If provided, weather is fetched for this time.",
+    )
+    entry_timezone: Optional[str] = Field(
+        None,
+        description="IANA timezone for the entry timestamp (e.g., America/Los_Angeles).",
+    )
 
 
 class WeatherData(BaseModel):
@@ -22,6 +32,10 @@ class WeatherData(BaseModel):
     pressure: Optional[int] = Field(None, description="Atmospheric pressure in hPa")
     visibility: Optional[int] = Field(None, description="Visibility in meters")
     icon: Optional[str] = Field(None, description="Weather icon code")
+    observed_at_utc: Optional[datetime] = Field(
+        None,
+        description="Authoritative timestamp for the weather observation (UTC)",
+    )
 
     class Config:
         json_schema_extra = {
@@ -34,7 +48,8 @@ class WeatherData(BaseModel):
                 "wind_speed": 3.5,
                 "pressure": 1013,
                 "visibility": 10000,
-                "icon": "01d"
+                "icon": "01d",
+                "observed_at_utc": "2025-12-05T10:30:00Z",
             }
         }
 
@@ -74,6 +89,6 @@ class WeatherServiceDisabledResponse(BaseModel):
         json_schema_extra = {
             "example": {
                 "enabled": False,
-                "message": "Weather service is not configured. Please set WEATHER_API_KEY in environment variables."
+                "message": "Weather service is not configured. Please set OPEN_WEATHER_API_KEY_25 or OPEN_WEATHER_API_KEY_30 in environment variables."
             }
         }

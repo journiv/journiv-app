@@ -123,13 +123,14 @@ class Settings(BaseSettings):
     ffmpeg_timeout: int = 300   # 5 minutes for video thumbnail generation
 
     # Weather Configuration
-    weather_api_key: Optional[str] = None  # OpenWeather API key
+    open_weather_api_key_25: Optional[str] = None  # OpenWeather 2.5 API key
+    open_weather_api_key_30: Optional[str] = None  # OpenWeather 3.0 API key
     weather_provider: str = "openweather"  # Weather provider (openweather)
 
-    @field_validator('weather_api_key', mode='before')
+    @field_validator('open_weather_api_key_25', 'open_weather_api_key_30', mode='before')
     @classmethod
     def trim_weather_api_key(cls, v):
-        """Trim whitespace from weather API key."""
+        """Trim whitespace from weather API keys."""
         if v is None:
             return None
         if isinstance(v, str):
