@@ -165,7 +165,7 @@ class WeatherService:
             provider = "openweather-timemachine"
             api_key = api_key_30
         elif api_key_25:
-            # Fallback to current if not historic OR if historic but no 3.0 key
+             # Use current API for non-historic requests, or as fallback when 3.0 key unavailable
             provider = "openweather-current"
             api_key = api_key_25
             effective_dt = None # For current weather, we don't cache by timestamp
@@ -173,8 +173,7 @@ class WeatherService:
              provider = "openweather-timemachine"
              api_key = api_key_30
              effective_dt = target_dt or utc_now() # Timemachine needs a time
-        else:
-            raise ValueError("Configuration error: Unreachable state.")
+             log_info("Using timemachine API for current weather (only 3.0 key configured)")
 
         # Try Cache
         cached = cls._get_from_cache(latitude, longitude, effective_dt)

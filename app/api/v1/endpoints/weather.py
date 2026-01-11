@@ -64,8 +64,8 @@ async def fetch_weather(
         )
 
         if not weather_data:
-             # This happens if parsing fails or data is missing despite success status
-             # We treat it as service unavailable or data unavailable
+            # This happens if parsing fails or data is missing despite success status
+            # We treat it as service unavailable or data unavailable
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to retrieve weather data from provider."

@@ -72,7 +72,8 @@ class WeatherFetchResponse(BaseModel):
                     "wind_speed": 3.5,
                     "pressure": 1013,
                     "visibility": 10000,
-                    "icon": "01d"
+                    "icon": "01d",
+                    "observed_at_utc": "2025-12-05T10:30:00Z"
                 },
                 "provider": "openweather",
                 "timestamp": "2025-12-05T10:30:00Z"
