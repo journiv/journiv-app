@@ -21,16 +21,23 @@ jobs:
           GH_TOKEN: ${{ secrets.PLUS_FEATURES_REPO_TOKEN }}
           PLUS_FEATURES_REPO: journiv/journiv-plus-features
         run: |
+          set -eo pipefail
+
           if [ -z "$GH_TOKEN" ]; then
             echo "ERROR: PLUS_FEATURES_REPO_TOKEN secret not set"
             exit 1
           fi
 
           DOWNLOAD_DIR=$(mktemp -d)
+          trap "rm -rf $DOWNLOAD_DIR" EXIT
           gh release download latest -R "$PLUS_FEATURES_REPO" -p "*.so" -D "$DOWNLOAD_DIR"
 
           mkdir -p app/plus
           mv "$DOWNLOAD_DIR"/*.so app/plus/
+          if ! ls app/plus/*.so 1> /dev/null 2>&1; then
+            echo "ERROR: No .so files were downloaded"
+            exit 1
+          fi
           ls -lh app/plus/
 
       - name: Set up QEMU
