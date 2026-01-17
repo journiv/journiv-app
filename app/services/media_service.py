@@ -589,37 +589,38 @@ class MediaService:
                 if temp_file is not None:
                     temp_file.close()
 
-            self._validate_streamed_upload(file_size, filename, header_bytes)
-            media_type = self._detect_media_type(header_bytes)
-        else:
-            self._validate_streamed_upload(file_size, filename, header_bytes)
-            media_type = self._detect_media_type(header_bytes)
+        try:
+            if use_temp_fallback:
+                self._validate_streamed_upload(file_size, filename, header_bytes)
+                media_type = self._detect_media_type(header_bytes)
+            else:
+                self._validate_streamed_upload(file_size, filename, header_bytes)
+                media_type = self._detect_media_type(header_bytes)
 
-        # 5. Verify entry exists and belongs to user
-        db_session = self._get_session(session)
-        self._get_entry_for_user(db_session, entry_id, user_id)
+            # 5. Verify entry exists and belongs to user
+            db_session = self._get_session(session)
+            self._get_entry_for_user(db_session, entry_id, user_id)
 
-        # 6. Save file
-        if use_temp_fallback:
-            try:
+            # 6. Save file
+            if use_temp_fallback:
                 media_info = await self.save_uploaded_file(
                     original_filename=filename,
                     user_id=str(user_id),
                     media_type=media_type,
                     file_path=str(temp_path)
                 )
-            finally:
-                if temp_path is not None and temp_path.exists():
-                    temp_path.unlink()
-        else:
-            media_info = await self.save_uploaded_file(
-                original_filename=filename,
-                user_id=str(user_id),
-                media_type=media_type,
-                file_stream=source_stream,
-                file_size_override=file_size,
-                mime_type_override=self._detect_mime(header_bytes)
-            )
+            else:
+                media_info = await self.save_uploaded_file(
+                    original_filename=filename,
+                    user_id=str(user_id),
+                    media_type=media_type,
+                    file_stream=source_stream,
+                    file_size_override=file_size,
+                    mime_type_override=self._detect_mime(header_bytes)
+                )
+        finally:
+            if use_temp_fallback and temp_path is not None and temp_path.exists():
+                temp_path.unlink()
 
         media_record = None
         db_session = self._get_session(session)
