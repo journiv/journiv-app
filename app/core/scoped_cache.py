@@ -41,6 +41,8 @@ class ScopedCache:
         Raises:
             ValueError: If scope_id or cache_type contains ':' character
         """
+        scope_id = str(scope_id)
+        cache_type = str(cache_type)
         if ':' in cache_type:
             raise ValueError(f"cache_type must not contain ':' character, got: {cache_type}")
         if ':' in scope_id:

@@ -187,7 +187,7 @@ async def disconnect(
         # Invalidate cache
         cache = _get_integration_cache()
         if cache:
-            cache.delete(scope_id=current_user.id, cache_type=f"{provider.value}")
+            cache.delete(scope_id=str(current_user.id), cache_type=f"{provider.value}")
     except ValueError as e:
         log_warning(f"Integration not found for disconnect: {e}")
         raise HTTPException(
@@ -410,7 +410,7 @@ async def proxy_thumbnail(
     # 1. Try Cache First
     cache = _get_integration_cache()
     if cache:
-        cached_creds = cache.get(scope_id=current_user.id, cache_type=f"{provider.value}")
+        cached_creds = cache.get(scope_id=str(current_user.id), cache_type=f"{provider.value}")
         if cached_creds and cached_creds.get("is_active"):
             integration_base_url = cached_creds.get("base_url")
             access_token_encrypted = cached_creds.get("token")
@@ -444,7 +444,7 @@ async def proxy_thumbnail(
         # 3. Populate Cache
         if cache:
             cache.set(
-                scope_id=current_user.id,
+                scope_id=str(current_user.id),
                 cache_type=f"{provider.value}",
                 value={
                     "base_url": integration_base_url,
