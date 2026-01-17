@@ -5,10 +5,11 @@ import asyncio
 import logging
 import subprocess
 import uuid
+import tempfile
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, BinaryIO
 
 import magic
 from fastapi import UploadFile
@@ -181,7 +182,10 @@ class MediaService:
         user_id: str,
         media_type: MediaType,
         file_content: Optional[bytes] = None,
-        file_path: Optional[str] = None
+        file_path: Optional[str] = None,
+        file_stream: Optional[BinaryIO] = None,
+        file_size_override: Optional[int] = None,
+        mime_type_override: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Save an uploaded file using unified MediaStorageService.
@@ -192,12 +196,17 @@ class MediaService:
             media_type: MediaType enum
             file_content: File content as bytes (optional)
             file_path: Path to file on disk (optional, for large files)
+            file_stream: File-like object for streaming uploads (optional)
+            file_size_override: Optional size override for file_stream (bytes)
+            mime_type_override: Optional MIME type override (used with file_stream)
 
         Returns:
             Dict with file metadata
         """
-        if not file_content and not file_path:
-            raise ValueError("Either file_content or file_path must be provided")
+        if not file_content and not file_path and file_stream is None:
+            raise ValueError("Either file_content, file_path, or file_stream must be provided")
+        if sum(bool(value) for value in (file_content, file_path, file_stream)) > 1:
+            raise ValueError("Only one of file_content, file_path, or file_stream can be provided")
 
         # Determine media type directory
         media_type_lower = self._normalize_media_type(media_type)
@@ -231,6 +240,29 @@ class MediaService:
                 header = source_stream.read(2048)
                 source_stream.seek(0)
                 mime_type = self._detect_mime(header)
+            elif file_stream is not None:
+                source_stream = file_stream
+                should_close_stream = False
+                if file_size_override is not None:
+                    file_size = file_size_override
+                else:
+                    try:
+                        if source_stream.seekable():
+                            source_stream.seek(0, 2)
+                            file_size = source_stream.tell()
+                            source_stream.seek(0)
+                        else:
+                            raise ValueError("file_size_override required for non-seekable streams")
+                    except Exception as exc:
+                        raise ValueError(f"Failed to determine stream size: {exc}") from exc
+                if mime_type_override:
+                    mime_type = mime_type_override
+                else:
+                    if not source_stream.seekable():
+                        raise ValueError("mime_type_override required for non-seekable streams")
+                    header = source_stream.read(2048)
+                    source_stream.seek(0)
+                    mime_type = self._detect_mime(header)
             else:
                 source_stream = BytesIO(file_content)
                 file_size = len(file_content)
@@ -436,6 +468,24 @@ class MediaService:
                 # Generic validation error
                 raise FileValidationError(error_message or "File validation failed")
 
+    def _validate_streamed_upload(self, file_size: int, filename: str, header_bytes: bytes) -> None:
+        """Validate size, MIME type, and extension for streamed uploads."""
+        if not MediaHandler.validate_file_size(file_size, self.settings.max_file_size_mb):
+            raise FileTooLargeError(
+                f"File size exceeds maximum limit of {self.settings.max_file_size_mb}MB"
+            )
+
+        allowed_mime_types = {mime.lower() for mime in (self.settings.allowed_media_types or [])} or self.allowed_mime_types
+        allowed_extensions = {ext.lower() for ext in (self.settings.allowed_file_extensions or [])} or self.allowed_extensions
+
+        mime_type = self._detect_mime(header_bytes)
+        if allowed_mime_types and mime_type.lower() not in allowed_mime_types:
+            raise InvalidFileTypeError(f"Mime type {mime_type} not allowed")
+
+        file_ext = Path(filename).suffix.lower()
+        if allowed_extensions and file_ext not in allowed_extensions:
+            raise FileValidationError(f"File extension {file_ext} not allowed")
+
     def _detect_media_type(self, file_content: bytes) -> MediaType:
         """Detect media type from file content."""
         try:
@@ -484,39 +534,92 @@ class MediaService:
             InvalidFileTypeError: If file type is not supported
             EntryNotFoundError: If entry doesn't exist
         """
-        # 1. Check file size before reading
+        # 1. Check file size before reading (if provided by upload implementation)
         await self._check_file_size(file)
 
-        # 2. Read file content
-        file_content = await self._read_file_content(file)
+        # 2. Prefer single-write streaming when the underlying file is seekable
+        filename = file.filename or "unknown"
+        source_stream = file.file
+        file_size = file.size if hasattr(file, "size") and file.size else None
+        header_bytes = b""
+        use_temp_fallback = not source_stream.seekable()
 
-        # 3. Validate file
-        validation_ok, validation_message = await self.validate_file(
-            file_content,
-            file.filename or "unknown"
-        )
-        if not validation_ok:
-            normalized = (validation_message or "").lower()
-            if "file too large" in normalized or "exceeds" in normalized:
-                raise FileTooLargeError(validation_message)
-            if "unsupported media type" in normalized or "mime type" in normalized:
-                raise InvalidFileTypeError(validation_message)
-            raise FileValidationError(validation_message)
+        if not use_temp_fallback:
+            try:
+                if file_size is None:
+                    source_stream.seek(0, 2)
+                    file_size = source_stream.tell()
+                    source_stream.seek(0)
+                header_bytes = source_stream.read(2048)
+                source_stream.seek(0)
+            except Exception:
+                use_temp_fallback = True
 
-        # 4. Detect media type
-        media_type = self._detect_media_type(file_content)
+        if file_size is None:
+            use_temp_fallback = True
+
+        temp_file = None
+        temp_path = None
+        if use_temp_fallback:
+            if source_stream.seekable():
+                try:
+                    source_stream.seek(0)
+                except Exception:
+                    pass
+            temp_file = tempfile.NamedTemporaryFile(delete=False)
+            temp_path = Path(temp_file.name)
+            file_size = 0
+            header_bytes = b""
+            max_bytes = self.settings.max_file_size_mb * 1024 * 1024
+
+            try:
+                while True:
+                    chunk = await file.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    if not header_bytes:
+                        header_bytes = chunk[:2048]
+                    file_size += len(chunk)
+                    if file_size > max_bytes:
+                        raise FileTooLargeError(
+                            f"File size exceeds maximum limit of {self.settings.max_file_size_mb}MB"
+                        )
+                    temp_file.write(chunk)
+            finally:
+                if temp_file is not None:
+                    temp_file.close()
+
+            self._validate_streamed_upload(file_size, filename, header_bytes)
+            media_type = self._detect_media_type(header_bytes)
+        else:
+            self._validate_streamed_upload(file_size, filename, header_bytes)
+            media_type = self._detect_media_type(header_bytes)
 
         # 5. Verify entry exists and belongs to user
         db_session = self._get_session(session)
         self._get_entry_for_user(db_session, entry_id, user_id)
 
         # 6. Save file
-        media_info = await self.save_uploaded_file(
-            original_filename=file.filename or "unknown",
-            user_id=str(user_id),
-            media_type=media_type,
-            file_content=file_content
-        )
+        if use_temp_fallback:
+            try:
+                media_info = await self.save_uploaded_file(
+                    original_filename=filename,
+                    user_id=str(user_id),
+                    media_type=media_type,
+                    file_path=str(temp_path)
+                )
+            finally:
+                if temp_path is not None and temp_path.exists():
+                    temp_path.unlink()
+        else:
+            media_info = await self.save_uploaded_file(
+                original_filename=filename,
+                user_id=str(user_id),
+                media_type=media_type,
+                file_stream=source_stream,
+                file_size_override=file_size,
+                mime_type_override=self._detect_mime(header_bytes)
+            )
 
         media_record = None
         db_session = self._get_session(session)
