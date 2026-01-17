@@ -41,7 +41,6 @@ async def test_get_current_user_uses_cache():
         second = await dependencies.get_current_user(token="token", cookie_token=None, session=session)
         assert second.id == user.id
         service_instance.get_user_by_id.assert_not_called()
-        service_instance.get_user_by_id.assert_not_called()
     dependencies._user_cache = None
 
 
@@ -133,4 +132,3 @@ async def test_get_current_user_detached_cache_hit():
              mock_get_context.assert_not_called()
 
     dependencies._user_cache = None
-

@@ -290,6 +290,8 @@ class TestIntegrationOptimizations:
         # Reset client to ensure clean state
         original_client = immich._client
         immich._client = None
+        client1 = None
+        client2 = None
 
         try:
             client1 = immich._get_client()
@@ -300,6 +302,13 @@ class TestIntegrationOptimizations:
             assert client1 is client2
             assert isinstance(client1, httpx.AsyncClient)
         finally:
+            clients_to_close = []
+            for client in (immich._client, client1, client2):
+                if isinstance(client, httpx.AsyncClient) and client is not original_client:
+                    if client not in clients_to_close:
+                        clients_to_close.append(client)
+            for client in clients_to_close:
+                await client.aclose()
             immich._client = original_client
 
     @pytest.mark.asyncio
@@ -312,11 +321,18 @@ class TestIntegrationOptimizations:
         from unittest.mock import MagicMock, AsyncMock
 
         # Mocks
-        mock_user = User(id="user-123", email="test@example.com")
+        mock_user = User(
+            id="user-123",
+            email="test@example.com",
+            password="hashed-password",
+            name="Test User",
+            is_active=True,
+        )
         mock_cache = MagicMock()
         mock_cache.get.return_value = {
             "base_url": "https://cached.com",
-            "token": "cached-token"
+            "token": "cached-token",
+            "is_active": True
         }
 
         # Mock Cache Getter
@@ -336,7 +352,7 @@ class TestIntegrationOptimizations:
                     with patch("app.core.encryption.decrypt_token", return_value="decrypted-key"):
 
                         # Call the endpoint function directly
-                        response = await proxy_thumbnail(
+                        await proxy_thumbnail(
                             provider=IntegrationProvider.IMMICH,
                             asset_id="asset-123",
                             current_user=mock_user
@@ -354,4 +370,3 @@ class TestIntegrationOptimizations:
                         # call_args[0][1] is url. Check it starts with cached base_url
                         args, _ = mock_client.build_request.call_args
                         assert args[1].startswith("https://cached.com")
-

@@ -22,7 +22,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Request, H
 from starlette.background import BackgroundTask
 from sqlmodel import Session, select
 
-from app.api.dependencies import get_current_user
 from app.core.database import get_session
 from app.models.integration import Integration, IntegrationProvider  # Needed for proxy queries below.
 from app.integrations.schemas import (
@@ -185,6 +184,10 @@ async def disconnect(
             user=current_user,
             provider=provider
         )
+        # Invalidate cache
+        cache = _get_integration_cache()
+        if cache:
+            cache.delete(scope_id=current_user.id, cache_type=f"{provider.value}")
     except ValueError as e:
         log_warning(f"Integration not found for disconnect: {e}")
         raise HTTPException(
@@ -399,9 +402,6 @@ async def proxy_thumbnail(
     """
     from fastapi.responses import StreamingResponse
     from app.core.encryption import decrypt_token
-
-    from fastapi.responses import StreamingResponse
-    from app.core.encryption import decrypt_token
     from app.core.database import get_session_context
 
     integration_base_url = None
@@ -411,7 +411,7 @@ async def proxy_thumbnail(
     cache = _get_integration_cache()
     if cache:
         cached_creds = cache.get(scope_id=current_user.id, cache_type=f"{provider.value}")
-        if cached_creds:
+        if cached_creds and cached_creds.get("is_active"):
             integration_base_url = cached_creds.get("base_url")
             access_token_encrypted = cached_creds.get("token")
 
@@ -446,7 +446,11 @@ async def proxy_thumbnail(
             cache.set(
                 scope_id=current_user.id,
                 cache_type=f"{provider.value}",
-                value={"base_url": integration_base_url, "token": access_token_encrypted},
+                value={
+                    "base_url": integration_base_url,
+                    "token": access_token_encrypted,
+                    "is_active": True
+                },
                 ttl_seconds=300 # Cache for 5 minutes
             )
 
@@ -573,9 +577,6 @@ async def proxy_original(
     """
     from fastapi.responses import StreamingResponse
     from app.core.encryption import decrypt_token
-
-    from fastapi.responses import StreamingResponse
-    from app.core.encryption import decrypt_token
     from app.core.database import get_session_context
 
     integration_base_url = None
@@ -586,7 +587,7 @@ async def proxy_original(
         cache = _get_integration_cache()
         if cache:
             cached_creds = cache.get(scope_id=current_user.id, cache_type=f"{provider.value}")
-            if cached_creds:
+            if cached_creds and cached_creds.get("is_active"):
                 integration_base_url = cached_creds.get("base_url")
                 access_token_encrypted = cached_creds.get("token")
 
@@ -621,7 +622,11 @@ async def proxy_original(
                 cache.set(
                     scope_id=current_user.id,
                     cache_type=f"{provider.value}",
-                    value={"base_url": integration_base_url, "token": access_token_encrypted},
+                    value={
+                        "base_url": integration_base_url,
+                        "token": access_token_encrypted,
+                        "is_active": True
+                    },
                     ttl_seconds=300 # Cache for 5 minutes
                 )
 
