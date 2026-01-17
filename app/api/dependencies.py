@@ -142,6 +142,105 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_detached(
+    token: Annotated[Optional[str], Depends(oauth2_scheme)],
+    cookie_token: Annotated[Optional[str], Cookie(alias="access_token")] = None,
+) -> User:
+    """
+    Dependency to get the current authenticated user without an open DB session.
+
+    This is suitable for long-running requests (e.g., streaming proxies) where
+    holding a DB connection open is undesirable.
+
+    WARNING: The returned User object is DETACHED from any session.
+    Accessing lazy-loaded relationships will fail.
+    """
+    # Reuse authentication logic for token validation and cache
+    # First, validate credentials (reusing logic logic from get_current_user conceptually)
+    # We duplicate some logic here to avoid the dependency on get_session
+
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    token_to_use = token or cookie_token
+    if token_to_use is None:
+        raise credentials_exception
+
+    try:
+        payload = verify_token(token_to_use, "access")
+        user_id: str = payload.get("sub")
+
+        # We are doing trict Subject validation
+        # Thsis ensure sub is not only a string, but a valid UUID
+        # This prevents any potential injection or invalid format issues
+        import uuid
+        try:
+            uuid_obj = uuid.UUID(user_id)
+        except (ValueError, TypeError):
+            # Log this as a potential security event
+            logger.warning(f"Invalid user_id format in token: {user_id}")
+            raise credentials_exception
+
+        if not user_id:
+             raise credentials_exception
+
+    except Exception:
+        # treat all token errors as 401
+        raise credentials_exception
+
+    # Check cache
+    token_hash = hashlib.sha256(token_to_use.encode("utf-8")).hexdigest()
+    cache = _get_user_cache()
+    if cache:
+        deleted_marker = cache.get(scope_id=user_id, cache_type="deleted")
+        if deleted_marker:
+            raise credentials_exception
+        cached_user = cache.get(scope_id=token_hash, cache_type="auth")
+        if cached_user:
+            try:
+                user = User.model_validate(cached_user)
+                if not user.is_active:
+                    raise credentials_exception
+                return user
+            except Exception:
+                cache.delete(scope_id=token_hash, cache_type="auth")
+
+    # If not in cache, fetch from DB using a short-lived session context
+    from app.core.database import get_session_context
+
+    with get_session_context() as session:
+        user = UserService(session).get_user_by_id(user_id)
+        if user:
+            # Refresh to load immediate attributes (though should be loaded by default)
+            session.refresh(user)
+            # Expunge from session so it can be used after session closes
+            session.expunge(user)
+
+    if user is None:
+        raise credentials_exception
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User account is inactive"
+        )
+
+    # Populate cache
+    if cache:
+        cache.set(
+            scope_id=token_hash,
+            cache_type="auth",
+            value=user.model_dump(mode="json"),
+            ttl_seconds=settings.auth_user_cache_ttl_seconds,
+        )
+
+    return user
+
+
+
 async def get_current_admin_user(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:

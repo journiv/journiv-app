@@ -32,6 +32,9 @@ from app.integrations.schemas import (
     IntegrationAssetsListResponse,
     IntegrationSettingsUpdateRequest,
 )
+from app.api.dependencies import get_current_user, get_current_user_detached
+from app.core.config import settings
+from app.core.scoped_cache import ScopedCache
 from app.integrations.service import (
     connect_integration,
     get_integration_status,
@@ -64,6 +67,13 @@ def _get_proxy_client() -> httpx.AsyncClient:
             transport=httpx.AsyncHTTPTransport(retries=2),
         )
     return _proxy_client
+
+
+def _get_integration_cache() -> Optional[ScopedCache]:
+    """Get the scoped cache for integration credentials."""
+    if not settings.redis_url:
+        return None
+    return ScopedCache(namespace="integration_creds")
 
 
 async def _close_httpx_stream(response: httpx.Response) -> None:
@@ -379,8 +389,7 @@ async def trigger_sync(
 async def proxy_thumbnail(
     provider: IntegrationProvider,
     asset_id: str,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    current_user: Annotated[User, Depends(get_current_user_detached)],
 ):
     """
     Proxy an asset's thumbnail from the provider.
@@ -391,28 +400,61 @@ async def proxy_thumbnail(
     from fastapi.responses import StreamingResponse
     from app.core.encryption import decrypt_token
 
+    from fastapi.responses import StreamingResponse
+    from app.core.encryption import decrypt_token
+    from app.core.database import get_session_context
+
+    integration_base_url = None
+    access_token_encrypted = None
+
+    # 1. Try Cache First
+    cache = _get_integration_cache()
+    if cache:
+        cached_creds = cache.get(scope_id=current_user.id, cache_type=f"{provider.value}")
+        if cached_creds:
+            integration_base_url = cached_creds.get("base_url")
+            access_token_encrypted = cached_creds.get("token")
+
+    # 2. If not in cache, fetch from DB
+    if not integration_base_url or not access_token_encrypted:
+        with get_session_context() as session:
+            # Get user's integration
+            integration = session.exec(
+                select(Integration)
+                .where(Integration.user_id == current_user.id)
+                .where(Integration.provider == provider)
+            ).first()
+
+            if not integration:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{provider} integration not found. Please connect first."
+                )
+
+            if not integration.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"{provider} integration is disabled. Please reconnect."
+                )
+
+            # EXTRACT DATA eagerly before session closes
+            integration_base_url = integration.base_url
+            access_token_encrypted = integration.access_token_encrypted
+
+        # 3. Populate Cache
+        if cache:
+            cache.set(
+                scope_id=current_user.id,
+                cache_type=f"{provider.value}",
+                value={"base_url": integration_base_url, "token": access_token_encrypted},
+                ttl_seconds=300 # Cache for 5 minutes
+            )
+
+    # Session is CLOSED here. Connection returned to pool.
+
     try:
-        # Get user's integration
-        integration = session.exec(
-            select(Integration)
-            .where(Integration.user_id == current_user.id)
-            .where(Integration.provider == provider)
-        ).first()
-
-        if not integration:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{provider} integration not found. Please connect first."
-            )
-
-        if not integration.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{provider} integration is disabled. Please reconnect."
-            )
-
         # Decrypt token
-        api_key = decrypt_token(integration.access_token_encrypted)
+        api_key = decrypt_token(access_token_encrypted)
 
         # Build provider-specific thumbnail URL
         if provider == IntegrationProvider.IMMICH:
@@ -423,7 +465,7 @@ async def proxy_thumbnail(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid asset ID format"
                 )
-            thumbnail_url = f"{integration.base_url}/api/assets/{asset_id}/thumbnail"
+            thumbnail_url = f"{integration_base_url}/api/assets/{asset_id}/thumbnail"
         else:
             # Future: Add other providers
             raise HTTPException(
@@ -445,10 +487,23 @@ async def proxy_thumbnail(
         # Handle provider errors
         if response.status_code in (401, 403):
             log_warning(f"Invalid {provider} token for user {current_user.id}")
-            integration.last_error = "Authentication failed"
-            integration.last_error_at = datetime.now(timezone.utc)
-            session.add(integration)
-            session.commit()
+            # We need a new session to update the error state since the main one is closed
+            try:
+                with get_session_context() as params_session:
+                    # Re-fetch for update
+                    integration_update = params_session.exec(
+                         select(Integration)
+                        .where(Integration.user_id == current_user.id)
+                        .where(Integration.provider == provider)
+                    ).first()
+                    if integration_update:
+                        integration_update.last_error = "Authentication failed"
+                        integration_update.last_error_at = datetime.now(timezone.utc)
+                        params_session.add(integration_update)
+                        params_session.commit()
+            except Exception as e:
+                log_error(f"Failed to update integration error state: {e}")
+
             await _close_httpx_stream(response)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -508,8 +563,7 @@ async def proxy_original(
     provider: IntegrationProvider,
     asset_id: str,
     request: Request,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user_detached)],
     range_header: Annotated[Optional[str], Header(alias="Range")] = None
 ):
     """
@@ -520,28 +574,61 @@ async def proxy_original(
     from fastapi.responses import StreamingResponse
     from app.core.encryption import decrypt_token
 
+    from fastapi.responses import StreamingResponse
+    from app.core.encryption import decrypt_token
+    from app.core.database import get_session_context
+
+    integration_base_url = None
+    access_token_encrypted = None
+
     try:
-        # Get user's integration
-        integration = session.exec(
-            select(Integration)
-            .where(Integration.user_id == current_user.id)
-            .where(Integration.provider == provider)
-        ).first()
+        # 1. Try Cache First
+        cache = _get_integration_cache()
+        if cache:
+            cached_creds = cache.get(scope_id=current_user.id, cache_type=f"{provider.value}")
+            if cached_creds:
+                integration_base_url = cached_creds.get("base_url")
+                access_token_encrypted = cached_creds.get("token")
 
-        if not integration:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{provider} integration not found. Please connect first."
-            )
+        # 2. If not in cache, fetch from DB
+        if not integration_base_url or not access_token_encrypted:
+            with get_session_context() as session:
+                # Get user's integration
+                integration = session.exec(
+                    select(Integration)
+                    .where(Integration.user_id == current_user.id)
+                    .where(Integration.provider == provider)
+                ).first()
 
-        if not integration.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"{provider} integration is disabled. Please reconnect."
-            )
+                if not integration:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"{provider} integration not found. Please connect first."
+                    )
+
+                if not integration.is_active:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"{provider} integration is disabled. Please reconnect."
+                    )
+
+                # EXTRACT DATA eagerly before session closes
+                integration_base_url = integration.base_url
+                access_token_encrypted = integration.access_token_encrypted
+
+            # 3. Populate Cache
+            if cache:
+                cache.set(
+                    scope_id=current_user.id,
+                    cache_type=f"{provider.value}",
+                    value={"base_url": integration_base_url, "token": access_token_encrypted},
+                    ttl_seconds=300 # Cache for 5 minutes
+                )
+
+        # Session is CLOSED here. Connection returned to pool.
 
         # Decrypt token
-        api_key = decrypt_token(integration.access_token_encrypted)
+        api_key = decrypt_token(access_token_encrypted)
 
         # Build provider-specific original URL
         if provider == IntegrationProvider.IMMICH:
@@ -552,7 +639,7 @@ async def proxy_original(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid asset ID format"
                 )
-            original_url = f"{integration.base_url}/api/assets/{asset_id}/original"
+            original_url = f"{integration_base_url}/api/assets/{asset_id}/original"
         else:
             raise HTTPException(
                 status_code=status.HTTP_501_NOT_IMPLEMENTED,
@@ -578,10 +665,23 @@ async def proxy_original(
         # Handle provider errors
         if response.status_code in (401, 403):
             log_warning(f"Invalid {provider} token for user {current_user.id}")
-            integration.last_error = "Authentication failed"
-            integration.last_error_at = datetime.now(timezone.utc)
-            session.add(integration)
-            session.commit()
+
+            # Update error state in new session
+            try:
+                with get_session_context() as params_session:
+                    integration_update = params_session.exec(
+                         select(Integration)
+                        .where(Integration.user_id == current_user.id)
+                        .where(Integration.provider == provider)
+                    ).first()
+                    if integration_update:
+                        integration_update.last_error = "Authentication failed"
+                        integration_update.last_error_at = datetime.now(timezone.utc)
+                        params_session.add(integration_update)
+                        params_session.commit()
+            except Exception as e:
+                log_error(f"Failed to update integration error state: {e}")
+
             await _close_httpx_stream(response)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,

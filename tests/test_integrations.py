@@ -274,3 +274,84 @@ class TestProviderRegistry:
 # - Test asset listing and pagination
 # - Test thumbnail proxy
 # - Test sync logic and cache management
+
+# ================================================================================
+# OPTIMIZATION TESTS
+# ================================================================================
+
+class TestIntegrationOptimizations:
+    """Test recent performance optimizations (Connection Pooling, Caching, Shared Clients)."""
+
+    @pytest.mark.asyncio
+    async def test_immich_client_is_shared(self):
+        """Test that Immich provider uses a shared httpx client."""
+        from app.integrations import immich
+
+        # Reset client to ensure clean state
+        original_client = immich._client
+        immich._client = None
+
+        try:
+            client1 = immich._get_client()
+            client2 = immich._get_client()
+
+            assert client1 is not None
+            assert client2 is not None
+            assert client1 is client2
+            assert isinstance(client1, httpx.AsyncClient)
+        finally:
+            immich._client = original_client
+
+    @pytest.mark.asyncio
+    async def test_proxy_credential_caching(self):
+        """Test that proxy endpoints use cache and avoid DB on hit."""
+        from app.integrations.router import proxy_thumbnail
+        from app.models.integration import IntegrationProvider
+        from app.models.user import User
+        from fastapi import HTTPException
+        from unittest.mock import MagicMock, AsyncMock
+
+        # Mocks
+        mock_user = User(id="user-123", email="test@example.com")
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = {
+            "base_url": "https://cached.com",
+            "token": "cached-token"
+        }
+
+        # Mock Cache Getter
+        with patch("app.integrations.router._get_integration_cache", return_value=mock_cache):
+            # Mock DB Context to ensure it's NOT used - Patching source because it's locally imported
+            with patch("app.core.database.get_session_context") as mock_db_ctx:
+                # Mock Proxy Client to avoid actual network call
+                mock_client = AsyncMock()
+                mock_response = MagicMock()
+                mock_response.status_code = 200
+                mock_response.headers = {"content-type": "image/jpeg"}
+                mock_response.aiter_bytes.return_value = [b"data"]
+                mock_client.build_request.return_value = "request"
+                mock_client.send.return_value = mock_response
+
+                with patch("app.integrations.router._get_proxy_client", return_value=mock_client):
+                    with patch("app.core.encryption.decrypt_token", return_value="decrypted-key"):
+
+                        # Call the endpoint function directly
+                        response = await proxy_thumbnail(
+                            provider=IntegrationProvider.IMMICH,
+                            asset_id="asset-123",
+                            current_user=mock_user
+                        )
+
+                        # VERIFICATION:
+                        # 1. Cache was checked
+                        mock_cache.get.assert_called_with(scope_id="user-123", cache_type="immich")
+
+                        # 2. DB was NOT touched (context manager not entered)
+                        mock_db_ctx.assert_not_called()
+
+                        # 3. Request used cached URL
+                        mock_client.build_request.assert_called()
+                        # call_args[0][1] is url. Check it starts with cached base_url
+                        args, _ = mock_client.build_request.call_args
+                        assert args[1].startswith("https://cached.com")
+

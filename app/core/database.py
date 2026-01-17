@@ -58,8 +58,8 @@ elif database_type in {"postgres", "postgresql"}:
     engine_kwargs = {
         "echo": False,
         "pool_pre_ping": True,
-        "pool_size": 5,
-        "max_overflow": 3,
+        "pool_size": 20,
+        "max_overflow": 10,
         "pool_recycle": 3600,  # Recycle connections every hour
     }
 

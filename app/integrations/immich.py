@@ -28,6 +28,20 @@ IMMICH_API_USER_ME = "/api/users/me"
 IMMICH_API_SEARCH_METADATA = "/api/search/metadata"  # Search assets with pagination
 IMMICH_API_ASSET_THUMBNAIL = "/api/assets/{asset_id}/thumbnail"
 
+_client: Optional[httpx.AsyncClient] = None
+
+def _get_client() -> httpx.AsyncClient:
+    """Reuse a single client to avoid connection churn."""
+    global _client
+    if _client is None:
+        _client = httpx.AsyncClient(
+            verify=True,
+            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            transport=httpx.AsyncHTTPTransport(retries=2),
+        )
+    return _client
+
 
 async def connect(
     session: Session | AsyncSession,
@@ -54,29 +68,27 @@ async def connect(
 
     # Validate API key by calling Immich's /api/user/me endpoint
     try:
-        async with httpx.AsyncClient(verify=True) as client:
-            response = await client.get(
-                f"{base_url}{IMMICH_API_USER_ME}",
-                headers={"x-api-key": api_key},
-                timeout=10.0
-            )
+        client = _get_client()
+        response = await client.get(
+            f"{base_url}{IMMICH_API_USER_ME}",
+            headers={"x-api-key": api_key},
+        )
 
-            # Raise for HTTP errors (401, 403, 500, etc.)
-            response.raise_for_status()
+        response.raise_for_status()
 
-            user_data = response.json()
+        user_data = response.json()
 
-            # Extract user ID from response
-            external_user_id = user_data.get("id")
-            if not external_user_id:
-                raise ValueError("Immich API response missing 'id' field")
+        # Extract user ID from response
+        external_user_id = user_data.get("id")
+        if not external_user_id:
+            raise ValueError("Immich API response missing 'id' field")
 
-            log_info(
-                f"Successfully connected to Immich for user {user.id}, "
-                f"external_user_id: {external_user_id}"
-            )
+        log_info(
+            f"Successfully connected to Immich for user {user.id}, "
+            f"external_user_id: {external_user_id}"
+        )
 
-            return str(external_user_id)
+        return str(external_user_id)
 
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (401, 403):
@@ -137,21 +149,20 @@ async def list_assets(
     api_key = decrypt_token(integration.access_token_encrypted)
 
     try:
-        async with httpx.AsyncClient(verify=True) as client:
-            response = await client.post(
-                f"{integration.base_url}{IMMICH_API_SEARCH_METADATA}",
-                headers={
-                    "x-api-key": api_key,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "page": page,
-                    "size": limit
-                },
-                timeout=30.0
-            )
-            response.raise_for_status()
-            search_response = response.json()
+        client = _get_client()
+        response = await client.post(
+            f"{integration.base_url}{IMMICH_API_SEARCH_METADATA}",
+            headers={
+                "x-api-key": api_key,
+                "Content-Type": "application/json"
+            },
+            json={
+                "page": page,
+                "size": limit
+            },
+        )
+        response.raise_for_status()
+        search_response = response.json()
 
         # Extract assets from search response
         assets_result = search_response.get("assets", {})
@@ -216,21 +227,20 @@ async def sync(
         cache_limit = settings.integration_cache_limit
 
         # Fetch recent assets from Immich using search metadata endpoint
-        async with httpx.AsyncClient(verify=True) as client:
-            response = await client.post(
-                f"{integration.base_url}{IMMICH_API_SEARCH_METADATA}",
-                headers={
-                    "x-api-key": api_key,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "page": 1,
-                    "size": cache_limit
-                },
-                timeout=60.0
-            )
-            response.raise_for_status()
-            search_response = response.json()
+        client = _get_client()
+        response = await client.post(
+            f"{integration.base_url}{IMMICH_API_SEARCH_METADATA}",
+            headers={
+                "x-api-key": api_key,
+                "Content-Type": "application/json"
+            },
+            json={
+                "page": 1,
+                "size": cache_limit
+            },
+        )
+        response.raise_for_status()
+        search_response = response.json()
 
         # Extract assets from search response
         assets_result = search_response.get("assets", {})
