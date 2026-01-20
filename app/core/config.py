@@ -131,10 +131,10 @@ class Settings(BaseSettings):
     max_file_size_mb: int = 100
     allowed_media_types: Optional[List[str]] = None
     allowed_file_extensions: Optional[List[str]] = None
-    media_signed_url_ttl_seconds: int = 120  # For images and general media
-    media_signed_url_video_ttl_seconds: int = 120  # 2 minutes for videos (same as images)
-    media_thumbnail_signed_url_ttl_seconds: int = 120
-    media_signed_url_grace_seconds: int = 60
+    media_signed_url_ttl_seconds: int = 300  # 5 minutes for images and general media
+    media_signed_url_video_ttl_seconds: int = 1200  # 20 minutes for videos
+    media_thumbnail_signed_url_ttl_seconds: int = 86400  # 24 hours for thumbnails
+    media_signed_url_grace_seconds: int = 60 # 1 minute grace period
 
     # File Processing Timeouts
     ffprobe_timeout: int = 300  # 5 minutes for video metadata extraction
