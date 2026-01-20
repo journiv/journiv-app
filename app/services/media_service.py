@@ -827,6 +827,12 @@ class MediaService:
             # Get media record with ownership validation
             media = self._get_media_by_id(media_id, user_id)
 
+            # If media is already completed, skip re-processing to avoid race conditions
+            # in duplicate uploads and unnecessary work
+            if media.upload_status == UploadStatus.COMPLETED:
+                log_info("Media already completed, skipping re-processing", media_id=media_id, user_id=user_id)
+                return
+
             # Update status to processing with transaction isolation
             try:
                 media.processing_error = None
