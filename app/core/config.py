@@ -630,9 +630,9 @@ class Settings(BaseSettings):
             raise ValueError("Grace period cannot exceed 300 seconds (5 minutes)")
 
         # Validate grace period is shorter than all media TTLs
-        ttl = info.data.get('media_signed_url_ttl_seconds', 120)
-        video_ttl = info.data.get('media_signed_url_video_ttl_seconds', 120)
-        thumb_ttl = info.data.get('media_thumbnail_signed_url_ttl_seconds', 120)
+        ttl = info.data.get('media_signed_url_ttl_seconds', 300)
+        video_ttl = info.data.get('media_signed_url_video_ttl_seconds', 1200)
+        thumb_ttl = info.data.get('media_thumbnail_signed_url_ttl_seconds', 86400)
 
         min_ttl = min(ttl, video_ttl, thumb_ttl)
 
