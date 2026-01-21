@@ -457,7 +457,10 @@ async def get_media_signed(
         # Session is now closed - DB connection released
 
         # Handle Immich proxy (Outside DB Session)
-        if external_provider == "immich" and external_asset_id:
+        if external_provider == "immich":
+            if not external_asset_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
             from app.models.integration import IntegrationProvider
 
             try:
@@ -512,6 +515,9 @@ async def get_media_signed(
             )
 
         # Handle Internal Media (file_info was fetched above)
+        if not file_info:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
+
         if file_info["range_info"]:
             range_info = file_info["range_info"]
             headers = {
@@ -613,7 +619,10 @@ async def get_media_thumbnail_signed(
         # Session is now closed - DB connection released
 
         # Handle Immich proxy for thumbnails (Outside DB Session)
-        if external_provider == "immich" and external_asset_id:
+        if external_provider == "immich":
+            if not external_asset_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not found")
+
             from app.models.integration import IntegrationProvider
 
             try:
@@ -647,6 +656,9 @@ async def get_media_thumbnail_signed(
             )
 
         # Handle Internal (thumbnail_path was fetched above)
+        if not thumbnail_path:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not found")
+
         return FileResponse(thumbnail_path)
     except MediaNotFoundError:
         raise HTTPException(

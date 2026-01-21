@@ -107,6 +107,8 @@ def attach_signed_urls(
 
     # 1. Skip URL generation for failed uploads
     if response.upload_status == UploadStatus.FAILED:
+        response.signed_url = None
+        response.signed_thumbnail_url = None
         return response
 
     # 2. Define logic to differentiate "Link-Only" from "In-Progress Copy"
@@ -125,6 +127,8 @@ def attach_signed_urls(
 
     # Skip URL generation for pending/processing uploads unless explicitly included
     if not include_incomplete and not is_immich_link_only and response.upload_status != UploadStatus.COMPLETED:
+        response.signed_url = None
+        response.signed_thumbnail_url = None
         return response
 
     now = int(time.time())
@@ -151,6 +155,8 @@ def attach_signed_urls(
             expires_at,
         )
         response.signed_url_expires_at = expires_at
+    else:
+        response.signed_url = None
 
     # 5. Generate Thumbnail URL
     if should_generate_thumbnail:
@@ -162,6 +168,8 @@ def attach_signed_urls(
             thumb_expires_at,
         )
         response.signed_thumbnail_expires_at = thumb_expires_at
+    else:
+        response.signed_thumbnail_url = None
 
     return response
 
