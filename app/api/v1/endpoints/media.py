@@ -437,68 +437,81 @@ async def get_media_signed(
 
     media_service = _get_media_service()
     try:
+        # Fetch metadata in SHORT-LIVED session, then release DB connection
+        # before starting the long-running streaming operation
+        external_provider = None
+        external_asset_id = None
+        file_info = None
+
         with database_module.get_session_context() as session:
-            # First fetch media record to check provider
+            # Fetch media record and extract required metadata
             media = media_service.get_media_by_id(media_id, uid, session)
+            external_provider = media.external_provider
+            external_asset_id = media.external_asset_id
 
-            # Handle Immich proxy (Unified Endpoint)
-            # Handle Immich proxy (Unified Endpoint)
-            if media.external_provider == "immich" and media.external_asset_id:
-                from app.models.integration import IntegrationProvider
+            # For internal media, fetch file info while we have the session
+            if external_provider != "immich":
+                file_info = await media_service.get_media_file_for_serving(
+                    media_id, uid, session, range_header
+                )
+        # Session is now closed - DB connection released
 
-                try:
+        # Handle Immich proxy (Outside DB Session)
+        if external_provider == "immich" and external_asset_id:
+            from app.models.integration import IntegrationProvider
+
+            try:
+                # Create a new short-lived session just for credential lookup
+                # fetch_proxy_asset uses cache to minimize DB hits
+                with database_module.get_session_context() as proxy_session:
                     response = await fetch_proxy_asset(
-                        session=session,
+                        session=proxy_session,
                         user_id=uid,
                         provider=IntegrationProvider.IMMICH,
-                        asset_id=media.external_asset_id,
+                        asset_id=external_asset_id,
                         variant="original",
                         range_header=range_header,
                     )
-                except ValueError as e:
-                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
-                except Exception as e:
-                    error_logger.exception(f"Proxy original failed: {e}")
-                    raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch original file") from e
+                # Session closed, but streaming response is still open
+            except ValueError as e:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+            except Exception as e:
+                error_logger.exception(f"Proxy original failed: {e}")
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch original file") from e
 
-                if response.status_code in (401, 403, 404, 416):
-                    await _close_httpx_stream(response)
-                    # Map proxied status codes
-                    if response.status_code == 404:
-                         raise HTTPException(status_code=404, detail="Media not found")
-                    raise HTTPException(status_code=response.status_code, detail="Provider error")
+            if response.status_code in (401, 403, 404, 416):
+                await _close_httpx_stream(response)
+                # Map proxied status codes
+                if response.status_code == 404:
+                     raise HTTPException(status_code=404, detail="Media not found")
+                raise HTTPException(status_code=response.status_code, detail="Provider error")
 
-                try:
-                    response.raise_for_status()
-                except httpx.HTTPStatusError as e:
-                    await _close_httpx_stream(response)
-                    raise HTTPException(status_code=e.response.status_code, detail="Provider error")
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                await _close_httpx_stream(response)
+                raise HTTPException(status_code=e.response.status_code, detail="Provider error")
 
-                # Forward headers
-                response_headers = {
-                    "Cache-Control": "public, max-age=3600",
-                    "X-Provider": "immich",
-                }
-                for header in ["Content-Range", "Accept-Ranges", "Content-Length"]:
-                    if header.lower() in response.headers:
-                        response_headers[header] = response.headers[header.lower()]
+            # Forward headers
+            response_headers = {
+                "Cache-Control": "public, max-age=3600",
+                "X-Provider": "immich",
+            }
+            for header in ["Content-Range", "Accept-Ranges", "Content-Length"]:
+                if header.lower() in response.headers:
+                    response_headers[header] = response.headers[header.lower()]
 
-                status_code = status.HTTP_206_PARTIAL_CONTENT if response.status_code == 206 else status.HTTP_200_OK
+            status_code = status.HTTP_206_PARTIAL_CONTENT if response.status_code == 206 else status.HTTP_200_OK
 
-                return StreamingResponse(
-                    response.aiter_bytes(),
-                    status_code=status_code,
-                    media_type=response.headers.get("content-type", "application/octet-stream"),
-                    headers=response_headers,
-                    background=BackgroundTask(_close_httpx_stream, response)
-                )
-
-            # Handle Internal Media
-            file_info = await media_service.get_media_file_for_serving(
-                media_id, uid, session, range_header
+            return StreamingResponse(
+                response.aiter_bytes(),
+                status_code=status_code,
+                media_type=response.headers.get("content-type", "application/octet-stream"),
+                headers=response_headers,
+                background=BackgroundTask(_close_httpx_stream, response)
             )
 
-        # Serving internal file
+        # Handle Internal Media (file_info was fetched above)
         if file_info["range_info"]:
             range_info = file_info["range_info"]
             headers = {
@@ -584,42 +597,56 @@ async def get_media_thumbnail_signed(
 
     media_service = _get_media_service()
     try:
+        # Fetch metadata in SHORT-LIVED session, then release DB connection
+        external_provider = None
+        external_asset_id = None
+        thumbnail_path = None
+
         with database_module.get_session_context() as session:
             media = media_service.get_media_by_id(media_id, uid, session)
+            external_provider = media.external_provider
+            external_asset_id = media.external_asset_id
 
-            # Handle Immich proxy for thumbnails
-            if media.external_provider == "immich" and media.external_asset_id:
-                from app.models.integration import IntegrationProvider
+            # For internal media, fetch thumbnail path while we have the session
+            if external_provider != "immich":
+                thumbnail_path = media_service.get_media_thumbnail_path(media)
+        # Session is now closed - DB connection released
 
-                try:
+        # Handle Immich proxy for thumbnails (Outside DB Session)
+        if external_provider == "immich" and external_asset_id:
+            from app.models.integration import IntegrationProvider
+
+            try:
+                # Create a new short-lived session just for credential lookup
+                with database_module.get_session_context() as proxy_session:
                     response = await fetch_proxy_asset(
-                        session=session,
+                        session=proxy_session,
                         user_id=uid,
                         provider=IntegrationProvider.IMMICH,
-                        asset_id=media.external_asset_id,
+                        asset_id=external_asset_id,
                         variant="thumbnail",
                     )
-                except Exception as e:
-                     error_logger.exception(f"Proxy thumbnail failed: {e}")
-                     raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch thumbnail") from e
+                # Session closed, but streaming response is still open
+            except Exception as e:
+                 error_logger.exception(f"Proxy thumbnail failed: {e}")
+                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch thumbnail") from e
 
-                if response.status_code != 200:
-                    await _close_httpx_stream(response)
-                    # If 404/401, we might want to try refreshing or just fail
-                    raise HTTPException(status_code=response.status_code, detail="Thumbnail not found in provider")
+            if response.status_code != 200:
+                await _close_httpx_stream(response)
+                # If 404/401, we might want to try refreshing or just fail
+                raise HTTPException(status_code=response.status_code, detail="Thumbnail not found in provider")
 
-                return StreamingResponse(
-                    response.aiter_bytes(),
-                    media_type=response.headers.get("content-type", "image/jpeg"),
-                    headers={
-                        "Cache-Control": "public, max-age=3600",
-                        "X-Provider": "immich"
-                    },
-                    background=BackgroundTask(_close_httpx_stream, response)
-                )
+            return StreamingResponse(
+                response.aiter_bytes(),
+                media_type=response.headers.get("content-type", "image/jpeg"),
+                headers={
+                    "Cache-Control": "public, max-age=3600",
+                    "X-Provider": "immich"
+                },
+                background=BackgroundTask(_close_httpx_stream, response)
+            )
 
-            # Handle Internal
-            thumbnail_path = media_service.get_media_thumbnail_path(media)
+        # Handle Internal (thumbnail_path was fetched above)
         return FileResponse(thumbnail_path)
     except MediaNotFoundError:
         raise HTTPException(
