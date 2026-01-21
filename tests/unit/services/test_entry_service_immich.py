@@ -52,6 +52,7 @@ class TestEntryServiceImmichAssetRemoval:
             external_provider="immich",
             external_asset_id=shared_asset_id,
             media_type="image",
+            mime_type="image/jpeg",
             file_path=None  # Link only
         )
         media2 = EntryMedia(
@@ -60,6 +61,7 @@ class TestEntryServiceImmichAssetRemoval:
             external_provider="immich",
             external_asset_id=unique_asset_id,
             media_type="image",
+            mime_type="image/jpeg",
             file_path=None  # Link only
         )
 
@@ -133,6 +135,7 @@ class TestEntryServiceImmichAssetRemoval:
             external_provider="immich",
             external_asset_id=asset_id_1,
             media_type="image",
+            mime_type="image/jpeg",
             file_path=None
         )
         media2 = EntryMedia(
@@ -141,6 +144,7 @@ class TestEntryServiceImmichAssetRemoval:
             external_provider="immich",
             external_asset_id=asset_id_2,
             media_type="image",
+            mime_type="image/jpeg",
             file_path=None
         )
 
@@ -196,6 +200,7 @@ class TestEntryServiceImmichAssetRemoval:
             external_provider="immich",
             external_asset_id=shared_asset_id,
             media_type="image",
+            mime_type="image/jpeg",
             file_path=None
         )
 
@@ -236,6 +241,7 @@ class TestEntryServiceImmichAssetRemoval:
             external_provider="immich",
             external_asset_id=unique_asset_id,
             media_type="image",
+            mime_type="image/jpeg",
             file_path=None
         )
 

@@ -379,17 +379,6 @@ class EntryService:
 
             self.session.delete(media)
 
-        # Trigger removal from Immich album for linked assets (only those not used elsewhere)
-        if linked_assets_to_remove:
-            try:
-                from app.core.celery_app import celery_app
-                celery_app.send_task(
-                    "app.integrations.tasks.remove_assets_from_album_task",
-                    args=[str(user_id), "immich", linked_assets_to_remove]
-                )
-            except Exception as exc:
-                log_warning(f"Failed to trigger album asset removal task: {exc}")
-
         # Hard delete related EntryTagLink records
         tag_link_statement = select(EntryTagLink).where(EntryTagLink.entry_id == entry_id)
         tag_link_records = self.session.exec(tag_link_statement).all()
@@ -408,6 +397,18 @@ class EntryService:
             self.session.rollback()
             log_error(exc)
             raise
+
+        # Trigger removal from Immich album for linked assets (only those not used elsewhere)
+        # This must happen AFTER commit to ensure the background task sees the committed state
+        if linked_assets_to_remove:
+            try:
+                from app.core.celery_app import celery_app
+                celery_app.send_task(
+                    "app.integrations.tasks.remove_assets_from_album_task",
+                    args=[str(user_id), "immich", linked_assets_to_remove]
+                )
+            except Exception as exc:
+                log_warning(f"Failed to trigger album asset removal task: {exc}")
 
         try:
             from app.services.journal_service import JournalService
