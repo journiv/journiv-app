@@ -16,6 +16,7 @@ Scheduling:
 import asyncio
 from typing import Any, Awaitable, Callable
 
+from sqlalchemy.pool import NullPool
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
@@ -24,11 +25,15 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.models.integration import IntegrationProvider
-from app.integrations.service import sync_integration, sync_all_integrations
+from app.integrations.service import (
+    sync_integration,
+    sync_all_integrations,
+    add_assets_to_integration_album,
+    remove_assets_from_integration_album
+)
 from app.models.user import User
 
 from app.core.logging_config import log_info, log_error
-
 
 def _build_async_database_url() -> str:
     url = make_url(settings.effective_database_url)
@@ -38,10 +43,16 @@ def _build_async_database_url() -> str:
         drivername = "postgresql+asyncpg"
     else:
         drivername = url.drivername
-    return str(url.set(drivername=drivername))
+    return url.set(drivername=drivername).render_as_string(hide_password=False)
 
 
-async_engine = create_async_engine(_build_async_database_url(), echo=False)
+# Use NullPool to avoid sharing connections across different asyncio loops
+# created by asyncio.run() in _run_async. Each task run gets a fresh connection.
+async_engine = create_async_engine(
+    _build_async_database_url(),
+    echo=False,
+    poolclass=NullPool
+)
 async_session_factory = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
@@ -131,3 +142,57 @@ def sync_provider_task(user_id: str, provider: str) -> None:
 @celery_app.task(name="app.integrations.tasks.sync_all_providers_task")
 def sync_all_providers_task() -> None:
     _run_async(_sync_all_providers_task)
+
+
+# ==============================================================================
+# ALBUM MANAGEMENT TASKS
+# ==============================================================================
+
+async def _add_assets_to_album_task(
+    session: AsyncSession,
+    user_id: str,
+    provider: IntegrationProvider,
+    asset_ids: list[str]
+) -> None:
+    """Async worker for adding assets to album."""
+    import uuid
+    try:
+        u_id = uuid.UUID(user_id)
+        await add_assets_to_integration_album(session, u_id, provider, asset_ids)
+    except Exception as e:
+        log_error(e, user_id=user_id, message="Failed to add assets to album task")
+
+
+@celery_app.task(name="app.integrations.tasks.add_assets_to_album_task")
+def add_assets_to_album_task(user_id: str, provider: str, asset_ids: list[str]) -> None:
+    """Celery task to add assets to provider album."""
+    try:
+        provider_enum = IntegrationProvider(provider)
+        _run_async(_add_assets_to_album_task, user_id=user_id, provider=provider_enum, asset_ids=asset_ids)
+    except ValueError as e:
+        log_error(e, user_id=user_id, message="Invalid provider for album task")
+
+
+async def _remove_assets_from_album_task(
+    session: AsyncSession,
+    user_id: str,
+    provider: IntegrationProvider,
+    asset_ids: list[str]
+) -> None:
+    """Async worker for removing assets from album."""
+    import uuid
+    try:
+        u_id = uuid.UUID(user_id)
+        await remove_assets_from_integration_album(session, u_id, provider, asset_ids)
+    except Exception as e:
+        log_error(e, user_id=user_id, message="Failed to remove assets from album task")
+
+
+@celery_app.task(name="app.integrations.tasks.remove_assets_from_album_task")
+def remove_assets_from_album_task(user_id: str, provider: str, asset_ids: list[str]) -> None:
+    """Celery task to remove assets from provider album."""
+    try:
+        provider_enum = IntegrationProvider(provider)
+        _run_async(_remove_assets_from_album_task, user_id=user_id, provider=provider_enum, asset_ids=asset_ids)
+    except ValueError as e:
+        log_error(e, user_id=user_id, message="Invalid provider for album task")

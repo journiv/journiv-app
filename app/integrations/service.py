@@ -22,6 +22,7 @@ Extension Points:
 - No changes to service.py required for new providers
 """
 from inspect import isawaitable
+import uuid
 from typing import Optional, Dict, Any
 import uuid
 
@@ -30,6 +31,7 @@ from sqlmodel import Session, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
+from app.core.encryption import encrypt_token, decrypt_token
 from app.core.time_utils import utc_now
 from app.integrations import immich
 from app.models.integration import Integration, IntegrationProvider, ImportMode
@@ -250,6 +252,14 @@ async def connect_integration(
         log_info(f"Connected {provider} for user {user.id} (new integration {integration.id})")
 
     # Return response (don't expose encrypted tokens)
+    # Ensure setup (e.g., Album creation) for specific providers
+    try:
+        if provider == IntegrationProvider.IMMICH:
+            api_key = decrypt_token(integration.access_token_encrypted)
+            await provider_module.ensure_album_exists(integration.base_url, api_key)
+    except Exception as e:
+        log_error(e, user_id=user.id, message=f"Failed to ensure album setup for {provider}")
+
     return IntegrationConnectResponse(
         status="connected",
         provider=provider,
@@ -627,3 +637,135 @@ async def fetch_proxy_asset(
     except Exception as e:
         log_error(f"Proxy request failed: {e}", user_id=user_id)
         raise
+
+async def add_assets_to_integration_album(
+    session: Session | AsyncSession,
+    user_id: uuid.UUID,
+    provider: IntegrationProvider,
+    asset_ids: list[str]
+) -> None:
+    """
+    Add assets to the provider's specific album (e.g., 'Journiv').
+    """
+    if not asset_ids:
+        return
+
+    # Get integration
+    integration = (await _exec(
+        session,
+        select(Integration)
+        .where(Integration.user_id == user_id)
+        .where(Integration.provider == provider)
+    )).first()
+
+    if not integration or not integration.is_active:
+        log_warning(f"Integration {provider} not active for user {user_id}, skipping album add")
+        return
+
+    provider_module = get_provider_module(provider)
+    if not hasattr(provider_module, "add_assets_to_album"):
+        log_warning(f"Provider {provider} does not support album addition")
+        return
+
+    try:
+        api_key = decrypt_token(integration.access_token_encrypted)
+
+        # Ensure album exists first
+        album_id = await provider_module.ensure_album_exists(integration.base_url, api_key)
+        if not album_id:
+            log_error(f"Could not find or create album for {provider}")
+            return
+
+        await provider_module.add_assets_to_album(
+            integration.base_url,
+            api_key,
+            album_id,
+            asset_ids
+        )
+    except Exception as e:
+        log_error(e, user_id=user_id, message=f"Failed to add assets to {provider} album")
+        # Don't raise, allowing background task to fail gracefully
+
+
+async def remove_assets_from_integration_album(
+    session: Session | AsyncSession,
+    user_id: uuid.UUID,
+    provider: IntegrationProvider,
+    asset_ids: list[str]
+) -> None:
+    """
+    Remove assets from the provider's specific album.
+    """
+    if not asset_ids:
+        return
+
+    # Filter out assets that are still in use by other entries for this user
+    # This prevents removing an asset from the album if it's linked to multiple entries
+    try:
+        from app.models.entry import Entry, EntryMedia
+
+        # Check if any of these assets are still referenced in the database
+        # (The current entry's reference has already been deleted by this point)
+        stmt = (
+            select(EntryMedia.external_asset_id)
+            .join(Entry)
+            .where(
+                Entry.user_id == user_id,
+                EntryMedia.external_provider == provider.value,
+                EntryMedia.external_asset_id.in_(asset_ids)
+            )
+        )
+
+        result = await _exec(session, stmt)
+        # Extract just the asset IDs from the query result (list of tuples)
+        remaining_assets = {row[0] for row in result.all()}
+
+        # Only remove assets that have no remaining references
+        original_count = len(asset_ids)
+        asset_ids = [aid for aid in asset_ids if aid not in remaining_assets]
+
+        if not asset_ids:
+            log_debug(f"All {original_count} assets are still in use by other entries, skipping removal from {provider} album")
+            return
+
+        if len(asset_ids) < original_count:
+            log_debug(f"Partial removal: {len(asset_ids)}/{original_count} assets will be removed (others still in use)")
+
+    except Exception as e:
+        log_error(e, user_id=user_id, message="Failed to check asset usage before removal")
+        return
+
+    # Get integration
+    integration = (await _exec(
+        session,
+        select(Integration)
+        .where(Integration.user_id == user_id)
+        .where(Integration.provider == provider)
+    )).first()
+
+    if not integration or not integration.is_active:
+        return
+
+    provider_module = get_provider_module(provider)
+    if not hasattr(provider_module, "remove_assets_from_album"):
+        return
+
+    try:
+        api_key = decrypt_token(integration.access_token_encrypted)
+
+        # We need the album ID. If we don't store it, we have to look it up.
+        # Assuming "Journiv" album.
+        album_id = await provider_module.get_album_id_by_name(integration.base_url, api_key, "Journiv")
+        if not album_id:
+            log_warning("Journiv album not found, skipping asset removal")
+            return
+
+        await provider_module.remove_assets_from_album(
+            integration.base_url,
+            api_key,
+            album_id,
+            asset_ids
+        )
+    except Exception as e:
+        log_error(e, user_id=user_id, message=f"Failed to remove assets from {provider} album")
+

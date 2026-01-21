@@ -336,6 +336,37 @@ class EntryService:
         # Note: We'll create storage service AFTER commit when reference counts are accurate
         media_files_to_delete = []
 
+        # Collect linked assets and check if they're used in other entries BEFORE deletion
+        # This is critical because once we delete the media records, we can't query for remaining references
+        linked_asset_ids = [
+            media.external_asset_id
+            for media in media_records
+            if media.external_provider == "immich" and not media.file_path and media.external_asset_id
+        ]
+
+        linked_assets_to_remove = []
+        if linked_asset_ids:
+            # Single query: count occurrences of each asset across all user entries (excluding current entry)
+            from sqlalchemy import func
+            count_statement = (
+                select(EntryMedia.external_asset_id, func.count(EntryMedia.id).label('count'))
+                .where(
+                    EntryMedia.external_asset_id.in_(linked_asset_ids),
+                    EntryMedia.external_provider == "immich",
+                    EntryMedia.entry_id != entry_id
+                )
+                .join(Entry)
+                .where(Entry.user_id == user_id)
+                .group_by(EntryMedia.external_asset_id)
+            )
+
+            # Get assets that are used in other entries
+            asset_counts = self.session.exec(count_statement).all()
+            assets_in_use = {asset_id for asset_id, count in asset_counts if count > 0}
+
+            # Only remove assets that are NOT in use elsewhere
+            linked_assets_to_remove = [aid for aid in linked_asset_ids if aid not in assets_in_use]
+
         for media in media_records:
             # Collect media info for reference-counted deletion BEFORE deleting from DB
             if media.file_path:
@@ -347,6 +378,17 @@ class EntryService:
                 })
 
             self.session.delete(media)
+
+        # Trigger removal from Immich album for linked assets (only those not used elsewhere)
+        if linked_assets_to_remove:
+            try:
+                from app.core.celery_app import celery_app
+                celery_app.send_task(
+                    "app.integrations.tasks.remove_assets_from_album_task",
+                    args=[str(user_id), "immich", linked_assets_to_remove]
+                )
+            except Exception as exc:
+                log_warning(f"Failed to trigger album asset removal task: {exc}")
 
         # Hard delete related EntryTagLink records
         tag_link_statement = select(EntryTagLink).where(EntryTagLink.entry_id == entry_id)
@@ -516,6 +558,18 @@ class EntryService:
             raise
 
         log_info(f"Media added to entry {entry_id} for user {user_id}: {media.id}")
+
+        # Trigger addition to Immich album for linked assets
+        if media.external_provider == "immich" and not media.file_path and media.external_asset_id:
+            try:
+                from app.core.celery_app import celery_app
+                celery_app.send_task(
+                    "app.integrations.tasks.add_assets_to_album_task",
+                    args=[str(user_id), "immich", [media.external_asset_id]]
+                )
+            except Exception as exc:
+                log_warning(f"Failed to trigger album asset addition task: {exc}")
+
         return media
 
     def get_entry_media(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> List[EntryMedia]:
@@ -551,6 +605,30 @@ class EntryService:
         if not media:
             raise EntryNotFoundError("Media not found")
 
+        # Check if this asset is used in other entries BEFORE deletion
+        should_remove_from_album = False
+        if media.external_provider == "immich" and not media.file_path and media.external_asset_id:
+            # Count how many other entries use this asset (excluding current media record)
+            from sqlalchemy import func
+            count_statement = (
+                select(func.count(EntryMedia.id))
+                .where(
+                    EntryMedia.external_asset_id == media.external_asset_id,
+                    EntryMedia.external_provider == "immich",
+                    EntryMedia.id != media_id
+                )
+                .join(Entry)
+                .where(Entry.user_id == user_id)
+            )
+
+            other_usage_count = self.session.exec(count_statement).one()
+
+            # Only mark for removal if no other entries use this asset
+            should_remove_from_album = (other_usage_count == 0)
+
+        # Store asset info for album removal after commit
+        asset_id_to_remove = media.external_asset_id if should_remove_from_album else None
+
         # Hard delete the media
         self.session.delete(media)
         try:
@@ -559,6 +637,17 @@ class EntryService:
             self.session.rollback()
             log_error(exc)
             raise
+
+        # Trigger removal from Immich album after successful deletion
+        if asset_id_to_remove:
+            try:
+                from app.core.celery_app import celery_app
+                celery_app.send_task(
+                    "app.integrations.tasks.remove_assets_from_album_task",
+                    args=[str(user_id), "immich", [asset_id_to_remove]]
+                )
+            except Exception as exc:
+                log_warning(f"Failed to trigger album asset removal task: {exc}")
 
         log_info(f"Media hard-deleted for user {user_id}: {media.id}")
         return True

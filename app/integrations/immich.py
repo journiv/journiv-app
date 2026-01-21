@@ -30,6 +30,8 @@ from app.models.user import User
 IMMICH_API_USER_ME = "/api/users/me"
 IMMICH_API_SEARCH_METADATA = "/api/search/metadata"  # Search assets with pagination
 IMMICH_API_ASSET_THUMBNAIL = "/api/assets/{asset_id}/thumbnail"
+IMMICH_API_ALBUMS = "/api/albums"
+IMMICH_API_ALBUM_ASSETS = "/api/albums/{album_id}/assets"
 
 _client: Optional[httpx.AsyncClient] = None
 
@@ -272,6 +274,152 @@ async def sync(
         integration.last_error_at = utc_now()
         session.add(integration)
         await _commit_session(session)
+        raise
+
+
+async def ensure_album_exists(
+    base_url: str,
+    api_key: str,
+    album_name: str = "Journiv"
+) -> Optional[str]:
+    """
+    Ensure an album with the given name exists.
+
+    Returns:
+        str: The album ID, or None if creation failed.
+    """
+    # Check if album exists
+    album_id = await get_album_id_by_name(base_url, api_key, album_name)
+    if album_id:
+        log_info(f"Found existing Immich album '{album_name}': {album_id}")
+        return album_id
+
+    # Create if not exists
+    log_info(f"Creating Immich album '{album_name}'")
+    try:
+        album_id = await create_album(base_url, api_key, album_name)
+        log_info(f"Created Immich album '{album_name}': {album_id}")
+        return album_id
+    except ValueError as e:
+        log_error(e, message=f"Failed to create Immich album '{album_name}': {e}")
+        # If creation fails mainly due to concurrency (created just now), try finding it again
+        return await get_album_id_by_name(base_url, api_key, album_name)
+
+
+async def get_album_id_by_name(
+    base_url: str,
+    api_key: str,
+    album_name: str
+) -> Optional[str]:
+    """Find an album ID by name."""
+    try:
+        async with httpx.AsyncClient(verify=True) as client:
+            response = await client.get(
+                f"{base_url}{IMMICH_API_ALBUMS}",
+                headers={"x-api-key": api_key},
+                timeout=30.0
+            )
+            response.raise_for_status()
+            albums = response.json()
+
+            # Find album with matching name
+            for album in albums:
+                if album.get("albumName") == album_name:
+                    return album.get("id")
+
+            return None
+    except Exception as e:
+        log_warning(e, f"Failed to list Immich albums: {e}")
+        return None
+
+
+async def create_album(
+    base_url: str,
+    api_key: str,
+    album_name: str
+) -> str:
+    """Create a new album with description."""
+    try:
+        async with httpx.AsyncClient(verify=True) as client:
+            response = await client.post(
+                f"{base_url}{IMMICH_API_ALBUMS}",
+                headers={
+                    "x-api-key": api_key,
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "albumName": album_name,
+                    "description": "Photos and Videos linked to Journiv journal entries"
+                },
+                timeout=30.0
+            )
+            response.raise_for_status()
+            data = response.json()
+            return data.get("id")
+    except Exception as e:
+        log_error(e, message=f"Failed to create album: {e}")
+        raise ValueError(f"Failed to create album: {e}")
+
+
+async def add_assets_to_album(
+    base_url: str,
+    api_key: str,
+    album_id: str,
+    asset_ids: List[str]
+) -> None:
+    """Add assets to an album."""
+    if not asset_ids:
+        return
+
+    try:
+        url = f"{base_url}{IMMICH_API_ALBUM_ASSETS.format(album_id=album_id)}"
+        async with httpx.AsyncClient(verify=True) as client:
+            response = await client.put(
+                url,
+                headers={
+                    "x-api-key": api_key,
+                    "Content-Type": "application/json"
+                },
+                json={"ids": asset_ids},
+                timeout=30.0
+            )
+            response.raise_for_status()
+            log_info(f"Added {len(asset_ids)} assets to Immich album {album_id}")
+
+    except Exception as e:
+        log_error(e, message=f"Failed to add assets to Immich album {album_id}: {e}")
+        raise
+
+
+async def remove_assets_from_album(
+    base_url: str,
+    api_key: str,
+    album_id: str,
+    asset_ids: List[str]
+) -> None:
+    """Remove assets from an album."""
+    if not asset_ids:
+        return
+
+    try:
+        url = f"{base_url}{IMMICH_API_ALBUM_ASSETS.format(album_id=album_id)}"
+
+        async with httpx.AsyncClient(verify=True) as client:
+            response = await client.request(
+                "DELETE",
+                url,
+                headers={
+                    "x-api-key": api_key,
+                    "Content-Type": "application/json"
+                },
+                json={"ids": asset_ids},
+                timeout=30.0
+            )
+            response.raise_for_status()
+            log_info(f"Removed {len(asset_ids)} assets from Immich album {album_id}")
+
+    except Exception as e:
+        log_error(e, message=f"Failed to remove assets from Immich album {album_id}: {e}")
         raise
 
 
