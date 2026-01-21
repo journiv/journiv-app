@@ -952,12 +952,12 @@ class ImportJobService:
             return None
 
     @staticmethod
-    def _parse_duration_seconds(raw_duration: Optional[object]) -> Optional[int]:
-        """Convert Immich duration values into integer seconds."""
+    def _parse_duration_seconds(raw_duration: Optional[object]) -> Optional[float]:
+        """Convert Immich duration values into float seconds."""
         if raw_duration is None:
             return None
         if isinstance(raw_duration, (int, float)):
-            return int(raw_duration)
+            return float(raw_duration)
         if not isinstance(raw_duration, str):
             return None
         value = raw_duration.strip()
@@ -965,7 +965,7 @@ class ImportJobService:
             return None
         if ":" not in value:
             try:
-                return int(float(value))
+                return float(value)
             except ValueError:
                 return None
 
@@ -979,7 +979,7 @@ class ImportJobService:
             seconds = float(parts[2])
         except ValueError:
             return None
-        return int(hours * 3600 + minutes * 60 + seconds)
+        return float(hours * 3600 + minutes * 60 + seconds)
 
 
     async def repair_thumbnails_async(

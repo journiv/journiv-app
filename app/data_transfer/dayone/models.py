@@ -80,7 +80,7 @@ class DayOnePhoto(BaseModel):
     favorite: Optional[bool] = Field(None, alias="favorite")
     width: Optional[int] = Field(None, alias="width", ge=0, le=50000)
     height: Optional[int] = Field(None, alias="height", ge=0, le=50000)
-    duration: Optional[int] = Field(None, alias="duration", ge=0)
+    duration: Optional[float] = Field(None, alias="duration", ge=0)
     camera_make: Optional[str] = Field(None, alias="cameraMake", max_length=100)
     camera_model: Optional[str] = Field(None, alias="cameraModel", max_length=100)
     focal_length: Optional[str] = Field(None, alias="focalLength", max_length=50)
@@ -112,7 +112,7 @@ class DayOneVideo(BaseModel):
     date: Optional[datetime] = Field(None, alias="date")
     order_in_entry: Optional[int] = Field(None, alias="orderInEntry", ge=0)
     favorite: Optional[bool] = Field(None, alias="favorite")
-    duration: Optional[int] = Field(None, alias="duration", ge=0)
+    duration: Optional[float] = Field(None, alias="duration", ge=0)
     width: Optional[int] = Field(None, alias="width", ge=0, le=50000)
     height: Optional[int] = Field(None, alias="height", ge=0, le=50000)
 
@@ -160,7 +160,7 @@ class DayOneEntry(BaseModel):
     tags: Optional[List[str]] = Field(default_factory=list, alias="tags")
     photos: Optional[List[DayOnePhoto]] = Field(default_factory=list, alias="photos")
     videos: Optional[List[DayOneVideo]] = Field(default_factory=list, alias="videos")
-    duration: Optional[int] = Field(None, alias="duration", ge=0)
+    duration: Optional[float] = Field(None, alias="duration", ge=0)
     editing_time: Optional[float] = Field(None, alias="editingTime", ge=0)
     is_all_day: Optional[bool] = Field(None, alias="isAllDay")
 

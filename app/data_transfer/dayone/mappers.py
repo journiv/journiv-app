@@ -357,7 +357,7 @@ class DayOneToJournivMapper:
         mime_type: str,
         width: Optional[int],
         height: Optional[int],
-        duration: Optional[int],
+        duration: Optional[float],
         date: Optional[datetime],
         file_metadata: Dict[str, Any],
     ) -> MediaDTO:

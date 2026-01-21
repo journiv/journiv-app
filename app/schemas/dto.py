@@ -38,7 +38,7 @@ class MediaDTO(BaseModel):
     height: Optional[int] = Field(None, description="Image/video height in pixels")
 
     # Audio/video duration
-    duration: Optional[int] = Field(None, description="Audio/video duration in seconds")
+    duration: Optional[float] = Field(None, description="Audio/video duration in seconds")
 
     # Accessibility
     alt_text: Optional[str] = Field(None, description="Alt text for accessibility")

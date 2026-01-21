@@ -218,7 +218,7 @@ class EntryMedia(BaseModel, table=True):
     # Common fields
     original_filename: Optional[str] = Field(None, max_length=255)
     mime_type: str = Field(..., max_length=100)
-    duration: Optional[int] = Field(None, ge=0)  # in seconds for video/audio
+    duration: Optional[float] = Field(None, ge=0)  # in seconds for video/audio
     width: Optional[int] = Field(None, ge=0)
     height: Optional[int] = Field(None, ge=0)
     alt_text: Optional[str] = Field(None, max_length=500)  # Accessibility

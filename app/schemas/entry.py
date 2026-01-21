@@ -96,7 +96,7 @@ class EntryMediaBase(BaseModel):
     file_size: Optional[int] = None
     mime_type: str
     thumbnail_path: Optional[str] = None
-    duration: Optional[int] = None
+    duration: Optional[float] = None
     width: Optional[int] = None
     height: Optional[int] = None
     alt_text: Optional[str] = None
