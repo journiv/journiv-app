@@ -28,8 +28,18 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     # Change duration column back from Float to Integer
-    with op.batch_alter_table('entry_media', schema=None) as batch_op:
-        batch_op.alter_column('duration',
-               existing_type=sa.Float(),
-               type_=sa.Integer(),
-               existing_nullable=True)
+    connection = op.get_bind()
+    if connection.dialect.name == "postgresql":
+        # PostgreSQL requires explicit USING clause for type conversion
+        op.execute("""
+            ALTER TABLE entry_media
+            ALTER COLUMN duration TYPE INTEGER
+            USING round(duration)::integer
+        """)
+    else:
+        # SQLite handles the conversion automatically
+        with op.batch_alter_table('entry_media', schema=None) as batch_op:
+            batch_op.alter_column('duration',
+                   existing_type=sa.Float(),
+                   type_=sa.Integer(),
+                   existing_nullable=True)
