@@ -105,18 +105,31 @@ def attach_signed_urls(
     elif response.external_provider is None and response.file_path:
         response.origin = MediaOrigin(source="internal")
 
-    # Skip URL generation for failed uploads
+    # 1. Skip URL generation for failed uploads
     if response.upload_status == UploadStatus.FAILED:
         return response
 
-    # Skip URL generation for pending uploads unless explicitly included
-    if not include_incomplete and response.upload_status == UploadStatus.PENDING:
+    # 2. Define logic to differentiate "Link-Only" from "In-Progress Copy"
+    is_immich_link_only = (
+        response.external_provider == IntegrationProvider.IMMICH.value
+        and not response.file_path
+        and response.upload_status == UploadStatus.COMPLETED
+    )
+
+    # 3. Determine if we should generate URLs based on the state
+    # For originals: generate if it's a stable link-only asset OR we have a local file
+    should_generate_original = is_immich_link_only or bool(response.file_path)
+
+    # For thumbnails: generate if it's a stable link-only asset OR we have a local thumbnail
+    should_generate_thumbnail = is_immich_link_only or bool(response.thumbnail_path)
+
+    # Skip URL generation for pending/processing uploads unless explicitly included
+    if not include_incomplete and not is_immich_link_only and response.upload_status != UploadStatus.COMPLETED:
         return response
 
     now = int(time.time())
 
     # Determine TTL based on media type (videos get longer TTL for streaming)
-    # Safely handle potential non-string media_type
     media_type_str = str(response.media_type).lower() if response.media_type else ""
     is_video = media_type_str == "video"
     ttl_seconds = (
@@ -124,26 +137,23 @@ def attach_signed_urls(
         else settings.media_signed_url_ttl_seconds
     )
 
-    # Generate unified Journiv signed URLs for ALL media (internal and external)
-    # The /media/{uuid}/signed endpoint automatically proxies to Immich for external media
     expires_at = now + ttl_seconds
 
     if response.id is None:
-         # Should not happen for persisted entries, but safeguard against invalid objects
         raise ValueError("Cannot generate signed URL for media with no ID")
 
-    response.signed_url = signed_url_for_journiv(
-        str(response.id),
-        user_id,
-        "original",
-        expires_at,
-    )
-    response.signed_url_expires_at = expires_at
+    # 4. Generate Original URL
+    if should_generate_original:
+        response.signed_url = signed_url_for_journiv(
+            str(response.id),
+            user_id,
+            "original",
+            expires_at,
+        )
+        response.signed_url_expires_at = expires_at
 
-    # Generate thumbnail URL if available
-    # For Immich: always generate (proxied from Immich)
-    # For internal: only if thumbnail_path exists
-    if response.external_provider == IntegrationProvider.IMMICH.value or response.thumbnail_path:
+    # 5. Generate Thumbnail URL
+    if should_generate_thumbnail:
         thumb_expires_at = now + settings.media_thumbnail_signed_url_ttl_seconds
         response.signed_thumbnail_url = signed_url_for_journiv(
             str(response.id),
