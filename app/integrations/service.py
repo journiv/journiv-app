@@ -270,7 +270,7 @@ async def connect_integration(
                 await _refresh(session, integration)
                 log_info(f"Created/found Immich album for user {user.id}: {album_id}")
             else:
-                integration.update_metadata(album_error="Failed to create album")
+                integration.update_metadata(album_id=None, album_error="Failed to create album")
                 session.add(integration)
                 await _commit(session)
                 await _refresh(session, integration)
