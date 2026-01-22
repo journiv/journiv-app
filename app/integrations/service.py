@@ -119,6 +119,12 @@ async def _refresh(session: Session | AsyncSession, instance) -> None:
     if isawaitable(result):
         await result
 
+
+async def _rollback(session: Session | AsyncSession) -> None:
+    result = session.rollback()
+    if isawaitable(result):
+        await result
+
 # ================================================================================
 # PROVIDER REGISTRY
 # ================================================================================
@@ -251,14 +257,32 @@ async def connect_integration(
 
         log_info(f"Connected {provider} for user {user.id} (new integration {integration.id})")
 
-    # Return response (don't expose encrypted tokens)
-    # Ensure setup (e.g., Album creation) for specific providers
-    try:
-        if provider == IntegrationProvider.IMMICH:
+    # Ensure setup (e.g., Album creation) for specific providers in link mode
+    if provider == IntegrationProvider.IMMICH and integration.import_mode == ImportMode.LINK_ONLY:
+        try:
             api_key = decrypt_token(integration.access_token_encrypted)
-            await provider_module.ensure_album_exists(integration.base_url, api_key)
-    except Exception as e:
-        log_error(e, user_id=user.id, message=f"Failed to ensure album setup for {provider}")
+            album_id = await provider_module.ensure_album_exists(integration.base_url, api_key)
+
+            if album_id:
+                integration.update_metadata(album_id=album_id, album_error=None)
+                session.add(integration)
+                await _commit(session)
+                await _refresh(session, integration)
+                log_info(f"Created/found Immich album for user {user.id}: {album_id}")
+            else:
+                integration.update_metadata(album_error="Failed to create album")
+                session.add(integration)
+                await _commit(session)
+                await _refresh(session, integration)
+                log_warning(f"Could not create Immich album for user {user.id}")
+        except Exception as e:
+            # If metadata update fails, rollback and log warning but don't fail the connection
+            error_msg = str(e)
+            log_warning(e, user_id=user.id, message=f"Failed to save Immich album metadata: {error_msg}")
+            try:
+                await _rollback(session)
+            except Exception:
+                pass  # Rollback may fail if already rolled back
 
     return IntegrationConnectResponse(
         status="connected",
@@ -293,7 +317,9 @@ async def get_integration_status(
             last_synced_at=None,
             last_error=None,
             is_active=False,
-            import_mode=ImportMode.LINK_ONLY
+            import_mode=ImportMode.LINK_ONLY,
+            album_id=None,
+            album_error=None
         )
 
     # Determine status
@@ -304,6 +330,11 @@ async def get_integration_status(
     else:
         status = "disconnected"
 
+    # Extract album metadata
+    metadata = integration.get_metadata()
+    album_id = metadata.get("album_id")
+    album_error = metadata.get("album_error")
+
     return IntegrationStatusResponse(
         provider=provider,
         status=status,
@@ -312,7 +343,9 @@ async def get_integration_status(
         last_synced_at=integration.last_synced_at,
         last_error=integration.last_error,
         is_active=integration.is_active,
-        import_mode=integration.import_mode
+        import_mode=integration.import_mode,
+        album_id=album_id,
+        album_error=album_error
     )
 
 
@@ -511,7 +544,7 @@ async def update_integration_settings(
     """
     Update integration settings without reconnecting.
 
-    Currently supports updating import_mode.
+    Currently supports updating import_mode and album_id.
     """
     integration = (await _exec(
         session,
@@ -525,14 +558,53 @@ async def update_integration_settings(
 
     # Update import_mode if provided
     if settings_update.import_mode is not None:
+        old_mode = integration.import_mode
         integration.import_mode = settings_update.import_mode
         integration.updated_at = utc_now()
+
+        # Handle mode switching for Immich provider
+        if provider == IntegrationProvider.IMMICH:
+            # Switching from copy to link_only: ensure album exists
+            if old_mode == ImportMode.COPY and settings_update.import_mode == ImportMode.LINK_ONLY:
+                metadata = integration.get_metadata()
+                existing_album_id = metadata.get("album_id")
+
+                # If no album_id exists, try to create one
+                if not existing_album_id:
+                    try:
+                        provider_module = get_provider_module(provider)
+                        api_key = decrypt_token(integration.access_token_encrypted)
+                        album_id = await provider_module.ensure_album_exists(integration.base_url, api_key)
+
+                        if album_id:
+                            integration.update_metadata(album_id=album_id, album_error=None)
+                            log_info(f"Created Immich album on mode switch for user {user.id}: {album_id}")
+                        else:
+                            integration.update_metadata(album_error="Failed to create album")
+                            log_warning(f"Could not create Immich album on mode switch for user {user.id}")
+                    except Exception as e:
+                        error_msg = str(e)
+                        log_warning(e, user_id=user.id, message=f"Failed to create album on mode switch: {error_msg}")
+                        integration.update_metadata(album_error=f"Album creation failed: {error_msg}")
+
         session.add(integration)
         await _commit(session)
         await _refresh(session, integration)
 
         log_info(
             f"Updated {provider} import_mode to {settings_update.import_mode} "
+            f"for user {user.id} (integration {integration.id})"
+        )
+
+    # Update album_id if provided (Immich only)
+    if settings_update.album_id is not None and provider == IntegrationProvider.IMMICH:
+        integration.update_metadata(album_id=settings_update.album_id, album_error=None)
+        session.add(integration)
+        await _commit(session)
+        await _refresh(session, integration)
+
+        log_info(
+            f"Updated {provider} album_id to {settings_update.album_id} "
             f"for user {user.id} (integration {integration.id})"
         )
 
@@ -645,7 +717,10 @@ async def add_assets_to_integration_album(
     asset_ids: list[str]
 ) -> None:
     """
-    Add assets to the provider's specific album (e.g., 'Journiv').
+    Add assets to the provider's specific album.
+
+    For Immich in link_only mode, uses stored album_id from metadata.
+    Skips if no album_id is present (e.g., album creation failed).
     """
     if not asset_ids:
         return
@@ -662,19 +737,29 @@ async def add_assets_to_integration_album(
         log_warning(f"Integration {provider} not active for user {user_id}, skipping album add")
         return
 
+    # Only add to album in link_only mode
+    if integration.import_mode != ImportMode.LINK_ONLY:
+        log_debug(f"Integration {provider} is in copy mode, skipping album add")
+        return
+
     provider_module = get_provider_module(provider)
     if not hasattr(provider_module, "add_assets_to_album"):
         log_warning(f"Provider {provider} does not support album addition")
         return
 
+    # Get album_id from metadata
+    metadata = integration.get_metadata()
+    album_id = metadata.get("album_id")
+
+    if not album_id:
+        log_warning(
+            f"No album_id found for {provider} integration (user {user_id}), skipping album add. "
+            f"Album may not have been created due to permissions."
+        )
+        return
+
     try:
         api_key = decrypt_token(integration.access_token_encrypted)
-
-        # Ensure album exists first
-        album_id = await provider_module.ensure_album_exists(integration.base_url, api_key)
-        if not album_id:
-            log_error(f"Could not find or create album for {provider}")
-            return
 
         await provider_module.add_assets_to_album(
             integration.base_url,
@@ -682,6 +767,7 @@ async def add_assets_to_integration_album(
             album_id,
             asset_ids
         )
+        log_info(f"Added {len(asset_ids)} assets to {provider} album {album_id}")
     except Exception as e:
         log_error(e, user_id=user_id, message=f"Failed to add assets to {provider} album")
         # Don't raise, allowing background task to fail gracefully
@@ -746,19 +832,24 @@ async def remove_assets_from_integration_album(
     if not integration or not integration.is_active:
         return
 
+    # Only remove from album in link_only mode
+    if integration.import_mode != ImportMode.LINK_ONLY:
+        return
+
     provider_module = get_provider_module(provider)
     if not hasattr(provider_module, "remove_assets_from_album"):
         return
 
+    # Get album_id from metadata
+    metadata = integration.get_metadata()
+    album_id = metadata.get("album_id")
+
+    if not album_id:
+        log_warning(f"No album_id found for {provider} integration (user {user_id}), skipping asset removal")
+        return
+
     try:
         api_key = decrypt_token(integration.access_token_encrypted)
-
-        # We need the album ID. If we don't store it, we have to look it up.
-        # Assuming "Journiv" album.
-        album_id = await provider_module.get_album_id_by_name(integration.base_url, api_key, "Journiv")
-        if not album_id:
-            log_warning("Journiv album not found, skipping asset removal")
-            return
 
         await provider_module.remove_assets_from_album(
             integration.base_url,
@@ -766,6 +857,7 @@ async def remove_assets_from_integration_album(
             album_id,
             asset_ids
         )
+        log_info(f"Removed {len(asset_ids)} assets from {provider} album {album_id}")
     except Exception as e:
         log_error(e, user_id=user_id, message=f"Failed to remove assets from {provider} album")
 

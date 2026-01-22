@@ -97,10 +97,15 @@ class IntegrationSettingsUpdateRequest(BaseModel):
 
     Fields:
         import_mode: Update import mode (optional)
+        album_id: Update album ID for link mode (optional, Immich only)
     """
     import_mode: Optional[ImportMode] = Field(
         None,
         description="Update import mode (optional)"
+    )
+    album_id: Optional[str] = Field(
+        None,
+        description="Update album ID for link mode (optional, Immich provider only)"
     )
 
 
@@ -160,6 +165,14 @@ class IntegrationStatusResponse(BaseModel):
     import_mode: ImportMode = Field(
         default=ImportMode.LINK_ONLY,
         description="Current import mode setting"
+    )
+    album_id: Optional[str] = Field(
+        default=None,
+        description="Album ID for link mode (Immich provider)"
+    )
+    album_error: Optional[str] = Field(
+        default=None,
+        description="Error message if album creation/validation failed"
     )
 
     class Config:

@@ -16,7 +16,8 @@ Extension Points:
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any, Dict
+import json
 
 from pydantic import HttpUrl
 from sqlalchemy import Column, ForeignKey, Text, String, UniqueConstraint
@@ -167,6 +168,13 @@ class Integration(BaseModel, table=True):
         description="How to handle asset imports (link-only or copy)"
     )
 
+    # Provider-specific metadata (JSON column for flexible provider data storage)
+    provider_metadata: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="JSON metadata specific to the provider (e.g., album_id for Immich)"
+    )
+
     # Relationships
     user: "User" = Relationship(back_populates="integrations")
 
@@ -179,4 +187,31 @@ class Integration(BaseModel, table=True):
         # Index for finding integrations that need syncing
         Index("idx_integration_last_synced", "last_synced_at"),
     )
+
+    def get_metadata(self) -> Dict[str, Any]:
+        """Get provider metadata as dict, handling JSON deserialization."""
+        if self.provider_metadata is None:
+            return {}
+        if isinstance(self.provider_metadata, dict):
+            return self.provider_metadata
+        if isinstance(self.provider_metadata, str):
+            try:
+                return json.loads(self.provider_metadata)
+            except (json.JSONDecodeError, TypeError):
+                return {}
+        return {}
+
+    def set_metadata(self, metadata: Dict[str, Any]) -> None:
+        """Set provider metadata, handling JSON serialization."""
+        if metadata is None or metadata == {}:
+            self.provider_metadata = None
+        else:
+            # Store as JSON string for both SQLite and PostgreSQL
+            self.provider_metadata = json.dumps(metadata)
+
+    def update_metadata(self, **kwargs) -> None:
+        """Update specific keys in provider metadata."""
+        current = self.get_metadata()
+        current.update(kwargs)
+        self.set_metadata(current)
 
