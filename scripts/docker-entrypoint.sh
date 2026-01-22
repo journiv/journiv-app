@@ -9,7 +9,7 @@ if [ "${SERVICE_ROLE:-app}" = "celery-worker" ]; then
   exec celery -A app.core.celery_app worker --loglevel=info
 elif [ "${SERVICE_ROLE:-app}" = "celery-beat" ]; then
   echo "Starting Celery beat..."
-  exec celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler
+  exec celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
 fi
 
 echo "Running database migrations in entrypoint script..."

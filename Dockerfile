@@ -93,11 +93,10 @@ USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD sh -c '\
-  if [ "${SERVICE_ROLE:-app}" = "celery-worker" ]; then \
-  celery -A app.core.celery_app inspect ping --timeout=5 | grep -q "pong"; \
-  else \
-  curl -f http://localhost:8000/api/v1/health; \
-  fi'
+  CMD sh -c 'case "${SERVICE_ROLE:-app}" in \
+  celery-worker) celery -A app.core.celery_app inspect ping --timeout=5 | grep -q "pong" ;; \
+  celery-beat) test -f /tmp/celerybeat.pid && kill -0 "$(cat /tmp/celerybeat.pid)" ;; \
+  *) curl -f http://localhost:8000/api/v1/health ;; \
+  esac'
 
 ENTRYPOINT ["/app/scripts/docker-entrypoint.sh"]

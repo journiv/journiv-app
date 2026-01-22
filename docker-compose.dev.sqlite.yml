@@ -54,11 +54,6 @@ services:
       SERVICE_ROLE: celery-worker
     restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "celery -A app.core.celery_app inspect ping --timeout=5 | grep -q pong",
-        ]
       <<: *celery-healthcheck
     deploy:
       resources:
@@ -70,7 +65,7 @@ services:
   celery-beat:
     <<: *dev-common
     container_name: journiv-dev-celery-beat
-    command: celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler
+    command: celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
     environment:
       <<: *common-valkey-env
       SERVICE_ROLE: celery-beat
@@ -89,7 +84,6 @@ services:
         max-size: "50m"
         max-file: "5"
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'celery.*beat' > /dev/null || exit 1"]
       <<: *celery-healthcheck
 
   app:
@@ -108,7 +102,6 @@ services:
         reservations:
           memory: 256m
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3

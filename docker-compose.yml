@@ -128,28 +128,18 @@ services:
       SERVICE_ROLE: celery-worker
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "celery -A app.core.celery_app inspect ping --timeout=5 | grep -q pong",
-        ]
       <<: *celery-healthcheck
 
   celery-beat:
     <<: *celery-common
     container_name: journiv-celery-beat
-    command: celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler
+    command: celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
     environment:
       <<: *base-env
       SERVICE_ROLE: celery-beat
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDBEAT_REDIS_URL: redis://valkey:6379/2
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "pgrep -f 'celery.*beat' > /dev/null || exit 1",
-        ]
       <<: *celery-healthcheck
 
   app:
@@ -167,7 +157,6 @@ services:
       - backend
       - frontend
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
