@@ -18,7 +18,7 @@ depends_on = None
 
 def upgrade() -> None:
     # Add provider_metadata column to integration table
-    # Using Text type for both SQLite (JSON as text) and PostgreSQL (will be JSONB)
+    # Using Text type for JSON string storage (SQLite/PostgreSQL)
     op.add_column('integration', sa.Column('provider_metadata', sa.Text(), nullable=True))
 
 
