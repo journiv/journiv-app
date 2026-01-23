@@ -579,7 +579,6 @@ class ImportJobService:
 
             for asset_id in asset_ids:
                 try:
-                try:
                     asset_metadata = await immich.get_asset_info(
                         base_url=base_url,
                         api_key=api_key,
