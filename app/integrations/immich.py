@@ -540,6 +540,46 @@ def _normalize_immich_asset(
     )
 
 
+def get_asset_url(
+    base_url: str,
+    asset_id: str,
+    variant: str,
+    user_id: str,
+) -> str:
+    """
+    Get the Immich URL for a given asset and variant.
+
+    For variant='original', it deduces whether the asset is an image or video
+    by looking up the asset in the integration cache.
+    """
+    if variant == "thumbnail":
+        return f"{base_url}{IMMICH_API_ASSET_THUMBNAIL.format(asset_id=asset_id)}"
+
+    if variant == "original":
+        # Deduce type from cache
+        is_video = False
+        try:
+            cache = _get_cache()
+            cached_data = cache.get(scope_id=user_id, cache_type="assets")
+            if cached_data and "items" in cached_data:
+                for item in cached_data["items"]:
+                    if item.get("id") == asset_id:
+                        if item.get("type") == "VIDEO":
+                            is_video = True
+                        break
+        except Exception as e:
+            log_warning(e, f"Failed to look up asset type in cache for {asset_id}")
+
+        if is_video:
+            return f"{base_url}/api/assets/{asset_id}/video/playback"
+        else:
+            # Default to image (preview)
+            # Use thumbnail?size=preview to get JPEG/WebP (avoids HEIC issues)
+            return f"{base_url}/api/assets/{asset_id}/thumbnail?size=preview"
+
+    raise ValueError(f"Unknown variant {variant}")
+
+
 def _build_signed_proxy_url(
     provider: Union[IntegrationProvider, str],
     asset_id: str,

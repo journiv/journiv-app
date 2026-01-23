@@ -685,23 +685,15 @@ async def fetch_proxy_asset(
         if not re.match(r'^[a-zA-Z0-9_-]+$', asset_id):
             raise ValueError("Invalid asset ID format")
 
-        if variant == "thumbnail":
-            url = f"{integration_base_url}/api/assets/{asset_id}/thumbnail"
-        elif variant == "original":
-            # For original, we use the thumbnail endpoint with size=preview which
-            # gives a higher quality image jpg images and work for HEIC images too.
-            # We do not get /original as those are higher quality and large in size and
-            # overkill to display on web/mobile and also HEIC will fail unless we support
-            # HEIC conversion.
-            url = f"{integration_base_url}/api/assets/{asset_id}/thumbnail?size=preview"
-        else:
-            raise ValueError(f"Unknown variant {variant}")
+        # Delegate URL construction to provider module
+        # This allows provider to handle type deduction (image vs video) via cache
+        url = immich.get_asset_url(integration_base_url, asset_id, variant, str(user_id))
     else:
         raise ValueError(f"Proxy not implemented for {provider}")
 
     # Prepare headers
     headers = {"x-api-key": api_key}
-    if range_header and variant == "original":
+    if range_header and variant in ("video", "original"):
         headers["Range"] = range_header
 
     # Make request
