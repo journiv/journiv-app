@@ -3,8 +3,10 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from app.integrations import immich
-from app.models.integration import Integration, IntegrationProvider
+from app.integrations.immich import IMMICH_API_SEARCH_METADATA
+from app.models.integration import Integration, IntegrationProvider, AssetType
 from app.models.user import User
+import httpx
 
 class TestImmichProvider:
 
@@ -232,3 +234,91 @@ class TestImmichProvider:
             args, kwargs = mock_client.put.call_args
             assert args[0] == f"{base_url}/api/albums/{album_id}/assets"
             assert kwargs['json']['ids'] == asset_ids
+
+    def test_get_asset_url_variants(self):
+        """Test URL generation for different asset types."""
+        base_url = "http://immich.test"
+        asset_id = "asset-1"
+
+        # Image original
+        url = immich.get_asset_url(base_url, asset_id, "original", AssetType.IMAGE)
+        assert "/thumbnail?size=preview" in url
+        assert asset_id in url
+
+        # Video original
+        url = immich.get_asset_url(base_url, asset_id, "original", AssetType.VIDEO)
+        assert "/video/playback" in url
+        assert asset_id in url
+
+        # Thumbnail (type doesn't matter)
+        url = immich.get_asset_url(base_url, asset_id, "thumbnail", AssetType.IMAGE)
+        assert "/thumbnail" in url
+        assert "size=preview" not in url
+
+    @pytest.mark.asyncio
+    async def test_get_asset_info_success(self):
+        """Test fetching asset info from Immich."""
+        base_url = "http://immich.test"
+        api_key = "key"
+        asset_id = "asset-1"
+        response_data = {"id": asset_id, "type": "VIDEO"}
+
+        with patch("app.integrations.immich._get_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_response = MagicMock()
+            mock_response.status_code = 200  # Explicitly set status code
+            mock_response.json.return_value = response_data
+            mock_response.raise_for_status = MagicMock()
+            mock_client.get.return_value = mock_response
+            mock_get_client.return_value = mock_client
+
+            result = await immich.get_asset_info(base_url, api_key, asset_id)
+
+            assert result == response_data
+            mock_client.get.assert_called_once()
+            assert f"/api/assets/{asset_id}" in mock_client.get.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_get_asset_info_fallback(self):
+        """Test get_asset_info falls back to search on 404."""
+        base_url = "http://immich.test"
+        api_key = "key"
+        asset_id = "asset-1"
+        response_data = {"id": asset_id, "type": "VIDEO"}
+
+        with patch("app.integrations.immich._get_client") as mock_get_client:
+            mock_client = AsyncMock()
+
+            # First response: 404
+            mock_response_404 = MagicMock()
+            mock_response_404.status_code = 404
+            mock_client.get.return_value = mock_response_404
+
+            # Second response (search): 200
+            mock_response_search = MagicMock()
+            mock_response_search.status_code = 200
+            mock_response_search.json.return_value = {
+                "assets": {"items": [response_data]}
+            }
+            mock_client.post.return_value = mock_response_search
+
+            mock_get_client.return_value = mock_client
+
+            result = await immich.get_asset_info(base_url, api_key, asset_id)
+
+            assert result == response_data
+            mock_client.get.assert_called_once()
+            mock_client.post.assert_called_once()
+            assert IMMICH_API_SEARCH_METADATA in mock_client.post.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_get_asset_info_failure(self):
+        """Test get_asset_info returns empty dict on error."""
+        with patch("app.integrations.immich._get_client") as mock_get_client:
+            mock_client = AsyncMock()
+            mock_client.get.side_effect = httpx.RequestError("Error")
+            mock_get_client.return_value = mock_client
+
+            result = await immich.get_asset_info("url", "key", "id")
+            assert result == {}
+

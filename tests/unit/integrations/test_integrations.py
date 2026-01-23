@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 
-from app.models.integration import Integration, IntegrationProvider
+from app.models.integration import Integration, IntegrationProvider, AssetType
 from app.integrations.schemas import IntegrationConnectRequest, IntegrationStatusResponse
 
 
@@ -522,3 +522,51 @@ class TestIntegrationOptimizations:
                         # call_args[0][1] is url. Check it starts with cached base_url
                         args, _ = mock_client.build_request.call_args
                         assert args[1].startswith("https://cached.com")
+
+    @pytest.mark.asyncio
+    async def test_fetch_proxy_asset_resolves_video_from_api(self):
+        """Test that fetch_proxy_asset resolves video type from API on cache miss."""
+        from app.integrations import service
+        from app.models.integration import IntegrationProvider, AssetType
+        from unittest.mock import MagicMock, AsyncMock
+        import uuid
+
+        # Mock dependencies
+        with patch("app.integrations.service._get_integration_cache", return_value=None):
+            with patch("app.integrations.service._exec", new_callable=AsyncMock) as mock_exec:
+                # Mock integration retrieval
+                mock_integration = MagicMock()
+                mock_integration.base_url = "http://immich"
+                # Mock encrypted token
+                mock_integration.access_token_encrypted = "enc"
+                mock_integration.is_active = True
+
+                # Mock the result object (ScalarResult) which has .first()
+                mock_result = MagicMock()
+                mock_result.first.return_value = mock_integration
+                mock_exec.return_value = mock_result
+
+                with patch("app.integrations.service.decrypt_token", return_value="key"):
+                    with patch("app.integrations.service._get_proxy_client", new_callable=AsyncMock) as mock_proxy_client:
+                        # Mock immich helpers
+                        with patch("app.integrations.immich.get_cached_asset_type", return_value=None) as mock_cache:
+                            with patch("app.integrations.immich.get_asset_info", new_callable=AsyncMock) as mock_info:
+                                mock_info.return_value = {"type": "VIDEO"}
+
+                                # Mock get_asset_url to verify it receives VIDEO
+                                with patch("app.integrations.immich.get_asset_url") as mock_get_url:
+                                    mock_get_url.return_value = "http://immich/video"
+
+                                    await service.fetch_proxy_asset(
+                                        session=MagicMock(),
+                                        user_id="uid",
+                                        provider=IntegrationProvider.IMMICH,
+                                        asset_id="asset1",
+                                        variant="original"
+                                    )
+
+                                    # Verify flow
+                                    mock_cache.assert_called_once()
+                                    mock_info.assert_called_once()
+                                    mock_get_url.assert_called_with("http://immich", "asset1", "original", AssetType.VIDEO)
+

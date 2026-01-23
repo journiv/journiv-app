@@ -34,7 +34,7 @@ from app.core.config import settings
 from app.core.encryption import encrypt_token, decrypt_token
 from app.core.time_utils import utc_now
 from app.integrations import immich
-from app.models.integration import Integration, IntegrationProvider, ImportMode
+from app.models.integration import Integration, IntegrationProvider, ImportMode, AssetType
 from app.integrations.schemas import (
     IntegrationStatusResponse,
     IntegrationConnectResponse,
@@ -686,8 +686,19 @@ async def fetch_proxy_asset(
             raise ValueError("Invalid asset ID format")
 
         # Delegate URL construction to provider module
-        # This allows provider to handle type deduction (image vs video) via cache
-        url = immich.get_asset_url(integration_base_url, asset_id, variant, str(user_id))
+        # Resolve asset type (cache -> API) to correctly serve video vs image
+        asset_type = AssetType.IMAGE
+        if variant == "original":
+            cached_type = immich.get_cached_asset_type(str(user_id), asset_id)
+            if cached_type:
+                asset_type = cached_type
+            else:
+                # Fetch detailed info if not in cache (avoids treating video as image)
+                info = await immich.get_asset_info(integration_base_url, api_key, asset_id)
+                if info.get("type") == "VIDEO":
+                    asset_type = AssetType.VIDEO
+
+        url = immich.get_asset_url(integration_base_url, asset_id, variant, asset_type)
     else:
         raise ValueError(f"Proxy not implemented for {provider}")
 

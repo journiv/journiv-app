@@ -22,6 +22,7 @@ from app.models.integration import Integration, IntegrationProvider
 from app.schemas.entry import EntryMediaCreate
 from app.services.entry_service import EntryService
 from app.services.media_service import MediaService
+from app.integrations import immich
 
 from app.core.logging_config import log_info, log_error, log_warning
 from app.core.http_client import get_http_client
@@ -354,44 +355,7 @@ class ImportJobService:
                 break
         return None
 
-    async def _fetch_asset_metadata(
-        self,
-        asset_id: str,
-        base_url: str,
-        api_key: str,
-        max_retries: int = 2
-    ) -> Optional[dict]:
-        """
-        Fetch asset metadata from Immich API with fallback.
-        """
-        headers = {"x-api-key": api_key}
 
-        # Try individual asset endpoint first
-        response = await self._fetch_with_retry(
-            f"{base_url}/api/assets/{asset_id}",
-            headers=headers,
-            max_retries=max_retries
-        )
-
-        if response and response.status_code == 200:
-            return response.json()
-
-        if response and response.status_code == 404:
-            # Fallback to search endpoint
-            search_response = await self._fetch_with_retry(
-                f"{base_url}/api/search/metadata",
-                headers=headers,
-                method="POST",
-                json_data={"ids": [asset_id]},
-                max_retries=max_retries
-            )
-            if search_response and search_response.status_code == 200:
-                search_data = search_response.json()
-                assets = search_data.get("assets", {}).get("items", [])
-                if assets:
-                    return assets[0]
-
-        return None
 
     def _create_link_only_media(
         self,
@@ -615,10 +579,11 @@ class ImportJobService:
 
             for asset_id in asset_ids:
                 try:
-                    asset_metadata = await thread_service._fetch_asset_metadata(
-                        asset_id=asset_id,
+                try:
+                    asset_metadata = await immich.get_asset_info(
                         base_url=base_url,
-                        api_key=api_key
+                        api_key=api_key,
+                        asset_id=asset_id
                     )
 
                     if asset_metadata:
@@ -783,7 +748,7 @@ class ImportJobService:
         """
         try:
             # Fetch asset metadata
-            asset_metadata = await self._fetch_asset_metadata(asset_id, base_url, api_key)
+            asset_metadata = await immich.get_asset_info(base_url, api_key, asset_id)
             if not asset_metadata:
                 return None, None
 

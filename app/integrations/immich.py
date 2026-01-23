@@ -540,37 +540,84 @@ def _normalize_immich_asset(
     )
 
 
+async def get_asset_info(
+    base_url: str,
+    api_key: str,
+    asset_id: str
+) -> Dict[str, Any]:
+    """
+    Fetch details for a single asset from Immich.
+    Falls back to search endpoint if direct lookup fails (e.g. 404).
+    """
+    client = _get_client()
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+
+    try:
+        # 1. Try direct endpoint
+        response = await client.get(
+            f"{base_url}/api/assets/{asset_id}",
+            headers=headers,
+        )
+
+        if response.status_code == 200:
+            return response.json()
+
+        if response.status_code == 404:
+            # 2. Fallback to search endpoint
+            # Some versions of Immich or some asset states might require search lookup
+            search_response = await client.post(
+                f"{base_url}{IMMICH_API_SEARCH_METADATA}",
+                headers=headers,
+                json={"ids": [asset_id]},
+            )
+            if search_response.status_code == 200:
+                data = search_response.json()
+                items = data.get("assets", {}).get("items", [])
+                if items:
+                    return items[0]
+
+        # Raise for other error codes
+        response.raise_for_status()
+
+    except Exception as e:
+        log_warning(e, f"Failed to fetch Immich asset info for {asset_id}")
+
+    return {}
+
+
+def get_cached_asset_type(user_id: str, asset_id: str) -> Optional[AssetType]:
+    """
+    Try to find asset type in local integration cache.
+    """
+    try:
+        cache = _get_cache()
+        cached_data = cache.get(scope_id=user_id, cache_type="assets")
+        if cached_data and "items" in cached_data:
+            for item in cached_data["items"]:
+                if item.get("id") == asset_id:
+                    return _map_asset_type(item.get("type", "OTHER"))
+    except Exception:
+        pass
+    return None
+
+
 def get_asset_url(
     base_url: str,
     asset_id: str,
     variant: str,
-    user_id: str,
+    asset_type: AssetType = AssetType.IMAGE,
 ) -> str:
     """
     Get the Immich URL for a given asset and variant.
 
-    For variant='original', it deduces whether the asset is an image or video
-    by looking up the asset in the integration cache.
+    For variant='original', uses the provided asset_type to determine
+    if it's a video playback URL or image thumbnail.
     """
     if variant == "thumbnail":
         return f"{base_url}{IMMICH_API_ASSET_THUMBNAIL.format(asset_id=asset_id)}"
 
     if variant == "original":
-        # Deduce type from cache
-        is_video = False
-        try:
-            cache = _get_cache()
-            cached_data = cache.get(scope_id=user_id, cache_type="assets")
-            if cached_data and "items" in cached_data:
-                for item in cached_data["items"]:
-                    if item.get("id") == asset_id:
-                        if item.get("type") == "VIDEO":
-                            is_video = True
-                        break
-        except Exception as e:
-            log_warning(e, f"Failed to look up asset type in cache for {asset_id}")
-
-        if is_video:
+        if asset_type == AssetType.VIDEO:
             return f"{base_url}/api/assets/{asset_id}/video/playback"
         else:
             # Default to image (preview)
