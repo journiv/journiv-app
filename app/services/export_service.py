@@ -462,6 +462,7 @@ class ExportService:
             external_url=media.external_url,
             external_created_at=media.external_created_at,
             external_metadata=media.external_metadata,
+            external_id=str(media.id),
         )
 
     def _get_mood_definitions(self) -> List[MoodDefinitionDTO]:

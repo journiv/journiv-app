@@ -754,6 +754,13 @@ class ImportService:
         legacy_media_id_map: Dict[str, str] = {}
         for media_dto in entry_dto.media:
             legacy_media_id = self._extract_legacy_media_id(media_dto.file_path)
+            # Fallback for link-only media where ID is not in file_path
+            if not legacy_media_id and media_dto.external_id:
+                try:
+                    UUID(media_dto.external_id)
+                    legacy_media_id = media_dto.external_id
+                except (ValueError, TypeError):
+                    pass
             media_result = self._import_media(
                 entry_id=entry.id,
                 user_id=user_id,
