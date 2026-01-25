@@ -4,11 +4,14 @@ Import command for CLI.
 Handles large file imports bypassing web upload limits.
 """
 import typer
+import tempfile
+import shutil
 from pathlib import Path
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from sqlmodel import Session
 
+from app.core.config import settings
 from app.core.database import engine
 from app.core.logging_config import log_info, log_warning, log_error
 from app.models.enums import ImportSourceType
@@ -177,16 +180,13 @@ def import_data(
                         raise KeyboardInterrupt("User interrupted")
                     progress.update(extract_task, completed=current)
 
-                    # Use streaming extraction with zero-copy strategy for media
-                    import tempfile
-                    from app.core.config import settings
+                # Use streaming extraction with zero-copy strategy for media
+                media_dest = Path(settings.media_root) / str(user_id) / "import_tmp"
+                media_dest.mkdir(parents=True, exist_ok=True)
 
+                try:
                     with tempfile.TemporaryDirectory() as temp_dir:
                         temp_path = Path(temp_dir)
-                        # Extract media directly to user's media folder to avoid redundant copies
-                        media_dest = Path(settings.media_root) / str(user_id) / "import_tmp"
-                        media_dest.mkdir(parents=True, exist_ok=True)
-
                         result = ZipHandler.stream_extract(
                             zip_path=file_path,
                             extract_to=temp_path,
@@ -197,74 +197,79 @@ def import_data(
                             source_type=source_enum.value,
                         )
 
-                    data_file = result["data_file"]
-                    media_dir = result["media_dir"]
+                        data_file = result["data_file"]
+                        media_dir = result["media_dir"]
 
-                    # Import data with progress
-                    console.print("\n[bold cyan]Importing data...[/bold cyan]")
+                        # Import data with progress
+                        console.print("\n[bold cyan]Importing data...[/bold cyan]")
 
-                    with Session(engine) as db:
-                        import_service = ImportService(db)
+                        with Session(engine) as db:
+                            import_service = ImportService(db)
 
-                        # Count entries for progress
-                        if source_enum == ImportSourceType.JOURNIV:
-                            import json
-                            with open(data_file, 'r') as f:
-                                data = json.load(f)
-                            total_entries = sum(len(j.get("entries", [])) for j in data.get("journals", []))
-                        else:
-                            total_entries = None
-
-                        with Progress(
-                            SpinnerColumn(),
-                            TextColumn("[progress.description]{task.description}"),
-                            BarColumn(),
-                            TaskProgressColumn(),
-                            console=console,
-                        ) as progress:
-                            import_task = progress.add_task(
-                                "Importing entries...",
-                                total=total_entries
-                            )
-
-                            def on_import_progress(current, total):
-                                if sig_handler.interrupted:
-                                    raise KeyboardInterrupt("User interrupted")
-                                progress.update(import_task, completed=current, total=total)
-
-                            # Call appropriate import method
+                            # Count entries for progress
                             if source_enum == ImportSourceType.JOURNIV:
-                                summary = import_service.import_journiv_data(
-                                    user_id=user_id,
-                                    data=data,
-                                    media_dir=media_dir,
-                                    total_entries=total_entries,
-                                    progress_callback=on_import_progress,
-                                )
-                            elif source_enum == ImportSourceType.DAYONE:
-                                summary = import_service.import_dayone_data(
-                                    user_id=user_id,
-                                    file_path=file_path,
-                                    total_entries=total_entries,
-                                    progress_callback=on_import_progress,
-                                    extraction_dir=temp_path,
-                                )
+                                import json
+                                with open(data_file, 'r') as f:
+                                    data = json.load(f)
+                                total_entries = sum(len(j.get("entries", [])) for j in data.get("journals", []))
                             else:
-                                console.print(f"\n[red]Unsupported source type: {source_enum}[/red]")
-                                raise typer.Exit(code=2)
+                                total_entries = None
 
-                            # Merge extraction warnings into summary
-                            if "warnings" in result:
-                                summary.warnings.extend(result["warnings"])
-                            if "warning_categories" in result:
-                                for cat, count in result["warning_categories"].items():
-                                    summary.warning_categories[cat] = summary.warning_categories.get(cat, 0) + count
+                            with Progress(
+                                SpinnerColumn(),
+                                TextColumn("[progress.description]{task.description}"),
+                                BarColumn(),
+                                TaskProgressColumn(),
+                                console=console,
+                            ) as progress:
+                                import_task = progress.add_task(
+                                    "Importing entries...",
+                                    total=total_entries
+                                )
 
-                            # Mark job complete
-                            job_db = db.get(ImportJob, job.id)
-                            if job_db:
-                                job_db.mark_completed(result_data=summary.model_dump())
-                                db.commit()
+                                def on_import_progress(current, total):
+                                    if sig_handler.interrupted:
+                                        raise KeyboardInterrupt("User interrupted")
+                                    progress.update(import_task, completed=current, total=total)
+
+                                # Call appropriate import method
+                                if source_enum == ImportSourceType.JOURNIV:
+                                    summary = import_service.import_journiv_data(
+                                        user_id=user_id,
+                                        data=data,
+                                        media_dir=media_dir,
+                                        total_entries=total_entries,
+                                        progress_callback=on_import_progress,
+                                    )
+                                elif source_enum == ImportSourceType.DAYONE:
+                                    summary = import_service.import_dayone_data(
+                                        user_id=user_id,
+                                        file_path=file_path,
+                                        total_entries=total_entries,
+                                        progress_callback=on_import_progress,
+                                        extraction_dir=temp_path,
+                                        media_dir=media_dir,
+                                    )
+                                else:
+                                    console.print(f"\n[red]Unsupported source type: {source_enum}[/red]")
+                                    raise typer.Exit(code=2)
+
+                                # Merge extraction warnings into summary
+                                if "warnings" in result:
+                                    summary.warnings.extend(result["warnings"])
+                                if "warning_categories" in result:
+                                    for cat, count in result["warning_categories"].items():
+                                        summary.warning_categories[cat] = summary.warning_categories.get(cat, 0) + count
+
+                                # Mark job complete
+                                job_db = db.get(ImportJob, job.id)
+                                if job_db:
+                                    job_db.mark_completed(result_data=summary.model_dump())
+                                    db.commit()
+                finally:
+                    # Cleanup media_dest to avoid leaving orphaned files
+                    if media_dest.exists():
+                        shutil.rmtree(media_dest)
 
         # Display summary
         console.print("\n[green bold]✓ Import completed successfully[/green bold]")

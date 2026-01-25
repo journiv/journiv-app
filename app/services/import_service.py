@@ -201,6 +201,7 @@ class ImportService:
         total_entries: Optional[int] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         extraction_dir: Optional[Path] = None,
+        media_dir: Optional[Path] = None,
     ) -> ImportResultSummary:
         """
         Import Day One export data.
@@ -233,11 +234,14 @@ class ImportService:
 
         try:
             # Parse Day One ZIP
-            dayone_journals, media_dir = DayOneParser.parse_zip(
+            dayone_journals, parsed_media_dir = DayOneParser.parse_zip(
                 file_path,
                 extract_dir,
                 is_already_extracted=extraction_dir is not None
             )
+
+            # Use provided media_dir (e.g. from zero-copy CLI) or fallback to parsed one
+            final_media_dir = media_dir or parsed_media_dir
 
             if not dayone_journals:
                 raise ValueError("No journals found in Day One export")
@@ -305,11 +309,11 @@ class ImportService:
                         # Find corresponding Day One entry to get media references
                         dayone_entry = dayone_entry_map.get(entry_dto.external_id)
 
-                        if dayone_entry and media_dir:
+                        if dayone_entry and final_media_dir:
                             # Map photos
                             for photo in (dayone_entry.photos or []):
                                 media_path = DayOneParser.find_media_file(
-                                    media_dir,
+                                    final_media_dir,
                                     photo.identifier,
                                     md5_hash=photo.md5,
                                     media_type="photo"
@@ -319,7 +323,7 @@ class ImportService:
                                         photo,
                                         media_path,
                                         entry_dto.external_id,
-                                        media_base_dir=media_dir,
+                                        media_base_dir=final_media_dir,
                                     )
                                     if media_dto:
                                         entry_dto.media.append(media_dto)
@@ -331,7 +335,7 @@ class ImportService:
                             # Map videos
                             for video in (dayone_entry.videos or []):
                                 media_path = DayOneParser.find_media_file(
-                                    media_dir,
+                                    final_media_dir,
                                     video.identifier,
                                     md5_hash=video.md5,
                                     media_type="video"
@@ -341,7 +345,7 @@ class ImportService:
                                         video,
                                         media_path,
                                         entry_dto.external_id,
-                                        media_base_dir=media_dir,
+                                        media_base_dir=final_media_dir,
                                     )
                                     if media_dto:
                                         entry_dto.media.append(media_dto)
@@ -354,7 +358,7 @@ class ImportService:
                     result = self._import_journal(
                         user_id=user_id,
                         journal_dto=journal_dto,
-                        media_dir=media_dir,
+                        media_dir=final_media_dir,
                         id_mapper=id_mapper,
                         existing_media_checksums=existing_media_checksums,
                         existing_tag_names=existing_tag_names,
@@ -502,7 +506,7 @@ class ImportService:
                     result = self._import_journal(
                         user_id=user_id,
                         journal_dto=journal_dto,
-                        media_dir=media_dir,
+                        media_dir=final_media_dir,
                         id_mapper=id_mapper,
                         existing_media_checksums=existing_media_checksums,
                         existing_tag_names=existing_tag_names,

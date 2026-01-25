@@ -375,15 +375,8 @@ class ZipHandler:
                         target_dir = media_dest
 
                         if source_type == "dayone":
-                            # For Day One, media is in photos/ or videos/
-                            # We strip the prefix to get the relative path
-                            filename_lower = info.filename.lower()
-                            if filename_lower.startswith("photos/"):
-                                relative_path = Path(info.filename).relative_to(info.filename[:7]) # handle case sensitivity
-                            elif filename_lower.startswith("videos/"):
-                                relative_path = Path(info.filename).relative_to(info.filename[:7])
-                            else:
-                                relative_path = Path(info.filename)
+                            # For Day One, preserve photos/ or videos/ directories
+                            relative_path = Path(info.filename)
                         else:
                             relative_path = Path(info.filename).relative_to("media")
 
