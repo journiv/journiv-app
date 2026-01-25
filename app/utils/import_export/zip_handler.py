@@ -446,9 +446,8 @@ class ZipHandler:
                                     logger.info(f"Deleted invalid media file: {target_path}")
                             except Exception as cleanup_exc:
                                 # Log but don't fail the whole extraction for a cleanup error
-                                logger.error(
-                                    f"Failed to delete invalid media file {target_path}",
-                                    exc_info=cleanup_exc
+                                logger.exception(
+                                    f"Failed to delete invalid media file {target_path}"
                                 )
 
                     # Report progress
