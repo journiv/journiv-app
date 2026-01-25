@@ -6,7 +6,7 @@ import logging
 import os
 import secrets
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import field_validator, model_validator, ValidationInfo, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsSourceCallable
@@ -77,6 +77,7 @@ class Settings(BaseSettings):
 
     # Security
     secret_key: str = ""  # Must be set via environment variable
+    secret_key_file: Optional[str] = None
     access_token_expire_minutes: int = 15
     refresh_token_expire_days: int = 7
     algorithm: str = "HS256"
@@ -251,8 +252,7 @@ class Settings(BaseSettings):
 
         # DB_DRIVER=sqlite: use DATABASE_URL (defaults to SQLite)
         return self.database_url
-    
-    ##custom
+
     @classmethod
     def settings_customise_sources(
         cls,
@@ -262,33 +262,40 @@ class Settings(BaseSettings):
         dotenv_settings: SettingsSourceCallable,
         file_secret_settings: SettingsSourceCallable,
     ):
+        """
+        Allow *_file fields to populate their base fields from a file path.
+        *_file must be a declared field on the model (e.g. secret_key_file).
+        - Direct values (e.g. secret_key) win over file-based values.
+        - Sources are merged as: init > env/.env/_file > secrets_dir.
+        """
         def file_env_settings() -> Dict[str, Any]:
             data: Dict[str, Any] = {}
             data.update(dotenv_settings() or {})
             data.update(env_settings() or {})
 
-            for k, v in data.items():
-                if k.endswith("_FILE") and v:
-                    base = k[: -len("_FILE")]
-                    if base not in data:
-                        # Read value from secret file
-                        try:
-                            with open(v, "r", encoding="utf-8") as handle:
-                                data[base] = handle.read().rstrip("\r\n")
-                        except OSError as exc:
-                            logger.warning(f"Failed to read secret file {v}: {exc}")
+            for key, value in list(data.items()):
+                if not (isinstance(key, str) and key.endswith("_file")):
+                    continue
+                if not isinstance(value, str) or not value.strip():
+                    continue
+                base = key[: -len("_file")]
+                if base not in settings_cls.model_fields:
+                    continue
+                if base in data and data[base] not in (None, ""):
+                    continue
+                try:
+                    with open(value, "r", encoding="utf-8") as handle:
+                        data[base] = handle.read().rstrip("\r\n")
+                except OSError as exc:
+                    logger.warning(f"Failed to read secret file {value}: {exc}")
             return data
 
-        # Precedence: init > env > dotenv > *_FILE-derived > secrets_dir
-        # (so explicit env var beats env_file path)
+        # Precedence: init > env/dotenv/ > *_FILE secrets > secrets_dir
         return (
             init_settings,
-            env_settings,
-            dotenv_settings,
             file_env_settings,
             file_secret_settings,
         )
-    ## custom
 
     @field_validator('secret_key')
     @classmethod
