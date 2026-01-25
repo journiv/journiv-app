@@ -6,10 +6,10 @@ import logging
 import os
 import secrets
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Dict, List, Optional, Any
 
-from pydantic import Field, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator, model_validator, ValidationInfo, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsSourceCallable
 
 try:
     from sqlalchemy.engine import URL, make_url
@@ -251,6 +251,44 @@ class Settings(BaseSettings):
 
         # DB_DRIVER=sqlite: use DATABASE_URL (defaults to SQLite)
         return self.database_url
+    
+    ##custom
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls,
+        init_settings: SettingsSourceCallable,
+        env_settings: SettingsSourceCallable,
+        dotenv_settings: SettingsSourceCallable,
+        file_secret_settings: SettingsSourceCallable,
+    ):
+        def file_env_settings() -> Dict[str, Any]:
+            data: Dict[str, Any] = {}
+            data.update(dotenv_settings() or {})
+            data.update(env_settings() or {})
+
+            for k, v in data.items():
+                if k.endswith("_FILE") and v:
+                    base = k[: -len("_FILE")]
+                    if base not in data:
+                        # Read value from secret file
+                        try:
+                            with open(v, "r", encoding="utf-8") as handle:
+                                data[base] = handle.read().rstrip("\r\n")
+                        except OSError as exc:
+                            logger.warning(f"Failed to read secret file {v}: {exc}")
+            return data
+
+        # Precedence: init > env > dotenv > *_FILE-derived > secrets_dir
+        # (so explicit env var beats env_file path)
+        return (
+            init_settings,
+            env_settings,
+            dotenv_settings,
+            file_env_settings,
+            file_secret_settings,
+        )
+    ## custom
 
     @field_validator('secret_key')
     @classmethod
