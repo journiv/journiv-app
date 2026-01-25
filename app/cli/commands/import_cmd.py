@@ -43,6 +43,11 @@ def import_data(
         "--skip-media-validation",
         help="Skip libmagic media type validation (much faster for large imports)"
     ),
+    max_entry_size_mb: int = typer.Option(
+        50000,
+        "--max-entry-size-mb",
+        help="Maximum size for individual entry/media file in MB (default 50GB for CLI)"
+    ),
     verbose: bool = typer.Option(False, "-v", "--verbose", help="Verbose output"),
 ):
     """
@@ -172,19 +177,25 @@ def import_data(
                         raise KeyboardInterrupt("User interrupted")
                     progress.update(extract_task, completed=current)
 
-                # Use streaming extraction
-                import tempfile
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir)
+                    # Use streaming extraction with zero-copy strategy for media
+                    import tempfile
+                    from app.core.config import settings
 
-                    result = ZipHandler.stream_extract(
-                        zip_path=file_path,
-                        extract_to=temp_path,
-                        max_size_mb=50000,  # 50GB limit for CLI
-                        validate_media=not skip_media_validation,
-                        progress_callback=on_extract_progress,
-                        source_type=source_enum.value,
-                    )
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_path = Path(temp_dir)
+                        # Extract media directly to user's media folder to avoid redundant copies
+                        media_dest = Path(settings.media_root) / str(user_id) / "import_tmp"
+                        media_dest.mkdir(parents=True, exist_ok=True)
+
+                        result = ZipHandler.stream_extract(
+                            zip_path=file_path,
+                            extract_to=temp_path,
+                            media_dest=media_dest,
+                            max_size_mb=max_entry_size_mb,
+                            validate_media=not skip_media_validation,
+                            progress_callback=on_extract_progress,
+                            source_type=source_enum.value,
+                        )
 
                     data_file = result["data_file"]
                     media_dir = result["media_dir"]
@@ -242,6 +253,13 @@ def import_data(
                                 console.print(f"\n[red]Unsupported source type: {source_enum}[/red]")
                                 raise typer.Exit(code=2)
 
+                            # Merge extraction warnings into summary
+                            if "warnings" in result:
+                                summary.warnings.extend(result["warnings"])
+                            if "warning_categories" in result:
+                                for cat, count in result["warning_categories"].items():
+                                    summary.warning_categories[cat] = summary.warning_categories.get(cat, 0) + count
+
                             # Mark job complete
                             job_db = db.get(ImportJob, job.id)
                             if job_db:
@@ -261,6 +279,6 @@ def import_data(
         raise
     except Exception as e:
         logger.error(f"Import failed: {e}", exc_info=True)
-        console.print("\n[red]Import failed: {e}[/red]")
+        console.print(f"\n[red]Import failed: {e}[/red]")
         console.print("[dim]See log file for details[/dim]")
         raise typer.Exit(code=4) from None

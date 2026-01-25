@@ -27,7 +27,12 @@ def display_import_summary(summary: Any):
     table.add_row("Tags Created", str(summary.tags_created))
 
     if summary.warnings:
-        table.add_row("Warnings", str(len(summary.warnings)), style="yellow")
+        table.add_row("Total Warnings", str(len(summary.warnings)), style="yellow")
+
+    # Detailed warning categories
+    if hasattr(summary, 'warning_categories') and summary.warning_categories:
+        for category, count in summary.warning_categories.items():
+            table.add_row(f"  • {category}", str(count), style="dim yellow")
 
     console.print(table)
 

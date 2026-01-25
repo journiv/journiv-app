@@ -260,7 +260,7 @@ class MediaHandler:
         max_size_mb: int,
         allowed_types: list[str],
         allowed_extensions: list[str]
-    ) -> Tuple[bool, str]:
+    ) -> Tuple[bool, str, str, str]:
         """
         Validate a media file's size, MIME type, and extension.
 
@@ -271,27 +271,28 @@ class MediaHandler:
             allowed_extensions: List of allowed file extensions
 
         Returns:
-            Tuple of (is_valid, error_message)
+            Tuple of (is_valid, mime_type, category, error_message)
+            category is one of: not_found, size, format, extension, error, none
         """
         try:
             # 1. Check file size
             if not file_path.exists():
-                return False, f"File not found: {file_path}"
+                return False, "unknown", "not_found", f"File not found: {file_path}"
 
             file_size = file_path.stat().st_size
             if not MediaHandler.validate_file_size(file_size, max_size_mb):
-                return False, f"File size exceeds maximum limit of {max_size_mb}MB"
+                return False, "unknown", "size", f"File size exceeds maximum limit of {max_size_mb}MB"
 
             # 2. Check MIME type
             mime_type = MediaHandler.detect_mime(file_path)
             if not MediaHandler.validate_media_type(mime_type, allowed_types):
-                return False, f"Mime type {mime_type} not allowed"
+                return False, mime_type, "format", f"Mime type {mime_type} not allowed"
 
             # 3. Check file extension
             file_ext = file_path.suffix.lower()
             if allowed_extensions and file_ext not in allowed_extensions:
-                return False, f"File extension {file_ext} not allowed"
+                return False, mime_type, "extension", f"File extension {file_ext} not allowed"
 
-            return True, "File is valid"
+            return True, mime_type, "none", "File is valid"
         except Exception as e:
-            return False, f"Validation failed: {e}"
+            return False, "unknown", "error", f"Validation failed: {e}"

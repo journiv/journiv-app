@@ -7,12 +7,15 @@ import zipfile
 import json
 import shutil
 import gc
+import logging
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Callable
 
 from app.core.config import settings
 from app.core.logging_config import log_warning, log_error
 from app.utils.import_export.media_handler import MediaHandler
+
+logger = logging.getLogger(__name__)
 
 
 class ZipHandler:
@@ -349,6 +352,10 @@ class ZipHandler:
                 entries = zipf.infolist()
                 total_files = len(entries)
 
+                # Track warnings during extraction
+                warnings = []
+                warning_categories = {}
+
                 # Extract files one by one
                 for idx, info in enumerate(entries, start=1):
                     # Skip directory entries
@@ -400,19 +407,49 @@ class ZipHandler:
 
                     # Validate media files using centralized MediaHandler
                     if is_media_file and validate_media:
-                        is_valid, mime_type, error_msg = MediaHandler.validate_media(
+                        validation_result = MediaHandler.validate_media(
                             target_path,
-                            max_size_mb=settings.max_file_size_mb,
+                            max_size_mb=max_size_mb,
                             allowed_types=settings.allowed_media_types,
                             allowed_extensions=settings.allowed_file_extensions
                         )
+
+                        is_valid, mime_type, category, error_msg = validation_result
+
                         if not is_valid:
+                            warning_msg = f"Media validation failed for {info.filename}: {error_msg}"
                             log_warning(
-                                f"Media validation failed for {info.filename}: {error_msg}",
+                                warning_msg,
                                 filename=info.filename,
                                 mime_type=mime_type,
-                                error=error_msg
+                                category=category,
+                                error=error_msg,
+                                context="stream_extract_validation_failed"
                             )
+                            warnings.append(warning_msg)
+
+                            # Categorize warnings using structured metadata
+                            cat_map = {
+                                "size": "Skipped due to size",
+                                "format": "Skipped due to format",
+                                "extension": "Skipped due to extension",
+                                "not_found": "Skipped (not found)",
+                                "error": "Skipped (error)"
+                            }
+                            display_category = cat_map.get(category, f"Skipped ({category})")
+                            warning_categories[display_category] = warning_categories.get(display_category, 0) + 1
+
+                            # (2) Remove invalid file immediately
+                            try:
+                                if target_path.exists():
+                                    target_path.unlink()
+                                    logger.info(f"Deleted invalid media file: {target_path}")
+                            except Exception as cleanup_exc:
+                                # Log but don't fail the whole extraction for a cleanup error
+                                logger.error(
+                                    f"Failed to delete invalid media file {target_path}",
+                                    exc_info=cleanup_exc
+                                )
 
                     # Report progress
                     if progress_callback:
@@ -446,6 +483,8 @@ class ZipHandler:
                     "media_dir": media_dir if media_dir and media_dir.exists() else None,
                     "total_size": total_size,
                     "file_count": len(entries),
+                    "warnings": warnings,
+                    "warning_categories": warning_categories,
                 }
 
         except zipfile.BadZipFile as e:

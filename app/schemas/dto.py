@@ -369,6 +369,10 @@ class ImportResultSummary(BaseModel):
         default_factory=list,
         description="Non-fatal warnings that occurred during import (e.g., invalid colors, unknown types)"
     )
+    warning_categories: Dict[str, int] = Field(
+        default_factory=dict,
+        description="Count of warnings by category (e.g., 'Skipped due to size', 'Skipped due to dimensions')"
+    )
     id_mappings: Dict[str, Dict[str, str]] = Field(
         default_factory=dict,
         description="Mapping of external IDs to newly created IDs grouped by entity type"

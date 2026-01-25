@@ -393,6 +393,11 @@ class DayOneToJournivMapper:
         except ValueError:
             relative_path = media_path
 
+        # Sanitization: Day One metadata can sometimes contain 0 for dimensions,
+        # which violates Journiv's POSITIVE check constraints.
+        width = width if width and width > 0 else None
+        height = height if height and height > 0 else None
+
         return MediaDTO(
             filename=media_path.name,
             file_path=str(relative_path),

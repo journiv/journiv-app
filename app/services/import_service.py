@@ -110,6 +110,12 @@ class ImportService:
             )
         return updated
 
+    @staticmethod
+    def _add_warning(summary: ImportResultSummary, message: str, category: str):
+        """Add a warning to summary and increment category count."""
+        summary.warnings.append(message)
+        summary.warning_categories[category] = summary.warning_categories.get(category, 0) + 1
+
     def create_import_job(
         self,
         user_id: UUID,
@@ -273,7 +279,7 @@ class ImportService:
                             mapped_entries.append(DayOneToJournivMapper.map_entry(entry))
                         except Exception as entry_error:  # noqa: BLE001
                             warning_msg = f"Skipped Day One entry during mapping: {entry_error}"
-                            summary.warnings.append(warning_msg)
+                            self._add_warning(summary, warning_msg, "Skipped (entry error)")
                             summary.entries_skipped += 1
                             log_warning(warning_msg, user_id=str(user_id), journal_name=dayone_journal.name)
                             handle_entry_progress()
@@ -319,7 +325,7 @@ class ImportService:
                                         entry_dto.media.append(media_dto)
                                 else:
                                     warning_msg = f"Media file not found for photo {photo.identifier}"
-                                    summary.warnings.append(warning_msg)
+                                    self._add_warning(summary, warning_msg, "Skipped (missing media)")
                                     summary.media_files_skipped += 1
 
                             # Map videos
@@ -341,7 +347,7 @@ class ImportService:
                                         entry_dto.media.append(media_dto)
                                 else:
                                     warning_msg = f"Media file not found for video {video.identifier}"
-                                    summary.warnings.append(warning_msg)
+                                    self._add_warning(summary, warning_msg, "Skipped (missing media)")
                                     summary.media_files_skipped += 1
 
                     # Import journal using existing import logic
@@ -374,7 +380,7 @@ class ImportService:
                         f"Failed to import Day One journal '{dayone_journal.name}': {journal_error}"
                     )
                     log_error(journal_error, user_id=str(user_id), journal_name=dayone_journal.name)
-                    summary.warnings.append(warning_msg)
+                    self._add_warning(summary, warning_msg, "Skipped (journal error)")
                     summary.entries_skipped += len(dayone_journal.entries)
                 except Exception as journal_error:
                     self.db.rollback()
@@ -382,7 +388,7 @@ class ImportService:
                         f"Failed to import Day One journal '{dayone_journal.name}': {journal_error}"
                     )
                     log_error(journal_error, user_id=str(user_id), journal_name=dayone_journal.name, context="unexpected_journal_import_error")
-                    summary.warnings.append(warning_msg)
+                    self._add_warning(summary, warning_msg, "Skipped (journal error)")
                     summary.entries_skipped += len(dayone_journal.entries)
 
             log_info(
@@ -523,7 +529,7 @@ class ImportService:
                         f"Failed to import journal '{journal_dto.title}': {journal_error}"
                     )
                     log_error(journal_error, user_id=str(user_id), journal_title=journal_dto.title)
-                    summary.warnings.append(warning_msg)
+                    self._add_warning(summary, warning_msg, "Skipped (journal error)")
                     summary.entries_skipped += len(journal_dto.entries)
                 except Exception as journal_error:
                     # Defensive catch-all for truly unexpected errors
@@ -533,7 +539,7 @@ class ImportService:
                         f"Failed to import journal '{journal_dto.title}': {journal_error}"
                     )
                     log_error(journal_error, user_id=str(user_id), journal_title=journal_dto.title, context="unexpected_journal_import_error")
-                    summary.warnings.append(warning_msg)
+                    self._add_warning(summary, warning_msg, "Skipped (journal error)")
                     summary.entries_skipped += len(journal_dto.entries)
 
             log_info(
@@ -593,7 +599,7 @@ class ImportService:
                 except StopIteration:
                     warning_msg = f"Invalid journal color '{journal_dto.color}' for journal '{journal_dto.title}', using default"
                     log_warning(warning_msg, user_id=str(user_id), journal_title=journal_dto.title, color=journal_dto.color)
-                    summary.warnings.append(warning_msg)
+                    self._add_warning(summary, warning_msg, "Format warning")
 
         # Create journal
         journal = Journal(
@@ -648,7 +654,7 @@ class ImportService:
                 result["tags_reused"] += entry_result["tags_reused"]
             except Exception as entry_error:  # noqa: BLE001 - continue on bad entry
                 warning_msg = f"Skipped entry due to error: {entry_error}"
-                summary.warnings.append(warning_msg)
+                self._add_warning(summary, warning_msg, "Skipped (entry error)")
                 summary.entries_skipped += 1
                 log_warning(warning_msg, user_id=str(user_id), journal_id=str(journal.id))
 
@@ -1015,14 +1021,14 @@ class ImportService:
                 file_path=media_dto.file_path,
                 entry_id=str(entry_id),
             )
-            summary.warnings.append(warning_msg)
+            self._add_warning(summary, warning_msg, "Security warning")
             summary.media_files_skipped += 1
             return {"imported": False, "deduplicated": False, "stored_relative_path": None, "media_id": None}
 
         if not resolved_source.exists():
             warning_msg = f"Media file not found: {resolved_source}"
             log_warning(warning_msg, user_id=str(user_id), media_filename=media_dto.filename, file_path=str(resolved_source), entry_id=str(entry_id))
-            summary.warnings.append(warning_msg)
+            self._add_warning(summary, warning_msg, "Skipped (missing media)")
             summary.media_files_skipped += 1
             return {"imported": False, "deduplicated": False, "stored_relative_path": None, "media_id": None}
 
@@ -1269,6 +1275,7 @@ class ImportService:
                         log_info(f"Generated thumbnail for imported media: {media.id}", media_id=str(media.id))
             except Exception as thumb_error:
                 # Log but don't fail import if thumbnail generation fails
+                self._add_warning(summary, f"Failed to generate thumbnail for imported media {media.id}: {thumb_error}", "Thumbnail warning")
                 log_warning(f"Failed to generate thumbnail for imported media {media.id}: {thumb_error}", media_id=str(media.id))
 
         if record_mapping and media_dto.external_id:
@@ -1326,6 +1333,10 @@ class ImportService:
         media_type = self._parse_media_type(media_dto.media_type)
         upload_status = self._parse_upload_status(media_dto.upload_status)
 
+        # Sanitization: Reset 0 dimensions to None to satisfy DB constraints
+        width = media_dto.width if media_dto.width and media_dto.width > 0 else None
+        height = media_dto.height if media_dto.height and media_dto.height > 0 else None
+
         return EntryMedia(
             entry_id=entry_id,
             file_path=file_path,
@@ -1335,8 +1346,8 @@ class ImportService:
             mime_type=media_dto.mime_type,
             checksum=checksum,
             thumbnail_path=media_dto.thumbnail_path,
-            width=media_dto.width,
-            height=media_dto.height,
+            width=width,
+            height=height,
             duration=media_dto.duration,
             alt_text=media_dto.alt_text or media_dto.caption,
             upload_status=upload_status,
