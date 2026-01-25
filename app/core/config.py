@@ -265,8 +265,8 @@ class Settings(BaseSettings):
         """
         Allow *_file fields to populate their base fields from a file path.
         *_file must be a declared field on the model (e.g. secret_key_file).
-        - Direct values (e.g. secret_key) win over file-based values.
-        - Sources are merged as: init > env/.env/_file > secrets_dir.
+        Direct values (e.g. secret_key) override the file-based values.
+        *_file values are ordered to override secrets_dir values.
         """
         def file_env_settings() -> Dict[str, Any]:
             data: Dict[str, Any] = {}
@@ -290,11 +290,11 @@ class Settings(BaseSettings):
                     logger.warning(f"Failed to read secret file {value}: {exc}")
             return data
 
-        # Precedence: init > env/dotenv/ > *_FILE secrets > secrets_dir
+        # Precedence (later sources win): secrets_dir < env/.env/_file < init
         return (
-            init_settings,
-            file_env_settings,
             file_secret_settings,
+            file_env_settings,
+            init_settings,
         )
 
     @field_validator('secret_key')
