@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     # When POSTGRES_PASSWORD is set, these components are used to construct the PostgreSQL URL
     postgres_user: Optional[str] = None
     postgres_password: Optional[str] = None
+    postgres_password_file: Optional[str] = None
     postgres_db: Optional[str] = None
     postgres_host: Optional[str] = None
     postgres_port: Optional[int] = None
@@ -87,6 +88,7 @@ class Settings(BaseSettings):
     oidc_issuer: str = "https://pocketid.example.com"
     oidc_client_id: str = "journiv-app"
     oidc_client_secret: str = "change_me"
+    oidc_client_secret_file: Optional[str] = None
     oidc_redirect_uri: Optional[str] = None
     oidc_scopes: str = "openid email profile"
     oidc_auto_provision: bool = True
