@@ -292,11 +292,11 @@ class Settings(BaseSettings):
                     logger.warning(f"Failed to read secret file {value}: {exc}")
             return data
 
-        # Precedence (later sources win): secrets_dir < env/.env/_file < init
+        # Precedence (first source = highest priority): init > env > *_FILE secrets > secrets dir > defaults
         return (
-            file_secret_settings,
-            file_env_settings,
             init_settings,
+            file_env_settings,
+            file_secret_settings,
         )
 
     @field_validator('secret_key')
