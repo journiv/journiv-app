@@ -279,13 +279,13 @@ class Settings(BaseSettings):
                 if not isinstance(value, str) or not value.strip():
                     continue
                 base = key[: -len("_file")]
-                if base not in settings_cls.model_fields:
-                    continue
                 if base in data and data[base] not in (None, ""):
+                    logger.warning(f"{base} is set directly; ignoring {key}")
                     continue
                 try:
                     with open(value, "r", encoding="utf-8") as handle:
                         data[base] = handle.read().rstrip("\r\n")
+                    logger.warning(f"{base} loaded from {value}")
                 except OSError as exc:
                     logger.warning(f"Failed to read secret file {value}: {exc}")
             return data
