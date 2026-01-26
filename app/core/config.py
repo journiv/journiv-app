@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import field_validator, model_validator, ValidationInfo, Field
-from pydantic_settings import BaseSettings, SettingsConfigDict, SettingsSourceCallable
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 try:
     from sqlalchemy.engine import URL, make_url
@@ -257,10 +257,10 @@ class Settings(BaseSettings):
     def settings_customise_sources(
         cls,
         settings_cls,
-        init_settings: SettingsSourceCallable,
-        env_settings: SettingsSourceCallable,
-        dotenv_settings: SettingsSourceCallable,
-        file_secret_settings: SettingsSourceCallable,
+        init_settings,
+        env_settings,
+        dotenv_settings,
+        file_secret_settings,
     ):
         """
         Allow *_file fields to populate their base fields from a file path.
