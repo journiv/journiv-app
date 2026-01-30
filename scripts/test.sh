@@ -117,7 +117,7 @@ if [ "$ENVIRONMENT" != "test" ] && [ "$ENVIRONMENT" != "development" ]; then
     exit 1
 fi
 
-uv sync --group task
+uv sync --group test
 
 print_status "Starting Journiv backend tests..."
 print_status "Environment: $ENVIRONMENT"
