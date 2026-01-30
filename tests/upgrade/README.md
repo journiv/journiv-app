@@ -56,7 +56,7 @@ All data IDs and relationships are preserved during upgrade.
 ### Prerequisites
 ```bash
 # Install test dependencies
-pip install -r requirements/test.txt
+uv sync --group test
 ```
 
 ### Manual Test Run
@@ -76,7 +76,7 @@ docker compose -f docker-compose.postgres.yml up -d
 curl http://localhost:8000/health
 
 # Run seeding script
-python -m pytest tests/upgrade/seed_old_data.py -v
+uv run pytest tests/upgrade/seed_old_data.py -v
 ```
 
 #### Step 3: Upgrade to NEW version
@@ -97,7 +97,7 @@ docker compose up -d
 curl http://localhost:8000/health
 
 # Run verification tests
-python -m pytest tests/upgrade/verify_after_upgrade.py -v
+uv run pytest tests/upgrade/verify_after_upgrade.py -v
 ```
 
 #### Cleanup

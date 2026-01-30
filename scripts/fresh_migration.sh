@@ -35,6 +35,8 @@ fi
 
 DATABASE_URL=${DATABASE_URL:-"sqlite:///./journiv.db"}
 
+uv sync --locked
+
 if [[ "${DATABASE_URL}" != sqlite://* ]]; then
   echo "ERROR: This script currently only supports SQLite DATABASE_URL values."
   echo "Current DATABASE_URL='${DATABASE_URL}'"
@@ -42,7 +44,7 @@ if [[ "${DATABASE_URL}" != sqlite://* ]]; then
 fi
 
 # Resolve the SQLite file path using Python for reliability
-DB_PATH="$(python3 - "${DATABASE_URL}" "${PROJECT_ROOT}" <<'PY'
+DB_PATH="$(uv run python - "${DATABASE_URL}" "${PROJECT_ROOT}" <<'PY'
 import os
 import sys
 from sqlalchemy.engine import make_url
@@ -96,13 +98,13 @@ echo "✓ Old migrations removed"
 # Step 3: Generate fresh migration
 echo ""
 echo "Step 3: Generating fresh initial migration..."
-DATABASE_URL="${DATABASE_URL}" alembic revision --autogenerate -m "initial schema"
+DATABASE_URL="${DATABASE_URL}" uv run alembic revision --autogenerate -m "initial schema"
 echo "✓ Initial migration generated"
 
 # Step 3.5: Fix migration imports
 echo ""
 echo "Step 3.5: Fixing migration imports..."
-python3 scripts/fix_migration_imports.py
+uv run python scripts/fix_migration_imports.py
 echo "✓ Migration imports fixed"
 
 # Step 4: Show summary
@@ -122,5 +124,5 @@ echo "✓ Fresh migration generated successfully!"
 echo "=========================================="
 echo "Next steps:"
 echo "1. Inspect the migration: cat ${MIGRATION_FILE}"
-echo "2. Apply it: DATABASE_URL=${DATABASE_URL} alembic upgrade head"
+echo "2. Apply it: DATABASE_URL=${DATABASE_URL} uv run alembic upgrade head"
 echo "3. Run tests to verify schema"

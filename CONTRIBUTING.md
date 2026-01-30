@@ -32,7 +32,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 Before you begin, ensure you have:
 
-- **Python 3.11+** - For local development
+- **Python 3.11+** and **uv** - For local development ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **Docker & Docker Compose** - For containerized development (recommended)
 - **Git** - For version control
 - **A code editor** - VS Code, PyCharm, or your preferred editor
@@ -58,22 +58,18 @@ Before you begin, ensure you have:
 
    **Option B: Local Development**
    ```bash
-   # Create virtual environment
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-
    # Install dependencies
-   pip install -r requirements/dev.txt
+   uv sync --group dev
 
    # Set up environment
    cp .env.template .env
    # Edit .env with your settings
 
    # Run migrations
-   alembic upgrade head
+   uv run alembic upgrade head
 
    # Start development server
-   uvicorn app.main:app --reload
+   uv run uvicorn app.main:app --reload
    ```
 
 3. **Access the application**
@@ -159,18 +155,25 @@ journiv-backend/
 │   └── conftest.py               # Test fixtures
 ├── scripts/                      # Utility scripts
 │   ├── docker-entrypoint.sh      # Container startup script
-│   ├── fresh_migration.sh        # Regenerate migrations
+│   ├── fresh_migration.sh        # Regenerate migrations (uv)
+│   ├── test.sh                   # Test runner (uv sync + uv run pytest)
 │   ├── moods.json                # Seed data
 │   └── prompts.json              # Seed data
-├── requirements/                 # Python dependencies
-│   ├── base.txt                  # Base dependencies
-│   ├── dev.txt                   # Development dependencies
-│   └── prod.txt                  # Production dependencies
+├── pyproject.toml                # Project and dependencies (uv)
+├── uv.lock                       # Locked dependencies
+├── requirements/                 # Legacy dependency files
+│   ├── base.txt
+│   ├── dev.txt
+│   ├── prod.txt
+│   └── test.txt
 ├── docker-compose.yml            # Production compose
 ├── docker-compose.dev.yml        # Development compose
-├── docker-compose.simple.yml     # Minimal compose (distribution)
+├── docker-compose.dev.sqlite.yml # Development (SQLite)
+├── docker-compose.sqlite.yml     # Production (SQLite)
 ├── Dockerfile                    # Container image
 ├── .env.template                 # Environment template
+├── env.template                  # Environment template (alt)
+├── alembic.ini                   # Alembic config
 └── pytest.ini                    # Test configuration
 ```
 
@@ -245,21 +248,15 @@ Refer to [API Documentation Standards](#api-documentation-standards) when adding
 Always run tests before committing:
 
 ```bash
-# Run all tests
-pytest
+# Run all tests (syncs task deps and runs pytest with coverage)
+./scripts/test.sh
 
-# Run specific test types
-pytest -m unit
-pytest -m integration
-
-# Run with coverage
-pytest --cov=app --cov-report=html
-
-# Run specific test file
-pytest tests/unit/test_user_service.py
-
-# Run with verbose output
-pytest -v
+# Or run pytest directly with uv
+uv run pytest
+uv run pytest -m unit
+uv run pytest -m integration
+uv run pytest --cov=app --cov-report=html
+uv run pytest tests/unit/test_user_service.py -v
 ```
 
 ### 4. Database Changes
@@ -269,11 +266,11 @@ If you modify database models:
 ```bash
 # 1. Update the model in app/models/
 # 2. Create migration
-alembic revision --autogenerate -m "add user timezone field"
+uv run alembic revision --autogenerate -m "add user timezone field"
 
 # 3. Review the generated migration in alembic/versions/
 # 4. Apply migration
-alembic upgrade head
+uv run alembic upgrade head
 
 # 5. Test the migration works correctly
 ```
@@ -517,38 +514,28 @@ tests/
 
 ### Running Tests
 
-**Using pytest directly:**
+**Using the test script (recommended):**
 ```bash
-# Run all tests
-pytest
+./scripts/test.sh                  # All tests with coverage
+./scripts/test.sh --markers unit   # Unit tests only
+./scripts/test.sh --markers integration
+./scripts/test.sh --parallel --fail-fast
+./scripts/test.sh --no-coverage -v
+```
 
-# Run specific test types
-pytest -m unit          # Fast unit tests only
-pytest -m integration   # API integration tests only
-
-# Run specific test file
-pytest tests/unit/test_user_service.py
-
-# Run with coverage report
-pytest --cov=app --cov-report=html
-# View report: open htmlcov/index.html
-
-# Run in parallel (faster)
-pytest -n auto
-
-# Verbose output
-pytest -v
-
-# Stop on first failure
-pytest -x
+**Using uv run pytest directly:**
+```bash
+uv run pytest
+uv run pytest -m unit
+uv run pytest -m integration
+uv run pytest tests/unit/test_user_service.py
+uv run pytest --cov=app --cov-report=html
+uv run pytest -n auto -v -x
 ```
 
 **Using Docker:**
 ```bash
-# Run tests in container
 docker compose -f docker-compose.dev.sqlite.yml run app pytest
-
-# With coverage
 docker compose -f docker-compose.dev.sqlite.yml run app pytest --cov=app
 ```
 
@@ -596,10 +583,10 @@ When you modify database models:
 1. **Update the model** in `app/models/`
 2. **Create migration**
    ```bash
-   alembic revision --autogenerate -m "description of changes"
+   uv run alembic revision --autogenerate -m "description of changes"
    ```
 3. **Review the generated migration** in `alembic/versions/`
-4. **Apply migration**
+4. **Apply migration** (local: `uv run alembic upgrade head`, or via Docker):
    ```bash
    ./scripts/migrate.sh
    ```
@@ -619,11 +606,11 @@ When you need to regenerate migrations from scratch during development:
 ./scripts/fresh_migration.sh
 ```
 
-This script:
+This script runs `uv sync` then:
 1. Deletes the SQLite database file
 2. Removes all existing migration files
-3. Generates a fresh initial migration
-4. Fixes any import issues in the migration
+3. Generates a fresh initial migration (`uv run alembic revision --autogenerate`)
+4. Fixes any import issues in the migration (`uv run python scripts/fix_migration_imports.py`)
 
 ⚠️ **Warning**: This deletes your database and all migrations. **Only use in development**, never in production!
 
@@ -662,8 +649,8 @@ Ensure your pull request meets these requirements:
 
 1. **All tests pass**
    ```bash
-   pytest
-   pytest --cov=app  # Verify coverage
+   ./scripts/test.sh
+   # or: uv run pytest && uv run pytest --cov=app
    ```
 
 2. **Code follows style guidelines**

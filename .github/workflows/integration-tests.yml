@@ -35,17 +35,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "requirements/*.txt"
+      - name: Install mise
+        uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5 # v3
 
       - name: Install test dependencies
-        run: |
-          pip install -r requirements/base.txt
-          pip install -r requirements/test.txt
+        run: mise run ci:install:test
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -188,14 +182,7 @@ jobs:
           fi
 
       - name: Run integration tests
-        run: |
-          echo "🧪 Running integration tests..."
-          python -m pytest tests/integration/ \
-            -v \
-            --tb=short \
-            --strict-markers \
-            --no-cov \
-            --junit-xml=pytest-results-${{ matrix.database }}.xml
+        run: mise run ci:test:integration --db ${{ matrix.database }}
         env:
           JOURNIV_API_BASE_URL: http://localhost:8000/api/v1
           # Import/Export tests require Celery

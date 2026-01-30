@@ -26,30 +26,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "requirements/*.txt"
+      - name: Install mise
+        uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5 # v3
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements/base.txt
-          pip install -r requirements/test.txt
+      - name: Install test dependencies
+        run: mise run ci:install:test
 
       - name: Run unit and CLI tests
         env:
           SECRET_KEY: test-secret-key
           ENVIRONMENT: test
-        run: |
-          echo "🧪 Running tests..."
-          python -m pytest tests/unit/ tests/cli/ \
-            -v \
-            --tb=short \
-            --strict-markers \
-            --no-cov \
-            --junit-xml=pytest-results.xml
+        run: mise run ci:test:unit
 
       - name: Upload test results
         if: always()

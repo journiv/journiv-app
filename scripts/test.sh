@@ -117,12 +117,7 @@ if [ "$ENVIRONMENT" != "test" ] && [ "$ENVIRONMENT" != "development" ]; then
     exit 1
 fi
 
-# Check if pytest is installed
-if ! command -v pytest &> /dev/null; then
-    print_error "pytest is not installed. Please install it first:"
-    print_error "  pip install pytest"
-    exit 1
-fi
+uv sync --group task
 
 print_status "Starting Journiv backend tests..."
 print_status "Environment: $ENVIRONMENT"
@@ -140,7 +135,7 @@ export DEBUG=true
 export LOG_LEVEL=WARNING
 
 # Build pytest command
-PYTEST_CMD="pytest"
+PYTEST_CMD="uv run pytest"
 
 # Add test directory
 PYTEST_CMD="$PYTEST_CMD tests/"
@@ -152,14 +147,8 @@ fi
 
 # Add coverage if enabled
 if [ "$COVERAGE" = true ]; then
-    if python -c "import pytest_cov" 2>/dev/null; then
-        PYTEST_CMD="$PYTEST_CMD --cov=app --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml"
-        print_status "Coverage reporting enabled"
-    else
-        print_warning "pytest-cov not installed, coverage disabled"
-        print_warning "Install with: pip install pytest-cov"
-        COVERAGE=false
-    fi
+    PYTEST_CMD="$PYTEST_CMD --cov=app --cov-report=term-missing --cov-report=html:htmlcov --cov-report=xml:coverage.xml"
+    print_status "Coverage reporting enabled"
 fi
 
 # Add verbose if enabled
@@ -169,13 +158,8 @@ fi
 
 # Add parallel if enabled (requires pytest-xdist)
 if [ "$PARALLEL" = true ]; then
-    if python -c "import xdist" 2>/dev/null; then
-        PYTEST_CMD="$PYTEST_CMD -n auto"
-        print_status "Parallel execution enabled (pytest-xdist)"
-    else
-        print_warning "pytest-xdist not installed, parallel execution disabled"
-        print_warning "Install with: pip install pytest-xdist"
-    fi
+    PYTEST_CMD="$PYTEST_CMD -n auto"
+    print_status "Parallel execution enabled (pytest-xdist)"
 fi
 
 # Add fail fast if enabled

@@ -50,19 +50,13 @@ jobs:
         uses: actions/checkout@v4
 
       # -------------------------------------------------------
-      # Python setup
+      # Install mise
       # -------------------------------------------------------
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: "pip"
-          cache-dependency-path: "requirements/*.txt"
+      - name: Install mise
+        uses: jdx/mise-action@146a28175021df8ca24f8ee1828cc2a60f980bd5 # v3
 
       - name: Install test dependencies
-        run: |
-          pip install -r requirements/base.txt
-          pip install -r requirements/test.txt
+        run: mise run ci:install:test
 
       # -------------------------------------------------------
       # Clean previous stack and volumes
@@ -190,7 +184,7 @@ jobs:
       - name: Seed data into OLD version
         run: |
           echo "🌱 Seeding data into OLD version..."
-          python -m pytest tests/upgrade/seed_old_data.py -v --tb=short --no-cov
+          uv run pytest tests/upgrade/seed_old_data.py -v --tb=short --no-cov
         env:
           PYTHONPATH: ${{ github.workspace }}
           JOURNIV_API_BASE_URL: http://localhost:8000/api/v1
@@ -288,7 +282,7 @@ jobs:
       - name: Verify upgrade - post-upgrade tests
         run: |
           echo "✅ Running post-upgrade verification tests..."
-          python -m pytest tests/upgrade/verify_after_upgrade.py -v --tb=short --no-cov
+          uv run pytest tests/upgrade/verify_after_upgrade.py -v --tb=short --no-cov
         env:
           PYTHONPATH: ${{ github.workspace }}
           JOURNIV_API_BASE_URL: http://localhost:8000/api/v1

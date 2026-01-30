@@ -1,0 +1,31 @@
+[tools]
+python = "3.14"
+uv = "0.9.28"
+
+[tasks.install]
+run = "uv sync --all-groups --all-extras"
+alias = "i"
+description = "Install dependencies (alias: 'i')"
+
+[tasks."install:upgrade"]
+run = "mise run install --upgrade"
+description = "Upgrade dependencies in the allowed ranges"
+
+[tasks."install:check"]
+run = "uv tree --outdated --all-groups --depth 1"
+description = "Check dependencies for updates"
+
+[tasks."ci:install:test"]
+run = "uv sync --group test --locked"
+description = "Install test dependencies for CI"
+
+[tasks."ci:test:unit"]
+run = "uv run pytest tests/unit/ tests/cli/ -v --tb=short --strict-markers --no-cov --junit-xml=pytest-results.xml"
+description = "Run unit and CLI tests in CI"
+
+[tasks."ci:test:integration"]
+usage = '''
+flag "--db <db>" help="The database to use for the tests (sqlite or postgres)" default="sqlite"
+'''
+run = "uv run pytest tests/integration/ -v --tb=short --strict-markers --no-cov --junit-xml=pytest-results-'${usage_db}'.xml"
+description = "Run integration tests in CI"

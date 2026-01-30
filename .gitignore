@@ -223,6 +223,9 @@ $RECYCLE.BIN/
 # Compiled Journiv Plus module
 app/plus/*.so
 
+# pytest
+pytest-results-*.xml
+
 # ===============================================================
 # END OF FILE
 # ===============================================================

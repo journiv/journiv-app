@@ -7,19 +7,8 @@ preventing memory exhaustion on multi-GB exports.
 import json
 from pathlib import Path
 from typing import Iterator, Dict, Any
-
-try:
-    import ijson
-    from ijson.common import JSONError, IncompleteJSONError
-    IJSON_AVAILABLE = True
-except ImportError:
-    IJSON_AVAILABLE = False
-    # Define shells for type checking if needed, though they won't be used since IJSON_AVAILABLE=False
-    class JSONError(Exception):
-        pass
-
-    class IncompleteJSONError(JSONError):
-        pass
+import ijson
+from ijson.common import JSONError, IncompleteJSONError
 
 
 def stream_parse_journiv_data(file_path: Path) -> Iterator[Dict[str, Any]]:
@@ -62,13 +51,6 @@ def stream_parse_journiv_data(file_path: Path) -> Iterator[Dict[str, Any]]:
             raise IOError(f"Failed to read JSON file: {e}") from e
     else:
         # For large files (>= 100MB), require ijson
-        if not IJSON_AVAILABLE:
-            raise ValueError(
-                f"File size is {file_size_mb:.1f}MB (>= 100MB). "
-                "ijson library is required for large files but not installed. "
-                "Install with: pip install ijson"
-            )
-
         try:
             with open(file_path, 'rb') as f:
                 # Parse 'journals' array items one by one
