@@ -27,5 +27,5 @@ description = "Run unit and CLI tests in CI"
 usage = '''
 flag "--db <db>" help="The database to use for the tests (sqlite or postgres)" default="sqlite"
 '''
-run = "uv run pytest tests/integration/ -v --tb=short --strict-markers --no-cov --junit-xml=pytest-results-'${usage_db}'.xml"
+run = "uv run pytest tests/integration/ -v --tb=short --strict-markers --no-cov --junit-xml=pytest-results-${usage_db}.xml"
 description = "Run integration tests in CI"
