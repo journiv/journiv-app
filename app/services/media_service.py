@@ -738,6 +738,18 @@ class MediaService:
                         checksum=checksum_value[:16] if checksum_value and len(checksum_value) >= 16 else None
                     )
                 # Re-raise if it's a different IntegrityError or existing record not found
+                # But cleanup first if not deduplicated to avoid orphaned files
+                if not media_info.get("was_deduplicated") and media_info.get("file_path"):
+                    try:
+                        self.media_storage_service.delete_media(
+                            relative_path=media_info["file_path"],
+                            checksum=media_info["checksum"],
+                            user_id=str(user_id),
+                            force=True
+                        )
+                        log_info(f"Cleaned up orphaned file after IntegrityError: {media_info['file_path']}", user_id=str(user_id))
+                    except (RuntimeError, OSError) as delete_exc:
+                        log_warning(f"Failed to cleanup uploaded file after IntegrityError: {delete_exc}")
                 raise
             except SQLAlchemyError as exc:
                 db_session.rollback()
