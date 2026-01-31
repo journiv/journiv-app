@@ -200,8 +200,7 @@ def verify_signed_media_request(
     }
 )
 async def upload_media(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(_get_db_session)],
+    current_user: Annotated[User, Depends(get_current_user_detached)],
     file: UploadFile = File(...),
     entry_id: uuid.UUID = Form(...),
     alt_text: Optional[str] = Form(None),
@@ -218,23 +217,28 @@ async def upload_media(
             file=file,
             user_id=current_user.id,
             entry_id=entry_id,
-            alt_text=alt_text,
-            session=session
+            alt_text=alt_text
         )
 
         media_record = result["media_record"]
         full_file_path = result["full_file_path"]
 
-        if media_record and hasattr(media_record, 'id') and full_file_path:
+        if media_record and full_file_path:
             try:
                 celery_app.send_task(
                     "app.tasks.media.process_media_upload",
                     args=[str(media_record.id), full_file_path, str(current_user.id)]
                 )
             except Exception as e:
-                error_logger.warning(
-                    "Failed to queue media processing task",
-                    extra={"user_id": str(current_user.id), "media_id": str(media_record.id), "error": str(e)}
+                error_logger.error(
+                    "Failed to queue media processing task - media will remain in PENDING state",
+                    extra={
+                        "user_id": str(current_user.id),
+                        "media_id": str(media_record.id),
+                        "error": str(e),
+                        "error_type": type(e).__name__
+                    },
+                    exc_info=True
                 )
 
         response = EntryMediaResponse.model_validate(media_record)
