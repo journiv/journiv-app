@@ -4,6 +4,7 @@ Supports SQLite (default) and PostgreSQL (optional override).
 """
 import json
 import logging
+from contextlib import contextmanager
 from pathlib import Path
 
 from sqlalchemy import event
@@ -146,6 +147,7 @@ def _log_integration_select(conn, cursor, statement, parameters, context, execut
     )
 
 
+@contextmanager
 def get_session_context():
     """
     Get database session as context manager.
@@ -158,7 +160,15 @@ def get_session_context():
             # use session
             pass
     """
-    return Session(engine)
+    session = Session(engine)
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def seed_initial_data():

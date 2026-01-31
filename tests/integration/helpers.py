@@ -111,3 +111,22 @@ def sample_jpeg_bytes() -> bytes:
         b"\xff\xc4\x00\x14\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
         b"\xff\xda\x00\x0c\x03\x01\x00\x02\x11\x03\x11\x00?\x00\xff\xd9"
     )
+
+
+def upload_sample_media(
+    api_client: JournivApiClient,
+    token: str,
+    entry_id: str,
+    filename: str = "integration-test.jpg",
+    content_type: str = "image/jpeg",
+    alt_text: str = "integration test image",
+) -> dict:
+    """Helper to upload sample media to an entry."""
+    return api_client.upload_media(
+        token,
+        entry_id=entry_id,
+        filename=filename,
+        content=sample_jpeg_bytes(),
+        content_type=content_type,
+        alt_text=alt_text,
+    )

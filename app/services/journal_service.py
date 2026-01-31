@@ -110,85 +110,28 @@ class JournalService:
         """Hard delete a journal and all related entries and media."""
         journal = self._get_owned_journal(journal_id, user_id)
 
-        # Hard delete all related entries and their media first
-        from app.models.entry import Entry, EntryMedia
-        from app.services.media_service import MediaService
-        from app.services.media_storage_service import MediaStorageService
+        # Get all entries in this journal
+        from app.models.entry import Entry
+        from app.services.entry_service import EntryService
 
         entries = self.session.exec(
             select(Entry).where(Entry.journal_id == journal_id)
         ).all()
 
-        media_service = MediaService()
-        # Note: We'll create storage service AFTER commit when reference counts are accurate
-        media_files_to_delete = []
-
+        # Delete each entry (which handles media deletion, Immich cleanup, etc.)
+        entry_service = EntryService(self.session)
         for entry in entries:
-            # Collect all entry media records with their file paths and checksums before deletion
-            entry_media_list = self.session.exec(
-                select(EntryMedia).where(EntryMedia.entry_id == entry.id)
-            ).all()
+            await entry_service.delete_entry(entry.id, user_id)
 
-            for media in entry_media_list:
-                # Collect media info for reference-counted deletion
-                if media.file_path:
-                    media_files_to_delete.append({
-                        'file_path': media.file_path,
-                        'checksum': media.checksum,  # May be None for older records
-                        'thumbnail_path': media.thumbnail_path,
-                        'force': media.checksum is None  # Force delete if no checksum
-                    })
-
-                self.session.delete(media)
-
-            # Hard delete the entry
-            self.session.delete(entry)
-
-        # Finally, hard delete the journal
+        # Hard delete the journal itself
         self.session.delete(journal)
 
         try:
-            # Commit all deletions
             self.session.commit()
         except SQLAlchemyError as exc:
             self.session.rollback()
             log_error(exc)
             raise
-
-        # Recalculate writing streak statistics after journal is deleted
-        # This ensures analytics reflect the correct entry counts
-        try:
-            from app.services.analytics_service import AnalyticsService
-            analytics_service = AnalyticsService(self.session)
-            analytics_service.recalculate_writing_streak_stats(user_id)
-        except Exception as exc:
-            # Log error but don't fail the deletion
-            log_warning(f"Failed to update writing streak stats after journal deletion: {exc}")
-
-        # Delete physical media files from disk using reference counting
-        # Create storage service with fresh session AFTER commit to get accurate reference counts
-        from app.core.database import get_session_context
-
-        with get_session_context() as fresh_session:
-            media_storage_service = MediaStorageService(media_service.media_root, fresh_session)
-            for media_info in media_files_to_delete:
-                try:
-                    # Delete main file with reference counting
-                    # Force delete if no checksum (can't do reference counting without checksum)
-                    media_storage_service.delete_media(
-                        relative_path=media_info['file_path'],
-                        checksum=media_info['checksum'],
-                        user_id=str(user_id),
-                        force=media_info.get('force', False)
-                    )
-
-                    # Delete thumbnail if it exists (thumbnails are not deduplicated)
-                    if media_info['thumbnail_path']:
-                        thumbnail_full_path = (media_service.media_root / media_info['thumbnail_path']).resolve()
-                        if thumbnail_full_path.exists() and str(thumbnail_full_path).startswith(str(media_service.media_root.resolve())):
-                            thumbnail_full_path.unlink(missing_ok=True)
-                except Exception as exc:
-                    log_warning(f"Failed to delete media file {media_info['file_path']} after journal deletion: {exc}")
 
         log_info(f"Journal and related entries/media hard-deleted for {user_id}: {journal_id}")
         return True

@@ -8,19 +8,11 @@ from tests.integration.helpers import (
     UNKNOWN_UUID,
     assert_requires_authentication,
     sample_jpeg_bytes,
+    upload_sample_media,
 )
 from tests.lib import ApiUser, JournivApiClient, make_api_user
 
 
-def _upload_sample_media(api_client: JournivApiClient, token: str, entry_id: str) -> dict:
-    return api_client.upload_media(
-        token,
-        entry_id=entry_id,
-        filename="integration-test.jpg",
-        content=sample_jpeg_bytes(),
-        content_type="image/jpeg",
-        alt_text="integration test image",
-    )
 
 
 def test_media_upload_fetch_and_delete(
@@ -30,7 +22,7 @@ def test_media_upload_fetch_and_delete(
 ):
     """Uploading media returns metadata that can be fetched and deleted."""
     entry = entry_factory()
-    uploaded = _upload_sample_media(api_client, api_user.access_token, entry["id"])
+    uploaded = upload_sample_media(api_client, api_user.access_token, entry["id"])
     assert uploaded["entry_id"] == entry["id"]
     assert uploaded["alt_text"] == "integration test image"
 
@@ -77,7 +69,7 @@ def test_media_download_supports_range(
 ):
     """Media downloads should honor HTTP Range requests."""
     entry = entry_factory()
-    uploaded = _upload_sample_media(api_client, api_user.access_token, entry["id"])
+    uploaded = upload_sample_media(api_client, api_user.access_token, entry["id"])
 
     # Wait for media processing to complete
     api_client.wait_for_media_ready(api_user.access_token, uploaded["id"])
@@ -107,7 +99,7 @@ def test_media_delete_requires_ownership(
 ):
     """Users cannot delete media owned by someone else."""
     entry = entry_factory()
-    uploaded = _upload_sample_media(api_client, api_user.access_token, entry["id"])
+    uploaded = upload_sample_media(api_client, api_user.access_token, entry["id"])
     media_id = uploaded["id"]
 
     other_user = make_api_user(api_client)
@@ -148,7 +140,7 @@ def test_media_get_and_delete_require_auth(
     entry_factory,
 ):
     entry = entry_factory()
-    uploaded = _upload_sample_media(api_client, api_user.access_token, entry["id"])
+    uploaded = upload_sample_media(api_client, api_user.access_token, entry["id"])
     assert_requires_authentication(
         api_client,
         [
@@ -179,8 +171,8 @@ def test_shared_media_deletion_preserves_file_with_references(
 
     # Upload the same image to both entries
     # The backend should deduplicate and store only one physical file
-    media_a = _upload_sample_media(api_client, api_user.access_token, entry_a["id"])
-    media_b = _upload_sample_media(api_client, api_user.access_token, entry_b["id"])
+    media_a = upload_sample_media(api_client, api_user.access_token, entry_a["id"])
+    media_b = upload_sample_media(api_client, api_user.access_token, entry_b["id"])
 
     # Both media records should exist with different IDs but same checksum
     assert media_a["id"] != media_b["id"], "Media records should have different IDs"
@@ -250,8 +242,8 @@ def test_shared_media_deletion_via_media_endpoint(
     entry_b = entry_factory(title="Entry B")
 
     # Upload same image to both entries
-    media_a = _upload_sample_media(api_client, api_user.access_token, entry_a["id"])
-    media_b = _upload_sample_media(api_client, api_user.access_token, entry_b["id"])
+    media_a = upload_sample_media(api_client, api_user.access_token, entry_a["id"])
+    media_b = upload_sample_media(api_client, api_user.access_token, entry_b["id"])
 
     # Delete media_a via media endpoint
     delete_media_a = api_client.request(

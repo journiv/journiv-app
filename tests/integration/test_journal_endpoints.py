@@ -7,6 +7,7 @@ from tests.integration.helpers import (
     UNKNOWN_UUID,
     assert_not_found,
     assert_requires_authentication,
+    upload_sample_media,
 )
 from tests.lib import ApiUser, JournivApiClient
 
@@ -126,3 +127,44 @@ def test_journal_not_found_errors(
             EndpointCase("POST", f"/journals/{UNKNOWN_UUID}/unarchive"),
         ],
     )
+
+
+def test_delete_journal_removes_media_files(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    entry_factory,
+):
+    """
+    Deleting a journal should cascade delete its entries and their associated media files.
+    """
+    # 1. Create journal and entry
+    entry = entry_factory(title="Entry with Media")
+    journal_id = entry["journal"]["id"]
+
+    # 2. Upload media
+    uploaded = upload_sample_media(api_client, api_user.access_token, entry["id"])
+    media_id = uploaded["id"]
+
+    # 3. Verify media exists
+    download = api_client.get_media(api_user.access_token, media_id)
+    assert download.status_code == 200
+
+    # 4. Delete Journal
+    api_client.delete_journal(api_user.access_token, journal_id)
+
+    # 5. Verify journal is gone
+    journal_response = api_client.request(
+        "GET", f"/journals/{journal_id}", token=api_user.access_token
+    )
+    assert journal_response.status_code == 404
+
+    # 6. Verify entry is gone (entries by journal)
+    entries_response = api_client.list_entries(api_user.access_token, journal_id=journal_id)
+    assert entries_response == [], "Entries should be cascade deleted with the journal"
+
+    # 7. Verify media is gone (both download and sign endpoint)
+    # Check sign endpoint for 404 (metadata gone)
+    sign_response = api_client.request(
+        "GET", f"/media/{media_id}/sign", token=api_user.access_token, expected=(404,)
+    )
+    assert sign_response.status_code == 404, "Media entry should be deleted from DB"
