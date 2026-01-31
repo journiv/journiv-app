@@ -3,6 +3,7 @@ Entry service for managing journal entries.
 """
 import uuid
 from datetime import date, datetime
+from pathlib import Path
 from typing import List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -94,6 +95,356 @@ class EntryService:
     def _refresh_entry_date(self, entry: Entry) -> None:
         utc_dt = ensure_utc(entry.entry_datetime_utc)
         entry.entry_date = self._derive_entry_date(utc_dt, entry.entry_timezone)
+
+    # ========== Media Deletion Helper Methods ==========
+
+    def _get_immich_asset_usage_count(
+        self,
+        asset_id: str,
+        user_id: uuid.UUID,
+        exclude_media_id: Optional[uuid.UUID] = None
+    ) -> int:
+        """Count how many entries use a specific Immich asset.
+
+        Args:
+            asset_id: External Immich asset ID
+            user_id: User ID to scope the search
+            exclude_media_id: Optional media ID to exclude from count
+
+        Returns:
+            Number of other entries using this asset
+        """
+        from sqlalchemy import func
+
+        statement = (
+            select(func.count(EntryMedia.id))
+            .join(Entry)
+            .where(
+                EntryMedia.external_asset_id == asset_id,
+                EntryMedia.external_provider == "immich",
+                Entry.user_id == user_id
+            )
+        )
+
+        if exclude_media_id:
+            statement = statement.where(EntryMedia.id != exclude_media_id)
+
+        return self.session.exec(statement).one()
+
+    def _should_remove_immich_asset(
+        self,
+        media: EntryMedia,
+        user_id: uuid.UUID
+    ) -> bool:
+        """Determine if an Immich asset should be removed from album.
+
+        Only removes if:
+        1. It's an Immich link-only asset (no local file)
+        2. No other entries use this asset
+
+        Args:
+            media: Media record to check
+            user_id: User ID for authorization scope
+
+        Returns:
+            True if asset should be removed from album
+        """
+        if not (media.external_provider == "immich"
+                and not media.file_path
+                and media.external_asset_id):
+            return False
+
+        usage_count = self._get_immich_asset_usage_count(
+            media.external_asset_id,
+            user_id,
+            exclude_media_id=media.id
+        )
+        return usage_count == 0
+
+    def _build_file_deletion_info(
+        self,
+        media: EntryMedia,
+        force: bool = False
+    ) -> Optional[dict]:
+        """Build file deletion metadata from media record.
+
+        Args:
+            media: Media record
+            force: Whether to force delete (bypass reference counting)
+
+        Returns:
+            Dict with file_path, checksum, thumbnail_path, force if media has file, None otherwise
+        """
+        if not (media.file_path and (media.checksum or force)):
+            return None
+
+        return {
+            'file_path': media.file_path,
+            'checksum': media.checksum,  # May be None when force=True
+            'thumbnail_path': media.thumbnail_path,
+            'force': force
+        }
+
+    def _delete_thumbnail(
+        self,
+        thumbnail_path: str,
+        media_root: Path
+    ) -> None:
+        """Delete a thumbnail file safely.
+
+        Args:
+            thumbnail_path: Relative path to thumbnail
+            media_root: Root media directory
+        """
+        try:
+            full_path = (media_root / thumbnail_path).resolve()
+            media_root_resolved = media_root.resolve()
+            # Security check: ensure path is within media_root
+            if full_path.exists() and full_path.is_relative_to(media_root_resolved):
+                full_path.unlink(missing_ok=True)
+        except Exception as e:
+            log_warning(f"Failed to delete thumbnail {thumbnail_path}: {e}")
+
+    def _delete_media_file(
+        self,
+        file_info: dict,
+        user_id: uuid.UUID,
+        media_root: Path,
+        session: Session
+    ) -> None:
+        """Delete a single media file with reference counting.
+
+        Args:
+            file_info: File deletion metadata dict with keys: file_path, checksum, thumbnail_path, force
+            user_id: User ID for logging
+            media_root: Root media directory
+            session: Database session to use
+        """
+        from app.services.media_storage_service import MediaStorageService
+
+        try:
+            # Delete thumbnail first if exists
+            if file_info['thumbnail_path']:
+                self._delete_thumbnail(file_info['thumbnail_path'], media_root)
+
+            # Delete media file with deduplication awareness
+            storage_service = MediaStorageService(media_root, session)
+            storage_service.delete_media(
+                relative_path=file_info['file_path'],
+                checksum=file_info['checksum'],
+                user_id=str(user_id),
+                force=file_info['force']
+            )
+        except Exception as e:
+            log_warning(f"Failed to delete media file {file_info['file_path']}: {e}")
+
+    def _trigger_immich_album_removal(
+        self,
+        user_id: uuid.UUID,
+        asset_ids: list[str]
+    ) -> None:
+        """Trigger Celery task to remove assets from Immich album.
+
+        Args:
+            user_id: User ID
+            asset_ids: List of Immich asset IDs to remove
+        """
+        if not asset_ids:
+            return
+
+        try:
+            from app.core.celery_app import celery_app
+            celery_app.send_task(
+                "app.integrations.tasks.remove_assets_from_album_task",
+                args=[str(user_id), "immich", asset_ids]
+            )
+        except Exception as exc:
+            log_warning(f"Failed to trigger asset removal task: {exc}")
+
+    # ========== Main Media Deletion Methods ==========
+
+    def _delete_media_files_post_commit(
+        self, user_id: uuid.UUID, media_files: list[dict], immich_assets: list[str]
+    ) -> None:
+        """Delete media files and trigger Immich asset removal after database commit.
+
+        Uses a fresh session to ensure accurate reference counts after commit.
+
+        Args:
+            user_id: User ID for logging and Immich removal
+            media_files: List of file deletion info dicts with keys: file_path, checksum, thumbnail_path, force
+            immich_assets: List of Immich asset IDs to remove from album
+        """
+        if not media_files and not immich_assets:
+            return
+
+        from app.core.config import get_settings
+        from app.core.database import get_session_context
+
+        try:
+            settings = get_settings()
+            media_root = Path(settings.media_root).resolve()
+
+            # Use fresh session for accurate reference counts after commit
+            with get_session_context() as session:
+                for file_info in media_files:
+                    self._delete_media_file(file_info, user_id, media_root, session)
+
+                self._trigger_immich_album_removal(user_id, immich_assets)
+
+        except Exception as e:
+            log_warning(f"Error during post-commit media cleanup: {e}")
+
+    def _delete_media_internal(
+        self, media_id: uuid.UUID, user_id: uuid.UUID, should_commit: bool = True, media: Optional[EntryMedia] = None
+    ) -> tuple[bool, Optional[dict], Optional[str]]:
+        """Internal media deletion without authorization checks.
+
+        Args:
+            media_id: Media ID to delete
+            user_id: User ID for logging/Immich album removal
+            should_commit: Whether to commit transaction (False when caller will commit, True for direct deletion)
+            media: Pre-fetched media object (optional, will query if not provided)
+
+        Returns:
+            Tuple of (success, file_deletion_info, asset_id_to_remove):
+            - success: True if DB deletion succeeded
+            - file_deletion_info: File deletion metadata (for post-commit deletion when should_commit=False)
+            - asset_id_to_remove: Immich asset ID to remove (for post-commit removal when should_commit=False)
+        """
+        # Get the media record if not provided
+        if not media:
+            media = self.session.exec(
+                select(EntryMedia).where(EntryMedia.id == media_id)
+            ).first()
+            if not media:
+                return False, None, None
+
+        # Collect metadata BEFORE deleting from database
+        should_remove_from_album = self._should_remove_immich_asset(media, user_id)
+        # Force delete if no checksum (legacy records without reference counting)
+        force_delete = media.checksum is None
+        file_deletion_info = self._build_file_deletion_info(media, force=force_delete)
+        asset_id_to_remove = media.external_asset_id if should_remove_from_album else None
+
+        try:
+            log_debug(
+                "Deleting media",
+                media_id=str(media.id),
+                user_id=str(user_id),
+                file_path=media.file_path
+            )
+
+            # Delete from database
+            self.session.delete(media)
+
+            # Commit if requested (for direct deletion endpoint)
+            if should_commit:
+                try:
+                    self._commit()
+                except SQLAlchemyError as exc:
+                    self.session.rollback()
+                    log_error(exc)
+                    raise
+
+                # Delete files AFTER commit with fresh session for accurate reference counts
+                files = [file_deletion_info] if file_deletion_info else []
+                assets = [asset_id_to_remove] if asset_id_to_remove else []
+                self._delete_media_files_post_commit(user_id, files, assets)
+
+                log_info("Media deleted", media_id=str(media.id), user_id=str(user_id))
+                return True, None, None
+            else:
+                # Return deletion info for caller to handle post-commit
+                log_debug(
+                    "Media DB record deleted (files pending post-commit)",
+                    media_id=str(media.id),
+                    user_id=str(user_id)
+                )
+                return True, file_deletion_info, asset_id_to_remove
+
+        except SQLAlchemyError:
+            # SQLAlchemy errors already handled by _commit() above
+            raise
+        except Exception as e:
+            # Rollback transaction for any other errors
+            self.session.rollback()
+            log_error(f"Error deleting media {media.id}: {e}")
+            raise
+
+    def _delete_orphaned_media(
+        self, entry_id: uuid.UUID, user_id: uuid.UUID, old_delta: Optional[dict], new_delta: dict
+    ) -> tuple[list[dict], list[str]]:
+        """Delete media files that were removed from the entry delta.
+
+        Handles mixed source formats: old_delta may contain file paths, new_delta contains normalized media IDs.
+        A media is truly orphaned only if neither its file_path nor its ID appear in new_sources.
+
+        Args:
+            entry_id: ID of the entry being updated
+            user_id: ID of the user
+            old_delta: Previous delta content (may be None)
+            new_delta: Updated delta content
+
+        Returns:
+            Tuple of (media_files_to_delete, immich_assets_to_remove)
+        """
+        if not old_delta or not new_delta:
+            return [], []
+
+        old_sources = set(extract_media_sources(old_delta))
+        new_sources = set(extract_media_sources(new_delta))
+        orphaned_sources = old_sources - new_sources
+
+        if not orphaned_sources:
+            return [], []
+
+        # Get all media records for this entry
+        media_items = self.session.exec(
+            select(EntryMedia).where(EntryMedia.entry_id == entry_id)
+        ).all()
+
+        # Build source -> media mapping (by file_path and media ID)
+        source_to_media = {}
+        for media in media_items:
+            if media.file_path:
+                source_to_media[media.file_path] = media
+            source_to_media[str(media.id)] = media
+
+        # Collect deletion info BEFORE deleting from database
+        media_files_to_delete = []
+        immich_assets_to_remove = []
+
+        for source in orphaned_sources:
+            media = source_to_media.get(source)
+            if not media:
+                continue
+
+            # Check if media is still referenced in new_sources
+            if media.file_path in new_sources or str(media.id) in new_sources:
+                continue  # Still referenced, don't delete
+
+            # Collect file deletion info
+            # Force delete if no checksum (legacy records without reference counting)
+            force_delete = media.checksum is None
+            file_info = self._build_file_deletion_info(media, force=force_delete)
+            if file_info:
+                media_files_to_delete.append(file_info)
+
+            # Check for Immich asset removal
+            if self._should_remove_immich_asset(media, user_id):
+                immich_assets_to_remove.append(media.external_asset_id)
+
+            # Delete from database
+            self.session.delete(media)
+            log_debug(
+                "Orphaned media deleted",
+                media_id=str(media.id),
+                user_id=str(user_id),
+                file_path=media.file_path
+            )
+
+        return media_files_to_delete, immich_assets_to_remove
 
     def create_entry(
         self,
@@ -342,6 +693,10 @@ class EntryService:
         """Update an entry."""
         entry = self._get_owned_entry(entry_id, user_id)
 
+        # Initialize variables for post-commit cleanup
+        orphaned_files = []
+        orphaned_immich_assets = []
+
         # Handle journal change if requested
         old_journal_id = None
         new_journal_id = None
@@ -410,6 +765,12 @@ class EntryService:
                 media_source_count=len(normalized_sources),
                 redacted_media_ids=[f"{s[:8]}..." for s in normalized_sources[:5]],
             )
+
+            # Delete media that was removed from the delta (collects metadata, deletes DB records)
+            orphaned_files, orphaned_immich_assets = self._delete_orphaned_media(
+                entry.id, user_id, entry.content_delta or {}, normalized_delta
+            )
+
             entry.content_delta = normalized_delta
             plain_text = extract_plain_text(normalized_delta)
             entry.content_plain_text = plain_text or None
@@ -458,6 +819,9 @@ class EntryService:
             self.session.rollback()
             log_error(exc)
             raise
+
+        # Delete orphaned media files AFTER successful commit
+        self._delete_media_files_post_commit(user_id, orphaned_files, orphaned_immich_assets)
 
         # Recalculate stats for both journals if journal was changed
         if old_journal_id is not None and new_journal_id is not None:
@@ -816,49 +1180,5 @@ class EntryService:
         if not media:
             raise EntryNotFoundError("Media not found")
 
-        # Check if this asset is used in other entries BEFORE deletion
-        should_remove_from_album = False
-        if media.external_provider == "immich" and not media.file_path and media.external_asset_id:
-            # Count how many other entries use this asset (excluding current media record)
-            from sqlalchemy import func
-            count_statement = (
-                select(func.count(EntryMedia.id))
-                .where(
-                    EntryMedia.external_asset_id == media.external_asset_id,
-                    EntryMedia.external_provider == "immich",
-                    EntryMedia.id != media_id
-                )
-                .join(Entry)
-                .where(Entry.user_id == user_id)
-            )
-
-            other_usage_count = self.session.exec(count_statement).one()
-
-            # Only mark for removal if no other entries use this asset
-            should_remove_from_album = (other_usage_count == 0)
-
-        # Store asset info for album removal after commit
-        asset_id_to_remove = media.external_asset_id if should_remove_from_album else None
-
-        # Hard delete the media
-        self.session.delete(media)
-        try:
-            self._commit()
-        except SQLAlchemyError as exc:
-            self.session.rollback()
-            log_error(exc)
-            raise
-
-        # Trigger removal from Immich album after successful deletion
-        if asset_id_to_remove:
-            try:
-                from app.core.celery_app import celery_app
-                celery_app.send_task(
-                    "app.integrations.tasks.remove_assets_from_album_task",
-                    args=[str(user_id), "immich", [asset_id_to_remove]]
-                )
-            except Exception as exc:
-                log_warning(f"Failed to trigger album asset removal task: {exc}")
-
-        log_info(f"Media hard-deleted for user {user_id}: {media.id}")
-        return True
+        success, _, _ = self._delete_media_internal(media_id, user_id, should_commit=True, media=media)
+        return success
