@@ -752,7 +752,7 @@ class MediaService:
                             user_id=str(user_id),
                             force=True  # Force deletion since no DB record exists
                         )
-                    except Exception as delete_exc:
+                    except (RuntimeError, OSError) as delete_exc:
                         log_warning(f"Failed to cleanup uploaded file after DB error: {delete_exc}")
                 raise
 

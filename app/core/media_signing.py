@@ -205,7 +205,7 @@ def attach_signed_urls_to_delta(
 
     media_map = {str(media.id): media for media in media_items}
 
-    def transform_to_signed_url(key: str, media_id: str) -> Optional[str]:
+    def transform_to_signed_url(_key: str, media_id: str) -> Optional[str]:
         media = media_map.get(media_id)
         if not media:
             return None
@@ -368,8 +368,8 @@ def _resolve_signed_url(
             user_id,
             external_base_url=external_base_url,
         )
-    except Exception as exc:
-        log_warning(f"Failed to sign media in delta hydration: {exc}")
+    except Exception as exc:  # noqa: BLE001 - Broad except intentional for best-effort media signing
+        log_warning(exc, "Failed to sign media in delta hydration (attach_signed_urls/model_validate)")
         return None
     if response.signed_url and response.signed_url_expires_at:
         cache.set(

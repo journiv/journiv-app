@@ -129,7 +129,7 @@ class EntryService:
                 user_id=user_id,
                 journal_id=str(entry_data.journal_id),
                 media_source_count=len(sources),
-                media_sources=sources[:5],
+                redacted_media_ids=[f"{s[:8]}..." for s in sources[:5]],
             )
 
         plain_text = extract_plain_text(
@@ -381,7 +381,7 @@ class EntryService:
                 entry_id=str(entry.id),
                 user_id=user_id,
                 media_source_count=len(sources),
-                media_sources=sources[:5],
+                redacted_media_ids=[f"{s[:8]}..." for s in sources[:5]],
             )
             media_items = self.session.exec(
                 select(EntryMedia).where(EntryMedia.entry_id == entry.id)
@@ -408,7 +408,7 @@ class EntryService:
                 entry_id=str(entry.id),
                 user_id=user_id,
                 media_source_count=len(normalized_sources),
-                media_sources=normalized_sources[:5],
+                redacted_media_ids=[f"{s[:8]}..." for s in normalized_sources[:5]],
             )
             entry.content_delta = normalized_delta
             plain_text = extract_plain_text(normalized_delta)

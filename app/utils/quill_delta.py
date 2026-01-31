@@ -162,7 +162,7 @@ def replace_media_ids(
     if not isinstance(ops, list):
         return {"ops": []}
 
-    def transform_id(key: str, value: str) -> Optional[str]:
+    def transform_id(_key: str, value: str) -> Optional[str]:
         return id_map.get(value)
 
     result = transform_delta_media(delta, transform_id)

@@ -81,8 +81,8 @@ async def _update_integration_error_state(
                 integration_update.last_error_at = datetime.now(timezone.utc)
                 session.add(integration_update)
                 session.commit()
-    except Exception as e:
-        log_error(f"Failed to update integration error state: {e}")
+    except Exception as e:  # noqa: BLE001 - Broad except intentional to ensure best-effort error reporting
+        log_error(e, message="Failed to update integration error state")
 
 
 @router.post(

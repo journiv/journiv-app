@@ -264,7 +264,7 @@ def migrate_content(
                     params = {
                         "limit": batch_limit,
                         "last_dt": last_entry_datetime,
-                        "last_id": str(last_entry_id),
+                        "last_id": last_entry_id,
                     }
 
                 rows = session.exec(text(query).bindparams(**params)).all()
@@ -272,10 +272,7 @@ def migrate_content(
                 if not rows:
                     break
 
-                entry_ids = [
-                    row.id if isinstance(row.id, uuid.UUID) else uuid.UUID(str(row.id))
-                    for row in rows
-                ]
+                entry_ids = [row.id for row in rows]
                 media_items = session.exec(
                     select(EntryMedia).where(EntryMedia.entry_id.in_(entry_ids))
                 ).all()
@@ -298,11 +295,7 @@ def migrate_content(
                         skipped += 1
                         continue
 
-                    entry_uuid = (
-                        row.id
-                        if isinstance(row.id, uuid.UUID)
-                        else uuid.UUID(str(row.id))
-                    )
+                    entry_uuid = row.id
                     content = _expand_media_shortcodes(
                         content,
                         list(media_by_entry.get(entry_uuid, [])),

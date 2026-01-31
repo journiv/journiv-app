@@ -137,7 +137,7 @@ class MarkdownConverter {
             final firstChild = node.children!.first as md.Element;
             if (firstChild.tag == 'input' && firstChild.attributes['type'] == 'checkbox') {
               newAttributes['list'] = 'checked';
-              if (firstChild.attributes['checked'] == 'true') {
+              if (firstChild.attributes.containsKey('checked')) {
                 newAttributes['checked'] = true;
               }
               node.children!.removeAt(0);
