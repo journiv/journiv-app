@@ -76,6 +76,25 @@ coverage/
 integration_test/
 
 # ===============================================================
+# DART MIGRATOR (bin/)
+# ===============================================================
+
+# Dart build artifacts
+bin/.dart_tool/
+bin/.flutter-plugins-dependencies
+bin/.coverage
+
+# Keep source files for in-Docker compilation
+!bin/migrator.dart
+!bin/utils/
+!bin/pubspec.yaml
+!bin/pubspec.lock
+
+# The migrator binary is compiled during Docker build, so ignore local builds
+bin/migrator
+bin/migrator-test
+
+# ===============================================================
 # MEDIA / USER FILES
 # ===============================================================
 

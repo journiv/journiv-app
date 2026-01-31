@@ -19,6 +19,7 @@ def version():
     typer.echo(f"Journiv CLI version {app_version}")
 
 # Register command groups
-from app.cli.commands import import_cmd, auth
+from app.cli.commands import import_cmd, auth, migrate
 app.add_typer(import_cmd.app, name="import")
 app.add_typer(auth.app, name="auth")
+app.add_typer(migrate.app, name="migrate")

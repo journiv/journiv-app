@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Context variable for request ID propagation
 request_id_ctx: ContextVar[str] = ContextVar('request_id', default='unknown')
+request_path_ctx: ContextVar[str] = ContextVar('request_path', default='unknown')
 
 # Default status code when response is not captured
 DEFAULT_STATUS_CODE = 500
@@ -76,6 +77,7 @@ class RequestLoggingMiddleware:
             method = scope.get("method", "UNKNOWN")
             path = scope.get("path", "/")
             client_host = scope.get("client", ["unknown", 0])[0] if scope.get("client") else "unknown"
+            request_path_ctx.set(path)
 
             # Structured logging for request start
             logger.info(
@@ -144,6 +146,18 @@ class RequestLoggingMiddleware:
                 # Calculate duration
                 duration = time.time() - start_time
                 duration_ms = round(duration * 1000, 2)
+                if duration_ms >= 10000:
+                    logger.warning(
+                        "Slow request",
+                        extra={
+                            "request_id": request_id,
+                            "method": method,
+                            "path": path,
+                            "client_ip": client_host,
+                            "duration_ms": duration_ms,
+                            "event": "request_slow",
+                        },
+                    )
 
                 # Determine final status code
                 if response_captured:

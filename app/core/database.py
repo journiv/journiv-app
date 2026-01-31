@@ -13,6 +13,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import SQLModel, create_engine, Session, select
 
 from app.core.config import settings, PROJECT_ROOT
+from app.middleware.request_logging import request_id_ctx, request_path_ctx
 
 logger = logging.getLogger(__name__)
 
@@ -120,6 +121,29 @@ def get_session():
     """Get database session."""
     with Session(engine) as session:
         yield session
+
+
+def _should_log_sql_requests() -> bool:
+    return settings.log_sql_requests
+
+
+@event.listens_for(engine, "before_cursor_execute")
+def _log_integration_select(conn, cursor, statement, parameters, context, executemany):
+    if not _should_log_sql_requests():
+        return
+    compact = " ".join(statement.split())
+    if len(compact) > 800:
+        compact = f"{compact[:800]}..."
+    logger.info(
+        "SQL statement path=%s request_id=%s",
+        request_path_ctx.get(),
+        request_id_ctx.get(),
+        extra={
+            "request_id": request_id_ctx.get(),
+            "path": request_path_ctx.get(),
+            "statement": compact,
+        },
+    )
 
 
 def get_session_context():

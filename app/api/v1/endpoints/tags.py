@@ -606,7 +606,11 @@ async def get_entries_by_tag(
             EntryPreviewResponse(
                 id=entry.id,
                 title=entry.title or "Untitled",
-                content=(entry.content[:200] + "..." if len(entry.content or "") > 200 else entry.content or ""),
+                content_plain_text=(
+                    entry.content_plain_text[:200] + "..."
+                    if len(entry.content_plain_text or "") > 200
+                    else entry.content_plain_text or ""
+                ),
                 journal_id=entry.journal_id,
                 created_at=entry.created_at,
                 updated_at=entry.updated_at,

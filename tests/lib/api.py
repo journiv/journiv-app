@@ -16,8 +16,18 @@ from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
+from app.utils.quill_delta import wrap_plain_text
+
 
 DEFAULT_BASE_URL = "http://localhost:8000/api/v1"
+
+
+def _wrap_content_to_delta(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert plain 'content' field to 'content_delta' Quill format if present."""
+    if "content" in payload:
+        content = payload.pop("content")
+        payload["content_delta"] = wrap_plain_text(content)
+    return payload
 
 
 def _normalize_base_url(value: str | None) -> str:
@@ -293,6 +303,7 @@ class JournivApiClient:
             "entry_date": entry_date,
         }
         payload.update(extra)
+        payload = _wrap_content_to_delta(payload)
         response = self.request(
             "POST",
             "/entries/",
@@ -319,6 +330,7 @@ class JournivApiClient:
     def update_entry(
         self, token: str, entry_id: str, payload: Dict[str, Any]
     ) -> Dict[str, Any]:
+        payload = _wrap_content_to_delta(payload.copy())
         return self.request(
             "PUT",
             f"/entries/{entry_id}",

@@ -3,6 +3,7 @@ Entry endpoints.
 """
 import logging
 import uuid
+from collections import defaultdict
 from datetime import date
 from typing import Annotated, List, Optional
 
@@ -12,13 +13,16 @@ from sqlmodel import Session, select
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import EntryNotFoundError, JournalNotFoundError, ValidationError
-from app.core.logging_config import log_user_action, log_error
-from app.core.media_signing import attach_signed_urls
+from app.core.logging_config import log_user_action, log_error, log_warning
+from app.core.media_signing import attach_signed_urls, attach_signed_urls_to_delta
 from app.models.user import User
+from app.models.entry import EntryMedia
 from app.models.integration import Integration, IntegrationProvider
 from app.schemas.entry import (
     EntryCreate,
+    EntryDraftCreate,
     EntryUpdate,
+    QuillDelta,
     EntryResponse,
     EntryMediaCreateRequest,
     EntryMediaResponse,
@@ -29,6 +33,56 @@ from app.services.tag_service import TagService
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 logger = logging.getLogger(__name__)
+
+
+def _build_entry_responses(
+    entries: List,
+    user_id: uuid.UUID,
+    session: Session,
+) -> List[EntryResponse]:
+    if not entries:
+        return []
+
+    responses = [EntryResponse.model_validate(entry) for entry in entries]
+    entry_ids = [entry.id for entry in entries if entry.content_delta]
+    if not entry_ids:
+        return responses
+
+    media_items = session.exec(
+        select(EntryMedia).where(EntryMedia.entry_id.in_(entry_ids))
+    ).all()
+    media_by_entry: dict[uuid.UUID, list[EntryMedia]] = defaultdict(list)
+    for media in media_items:
+        media_by_entry[media.entry_id].append(media)
+
+    immich_integration = session.exec(
+        select(Integration)
+        .where(Integration.user_id == user_id)
+        .where(Integration.provider == IntegrationProvider.IMMICH)
+    ).first()
+    immich_base_url = immich_integration.base_url if immich_integration else None
+
+    for entry, response in zip(entries, responses):
+        if not entry.content_delta:
+            continue
+        delta_dict = attach_signed_urls_to_delta(
+            entry.content_delta,
+            media_by_entry.get(entry.id, []),
+            str(user_id),
+            external_base_url=immich_base_url,
+        )
+        if delta_dict:
+            response.content_delta = QuillDelta.model_validate(delta_dict)
+
+    return responses
+
+
+def _build_entry_response(
+    entry,
+    user_id: uuid.UUID,
+    session: Session,
+) -> EntryResponse:
+    return _build_entry_responses([entry], user_id, session)[0]
 
 @router.post(
     "/",
@@ -45,14 +99,17 @@ logger = logging.getLogger(__name__)
 async def create_entry(
     entry_data: EntryCreate,
     current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    hydrate: bool = Query(True),
 ):
     """Create a new journal entry."""
     entry_service = EntryService(session)
     try:
         entry = entry_service.create_entry(current_user.id, entry_data)
         log_user_action(current_user.email, f"created entry {entry.id}", request_id=None)
-        return entry
+        if hydrate:
+            return _build_entry_response(entry, current_user.id, session)
+        return EntryResponse.model_validate(entry)
     except JournalNotFoundError:
         raise HTTPException(status_code=404, detail="Journal not found")
     except ValueError as e:
@@ -60,6 +117,76 @@ async def create_entry(
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while creating entry")
+
+
+@router.post(
+    "/draft",
+    response_model=EntryResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        400: {"description": "Invalid entry data"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal not found"},
+        500: {"description": "Internal server error"},
+    }
+)
+async def create_draft_entry(
+    entry_data: EntryDraftCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    hydrate: bool = Query(True),
+):
+    """Create a new draft entry."""
+    entry_service = EntryService(session)
+    try:
+        entry = entry_service.create_entry(current_user.id, entry_data, is_draft=True)
+        log_user_action(current_user.email, f"created draft entry {entry.id}", request_id=None)
+        if hydrate:
+            return _build_entry_response(entry, current_user.id, session)
+        return EntryResponse.model_validate(entry)
+    except JournalNotFoundError:
+        raise HTTPException(status_code=404, detail="Journal not found")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        log_error(e, request_id=None, user_email=current_user.email)
+        raise HTTPException(status_code=500, detail="An error occurred while creating draft entry")
+
+
+@router.get(
+    "/drafts",
+    response_model=List[EntryResponse],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        500: {"description": "Internal server error"},
+    }
+)
+async def get_user_drafts(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    journal_id: Optional[uuid.UUID] = Query(None),
+    hydrate: bool = Query(False),
+):
+    """Get all draft entries for the current user."""
+    try:
+        entry_service = EntryService(session)
+        entries = entry_service.get_user_drafts(
+            user_id=current_user.id,
+            limit=limit,
+            offset=offset,
+            journal_id=journal_id,
+            hydrate_media=False,
+        )
+        if not hydrate:
+            return entries
+        return _build_entry_responses(entries, current_user.id, session)
+    except Exception as e:
+        log_error(e, message="Unexpected error fetching draft entries", user_email=current_user.email)
+        raise HTTPException(status_code=500, detail="An error occurred while fetching draft entries")
 
 
 @router.get(
@@ -76,6 +203,8 @@ async def get_user_entries(
     session: Annotated[Session, Depends(get_session)],
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    include_drafts: bool = Query(False),
+    hydrate: bool = Query(False),
 ):
     """
     Get all entries for the current user.
@@ -91,8 +220,12 @@ async def get_user_entries(
             user_id=current_user.id,
             limit=limit,
             offset=offset,
+            include_drafts=include_drafts,
+            hydrate_media=False,
         )
-        return entries
+        if not hydrate:
+            return entries
+        return _build_entry_responses(entries, current_user.id, session)
     except Exception as e:
         log_error(e, message="Unexpected error fetching entries", user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while fetching entries")
@@ -115,6 +248,8 @@ async def get_journal_entries(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     include_pinned: bool = Query(True),
+    include_drafts: bool = Query(False),
+    hydrate: bool = Query(False),
 ):
     """
     Get entries for a specific journal.
@@ -124,9 +259,17 @@ async def get_journal_entries(
     entry_service = EntryService(session)
     try:
         entries = entry_service.get_journal_entries(
-            journal_id, current_user.id, limit, offset, include_pinned
+            journal_id,
+            current_user.id,
+            limit,
+            offset,
+            include_pinned,
+            include_drafts,
+            hydrate_media=False,
         )
-        return entries
+        if not hydrate:
+            return entries
+        return _build_entry_responses(entries, current_user.id, session)
     except JournalNotFoundError:
         raise HTTPException(status_code=404, detail="Journal not found")
     except Exception as e:
@@ -154,6 +297,8 @@ async def search_entries(
     journal_id: Optional[uuid.UUID] = Query(None),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    include_drafts: bool = Query(False),
+    hydrate: bool = Query(False),
 ):
     """
     Search entries by content.
@@ -163,9 +308,17 @@ async def search_entries(
     try:
         entry_service = EntryService(session)
         entries = entry_service.search_entries(
-            current_user.id, q, journal_id, limit, offset
+            current_user.id,
+            q,
+            journal_id,
+            limit,
+            offset,
+            include_drafts=include_drafts,
+            hydrate_media=False,
         )
-        return entries
+        if not hydrate:
+            return entries
+        return _build_entry_responses(entries, current_user.id, session)
     except Exception as e:
         logger.error(
             "Unexpected error searching entries",
@@ -190,6 +343,8 @@ async def get_entries_by_date_range(
     start_date: date = Query(...),
     end_date: date = Query(...),
     journal_id: Optional[str] = Query(None),
+    include_drafts: bool = Query(False),
+    hydrate: bool = Query(False),
 ):
     """
     Get entries within a date range.
@@ -210,9 +365,16 @@ async def get_entries_by_date_range(
                 )
 
         entries = entry_service.get_entries_by_date_range(
-            current_user.id, start_date, end_date, journal_uuid
+            current_user.id,
+            start_date,
+            end_date,
+            journal_uuid,
+            include_drafts=include_drafts,
+            hydrate_media=False,
         )
-        return entries
+        if not hydrate:
+            return entries
+        return _build_entry_responses(entries, current_user.id, session)
     except Exception as e:
         logger.error(
             "Unexpected error fetching entries by date range",
@@ -234,7 +396,8 @@ async def get_entries_by_date_range(
 async def get_entry(
     entry_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    hydrate: bool = Query(True),
 ):
     """Get a specific entry by ID."""
     try:
@@ -242,7 +405,9 @@ async def get_entry(
         entry = entry_service.get_entry_by_id(entry_id, current_user.id)
         if not entry:
             raise HTTPException(status_code=404, detail="Entry not found")
-        return entry
+        if hydrate:
+            return _build_entry_response(entry, current_user.id, session)
+        return EntryResponse.model_validate(entry)
     except HTTPException:
         raise
     except Exception as e:
@@ -269,14 +434,17 @@ async def update_entry(
     entry_id: uuid.UUID,
     entry_data: EntryUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    hydrate: bool = Query(True),
 ):
     """Update an entry's content, title, or other properties."""
     entry_service = EntryService(session)
     try:
         entry = entry_service.update_entry(entry_id, current_user.id, entry_data)
         log_user_action(current_user.email, "Updated entry", request_id=None)
-        return entry
+        if hydrate:
+            return _build_entry_response(entry, current_user.id, session)
+        return EntryResponse.model_validate(entry)
     except EntryNotFoundError:
         raise HTTPException(status_code=404, detail="Entry not found")
     except JournalNotFoundError:
@@ -291,6 +459,40 @@ async def update_entry(
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
         raise HTTPException(status_code=500, detail="An error occurred while updating entry")
+
+
+@router.patch(
+    "/{entry_id}/finalize",
+    response_model=EntryResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Entry not found"},
+        500: {"description": "Internal server error"},
+    }
+)
+async def finalize_entry(
+    entry_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    hydrate: bool = Query(True),
+):
+    """Finalize a draft entry."""
+    entry_service = EntryService(session)
+    try:
+        entry = entry_service.finalize_entry(entry_id, current_user.id)
+        log_user_action(current_user.email, f"finalized entry {entry.id}", request_id=None)
+        if hydrate:
+            return _build_entry_response(entry, current_user.id, session)
+        return EntryResponse.model_validate(entry)
+    except EntryNotFoundError:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    except Exception as e:
+        logger.error(
+            "Unexpected error finalizing entry",
+            extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
+        )
+        raise HTTPException(status_code=500, detail="An error occurred while finalizing entry")
 
 
 @router.delete(
@@ -338,14 +540,17 @@ async def delete_entry(
 async def toggle_pin(
     entry_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    hydrate: bool = Query(True),
 ):
     """Toggle pin status of an entry (on/off)."""
     entry_service = EntryService(session)
     try:
         entry = entry_service.toggle_pin(entry_id, current_user.id)
         log_user_action(current_user.email, f"toggled pin for entry {entry_id}", request_id=None)
-        return entry
+        if hydrate:
+            return _build_entry_response(entry, current_user.id, session)
+        return EntryResponse.model_validate(entry)
     except EntryNotFoundError:
         raise HTTPException(status_code=404, detail="Entry not found")
     except Exception as e:
@@ -384,6 +589,7 @@ async def add_media_to_entry(
             .where(Integration.provider == IntegrationProvider.IMMICH)
         ).first()
         immich_base_url = immich_integration.base_url if immich_integration else None
+
         response = EntryMediaResponse.model_validate(media)
         response = attach_signed_urls(
             response,
@@ -430,22 +636,34 @@ async def get_entry_media(
         immich_base_url = immich_integration.base_url if immich_integration else None
 
         media = entry_service.get_entry_media(entry_id, current_user.id)
+
         signed_media: list[EntryMediaResponse] = []
         for media_item in media:
-            response = EntryMediaResponse.model_validate(media_item)
-            response = attach_signed_urls(
-                response,
-                str(current_user.id),
-                external_base_url=immich_base_url,
-            )
-            signed_media.append(response)
+            try:
+                response = EntryMediaResponse.model_validate(media_item)
+                response = attach_signed_urls(
+                    response,
+                    str(current_user.id),
+                    external_base_url=immich_base_url,
+                )
+                signed_media.append(response)
+            except Exception as exc:
+                log_warning(
+                    exc,
+                    message="Failed to sign media item",
+                    user_id=str(current_user.id),
+                    entry_id=str(entry_id),
+                    media_id=str(getattr(media_item, "id", "")),
+                )
         return signed_media
     except EntryNotFoundError:
         raise HTTPException(status_code=404, detail="Entry not found")
     except Exception as e:
-        logger.error(
-            "Unexpected error fetching entry media",
-            extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
+        log_error(
+            e,
+            message="Unexpected error fetching entry media",
+            user_id=str(current_user.id),
+            entry_id=str(entry_id),
         )
         raise HTTPException(status_code=500, detail="An error occurred while fetching entry media")
 

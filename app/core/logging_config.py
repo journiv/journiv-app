@@ -214,24 +214,27 @@ def setup_logging():
     logging.getLogger(LogCategory.DB).setLevel(logging.INFO)
     logging.getLogger(LogCategory.SECURITY).setLevel(logging.INFO)
 
+    # SQLAlchemy logging (Safety guard: Only allow in dev/debug mode to avoid leaking parameters)
+    if settings.log_sql_requests and settings.environment != "production" and settings.debug:
+        logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+    elif settings.log_sql_requests:
+        log_warning("SQL request logging requested but disabled: only allowed in non-production debug environments.")
+
     # Reduce noise from third-party libraries
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("uvicorn.error").setLevel(logging.WARNING)
     logging.getLogger("fastapi").setLevel(logging.WARNING)
 
     # Log configuration
-    logger = logging.getLogger(__name__)
     if used_default_level:
-        logger.warning(
-            "Invalid log level '%s' in configuration, falling back to INFO",
-            settings.log_level
+        log_warning(
+            f"Invalid log level '{settings.log_level}' in configuration, falling back to INFO"
         )
-    logger.info(
-        "Logging configured - Level: %s",
-        logging.getLevelName(resolved_level)
+    log_info(
+        f"Logging configured - Level: {logging.getLevelName(resolved_level)}"
     )
-    logger.info(f"Console logging: Enabled")
-    logger.info(f"File logging: {log_dir / 'app.log'}")
+    log_info("Console logging: Enabled")
+    log_info(f"File logging: {log_dir / 'app.log'}")
 
 
 def get_request_logger():
@@ -350,6 +353,12 @@ def log_error(
         log_message = f"{message}: {str(error)}{user_info}"
     else:
         log_message = f"Error: {str(error)}{user_info}"
-    # exc_info should only be True if we have an actual Exception
-    exc_info = isinstance(error, Exception)
+    # exc_info should only be True if we have an actual Exception,
+    # unless explicitly provided in kwargs (which we must pop to avoid multiple values error)
+    explicit_exc_info = kwargs.pop('exc_info', None)
+    if explicit_exc_info is not None:
+        exc_info = explicit_exc_info
+    else:
+        exc_info = isinstance(error, Exception)
+
     _log_with_context(logger, logging.ERROR, log_message, request_id, exc_info=exc_info, **kwargs)

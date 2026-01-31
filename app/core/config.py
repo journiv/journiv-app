@@ -163,6 +163,10 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file: Optional[str] = None
     log_dir: str = "/data/logs"
+    # SQL query logging (WARNING: Never enable in production as it exposes bound parameters/sensitive data)
+    log_sql_requests: bool = Field(
+        default_factory=lambda: os.getenv("LOG_SQL_REQUESTS", "false").lower() == "true"
+    )
 
     # Disable signup
     disable_signup: bool = Field(

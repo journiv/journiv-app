@@ -32,7 +32,7 @@ from app.integrations.schemas import (
     IntegrationAssetsListResponse,
     IntegrationSettingsUpdateRequest,
 )
-from app.api.dependencies import get_current_user
+from app.api.dependencies import get_current_user, get_current_user_detached
 from app.core.config import settings
 from app.core.media_signing import is_signature_expired
 from app.core.signing import verify_media_signature
@@ -58,6 +58,33 @@ async def _close_httpx_stream(response: httpx.Response) -> None:
     await response.aclose()
 
 
+async def _update_integration_error_state(
+    user_id: uuid.UUID,
+    provider: IntegrationProvider,
+    error_message: str
+) -> None:
+    """
+    Update integration error state in a new database session.
+
+    Used when proxy requests fail due to authentication errors.
+    Creates a short-lived session to record the error without blocking.
+    """
+    try:
+        with get_session_context() as session:
+            integration_update = session.exec(
+                select(Integration)
+                .where(Integration.user_id == user_id)
+                .where(Integration.provider == provider)
+            ).first()
+            if integration_update:
+                integration_update.last_error = error_message
+                integration_update.last_error_at = datetime.now(timezone.utc)
+                session.add(integration_update)
+                session.commit()
+    except Exception as e:
+        log_error(f"Failed to update integration error state: {e}")
+
+
 @router.post(
     "/connect",
     response_model=IntegrationConnectResponse,
@@ -70,8 +97,7 @@ async def _close_httpx_stream(response: httpx.Response) -> None:
 )
 async def connect(
     request: IntegrationConnectRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    current_user: Annotated[User, Depends(get_current_user_detached)],
 ) -> IntegrationConnectResponse:
     """
     Connect or update an integration.
@@ -80,14 +106,15 @@ async def connect(
     Credentials are encrypted before storage.
     """
     try:
-        response = await connect_integration(
-            session=session,
-            user=current_user,
-            provider=request.provider,
-            credentials=request.credentials,
-            base_url=request.base_url,
-            import_mode=request.import_mode
-        )
+        with get_session_context() as session:
+            response = await connect_integration(
+                session=session,
+                user=current_user,
+                provider=request.provider,
+                credentials=request.credentials,
+                base_url=request.base_url,
+                import_mode=request.import_mode
+            )
         return response
     except ValueError as e:
         log_warning(f"Invalid integration connection request: {e}")
@@ -114,8 +141,7 @@ async def connect(
 )
 async def get_status(
     provider: IntegrationProvider,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    current_user: Annotated[User, Depends(get_current_user_detached)],
 ) -> IntegrationStatusResponse:
     """
     Get the status of an integration.
@@ -123,11 +149,12 @@ async def get_status(
     Returns the current connection status, sync history, and activity state.
     """
     try:
-        status_response = await get_integration_status(
-            session=session,
-            user=current_user,
-            provider=provider
-        )
+        with get_session_context() as session:
+            status_response = await get_integration_status(
+                session=session,
+                user=current_user,
+                provider=provider
+            )
         return status_response
     except Exception as e:
         log_error(e)
@@ -148,8 +175,7 @@ async def get_status(
 )
 async def disconnect(
     provider: IntegrationProvider,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    current_user: Annotated[User, Depends(get_current_user_detached)],
 ) -> None:
     """
     Disconnect an integration.
@@ -157,11 +183,12 @@ async def disconnect(
     Deactivates the integration. Connection history and cached data are preserved.
     """
     try:
-        await disconnect_integration(
-            session=session,
-            user=current_user,
-            provider=provider
-        )
+        with get_session_context() as session:
+            await disconnect_integration(
+                session=session,
+                user=current_user,
+                provider=provider
+            )
         # Cache invalidation is handled in the service
     except ValueError as e:
         log_warning(f"Integration not found for disconnect: {e}")
@@ -190,8 +217,7 @@ async def disconnect(
 async def update_settings(
     provider: IntegrationProvider,
     request: IntegrationSettingsUpdateRequest,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    current_user: Annotated[User, Depends(get_current_user_detached)],
 ) -> IntegrationStatusResponse:
     """
     Update integration settings.
@@ -199,12 +225,13 @@ async def update_settings(
     Updates settings like import mode without requiring reconnection.
     """
     try:
-        status_response = await update_integration_settings(
-            session=session,
-            user=current_user,
-            provider=provider,
-            settings_update=request
-        )
+        with get_session_context() as session:
+            status_response = await update_integration_settings(
+                session=session,
+                user=current_user,
+                provider=provider,
+                settings_update=request
+            )
         return status_response
     except ValueError as e:
         log_warning(f"Integration not found for settings update: {e}")
@@ -232,8 +259,7 @@ async def update_settings(
 )
 async def list_assets(
     provider: IntegrationProvider,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)],
+    current_user: Annotated[User, Depends(get_current_user_detached)],
     page: Annotated[int, Query(ge=1)] = 1,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     force_refresh: Annotated[bool, Query()] = False
@@ -244,15 +270,15 @@ async def list_assets(
     Returns a paginated list of assets, using cached data when available.
     """
     try:
-
-        assets, total_count = await list_integration_assets(
-            session=session,
-            user=current_user,
-            provider=provider,
-            page=page,
-            limit=limit,
-            force_refresh=force_refresh
-        )
+        with get_session_context() as session:
+            assets, total_count = await list_integration_assets(
+                session=session,
+                user=current_user,
+                provider=provider,
+                page=page,
+                limit=limit,
+                force_refresh=force_refresh
+            )
 
         # When total is unknown (-1), assume more if we got a full page
         if total_count == -1:
@@ -292,8 +318,7 @@ async def list_assets(
 )
 async def trigger_sync(
     provider: IntegrationProvider,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    current_user: Annotated[User, Depends(get_current_user_detached)],
 ) -> dict:
     """
     Manually trigger a sync for an integration.
@@ -302,11 +327,12 @@ async def trigger_sync(
     """
     try:
         # Verify integration exists and is active (quick check)
-        status_response = await get_integration_status(
-            session=session,
-            user=current_user,
-            provider=provider
-        )
+        with get_session_context() as session:
+            status_response = await get_integration_status(
+                session=session,
+                user=current_user,
+                provider=provider
+            )
 
         if status_response.status == "disconnected":
             raise ValueError(f"{provider} is not connected")
@@ -378,7 +404,7 @@ async def proxy_thumbnail(
     and caching.
     """
     from fastapi.responses import StreamingResponse
-    from app.core.database import get_session_context
+
     try:
         user_id = uuid.UUID(uid)
     except ValueError:
@@ -397,15 +423,15 @@ async def proxy_thumbnail(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature")
 
     # 1. Fetch asset stream using service
+    # Database session is managed internally by fetch_proxy_asset during credential retrieval
+    # and closed before the HTTP streaming begins to prevent connection leaks
     try:
-        with get_session_context() as session:
-            response = await fetch_proxy_asset(
-                session=session,
-                user_id=user_id,
-                provider=provider,
-                asset_id=asset_id,
-                variant="thumbnail",
-            )
+        response = await fetch_proxy_asset(
+            user_id=user_id,
+            provider=provider,
+            asset_id=asset_id,
+            variant="thumbnail",
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -415,23 +441,7 @@ async def proxy_thumbnail(
     # Handle provider errors
     if response.status_code in (401, 403):
         log_warning(f"Invalid {provider} token for user {user_id}")
-        # We need a new session to update the error state since the main one is closed
-        try:
-            with get_session_context() as params_session:
-                # Re-fetch for update
-                integration_update = params_session.exec(
-                        select(Integration)
-                    .where(Integration.user_id == user_id)
-                    .where(Integration.provider == provider)
-                ).first()
-                if integration_update:
-                    integration_update.last_error = "Authentication failed"
-                    integration_update.last_error_at = datetime.now(timezone.utc)
-                    params_session.add(integration_update)
-                    params_session.commit()
-        except Exception as e:
-            log_error(f"Failed to update integration error state: {e}")
-
+        await _update_integration_error_state(user_id, provider, "Authentication failed")
         await _close_httpx_stream(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -492,7 +502,6 @@ async def proxy_original(
     Supports Range requests for video streaming and seeking.
     """
     from fastapi.responses import StreamingResponse
-    from app.core.database import get_session_context
 
     try:
         user_id = uuid.UUID(uid)
@@ -512,16 +521,16 @@ async def proxy_original(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature")
 
     # 1. Fetch asset stream using service
+    # Database session is managed internally by fetch_proxy_asset during credential retrieval
+    # and closed before the HTTP streaming begins to prevent connection leaks
     try:
-        with get_session_context() as session:
-            response = await fetch_proxy_asset(
-                session=session,
-                user_id=user_id,
-                provider=provider,
-                asset_id=asset_id,
-                variant="original",
-                range_header=range_header,
-            )
+        response = await fetch_proxy_asset(
+            user_id=user_id,
+            provider=provider,
+            asset_id=asset_id,
+            variant="original",
+            range_header=range_header,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except Exception as e:
@@ -531,27 +540,10 @@ async def proxy_original(
             detail="Failed to fetch original file",
         )
 
-
     # Handle provider errors
     if response.status_code in (401, 403):
         log_warning(f"Invalid {provider} token for user {user_id}")
-
-        # Update error state in new session
-        try:
-            with get_session_context() as params_session:
-                integration_update = params_session.exec(
-                     select(Integration)
-                    .where(Integration.user_id == user_id)
-                    .where(Integration.provider == provider)
-                ).first()
-                if integration_update:
-                    integration_update.last_error = "Authentication failed"
-                    integration_update.last_error_at = datetime.now(timezone.utc)
-                    params_session.add(integration_update)
-                    params_session.commit()
-        except Exception as e:
-            log_error(f"Failed to update integration error state: {e}")
-
+        await _update_integration_error_state(user_id, provider, "Authentication failed")
         await _close_httpx_stream(response)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -1,0 +1,16 @@
+name: journiv_migrator
+description: Markdown to Quill Delta migration tool for Journiv backend
+version: 1.0.0
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  # Markdown parsing with GitHub-flavored syntax
+  markdown: ^7.2.2
+
+  # CLI argument parsing
+  args: ^2.4.0
+
+dev_dependencies:
+  lints: ^4.0.0

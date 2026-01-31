@@ -10,12 +10,14 @@ from sqlmodel import Session, select
 from zoneinfo import ZoneInfo
 
 from app.core.exceptions import EntryNotFoundError, JournalNotFoundError, ValidationError
-from app.core.logging_config import log_info, log_warning, log_error
+from app.core.logging_config import log_debug, log_info, log_warning, log_error
 from app.core.time_utils import utc_now, local_date_for_user, ensure_utc, to_utc
 from app.models.entry import Entry, EntryMedia
 from app.models.entry_tag_link import EntryTagLink
+from app.models.integration import IntegrationProvider
 from app.models.journal import Journal
 from app.schemas.entry import EntryCreate, EntryUpdate, EntryMediaCreate, EntryMediaCreateRequest
+from app.utils.quill_delta import extract_plain_text, extract_media_sources
 
 DEFAULT_ENTRY_PAGE_LIMIT = 50
 MAX_ENTRY_PAGE_LIMIT = 100
@@ -33,6 +35,13 @@ class EntryService:
         if limit <= 0:
             return DEFAULT_ENTRY_PAGE_LIMIT
         return min(limit, MAX_ENTRY_PAGE_LIMIT)
+
+    @staticmethod
+    def _escape_like_pattern(query: str) -> str:
+        """Escape SQL LIKE wildcards (% and _) in user query."""
+        if not query:
+            return query
+        return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def _get_owned_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, *, include_deleted: bool = False) -> Entry:
         statement = select(Entry).where(
@@ -86,7 +95,13 @@ class EntryService:
         utc_dt = ensure_utc(entry.entry_datetime_utc)
         entry.entry_date = self._derive_entry_date(utc_dt, entry.entry_timezone)
 
-    def create_entry(self, user_id: uuid.UUID, entry_data: EntryCreate) -> Entry:
+    def create_entry(
+        self,
+        user_id: uuid.UUID,
+        entry_data: EntryCreate,
+        *,
+        is_draft: bool = False,
+    ) -> Entry:
         """Create a new entry in a journal.
 
         Args:
@@ -106,8 +121,21 @@ class EntryService:
             log_warning(f"Journal not found for user {user_id}: {entry_data.journal_id}")
             raise JournalNotFoundError("Journal not found")
 
-        # Calculate word count
-        word_count = len(entry_data.content.split()) if entry_data.content else 0
+        if entry_data.content_delta is not None:
+            delta_payload = entry_data.content_delta.model_dump()
+            sources = extract_media_sources(delta_payload)
+            log_debug(
+                "Entry create: incoming delta media sources",
+                user_id=user_id,
+                journal_id=str(entry_data.journal_id),
+                media_source_count=len(sources),
+                media_sources=sources[:5],
+            )
+
+        plain_text = extract_plain_text(
+            entry_data.content_delta.model_dump() if entry_data.content_delta else None
+        )
+        word_count = len(plain_text.split()) if plain_text else 0
 
         from app.services.user_service import UserService
         user_service = UserService(self.session)
@@ -122,7 +150,8 @@ class EntryService:
 
         entry = Entry(
             title=entry_data.title,
-            content=entry_data.content,
+            content_delta=entry_data.content_delta.model_dump() if entry_data.content_delta else None,
+            content_plain_text=plain_text or None,
             entry_date=entry_date,
             entry_datetime_utc=entry_dt_utc,
             entry_timezone=entry_tz,
@@ -130,6 +159,7 @@ class EntryService:
             prompt_id=entry_data.prompt_id,
             word_count=word_count,
             user_id=user_id,
+            is_draft=is_draft,
             # Structured location/weather fields
             location_json=entry_data.location_json,
             latitude=entry_data.latitude,
@@ -147,7 +177,53 @@ class EntryService:
             log_error(exc)
             raise
 
-        log_info(f"Entry created for user {user_id} in journal {entry.journal_id}: {entry.id}")
+        log_info(
+            f"Entry created for user {user_id} in journal {entry.journal_id}: {entry.id} (draft={is_draft})"
+        )
+
+        if not is_draft:
+            try:
+                from app.services.journal_service import JournalService
+                JournalService(self.session).recalculate_journal_entry_count(entry.journal_id, user_id)
+            except JournalNotFoundError:
+                log_warning(f"Journal missing during entry recount for user {user_id}: {entry.journal_id}")
+            except SQLAlchemyError as exc:
+                log_error(exc)
+            except Exception as exc:
+                log_error(exc)
+
+            # Update writing streak analytics
+            try:
+                from app.services.analytics_service import AnalyticsService
+                analytics_service = AnalyticsService(self.session)
+                analytics_service.update_writing_streak(user_id, entry.entry_date)
+            except Exception as exc:
+                log_error(exc)
+
+        return entry
+
+    def finalize_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
+        """Finalize a draft entry."""
+        entry = self._get_owned_entry(entry_id, user_id)
+
+        if not entry.is_draft:
+            return entry
+
+        entry.is_draft = False
+        entry.updated_at = utc_now()
+        self._refresh_entry_date(entry)
+        plain_text = extract_plain_text(entry.content_delta)
+        entry.content_plain_text = plain_text or None
+        entry.word_count = len(plain_text.split()) if plain_text else 0
+
+        try:
+            self.session.add(entry)
+            self._commit()
+            self.session.refresh(entry)
+        except SQLAlchemyError as exc:
+            self.session.rollback()
+            log_error(exc)
+            raise
 
         try:
             from app.services.journal_service import JournalService
@@ -159,7 +235,6 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
-        # Update writing streak analytics
         try:
             from app.services.analytics_service import AnalyticsService
             analytics_service = AnalyticsService(self.session)
@@ -167,6 +242,7 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
+        log_info(f"Entry finalized for user {user_id}: {entry.id}")
         return entry
 
     def get_entry_by_id(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Entry]:
@@ -183,7 +259,9 @@ class EntryService:
         user_id: uuid.UUID,
         limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
         offset: int = 0,
-        include_pinned: bool = True
+        include_pinned: bool = True,
+        include_drafts: bool = False,
+        hydrate_media: bool = True,
     ) -> List[Entry]:
         """Get entries for a specific journal.
 
@@ -192,9 +270,10 @@ class EntryService:
         from app.services.journal_service import JournalService
         JournalService(self.session)._get_owned_journal(journal_id, user_id)
 
-        statement = select(Entry).where(
-            Entry.journal_id == journal_id,
-        )
+        statement = select(Entry).where(Entry.journal_id == journal_id)
+
+        if not include_drafts:
+            statement = statement.where(Entry.is_draft.is_(False))
 
         if not include_pinned:
             statement = statement.where(Entry.is_pinned.is_(False))
@@ -204,22 +283,60 @@ class EntryService:
             Entry.entry_datetime_utc.desc()
         ).offset(offset).limit(limit)
 
-        return list(self.session.exec(statement))
+        entries = list(self.session.exec(statement))
+        if hydrate_media:
+            return [self._hydrate_entry(entry, user_id) for entry in entries]
+        return entries
 
     def get_user_entries(
         self,
         user_id: uuid.UUID,
         limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
         offset: int = 0,
+        hydrate_media: bool = True,
+        include_drafts: bool = False,
     ) -> List[Entry]:
         """Get all entries for a user across all journals, sorted by entry_datetime_utc descending."""
         statement = select(Entry).where(
             Entry.user_id == user_id,
         ).order_by(Entry.entry_datetime_utc.desc())
 
+        if not include_drafts:
+            statement = statement.where(Entry.is_draft.is_(False))
+
         statement = statement.offset(offset).limit(limit)
 
-        return list(self.session.exec(statement))
+        entries = list(self.session.exec(statement))
+        if hydrate_media:
+            return [self._hydrate_entry(entry, user_id) for entry in entries]
+        return entries
+
+    def get_user_drafts(
+        self,
+        user_id: uuid.UUID,
+        limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
+        offset: int = 0,
+        journal_id: Optional[uuid.UUID] = None,
+        hydrate_media: bool = True,
+    ) -> List[Entry]:
+        """Get all draft entries for a user, newest updated first."""
+        statement = select(Entry).where(
+            Entry.user_id == user_id,
+            Entry.is_draft.is_(True),
+        )
+
+        if journal_id:
+            statement = statement.where(Entry.journal_id == journal_id)
+
+        statement = statement.order_by(
+            Entry.updated_at.desc(),
+            Entry.entry_datetime_utc.desc(),
+        ).offset(offset).limit(limit)
+
+        entries = list(self.session.exec(statement))
+        if hydrate_media:
+            return [self._hydrate_entry(entry, user_id) for entry in entries]
+        return entries
 
     def update_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, entry_data: EntryUpdate) -> Entry:
         """Update an entry."""
@@ -253,10 +370,50 @@ class EntryService:
         # Update fields
         if entry_data.title is not None:
             entry.title = entry_data.title
-        if entry_data.content is not None:
-            entry.content = entry_data.content
-            # Recalculate word count
-            entry.word_count = len(entry_data.content.split())
+        if entry_data.content_delta is not None:
+            from app.core.media_signing import normalize_delta_media_ids
+            from app.models.entry import EntryMedia
+
+            delta_payload = entry_data.content_delta.model_dump()
+            sources = extract_media_sources(delta_payload)
+            log_debug(
+                "Entry update: incoming delta media sources",
+                entry_id=str(entry.id),
+                user_id=user_id,
+                media_source_count=len(sources),
+                media_sources=sources[:5],
+            )
+            media_items = self.session.exec(
+                select(EntryMedia).where(EntryMedia.entry_id == entry.id)
+            ).all()
+            log_debug(
+                "Entry update: existing media items",
+                entry_id=str(entry.id),
+                user_id=user_id,
+                media_count=len(media_items),
+                media_ids=[str(media.id) for media in media_items[:5]],
+                immich_asset_count=len(
+                    [
+                        media
+                        for media in media_items
+                        if media.external_provider == IntegrationProvider.IMMICH.value
+                        and media.external_asset_id
+                    ]
+                ),
+            )
+            normalized_delta = normalize_delta_media_ids(delta_payload, list(media_items))
+            normalized_sources = extract_media_sources(normalized_delta)
+            log_debug(
+                "Entry update: normalized delta media sources",
+                entry_id=str(entry.id),
+                user_id=user_id,
+                media_source_count=len(normalized_sources),
+                media_sources=normalized_sources[:5],
+            )
+            entry.content_delta = normalized_delta
+            plain_text = extract_plain_text(normalized_delta)
+            entry.content_plain_text = plain_text or None
+            entry.word_count = len(plain_text.split()) if plain_text else 0
         if entry_data.entry_timezone is not None:
             tz_value = (entry_data.entry_timezone or "UTC").strip() or "UTC"
             entry.entry_timezone = tz_value
@@ -483,26 +640,36 @@ class EntryService:
         query: str,
         journal_id: Optional[uuid.UUID] = None,
         limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
-        offset: int = 0
+        offset: int = 0,
+        include_drafts: bool = False,
+        hydrate_media: bool = True,
     ) -> List[Entry]:
         """Search entries by content."""
         statement = select(Entry).where(
             Entry.user_id == user_id,
-            Entry.content.ilike(f"%{query}%")
+            Entry.content_plain_text.ilike(f"%{self._escape_like_pattern(query)}%", escape="\\")
         )
+
+        if not include_drafts:
+            statement = statement.where(Entry.is_draft.is_(False))
 
         if journal_id:
             statement = statement.where(Entry.journal_id == journal_id)
 
         statement = statement.order_by(Entry.entry_datetime_utc.desc()).offset(offset).limit(limit)
-        return list(self.session.exec(statement))
+        entries = list(self.session.exec(statement))
+        if hydrate_media:
+            return [self._hydrate_entry(entry, user_id) for entry in entries]
+        return entries
 
     def get_entries_by_date_range(
         self,
         user_id: uuid.UUID,
         start_date: date,
         end_date: date,
-        journal_id: Optional[uuid.UUID] = None
+        journal_id: Optional[uuid.UUID] = None,
+        include_drafts: bool = False,
+        hydrate_media: bool = True,
     ) -> List[Entry]:
         """Get entries within a date range based on entry_date."""
         statement = select(Entry).where(
@@ -511,11 +678,54 @@ class EntryService:
             Entry.entry_date <= end_date
         )
 
+        if not include_drafts:
+            statement = statement.where(Entry.is_draft.is_(False))
+
         if journal_id:
             statement = statement.where(Entry.journal_id == journal_id)
 
         statement = statement.order_by(Entry.entry_datetime_utc.desc())
-        return list(self.session.exec(statement))
+        entries = list(self.session.exec(statement))
+        if hydrate_media:
+            return [self._hydrate_entry(entry, user_id) for entry in entries]
+        return entries
+
+    def _hydrate_entry(self, entry: Entry, user_id: uuid.UUID) -> Entry:
+        """
+        Hydrate media UUIDs in content_delta to signed URLs.
+
+        Optimization: Skip traversal if media_count == 0.
+        """
+        if entry.media_count == 0 or not entry.content_delta:
+            return entry
+
+        from app.models.entry import EntryMedia
+        from app.models.integration import Integration, IntegrationProvider
+        from app.core.media_signing import attach_signed_urls_to_delta
+        from app.schemas.entry import QuillDelta
+
+        media = self.session.exec(
+            select(EntryMedia).where(EntryMedia.entry_id == entry.id)
+        ).all()
+
+        immich_integration = self.session.exec(
+            select(Integration)
+            .where(Integration.user_id == user_id)
+            .where(Integration.provider == IntegrationProvider.IMMICH)
+        ).first()
+        immich_base_url = immich_integration.base_url if immich_integration else None
+
+        delta_dict = attach_signed_urls_to_delta(
+            entry.content_delta,
+            list(media),
+            str(user_id),
+            external_base_url=immich_base_url,
+        )
+
+        if delta_dict:
+            entry.content_delta = QuillDelta.model_validate(delta_dict).model_dump()
+
+        return entry
 
     def add_media_to_entry(
         self,

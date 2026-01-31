@@ -2,7 +2,7 @@
 import pytest
 import uuid
 from datetime import datetime
-from app.schemas.entry import EntryMediaResponse
+from app.schemas.entry import EntryMediaResponse, QuillDelta, QuillOp
 from app.models.enums import MediaType, UploadStatus
 
 def test_entry_media_response_url_computation():
@@ -70,3 +70,20 @@ def test_entry_media_response_url_computation():
     assert "id" in dumped_local
     assert "entry_id" in dumped_local
     assert dumped_local["id"] == media_id
+
+
+def test_quill_delta_appends_newline():
+    delta = QuillDelta.model_validate({"ops": [{"insert": "Hello"}]})
+    assert delta.ops[-1].insert == "\n"
+    assert len(delta.ops) == 2
+
+
+def test_quill_delta_empty_ops_defaults():
+    delta = QuillDelta.model_validate({"ops": []})
+    assert delta.ops
+    assert delta.ops[-1].insert == "\n"
+
+
+def test_quill_delta_rejects_invalid_embed():
+    with pytest.raises(ValueError):
+        QuillOp.model_validate({"insert": {"unknown": "x"}})

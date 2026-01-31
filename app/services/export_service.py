@@ -388,12 +388,14 @@ class ExportService:
 
         return EntryDTO(
             title=entry.title,
-            content=entry.content or "",
+            content_delta=entry.content_delta,
+            content_plain_text=entry.content_plain_text,
             entry_date=entry.entry_date,  # All three datetime fields required
             entry_datetime_utc=entry.entry_datetime_utc,
             entry_timezone=entry.entry_timezone,
             word_count=entry.word_count,  # Include word count
             is_pinned=entry.is_pinned,  # Include pinned status
+            is_draft=entry.is_draft,
             tags=tags,
             mood_log=mood_log_dto,  # Use MoodLogDTO instead of separate fields
             # Structured location/weather fields

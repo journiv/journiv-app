@@ -1,5 +1,27 @@
 # =========================
-# Stage 1: Builder
+# Stage 1: Dart Migration Binary Builder
+# =========================
+FROM dart:stable AS dart-builder
+
+WORKDIR /build
+
+# Copy Dart migration tool source
+COPY bin/pubspec.yaml bin/pubspec.lock* ./
+RUN dart pub get
+
+COPY bin/ ./
+RUN rm -rf .dart_tool
+RUN dart pub get
+
+# Compile standalone binary (ensures architecture compatibility)
+RUN dart compile exe migrator.dart -o migrator
+
+# Verify binary was created
+RUN test -f migrator || (echo "❌ Dart binary compilation failed!" && exit 1)
+RUN echo "✅ Dart migration binary compiled successfully"
+
+# =========================
+# Stage 2: Python Builder
 # =========================
 FROM python:3.11-slim-bookworm AS builder
 
@@ -59,6 +81,11 @@ COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin/gunicorn /usr/local/bin/
 COPY --from=builder /usr/local/bin/celery /usr/local/bin/
 COPY --from=builder /usr/local/bin/alembic /usr/local/bin/
+
+# Copy Dart migration binary from dart-builder
+COPY --from=dart-builder /build/migrator /app/bin/migrator
+COPY --from=dart-builder /build/migrator /usr/local/bin/migrator
+RUN chmod +x /app/bin/migrator /usr/local/bin/migrator && echo "✅ Dart migration binary installed"
 
 # Copy app code and assets
 COPY app/ app/

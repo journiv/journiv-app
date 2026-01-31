@@ -271,7 +271,8 @@ class JournalService:
                 func.sum(Entry.word_count).label("total_words"),
                 func.max(Entry.entry_datetime_utc).label("last_created")
             ).where(
-                Entry.journal_id == journal_id
+                Entry.journal_id == journal_id,
+                Entry.is_draft.is_(False)
             )
         ).first()
         entry_count = int(stats.count) if stats and stats.count is not None else 0

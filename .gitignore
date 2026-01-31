@@ -125,6 +125,20 @@ flutter_export_environment.sh
 # web/
 
 # ===============================================================
+# DART MIGRATOR (bin/)
+# ===============================================================
+
+# Compiled Dart binaries
+bin/migrator
+bin/migrator-test
+
+# Dart build artifacts
+bin/.dart_tool/
+bin/.flutter-plugins-dependencies
+bin/.coverage
+bin/pubspec.lock
+
+# ===============================================================
 # MEDIA / USER FILES
 # ===============================================================
 

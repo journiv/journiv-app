@@ -3,6 +3,7 @@ Service for managing Immich import jobs.
 Handles both link-only and copy mode imports.
 """
 import asyncio
+import time
 import uuid
 from datetime import datetime
 from typing import Optional, Tuple, Dict, Any
@@ -18,13 +19,16 @@ from app.models.import_job import ImportJob
 from app.models.enums import JobStatus, ImportSourceType, MediaType, UploadStatus
 from app.models.user import User
 from app.models.entry import Entry, EntryMedia
-from app.models.integration import Integration, IntegrationProvider
+from app.models.integration import Integration, IntegrationProvider, ImportMode
 from app.schemas.entry import EntryMediaCreate
 from app.services.entry_service import EntryService
 from app.services.media_service import MediaService
 from app.integrations import immich
 
-from app.core.logging_config import log_info, log_error, log_warning
+from app.core.logging_config import log_debug, log_info, log_error, log_warning
+from app.core.media_signing import normalize_delta_media_ids
+from app.core.scoped_cache import ScopedCache
+from app.utils.quill_delta import extract_plain_text
 from app.core.http_client import get_http_client
 
 # Batch size for parallel downloads (configurable in future)
@@ -37,6 +41,9 @@ IMMICH_TYPE_TO_MEDIA_TYPE = {
     "AUDIO": MediaType.AUDIO,
 }
 
+# Shared cache instance
+_normalize_cache: Optional[ScopedCache] = None
+
 
 def _map_immich_type_to_media_type(immich_type: str) -> MediaType:
     """Map Immich asset type to MediaType enum."""
@@ -47,10 +54,60 @@ class ImportJobService:
     """Service for managing Immich import jobs (supports both link-only and copy modes)."""
 
     def __init__(self, session: Session):
+        global _normalize_cache
         self.session = session
         self.entry_service = EntryService(session)
         self.media_service = MediaService(session)
         self._immich_provider = "immich"
+        if _normalize_cache is None:
+            _normalize_cache = ScopedCache("immich_entry_normalize")
+        self._normalize_cache = _normalize_cache
+
+    def _maybe_normalize_entry_delta(
+        self,
+        entry_id: Optional[uuid.UUID],
+        session: Session,
+        *,
+        debounce_seconds: int = 2,
+        commit: bool = False,
+    ) -> None:
+        """
+        Normalize entry delta if needed (syncs media IDs between delta and EntryMedia).
+
+        Args:
+            entry_id: The ID of the entry to normalize.
+            session: The database session to use.
+            debounce_seconds: Minimum time in seconds between normalizations for same entry.
+            commit: Whether to commit the session after adding changes.
+                    Default is False to allow batching transactions.
+        """
+        if entry_id is None:
+            return
+        cache_key = str(entry_id)
+        cached = self._normalize_cache.get(cache_key, "debounce") or {}
+        last_ts = cached.get("ts")
+        now = time.time()
+        if isinstance(last_ts, (int, float)) and now - last_ts < debounce_seconds:
+            return
+
+        self._normalize_cache.set(cache_key, "debounce", {"ts": now}, ttl_seconds=debounce_seconds)
+
+        entry = session.get(Entry, entry_id)
+        if not entry or not entry.content_delta:
+            return
+
+        media_items = session.exec(
+            select(EntryMedia).where(EntryMedia.entry_id == entry_id)
+        ).all()
+        normalized = normalize_delta_media_ids(entry.content_delta, list(media_items))
+        if normalized != entry.content_delta:
+            entry.content_delta = normalized
+            plain_text = extract_plain_text(normalized)
+            entry.content_plain_text = plain_text or None
+            entry.word_count = len(plain_text.split()) if plain_text else 0
+            session.add(entry)
+            if commit:
+                session.commit()
 
     def _get_existing_external_media(
         self,
@@ -133,7 +190,8 @@ class ImportJobService:
         asset_data: Optional[Dict[str, Any]] = None,
         file_info: Optional[Dict[str, Any]] = None,
         upload_status: UploadStatus = UploadStatus.PROCESSING,
-        session: Optional[Session] = None
+        session: Optional[Session] = None,
+        commit: bool = True
     ) -> EntryMedia:
         """
         Create or update EntryMedia for an external asset.
@@ -178,7 +236,8 @@ class ImportJobService:
             existing.upload_status = upload_status
 
             active_session.add(existing)
-            active_session.commit()
+            if commit:
+                active_session.commit()
             active_session.refresh(existing)
             return existing
 
@@ -202,7 +261,6 @@ class ImportJobService:
             external_created_at=metadata.get("taken_at"),
             external_metadata=metadata.get("external_metadata", {}),
         )
-
         media = self.entry_service.add_media_to_entry(entry_id, user_id, media_create)
         return media
 
@@ -237,22 +295,31 @@ class ImportJobService:
                     "metadata": getattr(asset_payload, "metadata", None),
                 }
 
+        upload_status = (
+            UploadStatus.COMPLETED
+            if integration.import_mode == ImportMode.LINK_ONLY
+            else UploadStatus.PROCESSING
+        )
+
         return self._upsert_entry_media(
             entry_id=entry_id,
             user_id=user_id,
             asset_id=asset_id,
             asset_data=asset_data,
-            upload_status=UploadStatus.PROCESSING,
+            upload_status=upload_status,
             session=session
         )
 
     def _mark_media_failed(
         self,
-        entry_id: uuid.UUID,
+        entry_id: Optional[uuid.UUID],
         asset_id: str,
         session: Session,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
+        commit: bool = True
     ) -> None:
+        if entry_id is None:
+            return
         media = self._get_existing_external_media(entry_id, asset_id, session=session)
         if not media:
             return
@@ -260,7 +327,8 @@ class ImportJobService:
         if error_message:
             media.processing_error = error_message[:1000]
         session.add(media)
-        session.commit()
+        if commit:
+            session.commit()
 
     def create_job(
         self,
@@ -364,7 +432,8 @@ class ImportJobService:
         asset_id: str,
         asset_metadata: dict,
         integration: Integration,
-        session: Optional[Session] = None
+        session: Optional[Session] = None,
+        commit: bool = True
     ):
         """
         Create or update EntryMedia record for link-only Immich asset.
@@ -375,7 +444,8 @@ class ImportJobService:
             asset_id=asset_id,
             asset_data=asset_metadata,
             upload_status=UploadStatus.COMPLETED,
-            session=session
+            session=session,
+            commit=commit
         )
         log_info(f"Updated link-only EntryMedia for Immich asset {asset_id}")
         return media
@@ -392,42 +462,50 @@ class ImportJobService:
 
         Creates placeholder media records first, then the job.
         """
-        # Fetch integration needed for placeholders
-        integration = self.session.exec(
-            select(Integration)
-            .where(Integration.user_id == user_id)
-            .where(Integration.provider == IntegrationProvider.IMMICH)
-        ).first()
+        from app.core.database import engine
 
-        if not integration:
-            raise ValueError("Immich integration not found")
+        # Use a short-lived session for placeholder + job creation to avoid blocking on long-lived transactions from entry updates.
+        thread_session = Session(engine)
+        try:
+            thread_service = ImportJobService(thread_session)
 
-        assets_by_id = {}
-        if assets:
-            assets_by_id = {
-                (asset.id if hasattr(asset, "id") else asset.get("id")): asset
-                for asset in assets
-            }
+            # Fetch integration needed for placeholders
+            integration = thread_session.exec(
+                select(Integration)
+                .where(Integration.user_id == user_id)
+                .where(Integration.provider == IntegrationProvider.IMMICH)
+            ).first()
 
-        for asset_id in asset_ids:
-            try:
-                self.create_placeholder_media(
-                    entry_id=entry_id,
-                    user_id=user_id,
-                    asset_id=asset_id,
-                    integration=integration,
-                    asset_payload=assets_by_id.get(asset_id),
-                )
-            except Exception as e:
-                log_warning(f"Failed to create placeholder for {asset_id}: {e}")
-                # Continue - job will try to process anyway
+            if not integration:
+                raise ValueError("Immich integration not found")
 
-        job = self.create_job(
-            user_id=user_id,
-            entry_id=entry_id,
-            asset_ids=asset_ids
-        )
-        return job
+            assets_by_id = {}
+            if assets:
+                assets_by_id = {
+                    (asset.id if hasattr(asset, "id") else asset.get("id")): asset
+                    for asset in assets
+                }
+            for asset_id in asset_ids:
+                try:
+                    thread_service.create_placeholder_media(
+                        entry_id=entry_id,
+                        user_id=user_id,
+                        asset_id=asset_id,
+                        integration=integration,
+                        asset_payload=assets_by_id.get(asset_id),
+                    )
+                except Exception as e:
+                    log_warning(f"Failed to create placeholder for {asset_id}: {e}")
+                    # Continue - job will try to process anyway
+
+            job = thread_service.create_job(
+                user_id=user_id,
+                entry_id=entry_id,
+                asset_ids=asset_ids
+            )
+            return job
+        finally:
+            thread_session.close()
 
     async def process_copy_job_async(
         self,
@@ -592,16 +670,18 @@ class ImportJobService:
                             asset_id=asset_id,
                             asset_metadata=asset_metadata,
                             integration=integration,
-                            session=thread_session
+                            session=thread_session,
+                            commit=False
                         )
+                        thread_service._maybe_normalize_entry_delta(job.entry_id, thread_session, commit=False)
                         processed += 1
                     else:
-                        thread_service._mark_media_failed(job.entry_id, asset_id, thread_session)
+                        thread_service._mark_media_failed(job.entry_id, asset_id, thread_session, commit=False)
                         failed += 1
                         failed_asset_ids.append(asset_id)
                 except Exception as e:
                     log_error(e)
-                    thread_service._mark_media_failed(job.entry_id, asset_id, thread_session, str(e))
+                    thread_service._mark_media_failed(job.entry_id, asset_id, thread_session, str(e), commit=False)
                     failed += 1
                     failed_asset_ids.append(asset_id)
 
@@ -706,7 +786,8 @@ class ImportJobService:
                     entry_id=job.entry_id,
                     integration=integration,
                     session=session,
-                    thumbnail_info=thumbnail_cache.get(asset_id)
+                    thumbnail_info=thumbnail_cache.get(asset_id),
+                    commit=False
                 )
                 for asset_id in batch
             ]
@@ -718,15 +799,16 @@ class ImportJobService:
             for asset_id, result in zip(batch, results):
                 if isinstance(result, Exception):
                     log_error(result)
-                    self._mark_media_failed(job.entry_id, asset_id, session, str(result))
+                    self._mark_media_failed(job.entry_id, asset_id, session, str(result), commit=False)
                     failed += 1
                 elif result is None:
-                    self._mark_media_failed(job.entry_id, asset_id, session)
+                    self._mark_media_failed(job.entry_id, asset_id, session, commit=False)
                     failed += 1
                 else:
                     processed += 1
+                    self._maybe_normalize_entry_delta(job.entry_id, session, commit=False)
 
-            # Update job progress after each batch
+            # Update job progress after each batch and commit to ensure persistence
             job.update_progress(job.processed_items + processed, job.total_items, job.failed_items + failed)
             session.add(job)
             session.commit()
@@ -779,7 +861,8 @@ class ImportJobService:
         entry_id: uuid.UUID,
         integration: Integration,
         session: Session,
-        thumbnail_info: Optional[Tuple[Optional[bytes], Optional[dict]]] = None
+        thumbnail_info: Optional[Tuple[Optional[bytes], Optional[dict]]] = None,
+        commit: bool = True
     ) -> Optional[dict]:
         """
         Download original asset from Immich and save to local storage.
@@ -788,7 +871,7 @@ class ImportJobService:
         try:
             # Get metadata from thumbnail info or fetch it
             asset_metadata = (thumbnail_info[1] if thumbnail_info else None) or \
-                            await self._fetch_asset_metadata(asset_id, base_url, api_key)
+                            await immich.get_asset_info(base_url, api_key, asset_id)
 
             if not asset_metadata:
                 log_warning(f"Metadata not found for asset {asset_id}")
@@ -895,7 +978,8 @@ class ImportJobService:
                 asset_data=asset_metadata,
                 file_info=saved_info,
                 upload_status=UploadStatus.COMPLETED,
-                session=session
+                session=session,
+                commit=commit
             )
 
             # Post-process

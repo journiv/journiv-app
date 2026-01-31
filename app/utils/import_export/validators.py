@@ -180,8 +180,9 @@ def validate_entry(entry: EntryDTO, context: str = "Entry") -> ValidationResult:
     result = ValidationResult()
 
     # Check required fields
-    if not entry.content or not entry.content.strip():
-        result.add_warning(f"{context}: Content is empty")
+    if not entry.is_draft:
+        if not entry.content_delta or not entry.content_delta.get("ops"):
+            result.add_warning(f"{context}: Content is empty")
 
     if not entry.entry_date:
         result.add_error(f"{context}: Entry date is required")

@@ -10,7 +10,7 @@ from typing import Annotated, Optional, AsyncGenerator
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.api.dependencies import get_current_user, get_current_user_detached
 from app.core import database as database_module
@@ -464,18 +464,15 @@ async def get_media_signed(
             from app.models.integration import IntegrationProvider
 
             try:
-                # Create a new short-lived session just for credential lookup
-                # fetch_proxy_asset uses cache to minimize DB hits
-                with database_module.get_session_context() as proxy_session:
-                    response = await fetch_proxy_asset(
-                        session=proxy_session,
-                        user_id=uid,
-                        provider=IntegrationProvider.IMMICH,
-                        asset_id=external_asset_id,
-                        variant="original",
-                        range_header=range_header,
-                    )
-                # Session closed, but streaming response is still open
+                # fetch_proxy_asset manages its own DB session for credential lookup
+                # Session is closed before streaming begins
+                response = await fetch_proxy_asset(
+                    user_id=uid,
+                    provider=IntegrationProvider.IMMICH,
+                    asset_id=external_asset_id,
+                    variant="original",
+                    range_header=range_header,
+                )
             except ValueError as e:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
             except Exception as e:
@@ -626,16 +623,14 @@ async def get_media_thumbnail_signed(
             from app.models.integration import IntegrationProvider
 
             try:
-                # Create a new short-lived session just for credential lookup
-                with database_module.get_session_context() as proxy_session:
-                    response = await fetch_proxy_asset(
-                        session=proxy_session,
-                        user_id=uid,
-                        provider=IntegrationProvider.IMMICH,
-                        asset_id=external_asset_id,
-                        variant="thumbnail",
-                    )
-                # Session closed, but streaming response is still open
+                # fetch_proxy_asset manages its own DB session for credential lookup
+                # Session is closed before streaming begins
+                response = await fetch_proxy_asset(
+                    user_id=uid,
+                    provider=IntegrationProvider.IMMICH,
+                    asset_id=external_asset_id,
+                    variant="thumbnail",
+                )
             except Exception as e:
                  error_logger.exception(f"Proxy thumbnail failed: {e}")
                  raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch thumbnail") from e
@@ -775,7 +770,6 @@ async def import_from_immich_async(
     """
     from app.models.integration import Integration, IntegrationProvider, ImportMode
     from app.services.import_job_service import ImportJobService
-    from sqlmodel import select
 
     try:
         # 1. Verify Immich integration exists and is active
@@ -809,9 +803,9 @@ async def import_from_immich_async(
         # 3. Create job and process asynchronously via Celery
         import_service = ImportJobService(session)
 
-        file_logger.info(
-            f"[IMMICH_IMPORT] Creating job for {len(request.asset_ids)} assets",
-            extra={"user_id": str(current_user.id), "entry_id": str(request.entry_id), "asset_ids": request.asset_ids}
+        file_logger.debug(
+            f"[IMMICH_IMPORT] Creating job for {len(request.asset_ids)} assets (import_mode={immich_integration.import_mode})",
+            extra={"user_id": str(current_user.id), "entry_id": str(request.entry_id), "asset_ids": request.asset_ids, "import_mode": str(immich_integration.import_mode)}
         )
 
         job = await import_service.create_and_process_job_async(
@@ -820,14 +814,24 @@ async def import_from_immich_async(
             asset_ids=request.asset_ids,
             assets=request.assets
         )
-
         file_logger.info(
             f"[IMMICH_IMPORT] Job created: {job.id}",
-            extra={"job_id": str(job.id)}
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(request.entry_id),
+                "asset_count": len(request.asset_ids),
+            },
         )
 
         # Ensure placeholders are committed before querying
         session.commit()
+        file_logger.debug(
+            "[IMMICH_IMPORT] Placeholder commit completed",
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(request.entry_id)
+            },
+        )
 
         # Re-fetch placeholders for response
         from app.models.entry import EntryMedia
@@ -838,6 +842,14 @@ async def import_from_immich_async(
              .where(EntryMedia.external_provider == "immich")
              .where(EntryMedia.external_asset_id.in_(request.asset_ids))
         ).all()
+        file_logger.debug(
+            "[IMMICH_IMPORT] Placeholder fetch completed",
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(request.entry_id),
+                "media_count": len(placeholder_media)
+            },
+        )
 
         if immich_integration.import_mode == ImportMode.LINK_ONLY:
             try:
@@ -910,10 +922,23 @@ async def import_from_immich_async(
             )
             for record in placeholder_media
         ]
+        file_logger.debug(
+            "[IMMICH_IMPORT] Signed media build completed",
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(request.entry_id),
+                "media_count": len(signed_media),
+            },
+        )
 
         file_logger.info(
-            f"[IMMICH_IMPORT] Returning {len(signed_media)} signed media to frontend",
-            extra={"count": len(signed_media)}
+            "[IMMICH_IMPORT] Request completed",
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(request.entry_id),
+                "asset_count": len(request.asset_ids),
+                "signed_media_count": len(signed_media)
+            },
         )
 
         return ImmichImportStartResponse(

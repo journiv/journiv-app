@@ -14,7 +14,9 @@ def test_map_entry_allows_missing_title_and_content():
 
     dto = DayOneToJournivMapper.map_entry(entry)
 
-    assert dto.content is None
+    # Empty content produces valid Quill Delta with newline (required by Quill format)
+    assert dto.content_delta == {"ops": [{"insert": "\n"}]}
+    assert dto.content_plain_text is None
     assert dto.title is None
 
 

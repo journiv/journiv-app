@@ -254,6 +254,7 @@ class TagService:
         statement = select(Entry).join(EntryTagLink).where(
             EntryTagLink.tag_id == tag_id,
             Entry.user_id == user_id,
+            Entry.is_draft.is_(False),
         ).order_by(Entry.entry_datetime_utc.desc()).offset(offset).limit(limit)
         return list(self.session.exec(statement))
 
@@ -388,6 +389,7 @@ class TagService:
         ).where(
             Tag.user_id == user_id,
             Entry.user_id == user_id,
+            Entry.is_draft.is_(False),
         )
 
         # Apply filters
@@ -747,7 +749,8 @@ class TagService:
             Entry, Entry.id == EntryTagLink.entry_id
         ).where(
             EntryTagLink.tag_id == tag_id,
-            Entry.user_id == user_id
+            Entry.user_id == user_id,
+            Entry.is_draft.is_(False),
         )
         first_used = self.session.exec(first_used_query).first()
 
@@ -757,7 +760,8 @@ class TagService:
             Entry, Entry.id == EntryTagLink.entry_id
         ).where(
             EntryTagLink.tag_id == tag_id,
-            Entry.user_id == user_id
+            Entry.user_id == user_id,
+            Entry.is_draft.is_(False),
         )
         last_used = self.session.exec(last_used_query).first()
 

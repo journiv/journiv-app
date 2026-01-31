@@ -3,17 +3,88 @@ Entry schemas.
 """
 import uuid
 from datetime import datetime, date
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, List, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.schemas.base import TimestampMixin
+
+
+class QuillOp(BaseModel):
+    insert: Union[str, Dict[str, Any]]
+    attributes: Optional[Dict[str, Any]] = None
+
+    @field_validator("insert")
+    @classmethod
+    def validate_insert_content(cls, v):
+        """Validate insert field based on type."""
+        if isinstance(v, str):
+            if len(v) > 100_000:
+                raise ValueError("Text insert exceeds maximum size (100KB)")
+        elif isinstance(v, dict):
+            valid_keys = {'image', 'video', 'audio', 'formula', 'divider'}
+            if not any(k in v for k in valid_keys):
+                raise ValueError(
+                    f"Invalid embed: must contain one of {valid_keys}, got {list(v.keys())}"
+                )
+
+            media_keys = [k for k in v.keys() if k in valid_keys]
+            if len(media_keys) > 1:
+                raise ValueError(f"Embed must have exactly one media key, got {media_keys}")
+        return v
+
+    @field_validator("attributes")
+    @classmethod
+    def validate_attributes_depth(cls, v):
+        """Prevent deeply nested attributes (DoS protection)."""
+        if v is None:
+            return v
+
+        def check_depth(obj, current_depth=0, max_depth=5):
+            if current_depth > max_depth:
+                raise ValueError(f"Attribute nesting exceeds maximum depth ({max_depth})")
+            if isinstance(obj, dict):
+                for value in obj.values():
+                    check_depth(value, current_depth + 1, max_depth)
+            elif isinstance(obj, list):
+                for value in obj:
+                    check_depth(value, current_depth + 1, max_depth)
+
+        check_depth(v)
+        return v
+
+
+class QuillDelta(BaseModel):
+    ops: List[QuillOp] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_ops_constraints(self) -> "QuillDelta":
+        """
+        Validate Delta structure constraints and ensure terminating newline.
+
+        Ensures the terminating newline (Quill requirement) is present before
+        enforcing the maximum op count to prevent off-by-one overflows.
+        """
+        # 1. Ensure delta ends with newline
+        if not self.ops:
+            self.ops = [QuillOp(insert="\n")]
+        else:
+            last_op = self.ops[-1]
+            if not (isinstance(last_op.insert, str) and last_op.insert.endswith('\n')):
+                self.ops.append(QuillOp(insert="\n"))
+
+        # 2. Enforce size limit on the final state
+        if len(self.ops) > 10_000:
+            raise ValueError(f"Delta too large: {len(self.ops)} ops exceeds maximum (10,000)")
+
+        return self
+
 
 
 class EntryBase(BaseModel):
     """Base entry schema."""
     title: Optional[str] = None
-    content: Optional[str] = None
+    content_delta: Optional[QuillDelta] = None
     entry_date: Optional[date] = None  # Allows backdating/future-dating entries
     entry_datetime_utc: Optional[datetime] = None
     entry_timezone: Optional[str] = None
@@ -34,10 +105,16 @@ class EntryCreate(EntryBase):
     prompt_id: Optional[uuid.UUID] = None
 
 
+class EntryDraftCreate(EntryBase):
+    """Draft entry creation schema."""
+    journal_id: uuid.UUID
+    prompt_id: Optional[uuid.UUID] = None
+
+
 class EntryUpdate(BaseModel):
     """Entry update schema."""
     title: Optional[str] = None
-    content: Optional[str] = None
+    content_delta: Optional[QuillDelta] = None
     entry_date: Optional[date] = None
     entry_datetime_utc: Optional[datetime] = None
     entry_timezone: Optional[str] = None
@@ -65,7 +142,9 @@ class EntryResponse(EntryBase, TimestampMixin):
     entry_timezone: str
     word_count: int
     is_pinned: bool
+    is_draft: bool = False
     user_id: uuid.UUID
+    content_plain_text: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     media_count: int = 0
@@ -75,7 +154,7 @@ class EntryPreviewResponse(TimestampMixin):
     """Entry preview schema for listings (truncated content)."""
     id: uuid.UUID
     title: Optional[str] = None
-    content: Optional[str] = None  # Truncated by endpoint
+    content_plain_text: Optional[str] = None  # Truncated by endpoint
     journal_id: uuid.UUID
     created_at: datetime
     updated_at: datetime

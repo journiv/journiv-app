@@ -67,7 +67,9 @@ def test_entry(test_db: Session, test_user: User) -> Entry:
         journal_id=journal.id,
         user_id=test_user.id,
         title="Entry",
-        content="Test content",
+        content_delta={"ops": [{"insert": "Test content\n"}]},
+        content_plain_text="Test content",
+        word_count=2,
         entry_date=date.today(),
     )
     test_db.add(entry)
@@ -139,6 +141,15 @@ async def test_upload_media_uses_streaming_path(tmp_path, test_db, test_user, te
         raise AssertionError("tempfile fallback should not be used for seekable streams")
 
     monkeypatch.setattr("app.services.media_service.tempfile.NamedTemporaryFile", _reject_tempfile)
+
+    # Patch get_session_context to use the test database session
+    from contextlib import contextmanager
+
+    @contextmanager
+    def mock_session_context():
+        yield test_db
+
+    monkeypatch.setattr("app.services.media_service.get_session_context", mock_session_context)
 
     result = await service.upload_media(
         file=upload,

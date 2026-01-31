@@ -82,15 +82,75 @@ class MediaStorageService:
             raise ValueError("user_id contains invalid path characters")
         if '/' in media_type or '\\' in media_type or '..' in media_type:
             raise ValueError("media_type contains invalid path characters")
+        if '/' in extension or '\\' in extension or '..' in extension:
+            raise ValueError("extension contains invalid path characters")
 
         # Calculate checksum if not provided
         if checksum is None:
             if isinstance(source, Path):
                 checksum = self.media_handler.calculate_checksum(source)
             else:
-                checksum = self.media_handler.calculate_checksum_from_stream(source)
-                # Reset stream position after checksum calculation
-                source.seek(0)
+                # Single-pass: stream to temp while computing checksum
+                tmp_dir = self.media_root / "_tmp" / user_id / media_type
+                tmp_dir.mkdir(parents=True, exist_ok=True)
+                tmp_path = tmp_dir / f"{uuid.uuid4().hex}{extension}.tmp"
+                hasher = hashlib.sha256()
+
+                try:
+                    if hasattr(source, "seek"):
+                        try:
+                            source.seek(0)
+                        except Exception:
+                            pass
+                    with open(tmp_path, "wb") as dst:
+                        while True:
+                            chunk = source.read(1024 * 1024)
+                            if not chunk:
+                                break
+                            hasher.update(chunk)
+                            dst.write(chunk)
+                    checksum = hasher.hexdigest()
+                except Exception as e:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                    log_error(e, user_id=user_id)
+                    raise IOError(f"Failed to store media: {e}") from e
+
+                # Build target path
+                relative_path = self._build_storage_path(
+                    user_id, media_type, checksum, extension
+                )
+                target_path = self.media_root / relative_path
+
+                # Check if file already exists (per-user deduplication)
+                if target_path.exists():
+                    tmp_path.unlink(missing_ok=True)
+                    log_info(
+                        f"Media file already exists (deduplicated): {relative_path}",
+                        checksum=checksum,
+                        user_id=user_id
+                    )
+                    return str(relative_path), checksum, True
+
+                # Ensure parent directory exists
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+
+                try:
+                    tmp_path.rename(target_path)
+                except Exception as e:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                    log_error(e, relative_path=str(relative_path), user_id=user_id)
+                    raise IOError(f"Failed to store media: {e}") from e
+
+                log_info(
+                    f"Media file stored: {relative_path}",
+                    checksum=checksum,
+                    user_id=user_id,
+                    size=target_path.stat().st_size
+                )
+
+                return str(relative_path), checksum, False
 
         # Build target path
         relative_path = self._build_storage_path(

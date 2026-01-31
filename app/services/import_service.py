@@ -36,6 +36,7 @@ from app.utils.import_export.constants import ExportConfig
 from app.core.time_utils import local_date_for_user, utc_now, normalize_timezone
 from app.data_transfer.dayone import DayOneParser, DayOneToJournivMapper
 from app.services.media_storage_service import MediaStorageService
+from app.utils.quill_delta import extract_plain_text, replace_media_ids, wrap_plain_text
 
 
 class ImportService:
@@ -76,39 +77,14 @@ class ImportService:
         return match.group(1) if match else None
 
     @staticmethod
-    def _replace_media_ids_in_content(content: str, id_map: Dict[str, str]) -> str:
-        """Replace legacy media IDs in shortcodes and URLs with new IDs."""
-        updated = content
-        for old_id, new_id in id_map.items():
-            # Shortcodes: ![[media:<id>]]
-            updated = re.sub(
-                rf'(!\[\[media:){re.escape(old_id)}(\]\])',
-                lambda match: f"{match.group(1)}{new_id}{match.group(2)}",
-                updated,
-                flags=re.IGNORECASE,
-            )
-            # API URLs: /api/v1/media/<id> (with optional /thumbnail)
-            updated = re.sub(
-                rf'(/api/v1/media/){re.escape(old_id)}(?=/|$)',
-                lambda match: f"{match.group(1)}{new_id}",
-                updated,
-                flags=re.IGNORECASE,
-            )
-            # Legacy video placeholders with file paths or old URLs.
-            updated = re.sub(
-                rf':::video\s+\S*{re.escape(old_id)}\S*\s*:::',
-                f'![[media:{new_id}]]',
-                updated,
-                flags=re.IGNORECASE,
-            )
-            # Legacy markdown images with file paths or old URLs.
-            updated = re.sub(
-                rf'!\[[^\]]*]\(\S*{re.escape(old_id)}\S*\)',
-                f'![[media:{new_id}]]',
-                updated,
-                flags=re.IGNORECASE,
-            )
-        return updated
+    def _replace_media_ids_in_delta(
+        content_delta: Optional[Dict[str, Any]],
+        id_map: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Replace media IDs inside Quill Delta embeds."""
+        if not id_map:
+            return content_delta or {"ops": []}
+        return replace_media_ids(content_delta, id_map)
 
     @staticmethod
     def _add_warning(summary: ImportResultSummary, message: str, category: str):
@@ -674,7 +650,8 @@ class ImportService:
                 func.sum(Entry.word_count).label("total_words"),
                 func.max(Entry.created_at).label("last_created")
             ).where(
-                Entry.journal_id == journal.id
+                Entry.journal_id == journal.id,
+                Entry.is_draft.is_(False),
             )
         ).one()
 
@@ -710,9 +687,9 @@ class ImportService:
         record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
     ) -> Dict[str, int]:
         """Import a single entry with media and tags."""
-        # Calculate word count from content to ensure accuracy
-        # (don't trust the DTO value in case it's outdated or incorrect)
-        word_count = len(entry_dto.content.split()) if entry_dto.content else 0
+        content_delta = entry_dto.content_delta or wrap_plain_text(entry_dto.content_plain_text)
+        plain_text = entry_dto.content_plain_text or extract_plain_text(content_delta)
+        word_count = len(plain_text.split()) if plain_text else 0
 
         # Recalculate entry_date from UTC timestamp and timezone to avoid DST drift
         # This ensures consistency even if the exported entry_date was calculated
@@ -728,12 +705,14 @@ class ImportService:
             journal_id=journal_id,
             user_id=user_id,
             title=entry_dto.title,
-            content=entry_dto.content,
+            content_delta=content_delta,
+            content_plain_text=plain_text or None,
             entry_date=recalculated_entry_date,  # Recalculated local date
             entry_datetime_utc=entry_dto.entry_datetime_utc,  # UTC timestamp
             entry_timezone=entry_timezone,  # IANA timezone, default to UTC
             word_count=word_count,  # Recalculate from content
             is_pinned=entry_dto.is_pinned,
+            is_draft=entry_dto.is_draft or False,
             # Structured location/weather fields
             location_json=entry_dto.location_json,
             latitude=entry_dto.latitude,
@@ -771,7 +750,6 @@ class ImportService:
                 result["mood_logs_created"] += 1
 
         # Import media
-        media_map = {}  # Map md5/identifier -> media_id for Day One placeholder replacement
         legacy_media_id_map: Dict[str, str] = {}
         for media_dto in entry_dto.media:
             legacy_media_id = self._extract_legacy_media_id(media_dto.file_path)
@@ -796,28 +774,15 @@ class ImportService:
             elif media_result.get("deduplicated"):
                 result["media_deduplicated"] += 1
 
-            # Build photo map for Day One imports (md5 -> media_id)
-            source_key = media_result.get("source_md5") or media_dto.external_id
-            if source_key and media_result.get("media_id"):
-                media_map[source_key] = media_result["media_id"]
             if legacy_media_id and media_result.get("media_id"):
                 legacy_media_id_map[legacy_media_id] = media_result["media_id"]
 
         # Replace legacy Journiv media IDs in content with newly imported IDs.
-        if entry.content and legacy_media_id_map:
-            entry.content = self._replace_media_ids_in_content(entry.content, legacy_media_id_map)
-            # Recalculate word count after content update
-            entry.word_count = len(entry.content.split()) if entry.content else 0
-
-        # Replace Day One photo placeholders with Journiv media shortcode format
-        from app.data_transfer.dayone.richtext_parser import DayOneRichTextParser
-        if entry.content and DayOneRichTextParser.PLACEHOLDER_PREFIX in entry.content:
-            entry.content = DayOneRichTextParser.replace_photo_placeholders(
-                entry.content,
-                media_map
-            )
-            # Recalculate word count after content update
-            entry.word_count = len(entry.content.split()) if entry.content else 0
+        if entry.content_delta and legacy_media_id_map:
+            entry.content_delta = self._replace_media_ids_in_delta(entry.content_delta, legacy_media_id_map)
+            plain_text = extract_plain_text(entry.content_delta)
+            entry.content_plain_text = plain_text or None
+            entry.word_count = len(plain_text.split()) if plain_text else 0
 
         # Import tags
         for tag_name in entry_dto.tags:

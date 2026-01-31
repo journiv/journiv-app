@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, select, or_
 
 from app.core.config import get_settings
+from app.core.database import get_session_context
 from app.core.exceptions import (
     MediaNotFoundError,
     FileTooLargeError,
@@ -592,9 +593,9 @@ class MediaService:
                 self._validate_streamed_upload(file_size, filename, header_bytes)
                 media_type = self._detect_media_type(header_bytes)
 
-            # 5. Verify entry exists and belongs to user
-            db_session = self._get_session(session)
-            self._get_entry_for_user(db_session, entry_id, user_id)
+            # 5. Verify entry exists and belongs to user (short-lived session)
+            with get_session_context() as validation_session:
+                self._get_entry_for_user(validation_session, entry_id, user_id)
 
             # 6. Save file
             if use_temp_fallback:
@@ -618,142 +619,142 @@ class MediaService:
                 temp_path.unlink()
 
         media_record = None
-        db_session = self._get_session(session)
-
-        # Check if EntryMedia record already exists for this entry and checksum
-        # This prevents duplicate media within the same entry
-        checksum = media_info.get("checksum")
-        if checksum and isinstance(checksum, str) and checksum.strip():
-            existing_entry_media = db_session.exec(
-                select(EntryMedia).where(
-                    EntryMedia.entry_id == entry_id,
-                    EntryMedia.checksum == checksum
-                )
-            ).first()
-
-            if existing_entry_media:
-                log_info(
-                    "Media already associated with entry, returning existing record",
-                    user_id=str(user_id),
-                    entry_id=str(entry_id),
-                    checksum=checksum[:16] if checksum else None,
-                    media_id=str(existing_entry_media.id)
-                )
-                full_file_path = self.media_storage_service.get_full_path(existing_entry_media.file_path)
-                return {
-                    "media_record": existing_entry_media,
-                    "full_file_path": str(full_file_path),
-                }
-
-        # If file was deduplicated, try to find existing media with same checksum
-        existing_media = None
-        if media_info.get("was_deduplicated"):
-            stmt = (
-                select(EntryMedia)
-                .join(Entry)
-                .join(Journal)
-                .where(
-                    EntryMedia.checksum == media_info["checksum"],
-                    Journal.user_id == user_id
-                )
-            )
-            existing_media = db_session.exec(stmt).first()
-
-        if existing_media:
-            # Reuse existing media metadata, create new record for this entry
-            media_record = EntryMedia(
-                entry_id=entry_id,
-                media_type=existing_media.media_type,
-                file_path=existing_media.file_path,
-                original_filename=media_info["original_filename"],
-                file_size=existing_media.file_size,
-                mime_type=existing_media.mime_type,
-                thumbnail_path=existing_media.thumbnail_path,
-                alt_text=alt_text,
-                upload_status=existing_media.upload_status,
-                file_metadata=existing_media.file_metadata,
-                checksum=existing_media.checksum,
-                width=existing_media.width,
-                height=existing_media.height,
-                duration=existing_media.duration,
-            )
-            log_info(
-                "Reused deduplicated media",
-                user_id=str(user_id),
-                checksum=media_info['checksum'][:16] if media_info.get('checksum') else None
-            )
-        else:
-            # Create new media record
-            media_record = EntryMedia(
-                entry_id=entry_id,
-                media_type=media_type,
-                file_path=media_info["file_path"],
-                original_filename=media_info["original_filename"],
-                file_size=media_info["file_size"],
-                mime_type=media_info["mime_type"],
-                thumbnail_path=media_info["thumbnail_path"],
-                alt_text=alt_text,
-                upload_status=UploadStatus.PENDING,
-                file_metadata=media_info.get("file_metadata"),
-                checksum=media_info.get("checksum"),
-            )
-
-        try:
-            db_session.add(media_record)
-            db_session.commit()
-            db_session.refresh(media_record)
-        except IntegrityError as exc:
-            db_session.rollback()
-            # Check if this is the duplicate entry_media constraint violation
-            error_str = str(exc)
-            if "uq_entry_media_entry_checksum" in error_str:
-                # Race condition: media was created by concurrent request
-                checksum_value = media_info.get("checksum")
-                if checksum_value:
-                    existing = db_session.exec(
-                        select(EntryMedia).where(
-                            EntryMedia.entry_id == entry_id,
-                            EntryMedia.checksum == checksum_value
-                        )
-                    ).first()
-                    if existing:
-                        log_info(
-                            "Media already associated with entry (race condition), using existing record",
-                            user_id=str(user_id),
-                            entry_id=str(entry_id),
-                            checksum=checksum_value[:16] if len(checksum_value) >= 16 else checksum_value,
-                            media_id=str(existing.id)
-                        )
-                        full_file_path = self.media_storage_service.get_full_path(existing.file_path)
-                        return {
-                            "media_record": existing,
-                            "full_file_path": str(full_file_path),
-                        }
-                # If checksum is missing or existing record not found, log and re-raise
-                log_warning(
-                    "IntegrityError for entry_media constraint but existing record not found",
-                    user_id=str(user_id),
-                    entry_id=str(entry_id),
-                    checksum=checksum_value[:16] if checksum_value and len(checksum_value) >= 16 else None
-                )
-            # Re-raise if it's a different IntegrityError or existing record not found
-            raise
-        except SQLAlchemyError as exc:
-            db_session.rollback()
-            log_error(exc)
-            # Only delete file if it wasn't deduplicated
-            if not media_info.get("was_deduplicated"):
-                # Force delete since DB record was never committed
-                try:
-                    self.media_storage_service.delete_media(
-                        relative_path=media_info["file_path"],
-                        checksum=media_info["checksum"],
-                        user_id=str(user_id),
-                        force=True  # Force deletion since no DB record exists
+        # Finalize DB write in a short-lived session to avoid holding connections during file I/O.
+        with get_session_context() as db_session:
+            # Check if EntryMedia record already exists for this entry and checksum
+            # This prevents duplicate media within the same entry
+            checksum = media_info.get("checksum")
+            if checksum and isinstance(checksum, str) and checksum.strip():
+                existing_entry_media = db_session.exec(
+                    select(EntryMedia).where(
+                        EntryMedia.entry_id == entry_id,
+                        EntryMedia.checksum == checksum
                     )
-                except Exception as delete_exc:
-                    log_warning(f"Failed to cleanup uploaded file after DB error: {delete_exc}")
-            raise
+                ).first()
+
+                if existing_entry_media:
+                    log_info(
+                        "Media already associated with entry, returning existing record",
+                        user_id=str(user_id),
+                        entry_id=str(entry_id),
+                        checksum=checksum[:16] if checksum else None,
+                        media_id=str(existing_entry_media.id)
+                    )
+                    full_file_path = self.media_storage_service.get_full_path(existing_entry_media.file_path)
+                    return {
+                        "media_record": existing_entry_media,
+                        "full_file_path": str(full_file_path),
+                    }
+
+            # If file was deduplicated, try to find existing media with same checksum
+            existing_media = None
+            if media_info.get("was_deduplicated"):
+                stmt = (
+                    select(EntryMedia)
+                    .join(Entry)
+                    .join(Journal)
+                    .where(
+                        EntryMedia.checksum == media_info["checksum"],
+                        Journal.user_id == user_id
+                    )
+                )
+                existing_media = db_session.exec(stmt).first()
+
+            if existing_media:
+                # Reuse existing media metadata, create new record for this entry
+                media_record = EntryMedia(
+                    entry_id=entry_id,
+                    media_type=existing_media.media_type,
+                    file_path=existing_media.file_path,
+                    original_filename=media_info["original_filename"],
+                    file_size=existing_media.file_size,
+                    mime_type=existing_media.mime_type,
+                    thumbnail_path=existing_media.thumbnail_path,
+                    alt_text=alt_text,
+                    upload_status=existing_media.upload_status,
+                    file_metadata=existing_media.file_metadata,
+                    checksum=existing_media.checksum,
+                    width=existing_media.width,
+                    height=existing_media.height,
+                    duration=existing_media.duration,
+                )
+                log_info(
+                    "Reused deduplicated media",
+                    user_id=str(user_id),
+                    checksum=media_info['checksum'][:16] if media_info.get('checksum') else None
+                )
+            else:
+                # Create new media record
+                media_record = EntryMedia(
+                    entry_id=entry_id,
+                    media_type=media_type,
+                    file_path=media_info["file_path"],
+                    original_filename=media_info["original_filename"],
+                    file_size=media_info["file_size"],
+                    mime_type=media_info["mime_type"],
+                    thumbnail_path=media_info["thumbnail_path"],
+                    alt_text=alt_text,
+                    upload_status=UploadStatus.PENDING,
+                    file_metadata=media_info.get("file_metadata"),
+                    checksum=media_info.get("checksum"),
+                )
+
+            try:
+                db_session.add(media_record)
+                db_session.commit()
+                db_session.refresh(media_record)
+            except IntegrityError as exc:
+                db_session.rollback()
+                # Check if this is the duplicate entry_media constraint violation
+                error_str = str(exc)
+                if "uq_entry_media_entry_checksum" in error_str:
+                    # Race condition: media was created by concurrent request
+                    checksum_value = media_info.get("checksum")
+                    if checksum_value:
+                        existing = db_session.exec(
+                            select(EntryMedia).where(
+                                EntryMedia.entry_id == entry_id,
+                                EntryMedia.checksum == checksum_value
+                            )
+                        ).first()
+                        if existing:
+                            log_info(
+                                "Media already associated with entry (race condition), using existing record",
+                                user_id=str(user_id),
+                                entry_id=str(entry_id),
+                                checksum=checksum_value[:16] if len(checksum_value) >= 16 else checksum_value,
+                                media_id=str(existing.id)
+                            )
+                            full_file_path = self.media_storage_service.get_full_path(existing.file_path)
+                            return {
+                                "media_record": existing,
+                                "full_file_path": str(full_file_path),
+                            }
+                    # If checksum is missing or existing record not found, log and re-raise
+                    log_warning(
+                        "IntegrityError for entry_media constraint but existing record not found",
+                        user_id=str(user_id),
+                        entry_id=str(entry_id),
+                        checksum=checksum_value[:16] if checksum_value and len(checksum_value) >= 16 else None
+                    )
+                # Re-raise if it's a different IntegrityError or existing record not found
+                raise
+            except SQLAlchemyError as exc:
+                db_session.rollback()
+                log_error(exc)
+                # Only delete file if it wasn't deduplicated
+                if not media_info.get("was_deduplicated"):
+                    # Force delete since DB record was never committed
+                    try:
+                        self.media_storage_service.delete_media(
+                            relative_path=media_info["file_path"],
+                            checksum=media_info["checksum"],
+                            user_id=str(user_id),
+                            force=True  # Force deletion since no DB record exists
+                        )
+                    except Exception as delete_exc:
+                        log_warning(f"Failed to cleanup uploaded file after DB error: {delete_exc}")
+                raise
 
         log_file_upload(
             media_record.original_filename or media_record.file_path,

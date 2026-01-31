@@ -10,7 +10,7 @@ for future use to maintain backward compatibility with the export format.
 """
 from datetime import datetime, date
 from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import JobStatus, ImportSourceType, ExportType
 
@@ -99,12 +99,20 @@ class EntryDTO(BaseModel):
     """
     # Actual Entry fields
     title: Optional[str] = Field(None, max_length=300, description="Entry title")
-    content: Optional[str] = Field(None, description="Entry content (plain text or markdown)")
+    content_delta: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Entry content as Quill Delta JSON (source of truth)",
+    )
+    content_plain_text: Optional[str] = Field(
+        None,
+        description="Plain-text extraction from content_delta",
+    )
     entry_date: date = Field(..., description="User's local date for this entry")
     entry_datetime_utc: datetime = Field(..., description="UTC timestamp when entry occurred")
     entry_timezone: str = Field(default="UTC", description="IANA timezone for entry context")
     word_count: int = Field(default=0, description="Word count")
     is_pinned: bool = Field(default=False, description="Whether entry is pinned")
+    is_draft: bool = Field(default=False, description="Whether entry is a draft")
 
     # Structured location fields (persisted in database after migration d8f3a9e2b1c4)
     location_json: Optional[Dict[str, Any]] = Field(
@@ -142,6 +150,24 @@ class EntryDTO(BaseModel):
 
     # Import tracking (not exported for regular users)
     external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+    @model_validator(mode='before')
+    @classmethod
+    def map_legacy_content(cls, data: Any) -> Any:
+        """Backward compatibility: map legacy 'content' field to 'content_plain_text'."""
+        if isinstance(data, dict):
+            # If legacy 'content' field is present and 'content_plain_text' is missing, map it
+            if 'content' in data and data.get('content_plain_text') is None:
+                data['content_plain_text'] = data.get('content')
+        return data
+
+    @model_validator(mode='after')
+    def validate_content_present(self) -> 'EntryDTO':
+        """Ensure non-draft entries have some form of content."""
+        if not self.is_draft:
+            if self.content_delta is None and (self.content_plain_text is None or self.content_plain_text.strip() == ""):
+                raise ValueError("Non-draft entry must have either content_delta or content_plain_text")
+        return self
 
     @field_validator('entry_timezone', mode='before')
     @classmethod
@@ -253,7 +279,7 @@ class JournivExportDTO(BaseModel):
     This is the top-level structure for full exports.
     """
     # Metadata
-    export_version: str = Field("1.0", description="Export format version")
+    export_version: str = Field("1.1", description="Export format version")
     export_date: datetime = Field(..., description="When export was created (UTC)")
     app_version: str = Field(..., description="Journiv version that created export")
 

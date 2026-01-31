@@ -14,6 +14,7 @@ from app.core.logging_config import log_warning
 from app.core.time_utils import local_date_for_user, ensure_utc, normalize_timezone
 from app.schemas.dto import JournalDTO, EntryDTO, MediaDTO
 from app.utils.import_export.media_handler import MediaHandler
+from app.utils.quill_delta import wrap_plain_text
 from .models import DayOneEntry, DayOneJournal, DayOneLocation, DayOneWeather, DayOnePhoto, DayOneVideo
 from .richtext_parser import DayOneRichTextParser
 
@@ -155,8 +156,9 @@ class DayOneToJournivMapper:
                 else:
                     content = text
 
-        # Calculate word count
-        word_count = len(content.split()) if content else 0
+        content_delta = wrap_plain_text(content)
+        plain_text = content or ""
+        word_count = len(plain_text.split()) if plain_text else 0
 
         # Parse timestamps
         creation_date_utc = ensure_utc(dayone_entry.creation_date)
@@ -216,7 +218,8 @@ class DayOneToJournivMapper:
 
         return EntryDTO(
             title=title,  # Extracted from richText or first line
-            content=content,
+            content_delta=content_delta,
+            content_plain_text=plain_text or None,
             entry_date=entry_date,
             entry_datetime_utc=creation_date_utc,
             entry_timezone=entry_timezone,

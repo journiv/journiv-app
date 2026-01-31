@@ -149,14 +149,15 @@ class TestDayOneImportE2E:
         )
         assert photo_entry is not None
 
-        content = photo_entry["content"]
+        content = photo_entry.get("content_plain_text") or ""
         # Should have markdown headers
         assert "# Anonymized Main Title" in content or "### H3" in content
         # Should NOT have raw JSON
         assert "{\"contents\":" not in content
         assert "richText" not in content
-        # Should have photo markdown (placeholders replaced to media shortcodes)
-        assert "![[media:" in content
+        # With Quill Delta format, media references are stored in content_delta, not as markdown in plain text
+        # Verify that placeholder text is present (the text around photos)
+        assert "Placeholder text for photos" in content or "More placeholder text" in content
 
         # 8. Verify location data was imported
         assert photo_entry.get("location_json") is not None
@@ -212,8 +213,8 @@ class TestDayOneImportE2E:
             ).json()
             assert sign_response["signed_url"]
             # Existence check depends on test environment storage setup
-            # Markdown content should use Journiv media shortcode format
-            assert f"![[media:{media['id']}]]" in content
+            # Note: With Quill Delta format, media is stored in content_delta as embedded objects,
+            # not as markdown shortcodes in plain text. Media is verified via the media API above.
 
         # 11. Verify pinned/starred status
         # Entry with photos is pinned and starred in fixture

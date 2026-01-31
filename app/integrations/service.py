@@ -54,6 +54,9 @@ _proxy_lock = asyncio.Lock()
 _proxy_timeout = httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0)
 _proxy_limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
 
+# Shared cache instance (initialized once, reused for all calls)
+_integration_cache: Optional[ScopedCache] = None
+
 
 async def _get_proxy_client() -> httpx.AsyncClient:
     """Reuse a single client to avoid connection churn under thumbnail bursts."""
@@ -91,10 +94,40 @@ async def close_proxy_client() -> None:
 
 
 def _get_integration_cache() -> Optional[ScopedCache]:
-    """Get the scoped cache for integration credentials."""
+    """Get the scoped cache for integration credentials (singleton pattern)."""
+    global _integration_cache
     if not settings.redis_url:
         return None
-    return ScopedCache(namespace="integration_creds")
+    if _integration_cache is None:
+        _integration_cache = ScopedCache(namespace="integration_creds")
+    return _integration_cache
+
+
+def _set_integration_cache(
+    user_id: uuid.UUID,
+    provider: IntegrationProvider,
+    *,
+    base_url: str,
+    token: str,
+    is_active: bool,
+    ttl_seconds: int = 300,
+) -> None:
+    cache = _get_integration_cache()
+    if not cache:
+        return
+    cache.set(
+        scope_id=str(user_id),
+        cache_type=f"{provider.value}",
+        value={"base_url": base_url, "token": token, "is_active": is_active},
+        ttl_seconds=ttl_seconds,
+    )
+
+
+def _invalidate_integration_cache(user_id: uuid.UUID, provider: IntegrationProvider) -> None:
+    cache = _get_integration_cache()
+    if not cache:
+        return
+    cache.delete(scope_id=str(user_id), cache_type=f"{provider.value}")
 
 
 # ================================================================================
@@ -257,6 +290,14 @@ async def connect_integration(
 
         log_info(f"Connected {provider} for user {user.id} (new integration {integration.id})")
 
+    _set_integration_cache(
+        user_id=user.id,
+        provider=provider,
+        base_url=integration.base_url,
+        token=integration.access_token_encrypted,
+        is_active=integration.is_active,
+    )
+
     # Ensure setup (e.g., Album creation) for specific providers in link mode
     if provider == IntegrationProvider.IMMICH and integration.import_mode == ImportMode.LINK_ONLY:
         try:
@@ -283,6 +324,14 @@ async def connect_integration(
                 await _rollback(session)
             except Exception:
                 pass  # Rollback may fail if already rolled back
+
+    _set_integration_cache(
+        user_id=user.id,
+        provider=provider,
+        base_url=integration.base_url,
+        token=integration.access_token_encrypted,
+        is_active=integration.is_active,
+    )
 
     return IntegrationConnectResponse(
         status="connected",
@@ -377,9 +426,7 @@ async def disconnect_integration(
     log_info(f"Disconnected {provider} for user {user.id} (integration {integration.id})")
 
     # Invalidate cache
-    cache = _get_integration_cache()
-    if cache:
-        cache.delete(scope_id=str(user.id), cache_type=f"{provider.value}")
+    _invalidate_integration_cache(user.id, provider)
 
 
 async def list_integration_assets(
@@ -402,12 +449,17 @@ async def list_integration_assets(
         3. Provider decides whether to use cache or fetch live
     """
     # Get integration
-    integration = (await _exec(
-        session,
-        select(Integration)
-        .where(Integration.user_id == user.id)
-        .where(Integration.provider == provider)
-    )).first()
+    from app.core.database import get_session_context
+
+    with get_session_context() as temp_session:
+        integration = (await _exec(
+            temp_session,
+            select(Integration)
+            .where(Integration.user_id == user.id)
+            .where(Integration.provider == provider)
+        )).first()
+        if integration:
+            temp_session.expunge(integration)
 
     if not integration:
         raise ValueError(f"No {provider} integration found. Please connect first.")
@@ -595,6 +647,7 @@ async def update_integration_settings(
             f"Updated {provider} import_mode to {settings_update.import_mode} "
             f"for user {user.id} (integration {integration.id})"
         )
+        _invalidate_integration_cache(user.id, provider)
 
     # Update album_id if provided (Immich only)
     if settings_update.album_id is not None and provider == IntegrationProvider.IMMICH:
@@ -607,43 +660,38 @@ async def update_integration_settings(
             f"Updated {provider} album_id to {settings_update.album_id} "
             f"for user {user.id} (integration {integration.id})"
         )
+        _invalidate_integration_cache(user.id, provider)
 
     # Return updated status
     return await get_integration_status(session, user, provider)
 
 
-async def fetch_proxy_asset(
-    session: Session | AsyncSession,
+async def get_integration_credentials(
     user_id: uuid.UUID,
     provider: IntegrationProvider,
-    asset_id: str,
-    variant: str,  # "thumbnail" or "original"
-    range_header: Optional[str] = None,
-) -> httpx.Response:
+) -> tuple[str, str]:
     """
-    Fetch an asset stream from the provider.
+    Retrieve integration credentials from cache or database.
 
-    Handles credential retrieval (cache/DB), decryption, and request building.
-    Returns the open httpx.Response object (headers unused).
+    Returns a tuple of (base_url, encrypted_access_token).
+    Database session is opened and closed immediately if cache misses.
 
-    IMPORTANT: The caller is responsible for ensuring the response is closed.
-    You must call `response.aclose()` or stream the content fully.
-    Failure to do so will leak connections.
+    Raises:
+        ValueError: If integration not found or disabled
     """
-    integration_base_url = None
-    access_token_encrypted = None
-
-    # 1. Try Cache First
+    # 1. Try cache first (avoid DB entirely if hit)
     cache = _get_integration_cache()
     if cache:
         cached_creds = cache.get(scope_id=str(user_id), cache_type=f"{provider.value}")
         if cached_creds and cached_creds.get("is_active"):
-            integration_base_url = cached_creds.get("base_url")
-            access_token_encrypted = cached_creds.get("token")
+            base_url = cached_creds.get("base_url")
+            encrypted_token = cached_creds.get("token")
+            if base_url and encrypted_token:
+                return base_url, encrypted_token
 
-    # 2. If not in cache, fetch from DB
-    if not integration_base_url or not access_token_encrypted:
-        # Use existing session (async or sync)
+    # 2. Cache miss - fetch from DB with short-lived session
+    from app.core.database import get_session_context
+    with get_session_context() as session:
         integration = (await _exec(
             session,
             select(Integration)
@@ -657,21 +705,50 @@ async def fetch_proxy_asset(
         if not integration.is_active:
             raise ValueError(f"{provider} integration is disabled. Please reconnect.")
 
-        integration_base_url = integration.base_url
-        access_token_encrypted = integration.access_token_encrypted
+        base_url = integration.base_url
+        encrypted_token = integration.access_token_encrypted
+        # Session auto-closes here when exiting context
 
-        # 3. Populate Cache
-        if cache:
-            cache.set(
-                scope_id=str(user_id),
-                cache_type=f"{provider.value}",
-                value={
-                    "base_url": integration_base_url,
-                    "token": access_token_encrypted,
-                    "is_active": True
-                },
-                ttl_seconds=300 # Cache for 5 minutes
-            )
+    # 3. Populate cache for next request
+    if cache:
+        cache.set(
+            scope_id=str(user_id),
+            cache_type=f"{provider.value}",
+            value={
+                "base_url": base_url,
+                "token": encrypted_token,
+                "is_active": True
+            },
+            ttl_seconds=300  # Cache for 5 minutes
+        )
+
+    return base_url, encrypted_token
+
+
+async def fetch_proxy_asset(
+    user_id: uuid.UUID,
+    provider: IntegrationProvider,
+    asset_id: str,
+    variant: str,  # "thumbnail" or "original"
+    range_header: Optional[str] = None,
+) -> httpx.Response:
+    """
+    Fetch an asset stream from the provider.
+
+    Handles credential retrieval (cache/DB), decryption, and request building.
+    Returns the open httpx.Response object (headers unused).
+
+    Database session is opened and closed internally during credential retrieval.
+    No database connection is held during the HTTP request to the provider.
+
+    IMPORTANT: The caller is responsible for ensuring the response is closed.
+    You must call `response.aclose()` or stream the content fully.
+    Failure to do so will leak connections.
+    """
+    # Get credentials (DB session opened and closed internally)
+    integration_base_url, access_token_encrypted = await get_integration_credentials(
+        user_id, provider
+    )
 
     # Decrypt token
     try:
@@ -704,7 +781,7 @@ async def fetch_proxy_asset(
 
     # Prepare headers
     headers = {"x-api-key": api_key}
-    if range_header and variant in ("video", "original"):
+    if range_header and variant in ("thumbnail", "original"):
         headers["Range"] = range_header
 
     # Make request
@@ -868,4 +945,3 @@ async def remove_assets_from_integration_album(
         log_info(f"Removed {len(asset_ids)} assets from {provider} album {album_id}")
     except Exception as e:
         log_error(e, user_id=user_id, message=f"Failed to remove assets from {provider} album")
-

@@ -6,11 +6,12 @@ from datetime import date, datetime, timezone
 from typing import List, Optional, TYPE_CHECKING, Dict, Any
 
 from pydantic import field_validator, model_validator
-from sqlalchemy import Column, ForeignKey, Enum as SAEnum, UniqueConstraint, String, DateTime, Float, Boolean, Integer
+from sqlalchemy import Column, ForeignKey, Enum as SAEnum, UniqueConstraint, String, DateTime, Float, Text, event, inspect, Boolean, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, Relationship, Index, CheckConstraint, Column as SQLModelColumn, JSON
 
 from app.core.time_utils import utc_now
+from app.utils.quill_delta import extract_plain_text
 from .base import BaseModel
 from .enums import MediaType, UploadStatus
 
@@ -36,7 +37,16 @@ class Entry(BaseModel, table=True):
     __tablename__ = "entry"
 
     title: Optional[str] = Field(None, max_length=300)
-    content: Optional[str] = Field(None, max_length=100000)  # 100K character limit
+    content_delta: Optional[dict] = Field(
+        default=None,
+        sa_column=SQLModelColumn(JSONType()),
+        description="Quill Delta payload (stored as JSON/JSONB)",
+    )
+    content_plain_text: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text),
+        description="Plain-text extraction from content_delta for search/indexing",
+    )
     journal_id: uuid.UUID = Field(
         sa_column=Column(
             ForeignKey("journal.id", ondelete="CASCADE"),
@@ -66,6 +76,11 @@ class Entry(BaseModel, table=True):
         default=0,
         sa_column=Column(Integer, server_default="0", nullable=False, index=True),
         description="Number of media items associated with this entry"
+    )
+    is_draft: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, server_default="false", nullable=False, index=True),
+        description="Draft entries are not yet finalized"
     )
 
     # Structured location fields
@@ -145,14 +160,6 @@ class Entry(BaseModel, table=True):
             return None
         return v.strip() if v else v
 
-    @field_validator('content')
-    @classmethod
-    def validate_content(cls, v):
-        if v is None:
-            return None
-        cleaned = v.strip()
-        return cleaned if cleaned else None
-
     @field_validator('latitude')
     @classmethod
     def validate_latitude(cls, v):
@@ -186,6 +193,30 @@ class Entry(BaseModel, table=True):
                     raise ValueError(f'longitude field ({self.longitude}) does not match location_json.longitude ({loc_lon})')
 
         return self
+
+
+def _should_refresh_plain_text(entry: Entry) -> bool:
+    try:
+        state = inspect(entry)
+        return state.attrs.content_delta.history.has_changes()
+    except Exception:
+        return True
+
+
+@event.listens_for(Entry, "before_insert")
+def _entry_before_insert(mapper, connection, target: Entry) -> None:
+    plain_text = extract_plain_text(target.content_delta)
+    target.content_plain_text = plain_text or None
+    target.word_count = len(plain_text.split()) if plain_text else 0
+
+
+@event.listens_for(Entry, "before_update")
+def _entry_before_update(mapper, connection, target: Entry) -> None:
+    if not _should_refresh_plain_text(target):
+        return
+    plain_text = extract_plain_text(target.content_delta)
+    target.content_plain_text = plain_text or None
+    target.word_count = len(plain_text.split()) if plain_text else 0
 
 
 class EntryMedia(BaseModel, table=True):

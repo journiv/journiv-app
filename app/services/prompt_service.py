@@ -222,6 +222,7 @@ class PromptService:
         in_use = self.session.exec(
             select(func.count(Entry.id)).where(
                 Entry.prompt_id == prompt_id,
+                Entry.is_draft.is_(False),
             )
         ).one() or 0
 
@@ -344,6 +345,7 @@ class PromptService:
             Entry.user_id == user_id,
             Entry.prompt_id == daily_prompt.id,
             Entry.entry_date == today,
+            Entry.is_draft.is_(False),
         )
 
         existing_entry = self.session.exec(existing_entry_statement).first()

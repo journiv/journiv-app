@@ -147,6 +147,7 @@ class AnalyticsService:
                 func.coalesce(func.sum(Entry.word_count), 0).label("total_words"),
             ).where(
                 Entry.user_id == user_id,
+                Entry.is_draft.is_(False),
             )
         ).first()
 
@@ -177,7 +178,12 @@ class AnalyticsService:
         # Expire all to ensure we get fresh data from the database
         self.session.expire_all()
         entries = self.session.exec(
-            select(Entry).where(Entry.user_id == user_id).order_by(Entry.entry_date.desc())
+            select(Entry)
+            .where(
+                Entry.user_id == user_id,
+                Entry.is_draft.is_(False),
+            )
+            .order_by(Entry.entry_date.desc())
         ).all()
 
         unique_dates = sorted(
@@ -262,7 +268,8 @@ class AnalyticsService:
             .where(
                 Entry.user_id == user_id,
                 Entry.entry_date >= start_date,
-                Entry.entry_date <= end_date
+                Entry.entry_date <= end_date,
+                Entry.is_draft.is_(False),
             )
             .group_by(Entry.entry_date)
             .order_by(Entry.entry_date)
@@ -295,7 +302,8 @@ class AnalyticsService:
                 Tag.user_id == user_id,
                 Entry.user_id == user_id,
                 Entry.entry_date >= start_date,
-                Entry.entry_date <= end_date
+                Entry.entry_date <= end_date,
+                Entry.is_draft.is_(False),
             )
             .group_by(Tag.name)
             .order_by(func.count(EntryTagLink.entry_id).desc())
@@ -337,7 +345,8 @@ class AnalyticsService:
             select(func.count(Entry.id))
             .where(
                 Entry.user_id == user_id,
-                Entry.entry_datetime_utc >= month_start
+                Entry.entry_datetime_utc >= month_start,
+                Entry.is_draft.is_(False),
             )
         ).one() or 0
 
@@ -345,7 +354,8 @@ class AnalyticsService:
             select(func.coalesce(func.sum(Entry.word_count), 0))
             .where(
                 Entry.user_id == user_id,
-                Entry.entry_datetime_utc >= month_start
+                Entry.entry_datetime_utc >= month_start,
+                Entry.is_draft.is_(False),
             )
         ).one() or 0
 
@@ -358,7 +368,8 @@ class AnalyticsService:
             .where(
                 Entry.user_id == user_id,
                 Entry.entry_datetime_utc >= last_month_start,
-                Entry.entry_datetime_utc < month_start
+                Entry.entry_datetime_utc < month_start,
+                Entry.is_draft.is_(False),
             )
         ).one() or 0
 
@@ -387,7 +398,10 @@ class AnalyticsService:
                 func.sum(Entry.word_count).label('total_words'),
                 func.max(Entry.entry_datetime_utc).label('last_entry')
             )
-            .outerjoin(Entry, Journal.id == Entry.journal_id)
+            .outerjoin(
+                Entry,
+                (Journal.id == Entry.journal_id) & (Entry.is_draft.is_(False))
+            )
             .where(
                 Journal.user_id == user_id,
             )
