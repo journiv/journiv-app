@@ -446,22 +446,24 @@ async def get_media_signed(
         external_provider = None
         external_asset_id = None
         file_info = None
+        has_local_file = False
 
         with database_module.get_session_context() as session:
             # Fetch media record and extract required metadata
             media = media_service.get_media_by_id(media_id, uid, session)
             external_provider = media.external_provider
             external_asset_id = media.external_asset_id
+            has_local_file = bool(media.file_path)
 
             # For internal media, fetch file info while we have the session
-            if external_provider != "immich":
+            if has_local_file or external_provider != "immich":
                 file_info = await media_service.get_media_file_for_serving(
                     media_id, uid, session, range_header
                 )
         # Session is now closed - DB connection released
 
         # Handle Immich proxy (Outside DB Session)
-        if external_provider == "immich":
+        if external_provider == "immich" and not has_local_file:
             if not external_asset_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found")
 
@@ -608,19 +610,21 @@ async def get_media_thumbnail_signed(
         external_provider = None
         external_asset_id = None
         thumbnail_path = None
+        has_local_thumbnail = False
 
         with database_module.get_session_context() as session:
             media = media_service.get_media_by_id(media_id, uid, session)
             external_provider = media.external_provider
             external_asset_id = media.external_asset_id
+            has_local_thumbnail = bool(media.thumbnail_path)
 
             # For internal media, fetch thumbnail path while we have the session
-            if external_provider != "immich":
+            if has_local_thumbnail or external_provider != "immich":
                 thumbnail_path = media_service.get_media_thumbnail_path(media)
         # Session is now closed - DB connection released
 
         # Handle Immich proxy for thumbnails (Outside DB Session)
-        if external_provider == "immich":
+        if external_provider == "immich" and not has_local_thumbnail:
             if not external_asset_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not found")
 

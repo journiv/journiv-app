@@ -204,9 +204,20 @@ def attach_signed_urls_to_delta(
         cache = _delta_media_cache
 
     media_map = {str(media.id): media for media in media_items}
+    immich_by_asset_id = {
+        str(media.external_asset_id): str(media.id)
+        for media in media_items
+        if media.external_provider == IntegrationProvider.IMMICH.value and media.external_asset_id
+    }
 
-    def transform_to_signed_url(_key: str, media_id: str) -> Optional[str]:
-        media = media_map.get(media_id)
+    def transform_to_signed_url(_key: str, source: str) -> Optional[str]:
+        if not source:
+            return None
+        media = media_map.get(source)
+        if not media:
+            media_id = _extract_media_id_from_source(source, media_map, immich_by_asset_id)
+            if media_id:
+                media = media_map.get(media_id)
         if not media:
             return None
         return _resolve_signed_url(media, user_id, cache, external_base_url)
