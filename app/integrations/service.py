@@ -917,10 +917,6 @@ async def remove_assets_from_integration_album(
     if not integration or not integration.is_active:
         return
 
-    # Only remove from album in link_only mode
-    if integration.import_mode != ImportMode.LINK_ONLY:
-        return
-
     provider_module = get_provider_module(provider)
     if not hasattr(provider_module, "remove_assets_from_album"):
         return

@@ -99,6 +99,12 @@ class ImportJobService:
         media_items = session.exec(
             select(EntryMedia).where(EntryMedia.entry_id == entry_id)
         ).all()
+        # Expunge media items from session so they are not flushed on commit.
+        # We only need them for reading (mapping asset IDs to media UUIDs).
+        # Without this, a concurrent session (e.g. Celery worker) updating
+        # file_path would be overwritten when this session commits.
+        for m in media_items:
+            session.expunge(m)
         normalized = normalize_delta_media_ids(entry.content_delta, list(media_items))
         if normalized != entry.content_delta:
             entry.content_delta = normalized
@@ -238,7 +244,7 @@ class ImportJobService:
             active_session.add(existing)
             if commit:
                 active_session.commit()
-            active_session.refresh(existing)
+                active_session.refresh(existing)
             return existing
 
         # Create new record
@@ -772,23 +778,33 @@ class ImportJobService:
 
         Creates EntryMedia records ONLY if original download succeeds.
         Includes thumbnail_path if thumbnail was downloaded in Phase 1.
+
+        Each parallel task gets its own DB session to prevent
+        race conditions when persisting EntryMedia records.
         """
+        from app.core.database import engine
+
         batch_size = COPY_MODE_BATCH_SIZE
 
-        for i in range(0, len(asset_ids), batch_size):
-            batch = asset_ids[i:i + batch_size]
-            tasks = [
-                self._download_and_save_original(
-                    asset_id=asset_id,
+        async def _process_single_asset(current_asset_id: str):
+            with Session(engine) as task_session:
+                task_service = ImportJobService(task_session)
+                return await task_service._download_and_save_original(
+                    asset_id=current_asset_id,
                     base_url=base_url,
                     api_key=api_key,
                     user_id=str(job.user_id),
                     entry_id=job.entry_id,
                     integration=integration,
-                    session=session,
-                    thumbnail_info=thumbnail_cache.get(asset_id),
-                    commit=False
+                    session=task_session,
+                    thumbnail_info=thumbnail_cache.get(current_asset_id),
+                    commit=True
                 )
+
+        for i in range(0, len(asset_ids), batch_size):
+            batch = asset_ids[i:i + batch_size]
+            tasks = [
+                _process_single_asset(asset_id)
                 for asset_id in batch
             ]
 

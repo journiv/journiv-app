@@ -756,6 +756,11 @@ class EntryService:
                     ]
                 ),
             )
+            # Expunge media items so they are not flushed on commit.
+            # Prevents overwriting file_path set by a concurrent Celery worker
+            # (e.g. Immich copy-mode import running in parallel).
+            for media in media_items:
+                self.session.expunge(media)
             normalized_delta = normalize_delta_media_ids(delta_payload, list(media_items))
             normalized_sources = extract_media_sources(normalized_delta)
             log_debug(
