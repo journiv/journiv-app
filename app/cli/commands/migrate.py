@@ -31,6 +31,12 @@ app = typer.Typer(help="Data migration commands")
 console = Console()
 
 
+def _ensure_uuid(value: object) -> uuid.UUID:
+    if isinstance(value, uuid.UUID):
+        return value
+    return uuid.UUID(str(value))
+
+
 def _resolve_migrator_path() -> Path:
     docker_bin = Path("/usr/local/bin/migrator")
     if docker_bin.exists():
@@ -272,13 +278,13 @@ def migrate_content(
                 if not rows:
                     break
 
-                entry_ids = [row.id for row in rows]
+                entry_ids = [_ensure_uuid(row.id) for row in rows]
                 media_items = session.exec(
                     select(EntryMedia).where(EntryMedia.entry_id.in_(entry_ids))
                 ).all()
                 media_by_entry = {}
                 for media in media_items:
-                    media_by_entry.setdefault(media.entry_id, []).append(media)
+                    media_by_entry.setdefault(_ensure_uuid(media.entry_id), []).append(media)
 
                 # End the read transaction early to avoid long-running/idle transactions
                 session.commit()
@@ -286,7 +292,8 @@ def migrate_content(
                 updates = []
 
                 for row in rows:
-                    entry_id = str(row.id)
+                    entry_uuid = _ensure_uuid(row.id)
+                    entry_id = str(entry_uuid)
                     content = row.content or ""
                     processed += 1
                     progress.advance(task, 1)
@@ -295,7 +302,6 @@ def migrate_content(
                         skipped += 1
                         continue
 
-                    entry_uuid = row.id
                     content = _expand_media_shortcodes(
                         content,
                         list(media_by_entry.get(entry_uuid, [])),
