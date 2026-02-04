@@ -482,7 +482,7 @@ class ImportService:
                     result = self._import_journal(
                         user_id=user_id,
                         journal_dto=journal_dto,
-                        media_dir=final_media_dir,
+                        media_dir=media_dir,
                         id_mapper=id_mapper,
                         existing_media_checksums=existing_media_checksums,
                         existing_tag_names=existing_tag_names,

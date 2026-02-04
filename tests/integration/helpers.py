@@ -130,3 +130,120 @@ def upload_sample_media(
         content_type=content_type,
         alt_text=alt_text,
     )
+
+
+# ------------------------------------------------------------------ #
+# Import/Export Helpers
+# ------------------------------------------------------------------ #
+
+
+def wait_for_import_completion(
+    api_client: JournivApiClient,
+    token: str,
+    job_id: str,
+    timeout: int = 60,
+    poll_interval: float = 1.0,
+) -> dict[str, Any]:
+    """
+    Poll import job status until completion or timeout.
+
+    Args:
+        api_client: API client instance
+        token: User access token
+        job_id: Import job ID
+        timeout: Maximum seconds to wait
+        poll_interval: Seconds between polls
+
+    Returns:
+        Final job status dict
+
+    Raises:
+        TimeoutError: If job doesn't complete within timeout
+        RuntimeError: If job fails
+    """
+    import time
+
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        status = api_client.import_status(token, job_id)
+
+        if status["status"] == "completed":
+            return status
+        elif status["status"] == "failed":
+            errors = status.get("errors") or "Unknown error"
+            raise RuntimeError(f"Import job failed: {errors}")
+
+        time.sleep(poll_interval)
+
+    raise TimeoutError(f"Import job {job_id} did not complete within {timeout}s")
+
+
+def wait_for_export_completion(
+    api_client: JournivApiClient,
+    token: str,
+    job_id: str,
+    timeout: int = 60,
+    poll_interval: float = 1.0,
+) -> dict[str, Any]:
+    """
+    Poll export job status until completion or timeout.
+
+    Args:
+        api_client: API client instance
+        token: User access token
+        job_id: Export job ID
+        timeout: Maximum seconds to wait
+        poll_interval: Seconds between polls
+
+    Returns:
+        Final job status dict
+
+    Raises:
+        TimeoutError: If job doesn't complete within timeout
+        RuntimeError: If job fails
+    """
+    import time
+
+    deadline = time.time() + timeout
+
+    while time.time() < deadline:
+        status = api_client.export_status(token, job_id)
+
+        if status["status"] == "completed":
+            return status
+        elif status["status"] == "failed":
+            errors = status.get("errors") or "Unknown error"
+            raise RuntimeError(f"Export job failed: {errors}")
+
+        time.sleep(poll_interval)
+
+    raise TimeoutError(f"Export job {job_id} did not complete within {timeout}s")
+
+
+def download_export(
+    api_client: JournivApiClient,
+    token: str,
+    job_id: str,
+) -> bytes:
+    """
+    Download an export file after job completion.
+
+    Args:
+        api_client: API client instance
+        token: User access token
+        job_id: Export job ID
+
+    Returns:
+        Raw bytes of the export ZIP file
+
+    Raises:
+        JournivApiError: If download fails
+    """
+    response = api_client.request(
+        "GET",
+        f"/export/{job_id}/download",
+        token=token,
+        expected=(200,),
+    )
+    return response.content

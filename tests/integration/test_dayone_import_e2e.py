@@ -11,6 +11,7 @@ from typing import Dict, Any
 import pytest
 
 from tests.lib import ApiUser, JournivApiClient
+from tests.integration.helpers import wait_for_import_completion
 from app.core.config import settings
 
 
@@ -20,46 +21,6 @@ def _load_dayone_fixture() -> bytes:
     if not fixture_path.exists():
         raise FileNotFoundError(f"Day One test fixture not found: {fixture_path}")
     return fixture_path.read_bytes()
-
-
-def _wait_for_import_completion(
-    api_client: JournivApiClient,
-    token: str,
-    job_id: str,
-    timeout: int = 60,
-    poll_interval: float = 1.0,
-) -> Dict[str, Any]:
-    """
-    Poll import job status until completion or timeout.
-
-    Args:
-        api_client: API client instance
-        token: User access token
-        job_id: Import job ID
-        timeout: Maximum seconds to wait
-        poll_interval: Seconds between polls
-
-    Returns:
-        Final job status dict
-
-    Raises:
-        TimeoutError: If job doesn't complete within timeout
-        RuntimeError: If job fails
-    """
-    deadline = time.time() + timeout
-
-    while time.time() < deadline:
-        status = api_client.import_status(token, job_id)
-
-        if status["status"] == "completed":
-            return status
-        elif status["status"] == "failed":
-            errors = status.get("errors") or "Unknown error"
-            raise RuntimeError(f"Import job failed: {errors}")
-
-        time.sleep(poll_interval)
-
-    raise TimeoutError(f"Import job {job_id} did not complete within {timeout}s")
 
 
 class TestDayOneImportE2E:
@@ -99,7 +60,7 @@ class TestDayOneImportE2E:
         assert job["source_type"] == "dayone"
 
         # 2. Wait for import to complete
-        completed_job = _wait_for_import_completion(
+        completed_job = wait_for_import_completion(
             api_client,
             api_user.access_token,
             job["id"],
@@ -338,7 +299,7 @@ class TestDayOneImportE2E:
             expected=(202,),
         )
         job1 = upload1.json()
-        _wait_for_import_completion(api_client, api_user.access_token, job1["id"])
+        wait_for_import_completion(api_client, api_user.access_token, job1["id"])
 
         # Import second time
         upload2 = api_client.upload_import(
@@ -348,7 +309,7 @@ class TestDayOneImportE2E:
             expected=(202,),
         )
         job2 = upload2.json()
-        _wait_for_import_completion(api_client, api_user.access_token, job2["id"])
+        wait_for_import_completion(api_client, api_user.access_token, job2["id"])
 
         # Should now have 2 journals
         journals = api_client.list_journals(api_user.access_token)
@@ -428,7 +389,7 @@ class TestDayOneImportE2E:
         job_id = job["id"]
 
         # Wait for import to complete
-        completed_job = _wait_for_import_completion(
+        completed_job = wait_for_import_completion(
             api_client,
             api_user.access_token,
             job_id,
