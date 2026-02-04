@@ -69,7 +69,7 @@ class TestJournivImportExportE2E:
             {"is_pinned": True},
         )
 
-        entry2 = api_client.create_entry(
+        _entry2 = api_client.create_entry(
             api_user.access_token,
             journal_id=journal1["id"],
             title="Second Entry",
@@ -78,7 +78,7 @@ class TestJournivImportExportE2E:
         )
 
         # Upload media to first entry
-        media1 = upload_sample_media(
+        _media1 = upload_sample_media(
             api_client,
             api_user.access_token,
             entry1["id"],
@@ -86,7 +86,7 @@ class TestJournivImportExportE2E:
             alt_text="Test photo 1",
         )
 
-        media2 = upload_sample_media(
+        _media2 = upload_sample_media(
             api_client,
             api_user.access_token,
             entry1["id"],
@@ -95,7 +95,7 @@ class TestJournivImportExportE2E:
         )
 
         # Create second journal
-        journal2 = api_client.create_journal(
+        _journal2 = api_client.create_journal(
             api_user.access_token,
             title="Test Journal Two",
             description="Second test journal",
@@ -103,9 +103,9 @@ class TestJournivImportExportE2E:
             icon="📓",
         )
 
-        entry3 = api_client.create_entry(
+        _entry3 = api_client.create_entry(
             api_user.access_token,
-            journal_id=journal2["id"],
+            journal_id=_journal2["id"],
             title="Entry in Second Journal",
             content="Content in the second journal.",
             entry_date=date.today().isoformat(),
