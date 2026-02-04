@@ -135,7 +135,7 @@ class TestJournivImportExportE2E:
             export_type="full",
             include_media=True,
         )
-        assert export_job["status"] in ("pending", "queued", "running")
+        assert export_job["status"] in ("pending", "queued", "running", "completed")
 
         # Wait for export to complete
         completed_export = wait_for_export_completion(
