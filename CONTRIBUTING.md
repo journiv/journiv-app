@@ -32,7 +32,7 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 Before you begin, ensure you have:
 
-- **Python 3.11+** and **uv** - For local development ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
+- **Python 3.12+** and **uv** - For local development ([install uv](https://docs.astral.sh/uv/getting-started/installation/))
 - **Docker & Docker Compose** - For containerized development (recommended)
 - **Git** - For version control
 - **A code editor** - VS Code, PyCharm, or your preferred editor
@@ -161,11 +161,6 @@ journiv-backend/
 │   └── prompts.json              # Seed data
 ├── pyproject.toml                # Project and dependencies (uv)
 ├── uv.lock                       # Locked dependencies
-├── requirements/                 # Legacy dependency files
-│   ├── base.txt
-│   ├── dev.txt
-│   ├── prod.txt
-│   └── test.txt
 ├── docker-compose.yml            # Production compose
 ├── docker-compose.dev.yml        # Development compose
 ├── docker-compose.dev.sqlite.yml # Development (SQLite)

@@ -47,7 +47,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Use system Python so venv symlinks point to /usr/local/bin (survives COPY to runtime)
 COPY uv.lock pyproject.toml ./
-COPY --from=ghcr.io/astral-sh/uv:0.9.26 /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.9.28 /uv /uvx /bin/
 ENV UV_SYSTEM_PYTHON=1
 RUN uv sync --locked --no-editable --no-install-project
 
