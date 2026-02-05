@@ -3,10 +3,11 @@ OIDC client configuration and utilities.
 
 Provides OAuth2/OIDC client setup using Authlib and PKCE helpers.
 """
-import os
 import base64
 import hashlib
+import os
 import secrets
+
 from authlib.integrations.starlette_client import OAuth
 from starlette.config import Config
 

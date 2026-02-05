@@ -3,16 +3,17 @@ Validation utilities for import/export data.
 
 Validates data structure and content before processing.
 """
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from pydantic import ValidationError
 
+from app.core.logging_config import log_error
 from app.schemas.dto import (
-    JournivExportDTO,
-    JournalDTO,
     EntryDTO,
+    JournalDTO,
+    JournivExportDTO,
     MediaDTO,
 )
-from app.core.logging_config import log_error
 
 
 class ValidationResult:

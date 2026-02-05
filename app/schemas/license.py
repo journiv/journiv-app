@@ -6,7 +6,8 @@ license server and to provide license management endpoints to the frontend.
 """
 import re
 from typing import Optional
-from pydantic import BaseModel, Field, EmailStr, field_validator
+
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class LicenseRegisterRequest(BaseModel):
@@ -101,7 +102,7 @@ class LicenseResetRequest(BaseModel):
         except ValueError as e:
             if 'version' in str(e):
                 raise
-            raise ValueError('install_id must be a valid UUID v5 (deterministic)')
+            raise ValueError('install_id must be a valid UUID v5 (deterministic)') from None
         return v
 
 

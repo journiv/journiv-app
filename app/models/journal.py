@@ -3,19 +3,21 @@ Journal-related models.
 """
 import uuid
 from datetime import datetime
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import field_validator
-from sqlalchemy import Column, ForeignKey, Enum as SAEnum
+from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Field, Relationship, Index, CheckConstraint, Column as SQLModelColumn, JSON
+from sqlmodel import JSON, CheckConstraint, Field, Index, Relationship
+from sqlmodel import Column as SQLModelColumn
 
 from .base import BaseModel
 from .enums import JournalColor
 
 if TYPE_CHECKING:
-    from .user import User
     from .entry import Entry
+    from .user import User
 
 
 JSONType = JSONB().with_variant(JSON, "sqlite")

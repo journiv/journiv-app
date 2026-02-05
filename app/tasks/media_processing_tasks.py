@@ -1,15 +1,16 @@
 """
 Celery tasks for media processing.
 """
+import contextlib
+
+from redis import Redis
 from sqlmodel import Session
 
 from app.core.celery_app import celery_app
-from app.core.database import engine
-from app.core.logging_config import log_info, log_error
-from app.services.media_service import MediaService
 from app.core.config import settings
-from redis import Redis
-import contextlib
+from app.core.database import engine
+from app.core.logging_config import log_error, log_info
+from app.services.media_service import MediaService
 
 
 @celery_app.task(name="app.tasks.media.process_media_upload", bind=True)

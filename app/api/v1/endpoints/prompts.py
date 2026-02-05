@@ -2,9 +2,9 @@
 Prompt endpoints.
 """
 import uuid
-from typing import Annotated, List, Optional, Dict, Any
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
@@ -48,7 +48,7 @@ async def get_system_prompts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving prompts"
-        )
+        ) from None
 
 
 @router.get(
@@ -89,7 +89,7 @@ async def get_random_prompt(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving random prompt"
-        )
+        ) from None
 
 
 @router.get(
@@ -121,7 +121,7 @@ async def get_daily_prompt(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving daily prompt"
-        )
+        ) from None
 
 
 # Prompt Search and Filtering
@@ -152,7 +152,7 @@ async def search_prompts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while searching prompts"
-        )
+        ) from None
 
 
 # Prompt Analytics (must be before /{prompt_id})
@@ -182,7 +182,7 @@ async def get_prompt_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving statistics"
-        )
+        ) from None
 
 
 @router.get(
@@ -215,10 +215,10 @@ async def get_prompt(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Prompt not found"
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving prompt"
-        )
+        ) from None

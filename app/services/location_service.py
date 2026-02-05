@@ -4,12 +4,13 @@ Location service for geocoding and location search using Nominatim (OpenStreetMa
 import asyncio
 import time
 from typing import Any, List, Optional
+
 import httpx
 
-from app.schemas.location import LocationResult
-from app.core.logging_config import log_debug, log_info, log_warning, log_error
-from app.core.scoped_cache import ScopedCache
 from app.core.http_client import get_http_client
+from app.core.logging_config import log_debug, log_error, log_info, log_warning
+from app.core.scoped_cache import ScopedCache
+from app.schemas.location import LocationResult
 
 # Cache configuration
 CACHE_TTL_SECONDS = 24 * 3600  # 24 hours
@@ -174,6 +175,8 @@ class LocationService:
         # Check cache first
         cached_result = cls._get_from_cache("search", query)
         if cached_result is not _CACHE_MISS:
+            if cached_result is None:
+                return []
             return cached_result[:limit]
 
         await cls._respect_rate_limit()

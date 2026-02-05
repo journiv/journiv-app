@@ -16,35 +16,36 @@ from typing import Any, BinaryIO, Dict, Optional, Tuple
 import magic
 from fastapi import UploadFile
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlmodel import Session, select, or_
+from sqlmodel import Session, col, or_, select
 
 from app.core.config import get_settings
 from app.core.database import get_session_context
 from app.core.exceptions import (
-    MediaNotFoundError,
+    EntryNotFoundError,
     FileTooLargeError,
+    FileValidationError,
     InvalidFileTypeError,
     InvalidMediaTypeError,
-    FileValidationError,
-    EntryNotFoundError
+    MediaNotFoundError,
 )
 from app.core.logging_config import log_error, log_file_upload, log_info, log_warning
+from app.core.media_signing import signed_url_for_journiv
 from app.models.entry import Entry, EntryMedia
 from app.models.enums import MediaType, UploadStatus
-from app.models.journal import Journal
 from app.models.integration import Integration, IntegrationProvider
-from app.utils.import_export.media_handler import MediaHandler
-from app.services.media_storage_service import MediaStorageService
-from app.core.media_signing import signed_url_for_journiv, signed_url_for_immich
+from app.models.journal import Journal
 from app.schemas.media import (
+    MediaBatchSignError,
     MediaBatchSignRequest,
     MediaBatchSignResponse,
     MediaBatchSignResult,
-    MediaBatchSignError
 )
+from app.services.media_storage_service import MediaStorageService
+from app.utils.import_export.media_handler import MediaHandler
 
 try:
-    from PIL import Image
+    from PIL import Image as PILImage
+    Image = PILImage
 except ImportError:
     Image = None
 
@@ -177,7 +178,6 @@ class MediaService:
             # Fallback to MediaHandler.detect_mime using a temporary file if needed,
             # but since we have bytes, we'll try to guess from common headers or just return octet-stream
             # for backward compatibility with the existing _detect_mime behavior.
-            import mimetypes
             return "application/octet-stream"
 
     def _generate_filename(self, original_filename: str, user_id: str) -> str:
@@ -275,6 +275,8 @@ class MediaService:
                     source_stream.seek(0)
                     mime_type = self._detect_mime(header)
             else:
+                if file_content is None:
+                    raise ValueError("file_content is required when file_path and file_stream are not provided")
                 source_stream = BytesIO(file_content)
                 file_size = len(file_content)
                 mime_type = self._detect_mime(file_content)
@@ -441,7 +443,7 @@ class MediaService:
             return content
         except Exception as e:
             log_error(e, request_id="", user_email="")
-            raise FileValidationError("Failed to read file")
+            raise FileValidationError("Failed to read file") from None
 
     def _validate_file_content(self, file_content: bytes, filename: str) -> None:
         """Validate file content and raise appropriate exceptions if invalid.
@@ -499,7 +501,7 @@ class MediaService:
             if isinstance(e, InvalidFileTypeError):
                 raise
             log_error(e, request_id="", user_email="")
-            raise FileValidationError("Failed to determine media type")
+            raise FileValidationError("Failed to determine media type") from None
 
     async def upload_media(
         self,
@@ -589,6 +591,8 @@ class MediaService:
                         temp_file.close()
 
             # 3. Validate file content and detect media type
+            if file_size is None:
+                raise ValueError("Unable to determine uploaded file size")
             self._validate_streamed_upload(file_size, filename, header_bytes)
             media_type = self._detect_media_type(header_bytes)
 
@@ -711,7 +715,9 @@ class MediaService:
                     db_session.refresh(media_record)
 
                     log_file_upload(
-                        media_info.get("original_filename") or media_info.get("file_path"),
+                        media_info.get("original_filename")
+                        or media_info.get("file_path")
+                        or "unknown",
                         media_info["file_size"],
                         True,
                         request_id="",
@@ -794,10 +800,11 @@ class MediaService:
 
     def _commit(self) -> None:
         """Commit database changes with proper error handling."""
+        session = self._get_session(self.session)
         try:
-            self.session.commit()
+            session.commit()
         except SQLAlchemyError as exc:
-            self.session.rollback()
+            session.rollback()
             log_error(exc)
             raise
 
@@ -806,14 +813,15 @@ class MediaService:
         try:
             media_uuid = uuid.UUID(media_id)
         except ValueError:
-            raise MediaNotFoundError("Invalid media ID format")
+            raise MediaNotFoundError("Invalid media ID format") from None
 
+        session = self._get_session(self.session)
         statement = select(EntryMedia).join(Entry).where(
             EntryMedia.id == media_uuid,
             Entry.user_id == uuid.UUID(user_id),
         )
 
-        media = self.session.exec(statement).first()
+        media = session.exec(statement).first()
         if not media:
             log_warning(f"Media not found for user {user_id}: {media_id}")
             raise MediaNotFoundError("Media not found")
@@ -834,6 +842,8 @@ class MediaService:
             if not media_id or not file_path or not user_id:
                 raise ValueError("media_id, file_path, and user_id are required")
 
+            session = self._get_session(self.session)
+
             # Get media record with ownership validation
             media = self._get_media_by_id(media_id, user_id)
 
@@ -848,11 +858,11 @@ class MediaService:
                 media.processing_error = None
                 media.upload_status = UploadStatus.PROCESSING
                 media.updated_at = datetime.now(timezone.utc)
-                self.session.add(media)
-                self.session.flush()  # Ensure changes are visible immediately
+                session.add(media)
+                session.flush()  # Ensure changes are visible immediately
                 self._commit()
-            except Exception as e:
-                self.session.rollback()
+            except Exception:
+                session.rollback()
                 raise
 
             # Resolve file path with error handling
@@ -909,18 +919,18 @@ class MediaService:
 
             # Update database with processed data in a transaction
             try:
-                self.session.begin_nested()  # Create savepoint for atomic update
+                session.begin_nested()  # Create savepoint for atomic update
                 self._update_media_metadata(media_id, metadata, thumbnail_path)
-                self.session.commit()  # Commit the nested transaction
+                session.commit()  # Commit the nested transaction
                 log_file_upload(
-                    media.original_filename or media.file_path,
+                    media.original_filename or media.file_path or "unknown",
                     media.file_size or 0,
                     True,
                     request_id="",
                     user_email=user_id,
                 )
             except Exception as e:
-                self.session.rollback()
+                session.rollback()
                 error_message = f"Failed to update media metadata: {e}"
                 log_error(error_message, media_id=media_id, user_id=user_id)
                 self._mark_processing_failed(media_id, error_message)
@@ -934,7 +944,7 @@ class MediaService:
                 log_error(f"Failed to mark processing as failed for {media_id}: {mark_error}",
                          media_id=media_id, user_id=user_id)
 
-    def _resolve_file_path(self, passed_path: Optional[str], db_relative_path: str) -> Path:
+    def _resolve_file_path(self, passed_path: Optional[str], db_relative_path: Optional[str]) -> Path:
         """
         Resolve the on-disk location of the uploaded file.
 
@@ -950,6 +960,9 @@ class MediaService:
             if not candidate.is_absolute():
                 candidate = self.media_root / candidate
             return candidate
+
+        if not db_relative_path:
+            raise ValueError("Missing media file path in database")
 
         return self.media_root / db_relative_path
 
@@ -1110,7 +1123,7 @@ class MediaService:
 
         except subprocess.TimeoutExpired:
             log_error(f"FFmpeg timeout for {video_path}")
-            raise Exception("FFmpeg timeout")
+            raise Exception("FFmpeg timeout") from None
         except Exception as e:
             log_error(f"Failed to generate video thumbnail: {e}")
             raise
@@ -1119,7 +1132,8 @@ class MediaService:
         """Update media record with processed metadata."""
         try:
             media_uuid = uuid.UUID(media_id)
-            media = self.session.get(EntryMedia, media_uuid)
+            session = self._get_session(self.session)
+            media = session.get(EntryMedia, media_uuid)
             if not media:
                 log_error(f"Media record not found: {media_id}")
                 return
@@ -1144,7 +1158,7 @@ class MediaService:
             if thumbnail_path:
                 media.thumbnail_path = self._relative_thumbnail_path(Path(thumbnail_path))
 
-            self.session.add(media)
+            session.add(media)
             self._commit()
 
         except Exception as e:
@@ -1155,12 +1169,13 @@ class MediaService:
         """Mark media processing as failed."""
         try:
             media_uuid = uuid.UUID(media_id)
-            media = self.session.get(EntryMedia, media_uuid)
+            session = self._get_session(self.session)
+            media = session.get(EntryMedia, media_uuid)
             if media:
                 media.upload_status = UploadStatus.FAILED
                 media.processing_error = error_message
                 media.updated_at = datetime.now(timezone.utc)
-                self.session.add(media)
+                session.add(media)
                 self._commit()
         except Exception as e:
             log_error(f"Failed to mark processing as failed for {media_id}: {e}")
@@ -1225,7 +1240,7 @@ class MediaService:
         try:
             full_path.relative_to(root)
         except ValueError:
-            raise MediaNotFoundError("Invalid file path")
+            raise MediaNotFoundError("Invalid file path") from None
 
         if not full_path.exists():
             raise MediaNotFoundError("Media file not found")
@@ -1254,7 +1269,7 @@ class MediaService:
         try:
             full_path.relative_to(root)
         except ValueError:
-            raise MediaNotFoundError("Invalid thumbnail path")
+            raise MediaNotFoundError("Invalid thumbnail path") from None
 
         if not full_path.exists():
             raise MediaNotFoundError("Thumbnail not found")
@@ -1295,7 +1310,7 @@ class MediaService:
 
         # Delete file from filesystem using reference counting
         # Create storage service with fresh session AFTER commit to get accurate reference counts
-        if checksum:
+        if checksum and file_path:
             try:
                 from app.core.database import get_session_context
 
@@ -1311,6 +1326,8 @@ class MediaService:
             except Exception as e:
                 # Log error but don't fail since DB record is already deleted
                 log_error(f"Failed to delete media file: {e}")
+        elif checksum and not file_path:
+            log_warning("Skipping media file deletion due to missing file path", media_id=str(media_id), user_id=str(user_id))
 
     async def get_media_file_for_serving(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session, range_header: Optional[str] = None) -> Dict[str, Any]:
         """Get media file information for serving with optional range support.
@@ -1337,7 +1354,7 @@ class MediaService:
             stat_result = await asyncio.to_thread(os.stat, full_path)
             file_size = stat_result.st_size
         except FileNotFoundError:
-            raise MediaNotFoundError("Media file not found on disk")
+            raise MediaNotFoundError("Media file not found on disk") from None
 
         content_type, _ = mimetypes.guess_type(str(full_path))
         content_type = content_type or media.mime_type or "application/octet-stream"
@@ -1381,7 +1398,7 @@ class MediaService:
                     "length": end - start + 1,
                 }
             except Exception:
-                raise ValueError("Invalid Range header")
+                raise ValueError("Invalid Range header") from None
 
         return result
 
@@ -1404,7 +1421,7 @@ class MediaService:
         entry_service = entry_service_module.EntryService(session)
 
         # Verify entry belongs to user
-        entry = entry_service.get_entry_by_id(entry_id, user_id)
+        entry_service.get_entry_by_id(entry_id, user_id)
 
         # Get entry media
         media_list = entry_service.get_entry_media(entry_id, user_id)
@@ -1498,7 +1515,7 @@ class MediaService:
             logger.info(f"Batch sign querying for {len(item_ids_to_query)} IDs for user {current_user_id}")
             logger.debug(f"Batch sign querying for IDs: {item_ids_to_query}")
             rows = session.exec(
-                select(
+                select(  # type: ignore[no-matching-overload]
                     EntryMedia.id,
                     EntryMedia.upload_status,
                     EntryMedia.external_provider,
@@ -1510,8 +1527,8 @@ class MediaService:
                 .join(Entry)
                 .where(
                     or_(
-                        EntryMedia.id.in_(item_ids_to_query),
-                        EntryMedia.external_asset_id.in_(query_ids_str)
+                        col(EntryMedia.id).in_(item_ids_to_query),
+                        col(EntryMedia.external_asset_id).in_(query_ids_str)
                     )
                 )
                 .where(Entry.user_id == current_user_id)
@@ -1614,7 +1631,7 @@ class MediaService:
                     ttl_seconds = signed_url_ttl
                 expires_at = now + ttl_seconds
                 signed_url = signed_url_for_journiv(
-                    internal_media_id,
+                    str(internal_media_id),
                     user_id_str,
                     item.variant,
                     expires_at,
@@ -1637,7 +1654,7 @@ class MediaService:
                     ttl_seconds = signed_url_ttl
                 expires_at = now + ttl_seconds
                 signed_url = signed_url_for_journiv(
-                    internal_media_id,
+                    str(internal_media_id),
                     user_id_str,
                     item.variant,
                     expires_at,

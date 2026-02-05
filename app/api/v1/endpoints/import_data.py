@@ -2,24 +2,29 @@
 Import endpoints for importing data into Journiv.
 """
 import uuid
-import shutil
 from typing import Annotated, List
-from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Query
-from sqlmodel import Session
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from sqlmodel import Session, col, select
 
 from app.api.dependencies import get_current_user
-from app.core.config import settings
 from app.core.database import get_session
-from app.core.logging_config import log_user_action, log_error
-from app.models.user import User
-from app.models.import_job import ImportJob
+from app.core.logging_config import log_error, log_user_action
 from app.models.enums import ImportSourceType
+from app.models.import_job import ImportJob
+from app.models.user import User
 from app.schemas.dto import ImportJobStatusResponse
 from app.services.import_service import ImportService
 from app.tasks.import_tasks import process_import_job
-from app.utils.import_export.media_handler import MediaHandler
 
 router = APIRouter(prefix="/import", tags=["import-export"])
 
@@ -65,7 +70,7 @@ async def upload_import(
         raise HTTPException(
             status_code=400,
             detail=f"Invalid source type: {source_type}. Must be one of: journiv, markdown, dayone"
-        )
+        ) from None
 
     # Day One and Journiv imports are now supported
     if source_type_enum not in [ImportSourceType.JOURNIV, ImportSourceType.DAYONE]:
@@ -160,7 +165,7 @@ def get_import_status(
     the data has been successfully imported into your account.
     """
     try:
-        job = session.query(ImportJob).filter(ImportJob.id == job_id).first()
+        job = session.exec(select(ImportJob).where(ImportJob.id == job_id)).first()
 
         if not job:
             raise HTTPException(status_code=404, detail="Import job not found")
@@ -215,13 +220,14 @@ def list_imports(
     """
     try:
 
-        jobs = (
-            session.query(ImportJob)
-            .filter(ImportJob.user_id == current_user.id)
-            .order_by(ImportJob.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
+        jobs = list(
+            session.exec(
+                select(ImportJob)
+                .where(ImportJob.user_id == current_user.id)
+                .order_by(col(ImportJob.created_at).desc())
+                .offset(offset)
+                .limit(limit)
+            )
         )
 
         return [
@@ -273,7 +279,7 @@ def delete_import_job(
     Cannot delete a job that is currently running.
     """
     try:
-        job = session.query(ImportJob).filter(ImportJob.id == job_id).first()
+        job = session.exec(select(ImportJob).where(ImportJob.id == job_id)).first()
 
         if not job:
             raise HTTPException(status_code=404, detail="Import job not found")

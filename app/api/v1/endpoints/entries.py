@@ -7,25 +7,29 @@ from collections import defaultdict
 from datetime import date
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import Session, select
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlmodel import Session, col, select
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
-from app.core.exceptions import EntryNotFoundError, JournalNotFoundError, ValidationError
-from app.core.logging_config import log_user_action, log_error, log_warning
+from app.core.exceptions import (
+    EntryNotFoundError,
+    JournalNotFoundError,
+    ValidationError,
+)
+from app.core.logging_config import log_error, log_user_action, log_warning
 from app.core.media_signing import attach_signed_urls, attach_signed_urls_to_delta
-from app.models.user import User
 from app.models.entry import EntryMedia
 from app.models.integration import Integration, IntegrationProvider
+from app.models.user import User
 from app.schemas.entry import (
     EntryCreate,
     EntryDraftCreate,
-    EntryUpdate,
-    QuillDelta,
-    EntryResponse,
     EntryMediaCreateRequest,
     EntryMediaResponse,
+    EntryResponse,
+    EntryUpdate,
+    QuillDelta,
 )
 from app.schemas.tag import TagResponse
 from app.services.entry_service import EntryService
@@ -49,7 +53,7 @@ def _build_entry_responses(
         return responses
 
     media_items = session.exec(
-        select(EntryMedia).where(EntryMedia.entry_id.in_(entry_ids))
+        select(EntryMedia).where(col(EntryMedia.entry_id).in_(entry_ids))
     ).all()
     media_by_entry: dict[uuid.UUID, list[EntryMedia]] = defaultdict(list)
     for media in media_items:
@@ -62,7 +66,9 @@ def _build_entry_responses(
     ).first()
     immich_base_url = immich_integration.base_url if immich_integration else None
 
-    for entry, response in zip(entries, responses):
+    if len(entries) != len(responses):
+        raise ValueError(f"Entry response mismatch: {len(entries)} entries vs {len(responses)} responses")
+    for entry, response in zip(entries, responses, strict=True):
         if not entry.content_delta:
             continue
         delta_dict = attach_signed_urls_to_delta(
@@ -100,7 +106,7 @@ async def create_entry(
     entry_data: EntryCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    hydrate: bool = Query(True),
+    hydrate: Annotated[bool, Query()] = True,
 ):
     """Create a new journal entry."""
     entry_service = EntryService(session)
@@ -111,12 +117,12 @@ async def create_entry(
             return _build_entry_response(entry, current_user.id, session)
         return EntryResponse.model_validate(entry)
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while creating entry")
+        raise HTTPException(status_code=500, detail="An error occurred while creating entry") from None
 
 
 @router.post(
@@ -135,7 +141,7 @@ async def create_draft_entry(
     entry_data: EntryDraftCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    hydrate: bool = Query(True),
+    hydrate: Annotated[bool, Query()] = True,
 ):
     """Create a new draft entry."""
     entry_service = EntryService(session)
@@ -146,12 +152,12 @@ async def create_draft_entry(
             return _build_entry_response(entry, current_user.id, session)
         return EntryResponse.model_validate(entry)
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while creating draft entry")
+        raise HTTPException(status_code=500, detail="An error occurred while creating draft entry") from None
 
 
 @router.get(
@@ -166,10 +172,10 @@ async def create_draft_entry(
 async def get_user_drafts(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    journal_id: Optional[uuid.UUID] = Query(None),
-    hydrate: bool = Query(False),
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    journal_id: Annotated[Optional[uuid.UUID], Query()] = None,
+    hydrate: Annotated[bool, Query()] = False,
 ):
     """Get all draft entries for the current user."""
     try:
@@ -186,7 +192,7 @@ async def get_user_drafts(
         return _build_entry_responses(entries, current_user.id, session)
     except Exception as e:
         log_error(e, message="Unexpected error fetching draft entries", user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while fetching draft entries")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching draft entries") from None
 
 
 @router.get(
@@ -201,10 +207,10 @@ async def get_user_drafts(
 async def get_user_entries(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    include_drafts: bool = Query(False),
-    hydrate: bool = Query(False),
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    include_drafts: Annotated[bool, Query()] = False,
+    hydrate: Annotated[bool, Query()] = False,
 ):
     """
     Get all entries for the current user.
@@ -228,7 +234,7 @@ async def get_user_entries(
         return _build_entry_responses(entries, current_user.id, session)
     except Exception as e:
         log_error(e, message="Unexpected error fetching entries", user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while fetching entries")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching entries") from None
 
 
 @router.get(
@@ -245,11 +251,11 @@ async def get_journal_entries(
     journal_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    include_pinned: bool = Query(True),
-    include_drafts: bool = Query(False),
-    hydrate: bool = Query(False),
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    include_pinned: Annotated[bool, Query()] = True,
+    include_drafts: Annotated[bool, Query()] = False,
+    hydrate: Annotated[bool, Query()] = False,
 ):
     """
     Get entries for a specific journal.
@@ -271,13 +277,13 @@ async def get_journal_entries(
             return entries
         return _build_entry_responses(entries, current_user.id, session)
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except Exception as e:
         logger.error(
             "Unexpected error fetching journal entries",
             extra={"user_id": str(current_user.id), "journal_id": str(journal_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching journal entries")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching journal entries") from None
 
 
 @router.get(
@@ -293,12 +299,12 @@ async def get_journal_entries(
 async def search_entries(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    q: str = Query(..., min_length=1),
-    journal_id: Optional[uuid.UUID] = Query(None),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    include_drafts: bool = Query(False),
-    hydrate: bool = Query(False),
+    q: Annotated[str, Query(min_length=1)],
+    journal_id: Annotated[Optional[uuid.UUID], Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    include_drafts: Annotated[bool, Query()] = False,
+    hydrate: Annotated[bool, Query()] = False,
 ):
     """
     Search entries by content.
@@ -324,7 +330,7 @@ async def search_entries(
             "Unexpected error searching entries",
             extra={"user_id": str(current_user.id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while searching entries")
+        raise HTTPException(status_code=500, detail="An error occurred while searching entries") from None
 
 
 @router.get(
@@ -340,11 +346,11 @@ async def search_entries(
 async def get_entries_by_date_range(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    start_date: date = Query(...),
-    end_date: date = Query(...),
-    journal_id: Optional[str] = Query(None),
-    include_drafts: bool = Query(False),
-    hydrate: bool = Query(False),
+    start_date: Annotated[date, Query(...)],
+    end_date: Annotated[date, Query(...)],
+    journal_id: Annotated[Optional[str], Query()] = None,
+    include_drafts: Annotated[bool, Query()] = False,
+    hydrate: Annotated[bool, Query()] = False,
 ):
     """
     Get entries within a date range.
@@ -362,7 +368,7 @@ async def get_entries_by_date_range(
                 raise HTTPException(
                     status_code=422,
                     detail="Invalid journal_id format. Must be a valid UUID."
-                )
+                ) from None
 
         entries = entry_service.get_entries_by_date_range(
             current_user.id,
@@ -380,7 +386,7 @@ async def get_entries_by_date_range(
             "Unexpected error fetching entries by date range",
             extra={"user_id": str(current_user.id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching entries by date range")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching entries by date range") from None
 
 
 @router.get(
@@ -397,7 +403,7 @@ async def get_entry(
     entry_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    hydrate: bool = Query(True),
+    hydrate: Annotated[bool, Query()] = True,
 ):
     """Get a specific entry by ID."""
     try:
@@ -415,7 +421,7 @@ async def get_entry(
             "Unexpected error fetching entry",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching entry")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching entry") from None
 
 
 @router.put(
@@ -435,7 +441,7 @@ async def update_entry(
     entry_data: EntryUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    hydrate: bool = Query(True),
+    hydrate: Annotated[bool, Query()] = True,
 ):
     """Update an entry's content, title, or other properties."""
     entry_service = EntryService(session)
@@ -446,19 +452,19 @@ async def update_entry(
             return _build_entry_response(entry, current_user.id, session)
         return EntryResponse.model_validate(entry)
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except JournalNotFoundError:
         raise HTTPException(status_code=404, detail="Target journal not found") from None
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         logger.error(
             "Unexpected error updating entry",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while updating entry")
+        raise HTTPException(status_code=500, detail="An error occurred while updating entry") from None
 
 
 @router.patch(
@@ -475,7 +481,7 @@ async def finalize_entry(
     entry_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    hydrate: bool = Query(True),
+    hydrate: Annotated[bool, Query()] = True,
 ):
     """Finalize a draft entry."""
     entry_service = EntryService(session)
@@ -486,13 +492,13 @@ async def finalize_entry(
             return _build_entry_response(entry, current_user.id, session)
         return EntryResponse.model_validate(entry)
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except Exception as e:
         logger.error(
             "Unexpected error finalizing entry",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while finalizing entry")
+        raise HTTPException(status_code=500, detail="An error occurred while finalizing entry") from None
 
 
 @router.delete(
@@ -518,13 +524,13 @@ async def delete_entry(
         await entry_service.delete_entry(entry_id, current_user.id)
         log_user_action(current_user.email, "Deleted entry", request_id=None)
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except Exception as e:
         logger.error(
             "Unexpected error deleting entry",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while deleting entry")
+        raise HTTPException(status_code=500, detail="An error occurred while deleting entry") from None
 
 
 @router.post(
@@ -541,7 +547,7 @@ async def toggle_pin(
     entry_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    hydrate: bool = Query(True),
+    hydrate: Annotated[bool, Query()] = True,
 ):
     """Toggle pin status of an entry (on/off)."""
     entry_service = EntryService(session)
@@ -552,13 +558,13 @@ async def toggle_pin(
             return _build_entry_response(entry, current_user.id, session)
         return EntryResponse.model_validate(entry)
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except Exception as e:
         logger.error(
             "Unexpected error toggling pin",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while toggling pin status")
+        raise HTTPException(status_code=500, detail="An error occurred while toggling pin status") from None
 
 
 @router.post(
@@ -599,15 +605,15 @@ async def add_media_to_entry(
         log_user_action(current_user.email, f"added media to entry {entry_id}", request_id=None)
         return response
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         logger.error(
             "Unexpected error adding media to entry",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while adding media to entry")
+        raise HTTPException(status_code=500, detail="An error occurred while adding media to entry") from None
 
 
 @router.get(
@@ -657,7 +663,7 @@ async def get_entry_media(
                 )
         return signed_media
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except Exception as e:
         log_error(
             e,
@@ -665,7 +671,7 @@ async def get_entry_media(
             user_id=str(current_user.id),
             entry_id=str(entry_id),
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching entry media")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching entry media") from None
 
 
 # Entry-Tag Relationship Endpoints
@@ -690,13 +696,13 @@ async def get_entry_tags(
         tags = tag_service.get_entry_tags(entry_id, current_user.id)
         return tags
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except Exception as e:
         logger.error(
             "Unexpected error fetching entry tags",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching entry tags")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching entry tags") from None
 
 
 @router.post(
@@ -727,12 +733,12 @@ async def bulk_add_tags_to_entry(
         log_user_action(current_user.email, f"bulk added tags to entry {entry_id}", request_id=None)
         return tags
     except EntryNotFoundError:
-        raise HTTPException(status_code=404, detail="Entry not found")
+        raise HTTPException(status_code=404, detail="Entry not found") from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         logger.error(
             "Unexpected error bulk adding tags",
             extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while adding tags to entry")
+        raise HTTPException(status_code=500, detail="An error occurred while adding tags to entry") from None

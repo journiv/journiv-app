@@ -4,14 +4,15 @@ Authentication management commands.
 Handles user password recovery and management.
 """
 from typing import Optional
+
 import typer
 from rich.console import Console
 from rich.prompt import Prompt
 from sqlmodel import Session
 
 from app.core.database import engine
-from app.core.security import get_password_hash
 from app.core.logging_config import log_info, log_warning
+from app.core.security import get_password_hash
 from app.services.user_service import UserService
 
 app = typer.Typer(help="User authentication management")
@@ -82,4 +83,4 @@ def change_password(
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
         log_warning(f"Password change failed: {e}", email=email)
-        raise typer.Exit(code=4)
+        raise typer.Exit(code=4) from None

@@ -1,18 +1,19 @@
 """
 Export endpoints for creating data exports.
 """
+import os
 import uuid
 from pathlib import Path
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
-from sqlmodel import Session
+from sqlmodel import Session, col, select
 
 from app.api.dependencies import get_current_user
 from app.core.config import settings
 from app.core.database import get_session
-from app.core.logging_config import log_user_action, log_error
+from app.core.logging_config import log_error, log_user_action
 from app.models.enums import ExportType, JobStatus
 from app.models.export_job import ExportJob
 from app.models.user import User
@@ -91,7 +92,12 @@ async def create_export(
         )
 
         # Queue Celery task
-        process_export_job.delay(str(job.id))
+        if settings.environment == "test" or os.getenv("PYTEST_CURRENT_TEST"):
+            process_export_job(str(job.id))
+        elif settings.celery_broker_url:
+            process_export_job.delay(str(job.id))
+        else:
+            process_export_job(str(job.id))
 
         log_user_action(
             current_user.email,
@@ -119,13 +125,13 @@ async def create_export(
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(
             status_code=500,
             detail="An error occurred while creating export job"
-        )
+        ) from None
 
 
 @router.get(
@@ -152,7 +158,7 @@ async def get_export_status(
     use the download endpoint to retrieve the file.
     """
     try:
-        job = session.query(ExportJob).filter(ExportJob.id == job_id).first()
+        job = session.exec(select(ExportJob).where(ExportJob.id == job_id)).first()
 
         if not job:
             raise HTTPException(status_code=404, detail="Export job not found")
@@ -183,7 +189,7 @@ async def get_export_status(
         raise
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while retrieving export status")
+        raise HTTPException(status_code=500, detail="An error occurred while retrieving export status") from None
 
 
 @router.get(
@@ -209,7 +215,7 @@ async def download_export(
     The file will be named `journiv_export_{timestamp}.zip`.
     """
     try:
-        job = session.query(ExportJob).filter(ExportJob.id == job_id).first()
+        job = session.exec(select(ExportJob).where(ExportJob.id == job_id)).first()
 
         if not job:
             raise HTTPException(status_code=404, detail="Export job not found")
@@ -236,7 +242,7 @@ async def download_export(
         try:
             file_path.relative_to(export_root)
         except ValueError:
-            raise HTTPException(status_code=404, detail="Invalid export file path")
+            raise HTTPException(status_code=404, detail="Invalid export file path") from None
 
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Export file not found on disk")
@@ -261,7 +267,7 @@ async def download_export(
         raise
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while downloading export")
+        raise HTTPException(status_code=500, detail="An error occurred while downloading export") from None
 
 
 @router.get(
@@ -319,16 +325,16 @@ async def sign_export_url(
 async def download_export_signed(
     job_id: uuid.UUID,
     session: Annotated[Session, Depends(get_session)],
-    uid: uuid.UUID = Query(..., alias="uid"),
-    exp: int = Query(..., alias="exp"),
-    sig: str = Query(..., alias="sig"),
+    uid: Annotated[uuid.UUID, Query(alias="uid")],
+    exp: Annotated[int, Query(alias="exp")],
+    sig: Annotated[str, Query(alias="sig")],
 ):
     """
     Download completed export file using a signed URL.
     Does not require Authorization header if signature is valid.
     """
-    from app.core.signing import verify_export_signature
     from app.core.media_signing import is_signature_expired
+    from app.core.signing import verify_export_signature
 
     # 1. Verify Signature
     if is_signature_expired(exp, settings.media_signed_url_grace_seconds):
@@ -345,7 +351,7 @@ async def download_export_signed(
 
     # 2. Proceed with download logic (duplicated from download_export but safely authenticated)
     try:
-        job = session.query(ExportJob).filter(ExportJob.id == job_id).first()
+        job = session.exec(select(ExportJob).where(ExportJob.id == job_id)).first()
 
         if not job:
             raise HTTPException(status_code=404, detail="Export job not found")
@@ -369,7 +375,7 @@ async def download_export_signed(
         try:
             file_path.relative_to(export_root)
         except ValueError:
-            raise HTTPException(status_code=404, detail="Invalid export file path")
+            raise HTTPException(status_code=404, detail="Invalid export file path") from None
 
         if not file_path.exists():
             raise HTTPException(status_code=404, detail="Export file not found on disk")
@@ -388,7 +394,7 @@ async def download_export_signed(
         raise
     except Exception as e:
         log_error(e, request_id=None, user_email=f"signed:{uid}")
-        raise HTTPException(status_code=500, detail="An error occurred while downloading export")
+        raise HTTPException(status_code=500, detail="An error occurred while downloading export") from None
 @router.get(
     "/",
     response_model=List[ExportJobStatusResponse],
@@ -402,8 +408,8 @@ async def list_exports(
     request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    limit: int = Query(20, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ):
     """
     List export jobs for current user.
@@ -412,13 +418,14 @@ async def list_exports(
     """
     try:
 
-        jobs = (
-            session.query(ExportJob)
-            .filter(ExportJob.user_id == current_user.id)
-            .order_by(ExportJob.created_at.desc())
-            .offset(offset)
-            .limit(limit)
-            .all()
+        jobs = list(
+            session.exec(
+                select(ExportJob)
+                .where(ExportJob.user_id == current_user.id)
+                .order_by(col(ExportJob.created_at).desc())
+                .offset(offset)
+                .limit(limit)
+            )
         )
 
         return [
@@ -444,7 +451,7 @@ async def list_exports(
 
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while listing exports")
+        raise HTTPException(status_code=500, detail="An error occurred while listing exports") from None
 
 
 @router.delete(
@@ -471,7 +478,7 @@ async def delete_export_job(
     Cannot delete a job that is currently running.
     """
     try:
-        job = session.query(ExportJob).filter(ExportJob.id == job_id).first()
+        job = session.exec(select(ExportJob).where(ExportJob.id == job_id)).first()
 
         if not job:
             raise HTTPException(status_code=404, detail="Export job not found")
@@ -522,4 +529,4 @@ async def delete_export_job(
         raise
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while deleting export job")
+        raise HTTPException(status_code=500, detail="An error occurred while deleting export job") from None

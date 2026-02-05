@@ -2,18 +2,18 @@
 Prompt-related models.
 """
 import uuid
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import field_validator
 from sqlalchemy import Column, ForeignKey
-from sqlmodel import Field, Relationship, Index, CheckConstraint
+from sqlmodel import CheckConstraint, Field, Index, Relationship
 
 from .base import BaseModel
 from .enums import PromptCategory
 
 if TYPE_CHECKING:
-    from .user import User
     from .entry import Entry
+    from .user import User
 
 
 class Prompt(BaseModel, table=True):

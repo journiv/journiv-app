@@ -3,22 +3,37 @@ Entry-related models.
 """
 import uuid
 from datetime import date, datetime, timezone
-from typing import List, Optional, TYPE_CHECKING, Dict, Any
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from pydantic import field_validator, model_validator
-from sqlalchemy import Column, ForeignKey, Enum as SAEnum, UniqueConstraint, String, DateTime, Float, Text, event, inspect, Boolean, Integer
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    event,
+    inspect,
+)
+from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Field, Relationship, Index, CheckConstraint, Column as SQLModelColumn, JSON
+from sqlmodel import JSON, CheckConstraint, Field, Index, Relationship
+from sqlmodel import Column as SQLModelColumn
 
 from app.core.time_utils import utc_now
 from app.utils.quill_delta import extract_plain_text
+
 from .base import BaseModel
 from .enums import MediaType, UploadStatus
 
 if TYPE_CHECKING:
     from .journal import Journal
-    from .prompt import Prompt
     from .mood import MoodLog
+    from .prompt import Prompt
     from .tag import Tag
     from .user import User
 
@@ -198,7 +213,10 @@ class Entry(BaseModel, table=True):
 def _should_refresh_plain_text(entry: Entry) -> bool:
     try:
         state = inspect(entry)
-        return state.attrs.content_delta.history.has_changes()
+        attrs = getattr(state, "attrs", None)
+        if attrs is None or not hasattr(attrs, "content_delta"):
+            return True
+        return attrs.content_delta.history.has_changes()
     except Exception:
         return True
 

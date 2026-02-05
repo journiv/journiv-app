@@ -3,25 +3,26 @@ User-related models.
 """
 import uuid
 from datetime import datetime
-from typing import List, Optional, TYPE_CHECKING, Union
+from typing import TYPE_CHECKING, List, Optional, Union
 
-from pydantic import field_validator, EmailStr, HttpUrl
-from sqlalchemy import Column, ForeignKey, Enum as SQLAlchemyEnum, text
-from sqlmodel import Field, Relationship, Index, CheckConstraint, String
+from pydantic import EmailStr, HttpUrl, field_validator
+from sqlalchemy import Column, ForeignKey, text
+from sqlalchemy import Enum as SQLAlchemyEnum
+from sqlmodel import CheckConstraint, Field, Index, Relationship, String
 
 from .base import BaseModel, TimestampMixin
 from .enums import Theme, UserRole
 
-
 if TYPE_CHECKING:
-    from .journal import Journal
-    from .prompt import Prompt
-    from .mood import MoodLog
-    from .tag import Tag
-    from .analytics import WritingStreak
-    from .external_identity import ExternalIdentity
-    from .entry import Entry
     from app.models.integration import Integration
+
+    from .analytics import WritingStreak
+    from .entry import Entry
+    from .external_identity import ExternalIdentity
+    from .journal import Journal
+    from .mood import MoodLog
+    from .prompt import Prompt
+    from .tag import Tag
 
 
 class User(BaseModel, table=True):

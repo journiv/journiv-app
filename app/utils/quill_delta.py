@@ -3,7 +3,7 @@ Utilities for working with Quill Delta payloads.
 """
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Optional
 
 
 def extract_plain_text(delta: Optional[Dict[str, Any]]) -> str:

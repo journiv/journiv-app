@@ -6,15 +6,19 @@ import logging
 import os
 import secrets
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
-from pydantic import field_validator, model_validator, ValidationInfo, Field
+from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 try:
-    from sqlalchemy.engine import make_url
+    from sqlalchemy.engine import URL, make_url
 except ImportError:
-    make_url = None
+    class URL:
+        pass
+
+    def make_url(name_or_url: str | "URL") -> "URL":
+        raise RuntimeError("SQLAlchemy is required for database URL parsing")
 
 # Import version from package
 # Using JOURNIV_VERSION (not APP_VERSION) to prevent APP_VERSION env var from overriding app_version field
@@ -130,8 +134,8 @@ class Settings(BaseSettings):
     media_root: str = "/data/media"
     # media_url_prefix: str = "/media"
     max_file_size_mb: int = 100
-    allowed_media_types: Optional[List[str]] = None
-    allowed_file_extensions: Optional[List[str]] = None
+    allowed_media_types: List[str] = Field(default_factory=list)
+    allowed_file_extensions: List[str] = Field(default_factory=list)
     media_signed_url_ttl_seconds: int = 300  # 5 minutes for images and general media
     media_signed_url_video_ttl_seconds: int = 1200  # 20 minutes for videos
     media_thumbnail_signed_url_ttl_seconds: int = 86400  # 24 hours for thumbnails
@@ -502,8 +506,8 @@ class Settings(BaseSettings):
         # Try to use SQLAlchemy's URL parser for proper detection (handles driver variants)
         if make_url is not None:
             try:
-                parsed = make_url(url)
-                driver_name = parsed.drivername or ""
+                parsed = cast(Any, make_url(url))
+                driver_name = getattr(parsed, "drivername", "") or ""
                 # Remove driver suffix (e.g., "postgresql+asyncpg" -> "postgresql")
                 base_driver = driver_name.split("+", 1)[0].lower()
                 return base_driver in ("postgresql", "postgres")
@@ -540,8 +544,8 @@ class Settings(BaseSettings):
         # Try to use SQLAlchemy's URL parser for proper sanitization
         if make_url is not None:
             try:
-                parsed = make_url(url)
-                return parsed.render_as_string(hide_password=True)
+                parsed = cast(Any, make_url(url))
+                return str(parsed.render_as_string(hide_password=True))
             except Exception as exc:  # noqa: BLE001
                 logger.debug(
                     "Failed to sanitize database URL with SQLAlchemy (%s); falling back to manual masking.",

@@ -2,10 +2,10 @@
 CSP (Content Security Policy) reporting endpoint.
 Handles CSP violation reports for security monitoring.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from app.core.config import settings
@@ -54,12 +54,11 @@ async def report_csp_violation(
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("user-agent", "unknown")
 
-        # Log the violation
-        violation_data = {
-            "timestamp": datetime.utcnow().isoformat(),
+        violation_payload = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "client_ip": client_ip,
             "user_agent": user_agent,
-            "violation": report.csp_report.dict(),
+            "violation": report.csp_report.model_dump(),
             "request_id": getattr(request.state, "request_id", None),
         }
 
@@ -67,7 +66,8 @@ async def report_csp_violation(
         log_error(
             Exception(f"CSP Violation: {report.csp_report.violated_directive} blocked URI: {report.csp_report.blocked_uri}"),
             request_id=getattr(request.state, "request_id", ""),
-            user_email=""
+            user_email="",
+            violation=violation_payload,
         )
 
         # TODO: Implement the following:
@@ -79,7 +79,7 @@ async def report_csp_violation(
 
     except Exception as e:
         log_error(e, request_id="", user_email="")
-        raise HTTPException(status_code=500, detail="Failed to process CSP report")
+        raise HTTPException(status_code=500, detail="Failed to process CSP report") from None
 
 
 @router.get(
@@ -102,6 +102,6 @@ async def get_csp_status():
         "reporting_enabled": csp_config.is_reporting_enabled(),
         "hsts_enabled": csp_config.is_hsts_enabled(),
         "report_uri": csp_config.get_report_uri(),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "message": "CSP is active and monitoring violations" if csp_config.is_csp_enabled() else "CSP is disabled"
     }

@@ -5,10 +5,10 @@ import uuid
 from typing import List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, select, func
+from sqlmodel import Session, col, func, select
 
 from app.core.exceptions import JournalNotFoundError
-from app.core.logging_config import log_info, log_warning, log_error
+from app.core.logging_config import log_error, log_info, log_warning
 from app.core.time_utils import utc_now
 from app.models.journal import Journal
 from app.schemas.journal import JournalCreate, JournalUpdate
@@ -70,9 +70,9 @@ class JournalService:
         )
 
         if not include_archived:
-            statement = statement.where(Journal.is_archived.is_(False))
+            statement = statement.where(col(Journal.is_archived).is_(False))
 
-        statement = statement.order_by(Journal.created_at.desc())
+        statement = statement.order_by(col(Journal.created_at).desc())
         return list(self.session.exec(statement))
 
     def update_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID, journal_data: JournalUpdate) -> Journal:
@@ -139,8 +139,8 @@ class JournalService:
         """Get favorite journals for a user."""
         statement = select(Journal).where(
             Journal.user_id == user_id,
-            Journal.is_favorite.is_(True)
-        ).order_by(Journal.created_at.desc())
+            col(Journal.is_favorite).is_(True)
+        ).order_by(col(Journal.created_at).desc())
         return list(self.session.exec(statement))
 
     def toggle_favorite(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> Journal:
@@ -215,7 +215,7 @@ class JournalService:
                 func.max(Entry.entry_datetime_utc).label("last_created")
             ).where(
                 Entry.journal_id == journal_id,
-                Entry.is_draft.is_(False)
+                col(Entry.is_draft).is_(False)
             )
         ).first()
         entry_count = int(stats.count) if stats and stats.count is not None else 0

@@ -5,7 +5,8 @@ Converts Day One richText JSON format to clean Markdown.
 """
 import json
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from app.core.logging_config import log_warning
 
 

@@ -15,39 +15,42 @@ Authentication:
 - All endpoints require valid JWT access token
 - Users can only access their own integrations
 """
-from datetime import datetime, timezone
 import uuid
+from datetime import datetime, timezone
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Header
+import httpx
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from sqlmodel import select
 from starlette.background import BackgroundTask
-from sqlmodel import Session, select
 
-from app.core.database import get_session, get_session_context
-from app.models.integration import Integration, IntegrationProvider  # Needed for proxy queries below.
-from app.integrations.schemas import (
-    IntegrationConnectRequest,
-    IntegrationConnectResponse,
-    IntegrationStatusResponse,
-    IntegrationAssetsListResponse,
-    IntegrationSettingsUpdateRequest,
-)
-from app.api.dependencies import get_current_user, get_current_user_detached
+from app.api.dependencies import get_current_user_detached
+from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.database import get_session_context
+from app.core.logging_config import log_error, log_info, log_warning
 from app.core.media_signing import is_signature_expired
 from app.core.signing import verify_media_signature
+from app.integrations.schemas import (
+    IntegrationAssetsListResponse,
+    IntegrationConnectRequest,
+    IntegrationConnectResponse,
+    IntegrationSettingsUpdateRequest,
+    IntegrationStatusResponse,
+)
 from app.integrations.service import (
     connect_integration,
-    get_integration_status,
     disconnect_integration,
+    fetch_proxy_asset,
+    get_integration_status,
     list_integration_assets,
     update_integration_settings,
-    fetch_proxy_asset,
 )
-from app.core.celery_app import celery_app
+from app.models.integration import (  # Needed for proxy queries below.
+    Integration,
+    IntegrationProvider,
+)
 from app.models.user import User
-from app.core.logging_config import log_info, log_error, log_warning
-import httpx
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -121,13 +124,13 @@ async def connect(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to connect to {request.provider}. Please check your credentials and try again."
-        )
+        ) from None
 
 
 @router.get(
@@ -161,7 +164,7 @@ async def get_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve integration status"
-        )
+        ) from None
 
 
 @router.delete(
@@ -195,13 +198,13 @@ async def disconnect(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to disconnect integration"
-        )
+        ) from None
 
 
 @router.put(
@@ -238,13 +241,13 @@ async def update_settings(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update integration settings"
-        )
+        ) from None
 
 
 @router.get(
@@ -298,13 +301,13 @@ async def list_assets(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve assets from {provider}"
-        )
+        ) from None
 
 
 @router.post(
@@ -354,7 +357,7 @@ async def trigger_sync(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to start sync"
-            )
+            ) from None
 
         log_info(f"Scheduled sync for {provider} (user {current_user.id})")
 
@@ -367,13 +370,13 @@ async def trigger_sync(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start sync"
-        )
+        ) from None
 
 
 # ================================================================================
@@ -408,7 +411,7 @@ async def proxy_thumbnail(
     try:
         user_id = uuid.UUID(uid)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature") from None
     if is_signature_expired(exp, settings.media_signed_url_grace_seconds):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Signed URL expired")
     if not verify_media_signature(
@@ -433,10 +436,10 @@ async def proxy_thumbnail(
             variant="thumbnail",
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
     except Exception as e:
         log_error(f"Proxy thumbnail failed: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch thumbnail")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch thumbnail") from None
 
     # Handle provider errors
     if response.status_code in (401, 403):
@@ -463,7 +466,7 @@ async def proxy_thumbnail(
         raise HTTPException(
             status_code=e.response.status_code,
             detail=detail
-        )
+        ) from None
 
     # Stream the thumbnail to the client without buffering entire file in memory
     return StreamingResponse(
@@ -506,7 +509,7 @@ async def proxy_original(
     try:
         user_id = uuid.UUID(uid)
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature") from None
     if is_signature_expired(exp, settings.media_signed_url_grace_seconds):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Signed URL expired")
     if not verify_media_signature(
@@ -532,13 +535,13 @@ async def proxy_original(
             range_header=range_header,
         )
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
     except Exception as e:
         log_error(f"Proxy original failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch original file",
-        )
+        ) from None
 
     # Handle provider errors
     if response.status_code in (401, 403):
@@ -571,7 +574,7 @@ async def proxy_original(
         raise HTTPException(
             status_code=e.response.status_code,
             detail=f"{provider} provider error"
-        )
+        ) from None
 
     response_headers = {
         "Cache-Control": "public, max-age=3600",

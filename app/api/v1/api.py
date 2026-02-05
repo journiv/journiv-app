@@ -2,11 +2,28 @@
 API v1 router.
 """
 from fastapi import APIRouter
+
 from app.api.v1.endpoints import (
-    auth, users, journals, entries, moods, prompts, tags,
-    analytics, media, health, security, oidc, admin, version, license, location, weather,
-    instance_config
+    admin,
+    analytics,
+    auth,
+    entries,
+    health,
+    instance_config,
+    journals,
+    license,
+    location,
+    media,
+    moods,
+    oidc,
+    prompts,
+    security,
+    tags,
+    users,
+    version,
+    weather,
 )
+
 # Import/Export routers
 from app.api.v1.endpoints.export_data import router as export_router
 from app.api.v1.endpoints.import_data import router as import_router

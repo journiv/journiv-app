@@ -2,17 +2,17 @@
 Analytics endpoints.
 """
 import logging
-from typing import Annotated, Dict, Any
+from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
-
-logger = logging.getLogger(__name__)
 from app.models.user import User
 from app.services.analytics_service import AnalyticsService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -46,7 +46,7 @@ async def get_writing_streak(
             "Unexpected error fetching writing streak",
             extra={"user_id": str(current_user.id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching writing streak")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching writing streak") from None
 
 
 
@@ -80,7 +80,7 @@ async def get_writing_patterns(
             "Unexpected error fetching writing patterns",
             extra={"user_id": str(current_user.id), "days": days, "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching writing patterns")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching writing patterns") from None
 
 
 # Productivity Metrics
@@ -111,7 +111,7 @@ async def get_productivity_metrics(
             "Unexpected error fetching productivity metrics",
             extra={"user_id": str(current_user.id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching productivity metrics")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching productivity metrics") from None
 
 
 # Journal Analytics
@@ -142,7 +142,7 @@ async def get_journal_analytics(
             "Unexpected error fetching journal analytics",
             extra={"user_id": str(current_user.id), "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching journal analytics")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching journal analytics") from None
 
 
 # Comprehensive Dashboard
@@ -192,6 +192,6 @@ async def get_analytics_dashboard(
             "Unexpected error fetching analytics dashboard",
             extra={"user_id": str(current_user.id), "days": days, "error": str(e)}
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching analytics dashboard")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching analytics dashboard") from None
 
 

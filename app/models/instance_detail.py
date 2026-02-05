@@ -3,15 +3,16 @@ Instance details for a single Journiv installation.
 """
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 
 from pydantic import field_validator
 from sqlalchemy import Column, DateTime, UniqueConstraint
 from sqlmodel import Field
 
-from .base import BaseModel
 from app.core.install_id import generate_install_id
+
+from .base import BaseModel
 
 
 class InstanceDetail(BaseModel, table=True):

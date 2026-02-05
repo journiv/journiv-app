@@ -126,7 +126,7 @@ class ScopedCache:
                 raise RuntimeError(
                     f"Redis cache backend does not support pattern-based deletion. "
                     f"Cannot clear namespace '{self._namespace}' without affecting other cache data."
-                )
+                ) from None
             except Exception as e:
                 self._logger.error(
                     f"Failed to clear namespace cache: namespace={self._namespace}, "
@@ -151,7 +151,7 @@ class ScopedCache:
                 raise RuntimeError(
                     f"In-memory cache backend does not support pattern-based deletion. "
                     f"Cannot clear namespace '{self._namespace}' without affecting other cache data."
-                )
+                ) from None
             except Exception as e:
                 self._logger.error(
                     f"Failed to clear namespace cache: namespace={self._namespace}, "

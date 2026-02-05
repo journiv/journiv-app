@@ -2,8 +2,8 @@
 External identity model for OIDC/OAuth authentication.
 """
 import uuid
-from datetime import datetime
-from typing import Optional, TYPE_CHECKING
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import Column, ForeignKey, UniqueConstraint
 from sqlmodel import Field, Relationship, String
@@ -62,7 +62,7 @@ class ExternalIdentity(TimestampMixin, table=True):
         description="Profile picture URL from OIDC provider"
     )
     last_login_at: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=lambda: datetime.now(timezone.utc),
         description="Last successful login via this external identity"
     )
 

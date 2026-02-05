@@ -4,7 +4,12 @@ Celery application configuration for async tasks.
 from datetime import timedelta
 
 from celery import Celery
-from app.core.config import settings, VERSION_CHECK_INTERVAL_HOURS, LICENSE_REFRESH_INTERVAL_HOURS
+
+from app.core.config import (
+    LICENSE_REFRESH_INTERVAL_HOURS,
+    VERSION_CHECK_INTERVAL_HOURS,
+    settings,
+)
 
 # Create Celery app instance
 celery_app = Celery(

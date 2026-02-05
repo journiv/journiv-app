@@ -11,7 +11,7 @@ from sqlmodel import Session
 
 from app.core.celery_app import celery_app
 from app.core.database import engine
-from app.core.logging_config import log_info, log_error
+from app.core.logging_config import log_error, log_info
 from app.services.import_job_service import ImportJobService
 
 _shared_loop: asyncio.AbstractEventLoop | None = None
@@ -53,6 +53,7 @@ def _init_worker_loop(**_kwargs) -> None:
 def _get_shared_loop() -> asyncio.AbstractEventLoop:
     if _shared_loop is None or not _shared_loop.is_running():
         _start_shared_loop()
+    assert _shared_loop is not None
     return _shared_loop
 
 
@@ -65,8 +66,9 @@ def process_link_only_import(self, job_id: str):
             service = ImportJobService(session)
             await service.process_link_only_job_async(job_uuid)
 
+    log_info("Processing Immich link-only import job", job_id=job_id)
+    future = None
     try:
-        log_info("Processing Immich link-only import job", job_id=job_id)
         future = asyncio.run_coroutine_threadsafe(
             _run_link_only_job(),
             _get_shared_loop()
@@ -74,7 +76,8 @@ def process_link_only_import(self, job_id: str):
         future.result(timeout=300)
         log_info("Immich link-only import job completed", job_id=job_id)
     except FutureTimeoutError as exc:
-        future.cancel()
+        if future:
+            future.cancel()
         log_error(exc, message="Immich link-only import job timed out", job_id=job_id)
         raise
     except Exception as exc:
@@ -91,8 +94,9 @@ def process_copy_import(self, job_id: str):
             service = ImportJobService(session)
             await service.process_copy_job_async(job_uuid)
 
+    log_info("Processing Immich copy import job", job_id=job_id)
+    future = None
     try:
-        log_info("Processing Immich copy import job", job_id=job_id)
         future = asyncio.run_coroutine_threadsafe(
             _run_copy_job(),
             _get_shared_loop()
@@ -100,7 +104,8 @@ def process_copy_import(self, job_id: str):
         future.result(timeout=300)
         log_info("Immich copy import job completed", job_id=job_id)
     except FutureTimeoutError as exc:
-        future.cancel()
+        if future:
+            future.cancel()
         log_error(exc, message="Immich copy import job timed out", job_id=job_id)
         raise
     except Exception as exc:
@@ -116,16 +121,21 @@ def repair_thumbnails(self, user_id: str, asset_ids: list[str]):
         service = ImportJobService(session)
         try:
             log_info("Repairing thumbnails for user", user_id=user_id)
-            future = asyncio.run_coroutine_threadsafe(
-                service.repair_thumbnails_async(user_uuid, asset_ids),
-                _get_shared_loop()
-            )
-            future.result(timeout=300)
-            log_info("Thumbnail repair completed", user_id=user_id)
-        except FutureTimeoutError as exc:
-            future.cancel()
-            log_error(exc, message="Thumbnail repair timed out", user_id=user_id)
-            raise
+            future = None
+            try:
+                future = asyncio.run_coroutine_threadsafe(
+                    service.repair_thumbnails_async(user_uuid, asset_ids),
+                    _get_shared_loop()
+                )
+                future.result(timeout=300)
+                log_info("Thumbnail repair completed", user_id=user_id)
+            except FutureTimeoutError as exc_timeout:
+                if future:
+                    future.cancel()
+                log_error(exc_timeout, message="Thumbnail repair timed out", user_id=user_id)
+                raise
         except Exception as exc:
+            if isinstance(exc, FutureTimeoutError):
+                raise
             log_error(exc, user_id=user_id)
             raise

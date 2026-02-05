@@ -3,17 +3,18 @@ Pre-flight checks for import operations.
 
 Validates system state before large imports to prevent failures.
 """
-import shutil
 import os
+import shutil
 import zipfile
 from pathlib import Path
-from typing import Tuple, Dict, Any
+from typing import Any, Dict, Tuple
+
 from rich.console import Console
 from rich.table import Table
+from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.database import engine
-from sqlmodel import Session
 
 console = Console()
 
@@ -103,8 +104,8 @@ def check_pending_migrations() -> Tuple[bool, str]:
     """
     try:
         from alembic.config import Config
-        from alembic.script import ScriptDirectory
         from alembic.runtime.migration import MigrationContext
+        from alembic.script import ScriptDirectory
 
         # Try to find alembic.ini
         alembic_ini = Path("alembic.ini")
@@ -145,8 +146,8 @@ def check_database_connection() -> Tuple[bool, str]:
     try:
         with Session(engine) as db:
             # Simple query to test connection
-            from sqlalchemy import text
-            db.execute(text("SELECT 1"))
+            from sqlmodel import select
+            db.exec(select(1)).first()
         return True, "Database connection OK"
     except Exception as e:
         return False, f"Database connection failed: {e}"

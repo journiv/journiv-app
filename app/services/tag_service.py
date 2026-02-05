@@ -2,21 +2,33 @@
 Tag service for handling tag-related operations.
 """
 import uuid
-from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta, date
-
+from datetime import date, datetime, timedelta
+from typing import Dict, List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, select, func
+from sqlmodel import Session, col, func, select
 
 from app.core.config import settings
 from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error, log_info
 from app.core.time_utils import utc_now
 from app.models.entry import Entry
-from app.models.tag import Tag, EntryTagLink
-from app.schemas.tag import TagCreate, TagUpdate, TagStatisticsResponse, TagAnalyticsResponse, TagSummary, TagDetailAnalyticsResponse, PeakMonth
-from app.schemas.tag_plus import TagAnalyticsRawData, TagRawData, MonthlyUsageData, TagDetailAnalyticsRawData
+from app.models.tag import EntryTagLink, Tag
+from app.schemas.tag import (
+    PeakMonth,
+    TagAnalyticsResponse,
+    TagCreate,
+    TagDetailAnalyticsResponse,
+    TagStatisticsResponse,
+    TagSummary,
+    TagUpdate,
+)
+from app.schemas.tag_plus import (
+    MonthlyUsageData,
+    TagAnalyticsRawData,
+    TagDetailAnalyticsRawData,
+    TagRawData,
+)
 
 DEFAULT_TAG_PAGE_LIMIT = 50
 MAX_TAG_PAGE_LIMIT = 100
@@ -90,9 +102,9 @@ class TagService:
         )
 
         if search:
-            statement = statement.where(Tag.name.ilike(f"%{search}%"))
+            statement = statement.where(col(Tag.name).ilike(f"%{search}%"))
 
-        statement = statement.order_by(Tag.usage_count.desc(), Tag.name.asc()).offset(offset).limit(limit)
+        statement = statement.order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).offset(offset).limit(limit)
         return list(self.session.exec(statement))
 
     def get_popular_tags(self, user_id: uuid.UUID, limit: int = DEFAULT_TAG_PAGE_LIMIT) -> List[Tag]:
@@ -100,7 +112,7 @@ class TagService:
         statement = select(Tag).where(
             Tag.user_id == user_id,
             Tag.usage_count > 0,
-        ).order_by(Tag.usage_count.desc(), Tag.name.asc()).limit(limit)
+        ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).limit(limit)
         return list(self.session.exec(statement))
 
     def update_tag(self, tag_id: uuid.UUID, user_id: uuid.UUID, tag_data: TagUpdate) -> Tag:
@@ -235,7 +247,7 @@ class TagService:
         statement = select(Tag).join(EntryTagLink).where(
             EntryTagLink.entry_id == entry_id,
             Tag.user_id == user_id,
-        ).order_by(Tag.name.asc())
+        ).order_by(col(Tag.name).asc())
         return list(self.session.exec(statement))
 
     def get_entries_by_tag(
@@ -254,8 +266,8 @@ class TagService:
         statement = select(Entry).join(EntryTagLink).where(
             EntryTagLink.tag_id == tag_id,
             Entry.user_id == user_id,
-            Entry.is_draft.is_(False),
-        ).order_by(Entry.entry_datetime_utc.desc()).offset(offset).limit(limit)
+            col(Entry.is_draft).is_(False),
+        ).order_by(col(Entry.entry_datetime_utc).desc()).offset(offset).limit(limit)
         return list(self.session.exec(statement))
 
     def get_tag_statistics(self, user_id: uuid.UUID, include_usage_over_time: bool = False) -> TagStatisticsResponse:
@@ -282,7 +294,7 @@ class TagService:
         most_used_tag = self.session.exec(
             select(Tag).where(
                 Tag.user_id == user_id,
-            ).order_by(Tag.usage_count.desc())
+            ).order_by(col(Tag.usage_count).desc())
         ).first()
 
         # Average usage per tag
@@ -296,7 +308,7 @@ class TagService:
         all_tags = self.session.exec(
             select(Tag).where(
                 Tag.user_id == user_id,
-            ).order_by(Tag.usage_count.desc(), Tag.name.asc())
+            ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc())
         ).all()
 
         tag_usage_ranking = [
@@ -312,7 +324,7 @@ class TagService:
         recently_created_tags = self.session.exec(
             select(Tag).where(
                 Tag.user_id == user_id,
-            ).order_by(Tag.created_at.desc()).limit(20)
+            ).order_by(col(Tag.created_at).desc()).limit(20)
         ).all()
 
         recently_created_summary = [
@@ -389,7 +401,7 @@ class TagService:
         ).where(
             Tag.user_id == user_id,
             Entry.user_id == user_id,
-            Entry.is_draft.is_(False),
+            col(Entry.is_draft).is_(False),
         )
 
         # Apply filters
@@ -451,7 +463,7 @@ class TagService:
             Tag.id, Tag.name, Tag.usage_count, Tag.created_at
         ).where(
             Tag.user_id == user_id,
-        ).order_by(Tag.usage_count.desc(), Tag.name.asc())
+        ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc())
 
         # Returns list of tuples/rows: (id, name, usage_count, created_at)
         all_tags_rows = self.session.exec(statement).all()
@@ -487,22 +499,22 @@ class TagService:
             used_tags=used_tags,
             all_tags=[
                 TagRawData(
-                    id=row.id,
-                    name=row.name,
-                    usage_count=row.usage_count
+                    id=row[0],
+                    name=row[1],
+                    usage_count=row[2]
                 )
                 for row in all_tags_rows
             ],
             most_used_tag=TagRawData(
-                id=most_used_row.id,
-                name=most_used_row.name,
-                usage_count=most_used_row.usage_count
+                id=most_used_row[0],
+                name=most_used_row[1],
+                usage_count=most_used_row[2]
             ) if most_used_row else None,
             recently_created_tags=[
                 TagRawData(
-                    id=row.id,
-                    name=row.name,
-                    usage_count=row.usage_count
+                    id=row[0],
+                    name=row[1],
+                    usage_count=row[2]
                 )
                 for row in recently_created_rows
             ],
@@ -656,7 +668,7 @@ class TagService:
                         tag = self.get_tag_by_name(user_id, normalized_name)
                         if not tag:
                             # If we still can't find it, something went wrong
-                            raise ValueError(f"Failed to create or find tag '{normalized_name}': {str(e)}")
+                            raise ValueError(f"Failed to create or find tag '{normalized_name}': {str(e)}") from None
                 tags.append(tag)
         return tags
 
@@ -687,8 +699,8 @@ class TagService:
         """Search tags by name."""
         statement = select(Tag).where(
             Tag.user_id == user_id,
-            Tag.name.ilike(f"%{query}%"),
-        ).order_by(Tag.usage_count.desc(), Tag.name.asc()).limit(limit)
+            col(Tag.name).ilike(f"%{query}%"),
+        ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).limit(limit)
         return list(self.session.exec(statement))
 
     def get_tag_detail_analytics(
@@ -750,7 +762,7 @@ class TagService:
         ).where(
             EntryTagLink.tag_id == tag_id,
             Entry.user_id == user_id,
-            Entry.is_draft.is_(False),
+            col(Entry.is_draft).is_(False),
         )
         first_used = self.session.exec(first_used_query).first()
 
@@ -761,7 +773,7 @@ class TagService:
         ).where(
             EntryTagLink.tag_id == tag_id,
             Entry.user_id == user_id,
-            Entry.is_draft.is_(False),
+            col(Entry.is_draft).is_(False),
         )
         last_used = self.session.exec(last_used_query).first()
 

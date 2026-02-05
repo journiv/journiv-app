@@ -143,21 +143,28 @@ def _sanitize_data(data):
 
 def _resolve_log_level(level_value, default=DEFAULT_LOG_LEVEL):
     """Resolve string/integer log level inputs to a logging level."""
+    def _parse_level(value):
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            candidate = value.strip()
+            if not candidate:
+                raise ValueError
+            if candidate.isdigit():
+                return int(candidate)
+            level = logging.getLevelName(candidate.upper())
+            if isinstance(level, int):
+                return level
+        raise ValueError
+
     if isinstance(level_value, str):
-        candidate = level_value.strip()
-        if not candidate:
+        try:
+            return _parse_level(level_value), False
+        except ValueError:
             return default, True
-        if candidate.isdigit():
-            level_value = int(candidate)
-        else:
-            candidate = candidate.upper()
-            try:
-                return logging._checkLevel(candidate), False
-            except (ValueError, TypeError):
-                return default, True
     try:
-        return logging._checkLevel(level_value), False
-    except (ValueError, TypeError):
+        return _parse_level(level_value), False
+    except ValueError:
         return default, True
 
 
@@ -270,14 +277,14 @@ def _log_with_context(logger: logging.Logger, level: int, message: str, request_
     logger.log(level, log_message, exc_info=exc_info)
 
 
-def log_user_action(user_email: str, action: str, request_id: str = None, **kwargs):
+def log_user_action(user_email: str, action: str, request_id: Optional[str] = None, **kwargs):
     """Log user actions with request ID."""
     logger = logging.getLogger(LogCategory.USER_ACTIONS)
     message = f"User {user_email} {action}"
     _log_with_context(logger, logging.INFO, message, request_id, **kwargs)
 
 
-def log_api_request(method: str, path: str, status_code: int, duration_ms: float, request_id: str = None, user_email: str = None):
+def log_api_request(method: str, path: str, status_code: int, duration_ms: float, request_id: Optional[str] = None, user_email: Optional[str] = None):
     """Log API requests with request ID."""
     logger = logging.getLogger(LogCategory.API_REQUESTS)
     user_info = f" (user: {user_email})" if user_email else ""
@@ -285,7 +292,7 @@ def log_api_request(method: str, path: str, status_code: int, duration_ms: float
     _log_with_context(logger, logging.INFO, message, request_id)
 
 
-def log_file_upload(filename: str, file_size: int, success: bool, request_id: str = None, user_email: str = None):
+def log_file_upload(filename: str, file_size: int, success: bool, request_id: Optional[str] = None, user_email: Optional[str] = None):
     """Log file uploads with request ID."""
     logger = logging.getLogger(LogCategory.FILE_UPLOADS)
     status = "successful" if success else "failed"
@@ -294,13 +301,13 @@ def log_file_upload(filename: str, file_size: int, success: bool, request_id: st
     _log_with_context(logger, logging.INFO, message, request_id)
 
 
-def log_info(message: str, request_id: str = None, **kwargs):
+def log_info(message: str, request_id: Optional[str] = None, **kwargs):
     """Log info messages with request ID."""
     logger = logging.getLogger(LogCategory.APP)
     _log_with_context(logger, logging.INFO, message, request_id, **kwargs)
 
 
-def log_debug(message: str, request_id: str = None, **kwargs):
+def log_debug(message: str, request_id: Optional[str] = None, **kwargs):
     """Log debug messages with request ID."""
     logger = logging.getLogger(LogCategory.APP)
     _log_with_context(logger, logging.DEBUG, message, request_id, **kwargs)

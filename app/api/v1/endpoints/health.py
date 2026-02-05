@@ -3,10 +3,11 @@ Simple health check endpoint.
 """
 import os
 from datetime import datetime, timezone
-from typing import Dict, Any, Annotated
+from typing import Annotated, Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import Session, text
+from sqlalchemy import literal
+from sqlmodel import Session, select
 
 try:
     import psutil
@@ -14,9 +15,9 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.logging_config import log_error
-from app.core.config import settings
 
 router = APIRouter(tags=["health"])
 
@@ -42,7 +43,7 @@ async def health_check(session: Annotated[Session, Depends(get_session)]):
         # Check database connection
         db_status = "connected"
         try:
-            session.exec(text("SELECT 1")).first()
+            session.exec(select(literal(1))).first()
         except Exception as e:
             db_status = f"disconnected: {str(e)}"
 
@@ -55,7 +56,7 @@ async def health_check(session: Annotated[Session, Depends(get_session)]):
         }
     except Exception as e:
         log_error(e, request_id=None)
-        raise HTTPException(status_code=500, detail="Health check failed")
+        raise HTTPException(status_code=500, detail="Health check failed") from None
 
 
 @router.get(
@@ -114,4 +115,4 @@ async def memory_status():
         }
     except Exception as e:
         log_error(e, request_id=None)
-        raise HTTPException(status_code=500, detail="Failed to get memory status")
+        raise HTTPException(status_code=500, detail="Failed to get memory status") from None

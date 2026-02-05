@@ -1,17 +1,18 @@
 """
 Tag-related models.
 """
-from sqlmodel import SQLModel, Field, Relationship, Index, UniqueConstraint, CheckConstraint
-from sqlalchemy import Column, ForeignKey
-from datetime import datetime
-from typing import List, TYPE_CHECKING
-from pydantic import field_validator
 import uuid
-from .base import BaseModel, TimestampMixin
+from typing import TYPE_CHECKING, List
+
+from pydantic import field_validator
+from sqlalchemy import Column, ForeignKey
+from sqlmodel import CheckConstraint, Field, Index, Relationship, UniqueConstraint
+
+from .base import BaseModel
 
 if TYPE_CHECKING:
-    from .user import User
     from .entry import Entry
+    from .user import User
 
 # Import EntryTagLink from separate file to avoid circular imports
 from .entry_tag_link import EntryTagLink

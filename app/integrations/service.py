@@ -21,33 +21,34 @@ Extension Points:
 - Providers must implement: connect(), list_assets(), sync()
 - No changes to service.py required for new providers
 """
+import asyncio
+import uuid
 from inspect import isawaitable
-import uuid
-from typing import Optional, Dict, Any
-import uuid
+from typing import Any, Dict, Optional
 
-from pydantic import HttpUrl
-from sqlmodel import Session, select
+import httpx
+from sqlmodel import Session, col, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
-from app.core.encryption import encrypt_token, decrypt_token
+from app.core.encryption import decrypt_token, encrypt_token
+from app.core.logging_config import log_debug, log_error, log_info, log_warning
+from app.core.scoped_cache import ScopedCache
 from app.core.time_utils import utc_now
 from app.integrations import immich
-from app.models.integration import Integration, IntegrationProvider, ImportMode, AssetType
 from app.integrations.schemas import (
-    IntegrationStatusResponse,
-    IntegrationConnectResponse,
     IntegrationAssetResponse,
+    IntegrationConnectResponse,
     IntegrationSettingsUpdateRequest,
+    IntegrationStatusResponse,
+)
+from app.models.integration import (
+    AssetType,
+    ImportMode,
+    Integration,
+    IntegrationProvider,
 )
 from app.models.user import User
-
-from app.core.logging_config import log_info, log_error, log_warning, log_debug
-import httpx
-import asyncio
-from app.core.encryption import encrypt_token, decrypt_token
-from app.core.scoped_cache import ScopedCache
 
 _proxy_client: Optional[httpx.AsyncClient] = None
 _proxy_lock = asyncio.Lock()
@@ -71,6 +72,7 @@ async def _get_proxy_client() -> httpx.AsyncClient:
                     limits=_proxy_limits,
                     transport=httpx.AsyncHTTPTransport(retries=2),
                 )
+    assert _proxy_client is not None
     return _proxy_client
 
 
@@ -202,7 +204,7 @@ async def connect_integration(
     user: User,
     provider: IntegrationProvider,
     credentials: Dict[str, Any],
-    base_url: Optional[HttpUrl] = None,
+    base_url: Optional[str] = None,
     import_mode: Optional[ImportMode] = None
 ) -> IntegrationConnectResponse:
     """
@@ -237,7 +239,7 @@ async def connect_integration(
         )
     except Exception as e:
         log_error(e, user_id=user.id)
-        raise ValueError(f"Failed to connect to {provider}: {str(e)}")
+        raise ValueError(f"Failed to connect to {provider}: {str(e)}") from None
 
     # Encrypt credentials for storage
     # Most providers use api_key, but support other auth types (future OAuth)
@@ -556,7 +558,7 @@ async def sync_all_integrations(session: Session | AsyncSession) -> None:
     integrations = (await _exec(
         session,
         select(Integration)
-        .where(Integration.is_active == True)
+        .where(Integration.is_active)
     )).all()
 
     log_info(f"Starting batch sync for {len(integrations)} active integrations")
@@ -883,7 +885,7 @@ async def remove_assets_from_integration_album(
             .where(
                 Entry.user_id == user_id,
                 EntryMedia.external_provider == provider.value,
-                EntryMedia.external_asset_id.in_(asset_ids)
+                col(EntryMedia.external_asset_id).in_(asset_ids)
             )
         )
 

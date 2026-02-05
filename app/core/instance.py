@@ -10,13 +10,13 @@ import logging
 import os
 from typing import Dict
 
-from sqlmodel import Session, select, col
 from sqlalchemy.exc import IntegrityError
+from sqlmodel import Session, col, select
 
-from app.models.instance_detail import InstanceDetail
 from app.core.config import settings
-from app.core.logging_config import LogCategory, log_info
 from app.core.install_id import generate_install_id
+from app.core.logging_config import LogCategory, log_info
+from app.models.instance_detail import InstanceDetail
 
 logger = logging.getLogger(LogCategory.APP)
 
@@ -40,7 +40,7 @@ def get_or_create_instance(db: Session, create_if_missing: bool = True, _retry_c
     Raises:
         RuntimeError: If create_if_missing=False and instance doesn't exist
     """
-    rows = list(db.exec(select(InstanceDetail).order_by(InstanceDetail.id)).all())
+    rows = list(db.exec(select(InstanceDetail).order_by(col(InstanceDetail.id))).all())
 
     if len(rows) == 0:
         instance = None
@@ -107,7 +107,7 @@ def get_instance_strict(db: Session) -> InstanceDetail:
     rows = list(db.exec(
         select(InstanceDetail)
         .where(col(InstanceDetail.install_id).is_not(None))
-        .order_by(InstanceDetail.id)
+        .order_by(col(InstanceDetail.id))
     ).all())
 
     if len(rows) == 0:

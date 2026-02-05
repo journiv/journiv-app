@@ -3,14 +3,13 @@ Helpers for signing and validating media URLs.
 """
 from __future__ import annotations
 
-import time
 import re
+import time
 from typing import Optional
-from urllib.parse import parse_qs, urlparse
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from app.core.config import settings
-from app.core.logging_config import log_warning, log_debug
+from app.core.logging_config import log_debug, log_warning
 from app.core.scoped_cache import ScopedCache
 from app.core.signing import generate_media_signature
 from app.models.entry import EntryMedia

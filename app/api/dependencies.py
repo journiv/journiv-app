@@ -3,20 +3,20 @@ Shared API dependencies.
 """
 import hashlib
 import logging
-from typing import Annotated, Optional, Callable
+from typing import Annotated, Optional
 
-from fastapi import Depends, HTTPException, status, Cookie
+from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, ExpiredSignatureError
-from sqlmodel import Session
+from jose import ExpiredSignatureError, JWTError
+from sqlmodel import Session, select
 
 from app.core.config import JOURNIV_PLUS_DOC_URL, settings
-from app.core.scoped_cache import ScopedCache
 from app.core.database import get_session
+from app.core.scoped_cache import ScopedCache
 from app.core.security import verify_token
 from app.middleware.request_logging import request_id_ctx
-from app.models.user import User
 from app.models.enums import UserRole
+from app.models.user import User
 from app.services.user_service import UserService
 
 logger = logging.getLogger(__name__)
@@ -57,8 +57,8 @@ def get_request_id() -> str:
 
 async def get_current_user(
     token: Annotated[Optional[str], Depends(oauth2_scheme)],
+    session: Annotated[Session, Depends(get_session)],
     cookie_token: Annotated[Optional[str], Cookie(alias="access_token")] = None,
-    session: Annotated[Session, Depends(get_session)] = None
 ) -> User:
     """
     Dependency to get the current authenticated user from the token.
@@ -85,23 +85,24 @@ async def get_current_user(
     try:
         # Verify token signature and expiration
         payload = verify_token(token_to_use, "access")
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
 
         # Validate claim types
         if not isinstance(user_id, str) or not user_id:
             raise credentials_exception
+        user_id = str(user_id)
 
     except HTTPException:
         raise
     except ExpiredSignatureError:
         logger.info("Expired token presented", extra={"user_id": locals().get('user_id')})
-        raise credentials_exception
+        raise credentials_exception from None
     except JWTError as e:
         logger.warning("JWT error during token validation", extra={"error": str(e)})
-        raise credentials_exception
+        raise credentials_exception from None
     except Exception as e:
         logger.error("Unexpected token validation error", extra={"error": str(e)})
-        raise credentials_exception
+        raise credentials_exception from None
 
     token_hash = hashlib.sha256(token_to_use.encode("utf-8")).hexdigest()
     cache = _get_user_cache()
@@ -171,25 +172,27 @@ async def get_current_user_detached(
 
     try:
         payload = verify_token(token_to_use, "access")
-        user_id: str = payload.get("sub")
+        user_id = payload.get("sub")
 
         # We are doing trict Subject validation
         # Thsis ensure sub is not only a string, but a valid UUID
         # This prevents any potential injection or invalid format issues
         import uuid
         try:
-            uuid_obj = uuid.UUID(user_id)
+            if not isinstance(user_id, str) or not user_id:
+                raise credentials_exception
+            uuid.UUID(user_id)
         except (ValueError, TypeError):
             # Log this as a potential security event
             logger.warning(f"Invalid user_id format in token: {user_id}")
-            raise credentials_exception
+            raise credentials_exception from None
 
         if not user_id:
-             raise credentials_exception
+            raise credentials_exception
 
     except Exception:
         # treat all token errors as 401
-        raise credentials_exception
+        raise credentials_exception from None
 
     # Check cache
     token_hash = hashlib.sha256(token_to_use.encode("utf-8")).hexdigest()
@@ -280,8 +283,8 @@ async def get_plus_factory(
     """
     try:
         # Import Plus components
-        from app.plus import PlusFeatureFactory, PLUS_FEATURES_AVAILABLE
         from app.models.instance_detail import InstanceDetail
+        from app.plus import PLUS_FEATURES_AVAILABLE, PlusFeatureFactory
 
         # Check if Plus features are available in this build
         if not PLUS_FEATURES_AVAILABLE:
@@ -295,7 +298,7 @@ async def get_plus_factory(
             )
 
         # Get instance details from database
-        instance = session.query(InstanceDetail).first()
+        instance = session.exec(select(InstanceDetail)).first()
 
         if not instance:
             logger.error("No instance details found in database")
@@ -340,7 +343,7 @@ async def get_plus_factory(
                     "message": "License verification failed",
                     "action": "Please check your license or contact support"
                 }
-            )
+            ) from None
 
     except HTTPException:
         # Re-raise HTTP exceptions as-is
@@ -350,4 +353,4 @@ async def get_plus_factory(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while initializing Plus features"
-        )
+        ) from None

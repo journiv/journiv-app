@@ -52,6 +52,8 @@ add-bounds = "major"
 dev = [
     "types-redis>=4.6.0",
     "fakeredis>=2.32,<3",
+    "ruff>=0.14.14",
+    "ty>=0.0.1a26",
     { include-group = "test" },
 ]
 test = [
@@ -66,3 +68,19 @@ test = [
     "argon2-cffi==25.1.0",
     "pytest-xdist>=3.8.0,<4.0.0",
 ]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "B", "I"]
+ignore = ["E501"]
+
+[tool.ty.environment]
+python-version = "3.12"
+root = ["."]
+
+[tool.ty.rules]
+unresolved-reference = "error"
+possibly-unresolved-reference = "warn"
+deprecated = "ignore"

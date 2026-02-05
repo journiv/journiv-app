@@ -6,13 +6,13 @@ to reduce API calls.
 
 Uses Redis when available (production), falls back to in-memory cache (dev).
 """
-import threading
 import logging
-from typing import Optional
+import threading
+from typing import Iterable, Optional
 
-from app.core.scoped_cache import ScopedCache
-from app.core.logging_config import LogCategory, log_info, log_debug
 from app.core.config import LICENSE_CACHE_TTL
+from app.core.logging_config import LogCategory, log_debug, log_info
+from app.core.scoped_cache import ScopedCache
 
 logger = logging.getLogger(LogCategory.APP)
 
@@ -39,7 +39,7 @@ class LicenseCache(ScopedCache):
         super().__init__("license", cache_backend=cache_backend, log=logger)
         log_debug("LicenseCache initialized")
 
-    def invalidate(self, install_id: str) -> None:
+    def invalidate(self, scope_id: str, cache_types: Optional[Iterable[str]] = None) -> None:
         """
         Invalidate all cached license data for an installation.
 
@@ -51,9 +51,10 @@ class LicenseCache(ScopedCache):
         Args:
             install_id: Installation UUID
         """
-        super().invalidate(install_id, ["info"])
+        types = list(cache_types) if cache_types is not None else ["info"]
+        super().invalidate(scope_id, types)
 
-        log_info(f"Invalidated license cache for install_id={install_id}", install_id=install_id)
+        log_info(f"Invalidated license cache for install_id={scope_id}", install_id=scope_id)
 
     def get_info(self, install_id: str) -> Optional[dict]:
         """
@@ -114,4 +115,5 @@ def get_license_cache() -> LicenseCache:
             if _license_cache is None:
                 _license_cache = LicenseCache()
 
+    assert _license_cache is not None
     return _license_cache

@@ -4,17 +4,16 @@ Prompt service for handling prompt-related operations.
 import random
 import threading
 import uuid
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, select, func
+from sqlmodel import Session, col, func, select
 
 from app.core.exceptions import PromptNotFoundError
 from app.core.logging_config import log_error
 from app.core.time_utils import utc_now
 from app.models.entry import Entry
 from app.models.enums import PromptCategory
-from app.models.journal import Journal
 from app.models.prompt import Prompt
 from app.schemas.prompt import PromptCreate, PromptUpdate
 
@@ -117,7 +116,7 @@ class PromptService:
         statement = select(Prompt).where(Prompt.id == prompt_id)
 
         if user_id is None:
-            statement = statement.where(Prompt.user_id.is_(None))
+            statement = statement.where(col(Prompt.user_id).is_(None))
         else:
             statement = statement.where(Prompt.user_id == user_id)
 
@@ -136,7 +135,7 @@ class PromptService:
         )
 
         if user_id is None:
-            duplicate_stmt = duplicate_stmt.where(Prompt.user_id.is_(None))
+            duplicate_stmt = duplicate_stmt.where(col(Prompt.user_id).is_(None))
         else:
             duplicate_stmt = duplicate_stmt.where(Prompt.user_id == user_id)
 
@@ -178,7 +177,7 @@ class PromptService:
                     Prompt.id != prompt_id,
                 )
                 if user_id is None:
-                    duplicate_stmt = duplicate_stmt.where(Prompt.user_id.is_(None))
+                    duplicate_stmt = duplicate_stmt.where(col(Prompt.user_id).is_(None))
                 else:
                     duplicate_stmt = duplicate_stmt.where(Prompt.user_id == user_id)
 
@@ -222,7 +221,7 @@ class PromptService:
         in_use = self.session.exec(
             select(func.count(Entry.id)).where(
                 Entry.prompt_id == prompt_id,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
         ).one() or 0
 
@@ -262,7 +261,7 @@ class PromptService:
             statement = statement.where(Prompt.user_id == user_id)
         else:
             # If no user_id specified, get system prompts (user_id is NULL)
-            statement = statement.where(Prompt.user_id.is_(None))
+            statement = statement.where(col(Prompt.user_id).is_(None))
 
         if normalized_category:
             statement = statement.where(Prompt.category == normalized_category)
@@ -282,7 +281,7 @@ class PromptService:
             if cached is not None:
                 return cached
 
-        statement = statement.order_by(Prompt.created_at.desc()).offset(offset).limit(limit)
+        statement = statement.order_by(col(Prompt.created_at).desc()).offset(offset).limit(limit)
         prompts = list(self.session.exec(statement))
 
         if use_cache and cache_key is not None:
@@ -307,8 +306,8 @@ class PromptService:
 
     def get_daily_prompt(self, user_id: uuid.UUID) -> Optional[Prompt]:
         """Get a deterministic daily prompt for a user based on user ID and current date."""
-        from app.services.user_service import UserService
         from app.core.time_utils import local_date_for_user
+        from app.services.user_service import UserService
 
         # Get today's date in the user's timezone
         user_service = UserService(self.session)
@@ -317,8 +316,8 @@ class PromptService:
 
         # Get total count of active system prompts
         count_statement = select(func.count(Prompt.id)).where(
-            Prompt.is_active == True,
-            Prompt.user_id.is_(None),
+            Prompt.is_active,
+            col(Prompt.user_id).is_(None),
         )
         total_prompts = self.session.exec(count_statement).one() or 0
 
@@ -332,8 +331,8 @@ class PromptService:
 
         # Get the specific prompt at the calculated index using OFFSET
         statement = select(Prompt).where(
-            Prompt.is_active == True,
-            Prompt.user_id.is_(None),
+            Prompt.is_active,
+            col(Prompt.user_id).is_(None),
         ).offset(prompt_index).limit(1)
 
         daily_prompt = self.session.exec(statement).first()
@@ -345,7 +344,7 @@ class PromptService:
             Entry.user_id == user_id,
             Entry.prompt_id == daily_prompt.id,
             Entry.entry_date == today,
-            Entry.is_draft.is_(False),
+            col(Entry.is_draft).is_(False),
         )
 
         existing_entry = self.session.exec(existing_entry_statement).first()
@@ -363,13 +362,13 @@ class PromptService:
     ) -> Optional[Prompt]:
         """Get a random prompt with optional filters."""
         statement = select(Prompt).where(
-            Prompt.is_active == True,
+            Prompt.is_active,
         )
 
         if user_id is not None:
             statement = statement.where(Prompt.user_id == user_id)
         else:
-            statement = statement.where(Prompt.user_id.is_(None))
+            statement = statement.where(col(Prompt.user_id).is_(None))
 
         normalized_category = self._normalize_category(category) if category else None
         if normalized_category:
@@ -407,7 +406,7 @@ class PromptService:
         if user_id is not None:
             statement = statement.where(Prompt.user_id == user_id)
         else:
-            statement = statement.where(Prompt.user_id.is_(None))
+            statement = statement.where(col(Prompt.user_id).is_(None))
 
         prompts = list(self.session.exec(statement))
 
@@ -476,16 +475,16 @@ class PromptService:
     def search_prompts(self, query: str, user_id: Optional[uuid.UUID] = None) -> List[Prompt]:
         """Search prompts by text content (excludes soft-deleted)."""
         statement = select(Prompt).where(
-            Prompt.is_active == True,
-            Prompt.text.ilike(f"%{query}%")
+            Prompt.is_active,
+            col(Prompt.text).ilike(f"%{query}%")
         )
 
         if user_id is not None:
             statement = statement.where(Prompt.user_id == user_id)
         else:
-            statement = statement.where(Prompt.user_id.is_(None))
+            statement = statement.where(col(Prompt.user_id).is_(None))
 
-        statement = statement.order_by(Prompt.created_at.desc())
+        statement = statement.order_by(col(Prompt.created_at).desc())
         return list(self.session.exec(statement))
 
     def bulk_update_prompts(self, user_id: uuid.UUID, updates: List[Dict[str, Any]]) -> List[Prompt]:
@@ -510,7 +509,7 @@ class PromptService:
             statement = select(Prompt).where(
                 Prompt.id == prompt_id,
                 Prompt.user_id == user_id,
-                Prompt.is_active == True
+                Prompt.is_active
             )
             prompt = self.session.exec(statement).first()
 
@@ -552,7 +551,7 @@ class PromptService:
             statement = select(Prompt).where(
                 Prompt.id == prompt_id,
                 Prompt.user_id == user_id,
-                Prompt.is_active == True
+                Prompt.is_active
             )
             prompt = self.session.exec(statement).first()
 

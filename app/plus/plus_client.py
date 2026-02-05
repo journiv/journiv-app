@@ -7,27 +7,27 @@ TODO: Add secret refresh endpoint support when needed (future feature)
 import logging
 import re
 from datetime import datetime, timezone
-from typing import Dict, Any, Optional
-from sqlalchemy.orm import Session
+from typing import Any, Dict, Optional
+
 from pydantic import ValidationError
+from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.http_client import get_http_client
-from app.core.install_id import generate_install_id
-from app.core.signing import generate_canonical_signature
-from app.core.instance import get_or_create_instance, detect_platform, get_db_backend
+from app.core.instance import detect_platform, get_db_backend, get_or_create_instance
 from app.core.logging_config import LogCategory
+from app.core.signing import generate_canonical_signature
 from app.models.instance_detail import InstanceDetail
 from app.plus.exceptions import (
-    PlusServerError,
-    PlusIdentityRevokedError,
-    PlusRegistrationError,
-    PlusRateLimitError,
-    PlusNetworkError,
     PlusHTTPError,
+    PlusIdentityRevokedError,
+    PlusNetworkError,
+    PlusRateLimitError,
+    PlusRegistrationError,
+    PlusServerError,
 )
+from app.schemas.license import LicenseInfoResponse, LicenseRegisterResponse
 from app.schemas.version import VersionInfoResponse
-from app.schemas.license import LicenseRegisterResponse, LicenseInfoResponse
 
 logger = logging.getLogger(LogCategory.PLUS)
 

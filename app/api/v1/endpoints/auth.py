@@ -3,21 +3,20 @@ Authentication endpoints.
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
-from app.core.config import settings
 from app.core.database import get_session
 from app.core.exceptions import InvalidCredentialsError, UnauthorizedError
-from app.core.logging_config import log_user_action, log_error, log_warning
+from app.core.logging_config import log_error, log_user_action, log_warning
 from app.core.rate_limiting import auth_rate_limit
 from app.core.security import create_access_token, create_refresh_token, verify_token
 from app.models.user import User
-from app.schemas.auth import Token, LoginResponse, UserLogin, TokenRefresh
-from app.schemas.user import UserResponse, UserCreate
+from app.schemas.auth import LoginResponse, Token, TokenRefresh, UserLogin
+from app.schemas.user import UserCreate, UserResponse
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
@@ -81,10 +80,10 @@ async def register(
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=getattr(request.state, 'request_id', None), user_email=user_data.email)
-        raise HTTPException(status_code=500, detail="An error occurred during registration")
+        raise HTTPException(status_code=500, detail="An error occurred during registration") from None
 
 
 @router.post(
@@ -171,7 +170,7 @@ async def login(
         raise
     except Exception as e:
         log_error(e, request_id=getattr(request.state, 'request_id', None), user_email=user_data.email)
-        raise HTTPException(status_code=500, detail="An error occurred during login")
+        raise HTTPException(status_code=500, detail="An error occurred during login") from None
 
 
 @router.post(
@@ -239,14 +238,14 @@ async def refresh_token(
             status_code=401,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id=None)
         raise HTTPException(
             status_code=401,
             detail="Could not validate credentials",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from None
 
 
 @router.post(
@@ -314,7 +313,7 @@ async def login_for_access_token(
         raise
     except Exception as e:
         log_error(e, request_id=None, user_email=form_data.username)
-        raise HTTPException(status_code=500, detail="An error occurred during login")
+        raise HTTPException(status_code=500, detail="An error occurred during login") from None
 
 
 @router.post(
@@ -346,4 +345,4 @@ async def logout(
         }
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred during logout")
+        raise HTTPException(status_code=500, detail="An error occurred during logout") from None

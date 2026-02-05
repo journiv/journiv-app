@@ -6,7 +6,7 @@ Supports Redis (production) and in-memory fallback (development).
 import json
 import logging
 import time
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 

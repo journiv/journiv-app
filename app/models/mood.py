@@ -3,19 +3,20 @@ Mood-related models.
 """
 import uuid
 from datetime import date, datetime
-from typing import List, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import field_validator
-from sqlalchemy import Column, ForeignKey, Date, DateTime, String
-from sqlmodel import Field, Relationship, Index, CheckConstraint
+from sqlalchemy import Column, Date, DateTime, ForeignKey, String
+from sqlmodel import CheckConstraint, Field, Index, Relationship
 
 from app.core.time_utils import utc_now
+
 from .base import BaseModel
 from .enums import MoodCategory
 
 if TYPE_CHECKING:
-    from .user import User
     from .entry import Entry
+    from .user import User
 
 
 class Mood(BaseModel, table=True):

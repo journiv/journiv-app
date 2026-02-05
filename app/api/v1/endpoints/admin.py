@@ -4,18 +4,18 @@ Admin endpoints for user management.
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_admin_user, get_session
 from app.core.exceptions import UserAlreadyExistsError, UserNotFoundError
-from app.core.logging_config import log_user_action, log_error
+from app.core.logging_config import log_error, log_user_action
 from app.models.user import User
 from app.schemas.user import (
-    UserResponse,
     AdminUserCreate,
-    AdminUserUpdate,
     AdminUserListResponse,
+    AdminUserUpdate,
+    UserResponse,
 )
 from app.services.user_service import UserService
 

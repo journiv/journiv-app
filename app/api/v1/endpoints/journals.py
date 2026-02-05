@@ -10,9 +10,9 @@ from sqlmodel import Session
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import JournalNotFoundError
-from app.core.logging_config import log_user_action, log_error
+from app.core.logging_config import log_error, log_user_action
 from app.models.user import User
-from app.schemas.journal import JournalCreate, JournalUpdate, JournalResponse
+from app.schemas.journal import JournalCreate, JournalResponse, JournalUpdate
 from app.services.journal_service import JournalService
 
 router = APIRouter(prefix="/journals", tags=["journals"])
@@ -41,10 +41,10 @@ async def create_journal(
         log_user_action(current_user.email, f"created journal {journal.id}", request_id=None)
         return journal
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while creating journal")
+        raise HTTPException(status_code=500, detail="An error occurred while creating journal") from None
 
 
 @router.get(
@@ -72,7 +72,7 @@ async def get_user_journals(
         return journals
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while fetching journals")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching journals") from None
 
 
 @router.get(
@@ -95,7 +95,7 @@ async def get_favorite_journals(
         return journals
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while fetching favorite journals")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching favorite journals") from None
 
 
 @router.get(
@@ -124,7 +124,7 @@ async def get_journal(
         raise
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while fetching journal")
+        raise HTTPException(status_code=500, detail="An error occurred while fetching journal") from None
 
 
 @router.put(
@@ -151,12 +151,12 @@ async def update_journal(
         log_user_action(current_user.email, f"updated journal {journal_id}", request_id=None)
         return journal
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while updating journal")
+        raise HTTPException(status_code=500, detail="An error occurred while updating journal") from None
 
 
 @router.delete(
@@ -182,10 +182,10 @@ async def delete_journal(
         await journal_service.delete_journal(journal_id, current_user.id)
         log_user_action(current_user.email, f"deleted journal {journal_id}", request_id=None)
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while deleting journal")
+        raise HTTPException(status_code=500, detail="An error occurred while deleting journal") from None
 
 
 @router.post(
@@ -210,10 +210,10 @@ async def toggle_favorite(
         log_user_action(current_user.email, f"toggled favorite for journal {journal_id}", request_id=None)
         return journal
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while toggling favorite status")
+        raise HTTPException(status_code=500, detail="An error occurred while toggling favorite status") from None
 
 
 @router.post(
@@ -242,10 +242,10 @@ async def archive_journal(
         log_user_action(current_user.email, f"archived journal {journal_id}", request_id=None)
         return journal
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while archiving journal")
+        raise HTTPException(status_code=500, detail="An error occurred while archiving journal") from None
 
 
 @router.post(
@@ -270,9 +270,9 @@ async def unarchive_journal(
         log_user_action(current_user.email, f"unarchived journal {journal_id}", request_id=None)
         return journal
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Journal not found")
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while unarchiving journal")
+        raise HTTPException(status_code=500, detail="An error occurred while unarchiving journal") from None
 
 

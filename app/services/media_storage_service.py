@@ -8,18 +8,18 @@ This service handles all media file operations with:
 - Reference counting for safe deletion
 """
 import hashlib
+import shutil
 import uuid
 from pathlib import Path
-from typing import Optional, Tuple, BinaryIO, Union
-import shutil
+from typing import BinaryIO, Optional, Tuple, Union
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.logging_config import log_info, log_error, log_warning
-from app.utils.import_export.media_handler import MediaHandler
-from app.models.entry import EntryMedia, Entry
+from app.core.logging_config import log_error, log_info, log_warning
+from app.models.entry import Entry, EntryMedia
 from app.models.journal import Journal
+from app.utils.import_export.media_handler import MediaHandler
 
 
 class MediaStorageService:

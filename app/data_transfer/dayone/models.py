@@ -5,10 +5,11 @@ These models represent the Day One JSON export structure.
 Day One export format documentation:
 https://dayoneapp.com/guides/tips-and-tutorials/exporting-entries/
 """
-from datetime import datetime
-from typing import List, Optional, Dict, Any
 import math
-from pydantic import BaseModel, Field, field_validator, model_validator
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class DayOneLocation(BaseModel):

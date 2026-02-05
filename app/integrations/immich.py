@@ -6,24 +6,24 @@ and syncing photo/video metadata.
 
 API Documentation: https://api.immich.app/introduction
 """
-from datetime import datetime, timezone
 import time
-from urllib.parse import urlencode
+from datetime import datetime, timezone
 from inspect import isawaitable
-from typing import Dict, Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
+from urllib.parse import urlencode
 
 import httpx
 from sqlmodel import Session
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
-from app.core.media_signing import build_signed_query
 from app.core.encryption import decrypt_token
-from app.core.time_utils import utc_now
-from app.core.logging_config import log_info, log_error, log_warning
+from app.core.logging_config import log_error, log_info, log_warning
+from app.core.media_signing import build_signed_query
 from app.core.scoped_cache import ScopedCache
-from app.models.integration import Integration, IntegrationProvider, AssetType
+from app.core.time_utils import utc_now
 from app.integrations.schemas import IntegrationAssetResponse
+from app.models.integration import AssetType, Integration, IntegrationProvider
 from app.models.user import User
 
 # Immich API endpoints
@@ -100,18 +100,18 @@ async def connect(
             log_warning(e, f"Invalid Immich API key for user {user.id}: {e}")
             raise ValueError(
                 "Invalid Immich API key. Please check your key and try again."
-            )
+            ) from None
         else:
             log_error(e, message=f"Immich API error for user {user.id}: {e}")
-            raise ValueError(f"Immich API error: {e.response.status_code}")
+            raise ValueError(f"Immich API error: {e.response.status_code}") from None
 
     except httpx.TimeoutException as e:
         log_error(e, message=f"Timeout connecting to Immich at {base_url}")
-        raise ValueError("Connection to Immich timed out. Please check the URL and try again.")
+        raise ValueError("Connection to Immich timed out. Please check the URL and try again.") from None
 
     except httpx.RequestError as e:
         log_error(e, message=f"Failed to connect to Immich at {base_url}: {e}")
-        raise ValueError(f"Could not connect to Immich server at {base_url}. Please check the URL.")
+        raise ValueError(f"Could not connect to Immich server at {base_url}. Please check the URL.") from None
 
 
 async def list_assets(
@@ -194,7 +194,7 @@ async def list_assets(
     except httpx.HTTPStatusError as e:
         if e.response.status_code in (401, 403):
             log_warning(e, f"Invalid Immich API key for user {user.id}: {e}")
-            raise ValueError("Immich API key is no longer valid. Please reconnect.")
+            raise ValueError("Immich API key is no longer valid. Please reconnect.") from None
         else:
             log_error(e, message=f"Immich API error for user {user.id}: {e}")
             raise
@@ -358,7 +358,7 @@ async def create_album(
             return data.get("id")
     except Exception as e:
         log_error(e, message=f"Failed to create album: {e}")
-        raise ValueError(f"Failed to create album: {e}")
+        raise ValueError(f"Failed to create album: {e}") from None
 
 
 async def add_assets_to_album(

@@ -6,7 +6,8 @@ Centralized configuration for Content Security Policy and related security heade
 import json
 import secrets
 from enum import Enum
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
+
 from app.core.logging_config import log_info
 
 

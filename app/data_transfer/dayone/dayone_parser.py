@@ -4,16 +4,17 @@ Day One export parser.
 Parses Day One JSON export files and extracts media.
 """
 import json
+import os
 import re
 import shutil
 import zipfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import os
 
-from app.core.logging_config import log_info, log_warning, log_error
 from app.core.config import settings
-from .models import DayOneExport, DayOneJournal, DayOneEntry
+from app.core.logging_config import log_error, log_info, log_warning
+
+from .models import DayOneExport, DayOneJournal
 
 # Security constants
 MAX_FILENAME_LENGTH = 255
@@ -39,7 +40,7 @@ def _validate_md5_hash(md5_hash: Optional[str]) -> Optional[str]:
         return md5_hash
 
     log_warning(
-        f"Invalid MD5 hash format, skipping glob search",
+        "Invalid MD5 hash format, skipping glob search",
         md5_hash=md5_hash[:50] if len(md5_hash) > 50 else md5_hash
     )
     return None
@@ -59,7 +60,7 @@ def _validate_identifier(identifier: str) -> Optional[str]:
         return identifier
 
     log_warning(
-        f"Invalid identifier format, skipping glob search",
+        "Invalid identifier format, skipping glob search",
         identifier=identifier[:50] if len(identifier) > 50 else identifier
     )
     return None
@@ -149,7 +150,7 @@ class DayOneParser:
                         )
                         raise ValueError(
                             f"Extraction path must be within {base_temp_dir}, got {extract_to_resolved}"
-                        )
+                        ) from None
 
                 if extract_to.exists():
                     shutil.rmtree(extract_to)
@@ -202,7 +203,7 @@ class DayOneParser:
                         try:
                             dest_path.relative_to(extract_root)
                         except ValueError:
-                            raise ValueError(f"ZIP contains unsafe path: {info.filename}")
+                            raise ValueError(f"ZIP contains unsafe path: {info.filename}") from None
 
                         # Disallow symlinks (check external attributes)
                         if info.external_attr >> 16 & 0o170000 == 0o120000:

@@ -5,7 +5,7 @@ All timestamps are stored in UTC and converted to user's local timezone for disp
 Compatible with both SQLite and PostgreSQL.
 """
 
-from datetime import datetime, date, time, timedelta, timezone
+from datetime import date, datetime, time, timezone
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
 

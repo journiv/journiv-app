@@ -3,17 +3,17 @@ Location endpoints for geocoding and location search.
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
 import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.dependencies import get_current_user
 from app.core.logging_config import log_error
 from app.models.user import User
 from app.schemas.location import (
+    LocationResult,
     LocationSearchRequest,
     LocationSearchResponse,
     ReverseGeocodeRequest,
-    LocationResult,
 )
 from app.services.location_service import LocationService
 
@@ -69,7 +69,7 @@ async def search_location(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Location service temporarily unavailable. Please try again later."
-        )
+        ) from None
     except Exception as e:
         log_error(
             e,
@@ -80,7 +80,7 @@ async def search_location(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while searching for locations"
-        )
+        ) from None
 
 
 @router.post(
@@ -133,7 +133,7 @@ async def reverse_geocode(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Location service temporarily unavailable. Please try again later."
-        )
+        ) from None
     except Exception as e:
         log_error(
             e,
@@ -145,4 +145,4 @@ async def reverse_geocode(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while reverse geocoding"
-        )
+        ) from None

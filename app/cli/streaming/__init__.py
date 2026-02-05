@@ -3,8 +3,7 @@ Streaming utilities for CLI operations.
 
 Provides memory-efficient streaming for large files.
 """
-from typing import Generator, Optional, Any
-import io
+from typing import Generator
 
 __all__ = ["stream_file", "stream_lines"]
 

@@ -9,7 +9,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.celery_app import celery_app
 from app.core.config import VERSION_CHECK_ENABLED
 from app.core.database import get_session_context
-from app.core.logging_config import log_info, log_warning, log_error
+from app.core.logging_config import log_error, log_info, log_warning
 from app.services.version_checker import VersionChecker
 
 

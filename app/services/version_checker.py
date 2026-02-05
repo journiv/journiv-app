@@ -12,23 +12,27 @@ This service handles:
 import logging
 import random
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from sqlmodel import Session, select
 
-from app.core.config import settings, VERSION_CHECK_ENABLED, VERSION_CHECK_INTERVAL_HOURS
-from app.core.logging_config import log_info, log_warning, log_error, LogCategory
-from app.core.time_utils import utc_now, ensure_utc, parse_iso_datetime
-from app.core.version_check_cache import get_version_check_cache
+from app.core.config import (
+    VERSION_CHECK_ENABLED,
+    VERSION_CHECK_INTERVAL_HOURS,
+    settings,
+)
 from app.core.instance import get_install_id, get_or_create_instance, get_system_info
+from app.core.logging_config import LogCategory, log_error, log_info, log_warning
+from app.core.time_utils import parse_iso_datetime, utc_now
+from app.core.version_check_cache import get_version_check_cache
 from app.models.instance_detail import InstanceDetail
-from app.plus.plus_client import PlusServerClient
 from app.plus.exceptions import (
-    PlusServerError,
+    PlusNetworkError,
     PlusRateLimitError,
     PlusRegistrationError,
-    PlusNetworkError,
+    PlusServerError,
 )
+from app.plus.plus_client import PlusServerClient
 
 
 def format_wait_time(seconds: int) -> str:

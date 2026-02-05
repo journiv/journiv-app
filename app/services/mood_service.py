@@ -3,16 +3,16 @@ Mood service for handling mood-related operations.
 """
 import threading
 import uuid
-from datetime import datetime, date, timedelta
-from typing import List, Optional, Dict, Any
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, select, func
+from sqlmodel import Session, col, func, select
 
-from app.core.exceptions import MoodNotFoundError, EntryNotFoundError
+from app.core.exceptions import EntryNotFoundError, MoodNotFoundError
 from app.core.logging_config import log_error
-from app.core.time_utils import utc_now, local_date_for_user, ensure_utc, to_utc
+from app.core.time_utils import ensure_utc, local_date_for_user, to_utc, utc_now
 from app.models.entry import Entry
 from app.models.enums import MoodCategory
 from app.models.mood import Mood, MoodLog
@@ -302,7 +302,7 @@ class MoodService:
         if end_date:
             statement = statement.where(MoodLog.logged_date <= end_date)
 
-        statement = statement.order_by(MoodLog.logged_datetime_utc.desc()).offset(offset).limit(self._normalize_limit(limit))
+        statement = statement.order_by(col(MoodLog.logged_datetime_utc).desc()).offset(offset).limit(self._normalize_limit(limit))
         return list(self.session.exec(statement))
 
     def get_mood_log_by_id(self, mood_log_id: uuid.UUID, user_id: uuid.UUID) -> Optional[MoodLog]:
@@ -372,7 +372,7 @@ class MoodService:
             start_date = end_date - timedelta(days=30)
 
         # Get mood counts
-        mood_counts = list(self.session.exec(
+        mood_counts_rows = list(self.session.exec(
             select(
                 Mood.name,
                 Mood.category,
@@ -387,29 +387,31 @@ class MoodService:
             .group_by(Mood.id, Mood.name, Mood.category)
             .order_by(func.count(MoodLog.id).desc())
         ))
+        mood_counts = [row._mapping for row in mood_counts_rows]
 
         # Get daily mood trends
-        daily_moods = list(self.session.exec(
+        daily_moods_rows = list(self.session.exec(
             select(
-                MoodLog.logged_date.label('date'),
+                col(MoodLog.logged_date).label('date'),
                 Mood.category,
                 func.count(MoodLog.id).label('count')
             )
-            .join(Mood, Mood.id == MoodLog.mood_id)
+            .join(Mood, col(Mood.id) == MoodLog.mood_id)
             .where(
                 MoodLog.user_id == user_id,
                 MoodLog.logged_date >= start_date,
                 MoodLog.logged_date <= end_date
             )
-            .group_by(MoodLog.logged_date, Mood.category)
-            .order_by(MoodLog.logged_date)
+            .group_by(col(MoodLog.logged_date), Mood.category)
+            .order_by(col(MoodLog.logged_date))
         ))
+        daily_moods = [row._mapping for row in daily_moods_rows]
 
         # Get most frequent mood
         most_frequent = mood_counts[0] if mood_counts else None
 
         # Calculate mood distribution
-        total_logs = sum(count.count for count in mood_counts)
+        total_logs = sum(row["count"] for row in mood_counts)
         mood_distribution = {
             'positive': 0,
             'negative': 0,
@@ -417,7 +419,8 @@ class MoodService:
         }
 
         for mood_count in mood_counts:
-            mood_distribution[mood_count.category] += mood_count.count
+            category = mood_count["category"]
+            mood_distribution[category] = mood_distribution.get(category, 0) + mood_count["count"]
 
         # Convert to percentages
         if total_logs > 0:
@@ -434,36 +437,36 @@ class MoodService:
             },
             'mood_distribution': mood_distribution,
             'most_frequent_mood': {
-                'name': most_frequent.name,
-                'category': most_frequent.category,
-                'count': most_frequent.count
+                'name': most_frequent["name"],
+                'category': most_frequent["category"],
+                'count': most_frequent["count"]
             } if most_frequent else None,
             'mood_counts': [
                 {
-                    'name': count.name,
-                    'category': count.category,
-                    'count': count.count,
-                    'percentage': round((count.count / total_logs) * 100, 2) if total_logs > 0 else 0
+                    'name': count["name"],
+                    'category': count["category"],
+                    'count': count["count"],
+                    'percentage': round((count["count"] / total_logs) * 100, 2) if total_logs > 0 else 0
                 }
                 for count in mood_counts
             ],
-        'daily_trends': [
-            {
-                'date': trend.date,  # func.date() already returns a string
-                'category': trend.category,
-                'count': trend.count
-            }
-            for trend in daily_moods
-        ]
+            'daily_trends': [
+                {
+                    'date': trend["date"],
+                    'category': trend["category"],
+                    'count': trend["count"]
+                }
+                for trend in daily_moods
+            ]
         }
 
     def get_recent_moods(self, user_id: uuid.UUID, limit: int = 10) -> List[MoodLog]:
         """Get recent mood logs for a user."""
         statement = (
             select(MoodLog)
-            .join(Mood, MoodLog.mood_id == Mood.id)
+            .join(Mood, col(MoodLog.mood_id) == Mood.id)
             .where(MoodLog.user_id == user_id)
-            .order_by(MoodLog.logged_datetime_utc.desc())
+            .order_by(col(MoodLog.logged_datetime_utc).desc())
             .limit(limit)
         )
         mood_logs = list(self.session.exec(statement))
@@ -479,15 +482,15 @@ class MoodService:
 
     def get_mood_streak(self, user_id: uuid.UUID) -> Dict[str, Any]:
         """Get current mood logging streak for a user."""
-        from app.services.user_service import UserService
         from app.core.time_utils import local_date_for_user
+        from app.services.user_service import UserService
 
         # Get all mood log dates for the user
         mood_dates = list(self.session.exec(
-            select(MoodLog.logged_date.label('date'))
+            select(col(MoodLog.logged_date).label('date'))
             .where(MoodLog.user_id == user_id)
             .distinct()
-            .order_by(MoodLog.logged_date.desc())
+            .order_by(col(MoodLog.logged_date).desc())
         ))
 
         if not mood_dates:
@@ -547,10 +550,10 @@ class MoodService:
         if mood_log_ids:
             existing_logs = self.session.exec(
                 select(MoodLog).where(
-                    MoodLog.id.in_(mood_log_ids),
+                    col(MoodLog.id).in_(mood_log_ids),
                     MoodLog.user_id == user_id
                 )
-            )
+            ).all()
 
             if len(existing_logs) != len(mood_log_ids):
                 raise MoodNotFoundError("One or more mood logs not found")
@@ -590,10 +593,10 @@ class MoodService:
         # Verify all logs belong to user
         existing_logs = self.session.exec(
             select(MoodLog).where(
-                MoodLog.id.in_(mood_log_ids),
+                col(MoodLog.id).in_(mood_log_ids),
                 MoodLog.user_id == user_id
             )
-        )
+        ).all()
 
         if len(existing_logs) != len(mood_log_ids):
             raise MoodNotFoundError("One or more mood logs not found")

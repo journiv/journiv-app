@@ -6,10 +6,11 @@ Dual logging strategy:
 - File: Complete debug logs with stack traces (always DEBUG level)
 """
 import logging
+from datetime import datetime, timezone
 from pathlib import Path
-from datetime import datetime
-from rich.logging import RichHandler
+
 from rich.console import Console
+from rich.logging import RichHandler
 
 from app.core.config import settings
 
@@ -57,7 +58,7 @@ def setup_cli_logging(command_name: str, verbose: bool = False) -> logging.Logge
     log_dir = Path(settings.log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     log_file = log_dir / f"cli_{command_name}_{timestamp}.log"
 
     file_handler = logging.FileHandler(log_file)

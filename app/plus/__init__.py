@@ -10,10 +10,16 @@ In non-Plus builds, placeholder stubs are used.
 """
 
 import logging
+from typing import TYPE_CHECKING, Any, Type, cast
 
 from app.core.logging_config import LogCategory
 
 logger = logging.getLogger(LogCategory.PLUS)
+
+PlusFeatureFactory: Type[Any]
+
+if TYPE_CHECKING:
+    from app.plus.placeholder import PlusFeatureFactory as PlusFeatureFactory
 
 
 def _create_error_stub(plus_err: str, placeholder_err: str, error_type: str = "also failed") -> type:
@@ -35,9 +41,10 @@ PLUS_FEATURES_AVAILABLE = False
 
 try:
     # Try to import from compiled extension module (Plus build)
-    from app.plus.plus_features import (
-        PlusFeatureFactory,
+    from app.plus.plus_features import (  # type: ignore[unresolved-import]
+        PlusFeatureFactory as _PlusFeatureFactory,
     )
+    PlusFeatureFactory = cast(Type[Any], _PlusFeatureFactory)
     PLUS_FEATURES_AVAILABLE = True
 except ImportError as e:
     # Log the import error for debugging
@@ -48,8 +55,9 @@ except ImportError as e:
     # Fall back to placeholder implementations
     try:
         from app.plus.placeholder import (
-            PlusFeatureFactory,
+            PlusFeatureFactory as _PlusFeatureFactory,
         )
+        PlusFeatureFactory = cast(Type[Any], _PlusFeatureFactory)
         PLUS_FEATURES_AVAILABLE = False
     except ImportError as placeholder_error:
         logger.error(
@@ -58,11 +66,11 @@ except ImportError as e:
             "Using no-op stub as fallback.",
             exc_info=True
         )
-        PlusFeatureFactory = _create_error_stub(
+        PlusFeatureFactory = cast(Type[Any], _create_error_stub(
             str(e),
             str(placeholder_error),
             "also failed"
-        )
+        ))
         PLUS_FEATURES_AVAILABLE = False
     except Exception as placeholder_error:
         logger.error(
@@ -71,11 +79,11 @@ except ImportError as e:
             "Using no-op stub as fallback.",
             exc_info=True
         )
-        PlusFeatureFactory = _create_error_stub(
+        PlusFeatureFactory = cast(Type[Any], _create_error_stub(
             str(e),
             str(placeholder_error),
             "failed with unexpected error"
-        )
+        ))
         PLUS_FEATURES_AVAILABLE = False
 except Exception as e:
     # Catch any other errors during import (e.g., missing dependencies, wrong architecture)
@@ -86,8 +94,9 @@ except Exception as e:
     # Fall back to placeholder implementations
     try:
         from app.plus.placeholder import (
-            PlusFeatureFactory,
+            PlusFeatureFactory as _PlusFeatureFactory,
         )
+        PlusFeatureFactory = cast(Type[Any], _PlusFeatureFactory)
         PLUS_FEATURES_AVAILABLE = False
     except ImportError as placeholder_error:
         logger.error(
@@ -96,11 +105,11 @@ except Exception as e:
             "Using no-op stub as fallback.",
             exc_info=True
         )
-        PlusFeatureFactory = _create_error_stub(
+        PlusFeatureFactory = cast(Type[Any], _create_error_stub(
             str(e),
             str(placeholder_error),
             "also failed"
-        )
+        ))
         PLUS_FEATURES_AVAILABLE = False
     except Exception as placeholder_error:
         logger.error(
@@ -109,11 +118,11 @@ except Exception as e:
             "Using no-op stub as fallback.",
             exc_info=True
         )
-        PlusFeatureFactory = _create_error_stub(
+        PlusFeatureFactory = cast(Type[Any], _create_error_stub(
             str(e),
             str(placeholder_error),
             "failed with unexpected error"
-        )
+        ))
         PLUS_FEATURES_AVAILABLE = False
 
 __all__ = [

@@ -6,6 +6,7 @@ Handles SIGINT/SIGTERM to allow cleanup before exit.
 import signal
 import sys
 from typing import Callable, Optional
+
 from rich.console import Console
 
 console = Console()

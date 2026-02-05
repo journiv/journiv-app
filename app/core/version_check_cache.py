@@ -8,11 +8,11 @@ Uses Redis when available (production), falls back to in-memory cache (dev).
 """
 import logging
 import threading
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Iterable, Optional
 
-from app.core.scoped_cache import ScopedCache
 from app.core.config import VERSION_CHECK_CACHE_TTL
 from app.core.logging_config import LogCategory, log_info
+from app.core.scoped_cache import ScopedCache
 
 logger = logging.getLogger(LogCategory.APP)
 
@@ -106,16 +106,17 @@ class VersionCheckCache(ScopedCache):
             ttl_seconds=VERSION_CHECK_CACHE_TTL
         )
 
-    def invalidate(self, instance_uuid: str) -> None:
+    def invalidate(self, scope_id: str, cache_types: Iterable[str]) -> None:
         """
-        Invalidate all cached version check data for an instance.
+        Invalidate cached version check data for a scope.
 
         Args:
-            instance_uuid: Instance UUID
+            scope_id: Instance or scope identifier to invalidate.
+            cache_types: Iterable of cache type names to clear.
         """
-        super().invalidate(instance_uuid, ["latest_success", "latest_all"])
+        super().invalidate(scope_id, cache_types)
 
-        log_info(f"Invalidated version check cache for instance={instance_uuid}", instance_uuid=instance_uuid)
+        log_info(f"Invalidated version check cache for instance={scope_id}", instance_uuid=scope_id)
 
 
 # Global version check cache instance
@@ -137,4 +138,5 @@ def get_version_check_cache() -> VersionCheckCache:
             if _version_check_cache is None:
                 _version_check_cache = VersionCheckCache()
 
+    assert _version_check_cache is not None
     return _version_check_cache

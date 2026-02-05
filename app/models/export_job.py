@@ -1,16 +1,18 @@
 """
 Export job model for tracking async export operations.
 """
-from datetime import datetime
-from typing import Optional, Dict, Any, List
 import uuid
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import Column, ForeignKey, Enum as SAEnum
-from sqlmodel import Field, Column as SQLModelColumn, JSON
+from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Enum as SAEnum
+from sqlmodel import JSON, Field
+from sqlmodel import Column as SQLModelColumn
 
-from app.models.base import BaseModel
-from app.models.enums import JobStatus, ExportType
 from app.core.time_utils import utc_now
+from app.models.base import BaseModel
+from app.models.enums import ExportType, JobStatus
 
 
 class ExportJob(BaseModel, table=True):

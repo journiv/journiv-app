@@ -2,16 +2,16 @@
 Weather service for fetching weather data using OpenWeather API.
 """
 from datetime import datetime, timezone
-from typing import Optional, Tuple, Literal
+from typing import Literal, Optional, Tuple
 
 import httpx
 
-from app.schemas.weather import WeatherData
 from app.core.config import settings
-from app.core.logging_config import log_debug, log_info, log_warning, log_error
 from app.core.http_client import get_http_client
+from app.core.logging_config import log_debug, log_error, log_info, log_warning
 from app.core.scoped_cache import ScopedCache
 from app.core.time_utils import ensure_utc, utc_now
+from app.schemas.weather import WeatherData
 
 # Cache configuration
 CACHE_TTL_SECONDS = 30 * 60  # 30 minutes
@@ -175,6 +175,9 @@ class WeatherService:
              api_key = api_key_30
              effective_dt = target_dt or utc_now() # Timemachine needs a time
              log_info("Using timemachine API for current weather (only 3.0 key configured)")
+        else:
+            # This should be unreachable due to the API key check above, but satisfies type checkers
+            raise ValueError("Weather service not configured: No valid API key/provider combination found.")
 
         # Try Cache
         cached = cls._get_from_cache(latitude, longitude, effective_dt)
@@ -198,7 +201,7 @@ class WeatherService:
 
         except httpx.HTTPError as e:
              cls._handle_http_error(e, latitude, longitude)
-             raise # Re-raise after logging
+             raise  # Re-raise after logging
 
     @staticmethod
     def _validate_coordinates(lat: float, lon: float) -> None:

@@ -3,26 +3,37 @@ Import command for CLI.
 
 Handles large file imports bypassing web upload limits.
 """
-import typer
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
+from typing import Annotated
+
+import typer
 from rich.console import Console
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
 from sqlmodel import Session
 
+from app.cli.commands.preflight import run_preflight_checks
+from app.cli.commands.signal_handler import GracefulInterruptHandler
+from app.cli.commands.utils import (
+    confirm_action,
+    display_import_summary,
+    display_zip_info,
+)
+from app.cli.logging import setup_cli_logging
 from app.core.config import settings
 from app.core.database import engine
-from app.core.logging_config import log_info, log_warning, log_error
 from app.models.enums import ImportSourceType
 from app.models.import_job import ImportJob
 from app.services.import_service import ImportService
 from app.services.user_service import UserService
 from app.utils.import_export.zip_handler import ZipHandler
-from app.cli.logging import setup_cli_logging
-from app.cli.commands.preflight import run_preflight_checks
-from app.cli.commands.signal_handler import GracefulInterruptHandler
-from app.cli.commands.utils import display_import_summary, display_zip_info, confirm_action
 
 app = typer.Typer(help="Import data from files")
 console = Console()
@@ -30,28 +41,25 @@ console = Console()
 
 @app.command("import-data")
 def import_data(
-    file_path: Path = typer.Argument(..., help="Path to import ZIP file", exists=True),
-    user_email: str = typer.Option(..., "--user-email", "-u", help="User email to import for"),
-    source_type: str = typer.Option(
-        "journiv",
+    file_path: Annotated[Path, typer.Argument(help="Path to import ZIP file", exists=True)],
+    user_email: Annotated[str, typer.Option("--user-email", "-u", help="User email to import for")],
+    source_type: Annotated[str, typer.Option(
         "--source-type", "-s",
         help="Import source type (journiv, dayone)",
         case_sensitive=False,
-    ),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Validate without importing"),
-    skip_preflight: bool = typer.Option(False, "--skip-preflight", help="Skip pre-flight checks"),
-    force: bool = typer.Option(False, "--force", help="Force import on critical failures"),
-    skip_media_validation: bool = typer.Option(
-        False,
+    )] = "journiv",
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate without importing")] = False,
+    skip_preflight: Annotated[bool, typer.Option("--skip-preflight", help="Skip pre-flight checks")] = False,
+    force: Annotated[bool, typer.Option("--force", help="Force import on critical failures")] = False,
+    skip_media_validation: Annotated[bool, typer.Option(
         "--skip-media-validation",
         help="Skip libmagic media type validation (much faster for large imports)"
-    ),
-    max_entry_size_mb: int = typer.Option(
-        50000,
+    )] = False,
+    max_entry_size_mb: Annotated[int, typer.Option(
         "--max-entry-size-mb",
         help="Maximum size for individual entry/media file in MB (default 50GB for CLI)"
-    ),
-    verbose: bool = typer.Option(False, "-v", "--verbose", help="Verbose output"),
+    )] = 50000,
+    verbose: Annotated[bool, typer.Option("-v", "--verbose", help="Verbose output")] = False,
 ):
     """
     Import large data files directly from server filesystem.
@@ -207,6 +215,7 @@ def import_data(
                             import_service = ImportService(db)
 
                             # Count entries for progress
+                            data = None
                             if source_enum == ImportSourceType.JOURNIV:
                                 import json
                                 with open(data_file, 'r') as f:
@@ -234,6 +243,9 @@ def import_data(
 
                                 # Call appropriate import method
                                 if source_enum == ImportSourceType.JOURNIV:
+                                    if data is None:
+                                        raise ValueError("Journiv import data not loaded")
+                                    assert data is not None
                                     summary = import_service.import_journiv_data(
                                         user_id=user_id,
                                         data=data,

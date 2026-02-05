@@ -6,36 +6,36 @@ Handles the business logic for importing data from various sources.
 import re
 import shutil
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable
-from uuid import UUID, uuid4
+from typing import Any, Callable, Dict, Optional, cast
+from uuid import UUID
 
-from sqlalchemy.orm import Session
-from sqlalchemy import select, func
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import Session
+from sqlmodel import col, select
 
 from app.core.config import settings
-from app.core.logging_config import log_info, log_warning, log_error
-from app.models import User, Journal, Entry, EntryMedia, Mood, MoodLog, Tag
-from app.models.import_job import ImportJob
+from app.core.logging_config import log_error, log_info, log_warning
+from app.core.time_utils import local_date_for_user, normalize_timezone, utc_now
+from app.data_transfer.dayone import DayOneParser, DayOneToJournivMapper
+from app.models import Entry, EntryMedia, Journal, Mood, MoodLog, Tag, User
 from app.models.enums import ImportSourceType, JournalColor, MediaType, UploadStatus
+from app.models.import_job import ImportJob
 from app.schemas.dto import (
-    JournivExportDTO,
-    JournalDTO,
     EntryDTO,
+    ImportResultSummary,
+    JournalDTO,
+    JournivExportDTO,
     MediaDTO,
     MoodLogDTO,
-    ImportResultSummary,
 )
+from app.services.media_storage_service import MediaStorageService
 from app.utils.import_export import (
-    ZipHandler,
-    MediaHandler,
     IDMapper,
-    normalize_datetime,
+    MediaHandler,
+    ZipHandler,
 )
 from app.utils.import_export.constants import ExportConfig
-from app.core.time_utils import local_date_for_user, utc_now, normalize_timezone
-from app.data_transfer.dayone import DayOneParser, DayOneToJournivMapper
-from app.services.media_storage_service import MediaStorageService
 from app.utils.quill_delta import extract_plain_text, replace_media_ids, wrap_plain_text
 
 
@@ -113,7 +113,7 @@ class ImportService:
             ValueError: If user not found or file invalid
         """
         # Validate user exists
-        user = self.db.query(User).filter(User.id == user_id).first()
+        user = self.db.query(User).filter(col(User.id) == user_id).first()
         if not user:
             raise ValueError(f"User not found: {user_id}")
 
@@ -282,6 +282,8 @@ class ImportService:
 
                     # Map media for each entry
                     for entry_dto in journal_dto.entries:
+                        if not entry_dto.external_id:
+                            continue
                         # Find corresponding Day One entry to get media references
                         dayone_entry = dayone_entry_map.get(entry_dto.external_id)
 
@@ -650,14 +652,15 @@ class ImportService:
                 func.sum(Entry.word_count).label("total_words"),
                 func.max(Entry.created_at).label("last_created")
             ).where(
-                Entry.journal_id == journal.id,
-                Entry.is_draft.is_(False),
+                col(Entry.journal_id) == journal.id,
+                col(Entry.is_draft).is_(False),
             )
         ).one()
 
-        entry_count = int(stats.count) if stats and stats.count is not None else 0
-        total_words = int(stats.total_words) if stats and stats.total_words is not None else 0
-        last_created = stats.last_created if stats else None
+        stats_mapping = stats._mapping
+        entry_count = int(stats_mapping["count"] or 0)
+        total_words = int(stats_mapping["total_words"] or 0)
+        last_created = stats_mapping["last_created"]
 
         journal.entry_count = entry_count
         journal.total_words = total_words
@@ -878,8 +881,8 @@ class ImportService:
         existing_entry_media = (
             self.db.query(EntryMedia)
             .filter(
-                EntryMedia.entry_id == entry_id,
-                EntryMedia.checksum == checksum
+                col(EntryMedia.entry_id) == entry_id,
+                col(EntryMedia.checksum) == checksum
             )
             .first()
         )
@@ -899,7 +902,7 @@ class ImportService:
                 "imported": False,
                 "deduplicated": True,
                 "stored_relative_path": existing_entry_media.file_path,
-                "stored_filename": Path(existing_entry_media.file_path).name,
+                "stored_filename": Path(existing_entry_media.file_path or "").name,
                 "source_md5": source_md5,
                 "media_id": str(existing_entry_media.id),
             }
@@ -946,24 +949,24 @@ class ImportService:
 
         # If it's external only, we skip file system checks
         if is_external_link_only:
-             # Create new external media record
-             # Normalize file_size to None if not positive (external assets might report 0)
-             file_size = media_dto.file_size if media_dto.file_size and media_dto.file_size > 0 else None
-             media = self._create_media_record(
+            # Create new external media record
+            # Normalize file_size to None if not positive (external assets might report 0)
+            file_size = media_dto.file_size if media_dto.file_size and media_dto.file_size > 0 else None
+            media = self._create_media_record(
                 entry_id=entry_id,
                 file_path=None,
                 media_dto=media_dto,
                 checksum=media_dto.checksum,
                 file_size=file_size
-             )
-             self.db.add(media)
-             # Commit happens at journal level, but we need ID
-             self.db.flush()
+            )
+            self.db.add(media)
+            # Commit happens at journal level, but we need ID
+            self.db.flush()
 
-             if record_mapping and media_dto.external_id:
-                 record_mapping("media", media_dto.external_id, media.id)
+            if record_mapping and media_dto.external_id:
+                record_mapping("media", media_dto.external_id, media.id)
 
-             return {
+            return {
                 "imported": True,
                 "deduplicated": False,
                 "stored_relative_path": None,
@@ -971,6 +974,20 @@ class ImportService:
                 "source_md5": None,
                 "media_id": str(media.id),
             }
+
+        if media_dir is None:
+            warning_msg = f"No media directory, skipping media: {media_dto.filename}"
+            log_warning(warning_msg, user_id=str(user_id), media_filename=media_dto.filename, entry_id=str(entry_id))
+            summary.warnings.append(warning_msg)
+            summary.media_files_skipped += 1
+            return {"imported": False, "deduplicated": False, "stored_relative_path": None, "media_id": None}
+
+        if media_dto.file_path is None:
+            warning_msg = f"Missing file_path for media: {media_dto.filename}"
+            log_warning(warning_msg, user_id=str(user_id), media_filename=media_dto.filename, entry_id=str(entry_id))
+            summary.warnings.append(warning_msg)
+            summary.media_files_skipped += 1
+            return {"imported": False, "deduplicated": False, "stored_relative_path": None, "media_id": None}
 
         source_path = Path(media_dto.file_path)
         if not source_path.is_absolute():
@@ -1018,8 +1035,8 @@ class ImportService:
             existing_entry_media = (
                 self.db.query(EntryMedia)
                 .filter(
-                    EntryMedia.entry_id == entry_id,
-                    EntryMedia.checksum == media_dto.checksum
+                    col(EntryMedia.entry_id) == entry_id,
+                    col(EntryMedia.checksum) == media_dto.checksum
                 )
                 .first()
             )
@@ -1039,7 +1056,7 @@ class ImportService:
                     "imported": False,
                     "deduplicated": True,
                     "stored_relative_path": existing_entry_media.file_path,
-                    "stored_filename": Path(existing_entry_media.file_path).name,
+                    "stored_filename": Path(existing_entry_media.file_path or "").name,
                     "source_md5": source_md5,
                     "media_id": str(existing_entry_media.id),
                 }
@@ -1072,8 +1089,8 @@ class ImportService:
         existing_entry_media = (
             self.db.query(EntryMedia)
             .filter(
-                EntryMedia.entry_id == entry_id,
-                EntryMedia.checksum == checksum
+                col(EntryMedia.entry_id) == entry_id,
+                col(EntryMedia.checksum) == checksum
             )
             .first()
         )
@@ -1093,7 +1110,7 @@ class ImportService:
                 "imported": False,
                 "deduplicated": True,
                 "stored_relative_path": existing_entry_media.file_path,
-                "stored_filename": Path(existing_entry_media.file_path).name,
+                "stored_filename": Path(existing_entry_media.file_path or "").name,
                 "source_md5": source_md5,
                 "media_id": str(existing_entry_media.id),
             }
@@ -1105,8 +1122,8 @@ class ImportService:
                 .join(Entry)
                 .join(Journal)
                 .filter(
-                    Journal.user_id == user_id,
-                    EntryMedia.checksum == checksum
+                    col(Journal.user_id) == user_id,
+                    col(EntryMedia.checksum) == checksum
                 )
                 .first()
             )
@@ -1170,7 +1187,7 @@ class ImportService:
                     "imported": False,
                     "deduplicated": True,
                     "stored_relative_path": existing_media.file_path,
-                    "stored_filename": Path(existing_media.file_path).name,
+                    "stored_filename": Path(existing_media.file_path or "").name,
                     "source_md5": source_md5,
                     "media_id": str(media.id),
                 }
@@ -1223,7 +1240,7 @@ class ImportService:
         if media.media_type in [MediaType.IMAGE, MediaType.VIDEO]:
             try:
                 from app.services.media_service import MediaService
-                media_service = MediaService(self.db)
+                media_service = MediaService(cast(Any, self.db))
 
                 # Generate thumbnail synchronously
                 if full_path is None:
@@ -1278,9 +1295,9 @@ class ImportService:
     def _create_media_record(
         self,
         entry_id: UUID,
-        file_path: str,
+        file_path: Optional[str],
         media_dto: MediaDTO,
-        checksum: str,
+        checksum: Optional[str],
         file_size: Optional[int] = None,
     ) -> EntryMedia:
         """
@@ -1291,9 +1308,9 @@ class ImportService:
 
         Args:
             entry_id: Entry ID to associate media with
-            file_path: Relative path to media file
+            file_path: Relative path to media file (optional for external media)
             media_dto: Media DTO with metadata
-            checksum: File checksum
+            checksum: File checksum (optional for external media)
             file_size: Optional file size override (uses DTO value if not provided)
 
         Returns:
@@ -1352,8 +1369,8 @@ class ImportService:
         tag = (
             self.db.query(Tag)
             .filter(
-                Tag.user_id == user_id,
-                Tag.name == tag_name_lower
+                col(Tag.user_id) == user_id,
+                col(Tag.name) == tag_name_lower
             )
             .first()
         )
@@ -1379,20 +1396,21 @@ class ImportService:
 
     def _get_existing_media_checksums(self, user_id: UUID) -> set:
         """Get set of existing media checksums for user."""
-        checksums = (
-            self.db.query(EntryMedia.checksum)
+        checksums = self.db.execute(
+            select(EntryMedia.checksum)
             .join(Entry)
-            .filter(
+            .where(
                 Entry.user_id == user_id,
-                EntryMedia.checksum.isnot(None)
+                col(EntryMedia.checksum).is_not(None)
             )
-            .all()
-        )
+        ).all()
         return {c[0] for c in checksums if c[0]}
 
     def _get_existing_tag_names(self, user_id: UUID) -> set:
         """Get set of existing tag names for user (lowercase)."""
-        tags = self.db.query(Tag.name).filter(Tag.user_id == user_id).all()
+        tags = self.db.execute(
+            select(Tag.name).where(Tag.user_id == user_id)
+        ).all()
         return {t[0].lower() for t in tags}
 
     def _get_existing_mood_names(self, user_id: UUID) -> set:
@@ -1402,7 +1420,7 @@ class ImportService:
         Note: Moods are system-wide, so user_id parameter is not used.
         It's kept for API consistency with other _get_existing_* methods.
         """
-        moods = self.db.query(Mood.name).all()
+        moods = self.db.execute(select(Mood.name)).all()
         return {m[0].lower() for m in moods}
 
     @staticmethod

@@ -23,8 +23,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field, HttpUrl, TypeAdapter, field_validator
 
-from app.models.integration import IntegrationProvider, AssetType, ImportMode
-
+from app.models.integration import AssetType, ImportMode, IntegrationProvider
 
 # ================================================================================
 # REQUEST SCHEMAS

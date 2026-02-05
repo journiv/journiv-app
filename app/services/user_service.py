@@ -5,26 +5,37 @@ import secrets
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional, cast
 
+from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, select
-from app.core.config import settings
+from sqlmodel import Session, col, select
 
+from app.core.config import settings
 from app.core.exceptions import (
-    UserNotFoundError,
-    UserAlreadyExistsError,
     InvalidCredentialsError,
     UnauthorizedError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
     UserSettingsNotFoundError,
 )
-from app.core.logging_config import log_error, log_warning, log_info
-from app.core.security import get_password_hash, verify_password, create_access_token, create_refresh_token
-from app.models.user import User, UserSettings
-from app.models.external_identity import ExternalIdentity
+from app.core.logging_config import log_error, log_info, log_warning
+from app.core.security import (
+    get_password_hash,
+    verify_password,
+)
 from app.models.enums import UserRole
-from app.schemas.user import UserCreate, UserUpdate, UserSettingsCreate, UserSettingsUpdate, AdminUserCreate, AdminUserUpdate
+from app.models.external_identity import ExternalIdentity
+from app.models.user import User, UserSettings
+from app.schemas.user import (
+    AdminUserCreate,
+    AdminUserUpdate,
+    UserCreate,
+    UserSettingsCreate,
+    UserSettingsUpdate,
+    UserUpdate,
+)
 
 # Hash evaluated once to keep timing consistent for missing users
 _DUMMY_PASSWORD_HASH = get_password_hash("journiv-dummy-password")
@@ -51,14 +62,20 @@ class UserService:
         Returns:
             bool: True if this is the first user, False otherwise
         """
-        from sqlalchemy import func, text
+        from sqlalchemy import func
 
         # Use SELECT COUNT(*) FOR UPDATE to lock the table and prevent race conditions
         # This ensures that concurrent user creations will be serialized
         try:
             # For SQLite, we can't use FOR UPDATE, so we just count
             # For PostgreSQL, we use FOR UPDATE to lock
-            if 'sqlite' in str(self.session.bind.url).lower():
+            bind = self.session.bind
+            bind_url = None
+            if isinstance(bind, Engine):
+                bind_url = bind.url
+            elif isinstance(bind, Connection):
+                bind_url = bind.engine.url
+            if bind_url and 'sqlite' in str(bind_url).lower():
                 count = self.session.exec(select(func.count(User.id))).one() or 0
                 return count == 0
             else:
@@ -341,7 +358,7 @@ class UserService:
                 raise UserSettingsNotFoundError("User settings not found")
             return settings
         except ValueError:
-            raise UserNotFoundError("Invalid user ID format")
+            raise UserNotFoundError("Invalid user ID format") from None
 
     def update_user_settings(self, user_id: str, settings_data: UserSettingsUpdate) -> UserSettings:
         """Update user settings."""
@@ -569,10 +586,10 @@ class UserService:
         """
         statement = (
             select(User)
-            .options(selectinload(User.external_identities))
+            .options(selectinload(cast(Any, User.external_identities)))
             .limit(limit)
             .offset(offset)
-            .order_by(User.created_at.desc())
+            .order_by(col(User.created_at).desc())
         )
         return list(self.session.exec(statement).all())
 

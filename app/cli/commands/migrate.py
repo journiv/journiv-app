@@ -9,15 +9,15 @@ import subprocess
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Annotated, Optional
 
 import typer
 from pydantic import ValidationError
 from rich.console import Console
-from rich.progress import Progress, BarColumn, TextColumn, TimeRemainingColumn
+from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 from rich.table import Table
 from sqlalchemy import text
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.cli.commands.utils import confirm_action
 from app.cli.logging import setup_cli_logging
@@ -100,13 +100,13 @@ def _expand_media_shortcodes(markdown: str, media_items: list[EntryMedia]) -> st
 
 @app.command("content")
 def migrate_content(
-    batch_size: int = typer.Option(50, "--batch-size", "-b", help="Entries processed per batch"),
-    limit: Optional[int] = typer.Option(None, "--limit", "-l", help="Maximum entries to migrate (for testing)"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Preview migration without database changes"),
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
-    force: bool = typer.Option(False, "--force", help="Skip confirmation prompt"),
-    cleanup: bool = typer.Option(False, "--cleanup", help="Clear legacy content after successful migration"),
-    error_log: Path = typer.Option("migration_errors.log", "--error-log", "-e", help="Path for error log file"),
+    batch_size: Annotated[int, typer.Option("--batch-size", "-b", help="Entries processed per batch")] = 50,
+    limit: Annotated[Optional[int], typer.Option("--limit", "-l", help="Maximum entries to migrate (for testing)")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Preview migration without database changes")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", "-v", help="Enable verbose logging")] = False,
+    force: Annotated[bool, typer.Option("--force", help="Skip confirmation prompt")] = False,
+    cleanup: Annotated[bool, typer.Option("--cleanup", help="Clear legacy content after successful migration")] = False,
+    error_log: Annotated[Path, typer.Option("--error-log", "-e", help="Path for error log file")] = Path("migration_errors.log"),
 ):
     """
     Migrate Markdown content to Quill Delta JSON format.
@@ -134,7 +134,7 @@ def migrate_content(
         raise typer.Exit(code=2)
 
     with Session(engine) as session:
-        total_query = session.exec(
+        total_query = session.exec(  # type: ignore[no-matching-overload]
             text(
                 "SELECT COUNT(*) FROM entry "
                 "WHERE content_delta IS NULL AND content IS NOT NULL AND content != ''"
@@ -146,7 +146,7 @@ def migrate_content(
         if total_entries == 0:
             logger.info("No entries to migrate")
             if cleanup:
-                cleanup_count = session.exec(
+                cleanup_count = session.exec(  # type: ignore[no-matching-overload]
                     text("SELECT COUNT(*) FROM entry WHERE content_delta IS NOT NULL AND content IS NOT NULL")
                 ).one()[0]
                 logger.info(f"Found {cleanup_count} entries eligible for cleanup")
@@ -177,7 +177,7 @@ def migrate_content(
 
                 console.print("[yellow]No entries to migrate. Running cleanup...[/yellow]")
                 logger.info(f"Starting cleanup of {cleanup_count} entries")
-                session.exec(
+                session.exec(  # type: ignore[no-matching-overload]
                     text("UPDATE entry SET content = NULL WHERE content_delta IS NOT NULL")
                 )
                 session.commit()
@@ -202,7 +202,7 @@ def migrate_content(
         console.print(header)
 
         if verbose:
-            preview_rows = session.exec(
+            preview_rows = session.exec(  # type: ignore[no-matching-overload]
                 text(
                     "SELECT id, content FROM entry "
                     "WHERE content_delta IS NULL AND content IS NOT NULL AND content != '' "
@@ -273,14 +273,16 @@ def migrate_content(
                         "last_id": last_entry_id,
                     }
 
-                rows = session.exec(text(query).bindparams(**params)).all()
+                rows = session.exec(  # type: ignore[no-matching-overload]
+                    text(query).bindparams(**params)
+                ).all()
 
                 if not rows:
                     break
 
                 entry_ids = [_ensure_uuid(row.id) for row in rows]
                 media_items = session.exec(
-                    select(EntryMedia).where(EntryMedia.entry_id.in_(entry_ids))
+                    select(EntryMedia).where(col(EntryMedia.entry_id).in_(entry_ids))
                 ).all()
                 media_by_entry = {}
                 for media in media_items:
@@ -382,7 +384,7 @@ def migrate_content(
 
                 if updates:
                     entries = session.exec(
-                        select(Entry).where(Entry.id.in_([u["entry_id"] for u in updates]))
+                        select(Entry).where(col(Entry.id).in_([u["entry_id"] for u in updates]))
                     ).all()
                     entry_map = {entry.id: entry for entry in entries}
                     for update in updates:
@@ -424,7 +426,7 @@ def migrate_content(
         logger.info(f"Migration complete: {migrated} migrated, {skipped} skipped, {errors} errors in {duration_seconds:.2f}s ({speed:.2f} entries/sec)")
 
         if cleanup:
-            cleanup_count = session.exec(
+            cleanup_count = session.exec(  # type: ignore[no-matching-overload]
                 text("SELECT COUNT(*) FROM entry WHERE content_delta IS NOT NULL AND content IS NOT NULL")
             ).one()[0]
             logger.info(f"Found {cleanup_count} entries eligible for cleanup")
@@ -446,7 +448,7 @@ def migrate_content(
 
             console.print("\n[yellow]Cleaning up legacy content field...[/yellow]")
             logger.info(f"Starting cleanup of {cleanup_count} entries")
-            session.exec(
+            session.exec(  # type: ignore[no-matching-overload]
                 text("UPDATE entry SET content = NULL WHERE content_delta IS NOT NULL")
             )
             session.commit()

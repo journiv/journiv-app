@@ -4,11 +4,11 @@ Shared HTTP client for internal services.
 Provides a singleton httpx.AsyncClient for connection pooling and efficient resource usage.
 """
 import asyncio
-from typing import Optional, AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import httpx
-from app.core.config import settings
+
 from app.core.logging_config import log_info
 
 _client: Optional[httpx.AsyncClient] = None
@@ -39,6 +39,7 @@ async def get_http_client() -> httpx.AsyncClient:
             if _client is None or _client.is_closed:
                 _client = httpx.AsyncClient(timeout=10.0)
                 log_info("HTTP client created", timeout=10.0)
+    assert _client is not None
     return _client
 
 

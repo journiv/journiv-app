@@ -2,9 +2,9 @@
 Tag endpoints.
 """
 import uuid
-from typing import Annotated, List, Optional, Dict, Any
+from typing import Annotated, Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user, get_plus_factory
@@ -13,7 +13,14 @@ from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error
 from app.models.user import User
 from app.schemas.entry import EntryPreviewResponse
-from app.schemas.tag import TagCreate, TagUpdate, TagResponse, EntryTagLinkResponse, TagAnalyticsResponse, TagDetailAnalyticsResponse
+from app.schemas.tag import (
+    EntryTagLinkResponse,
+    TagAnalyticsResponse,
+    TagCreate,
+    TagDetailAnalyticsResponse,
+    TagResponse,
+    TagUpdate,
+)
 from app.services.tag_service import TagService
 
 router = APIRouter(prefix="/tags", tags=["tags"])
@@ -44,13 +51,13 @@ async def create_tag(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while creating tag"
-        )
+        ) from None
 
 
 @router.get(
@@ -136,7 +143,7 @@ async def search_tags(
 async def get_tag_analytics(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    plus_factory=Depends(get_plus_factory)
+    plus_factory: Annotated[Any, Depends(get_plus_factory)]
 ):
     """
     Get detailed tag analytics.
@@ -167,7 +174,7 @@ async def get_tag_analytics(
                 "message": f"License verification failed: {str(e)}",
                 "action": "Please verify your license or contact support"
             }
-        )
+        ) from None
     except Exception as e:
         log_error(
             e,
@@ -178,7 +185,7 @@ async def get_tag_analytics(
         raise HTTPException(
             status_code=500,
             detail="An error occurred while fetching tag analytics"
-        )
+        ) from None
 
 
 @router.get(
@@ -197,8 +204,8 @@ async def get_tag_detail_analytics(
     tag_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    plus_factory=Depends(get_plus_factory),
-    days: int = Query(365, ge=1, le=3650, description="Number of days to analyze")
+    plus_factory: Annotated[Any, Depends(get_plus_factory)],
+    days: Annotated[int, Query(ge=1, le=3650, description="Number of days to analyze")] = 365
 ):
     """
     Get detailed analytics for a specific tag.
@@ -222,7 +229,7 @@ async def get_tag_detail_analytics(
         raise HTTPException(
             status_code=404,
             detail="Tag not found"
-        )
+        ) from None
     except PermissionError as e:
         # This should not happen since get_plus_factory already validates
         # But we catch it as defense in depth
@@ -239,7 +246,7 @@ async def get_tag_detail_analytics(
                 "message": f"License verification failed: {str(e)}",
                 "action": "Please verify your license or contact support"
             }
-        )
+        ) from None
     except Exception as e:
         log_error(
             e,
@@ -250,7 +257,7 @@ async def get_tag_detail_analytics(
         raise HTTPException(
             status_code=500,
             detail="An error occurred while fetching tag analytics"
-        )
+        ) from None
 
 
 @router.get(
@@ -283,13 +290,13 @@ async def get_tag(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tag not found"
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving tag"
-        )
+        ) from None
 
 
 @router.put(
@@ -318,18 +325,18 @@ async def update_tag(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tag not found"
-        )
+        ) from None
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating tag"
-        )
+        ) from None
 
 
 @router.delete(
@@ -355,13 +362,13 @@ async def delete_tag(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tag not found"
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while deleting tag"
-        )
+        ) from None
 
 
 @router.post(
@@ -403,12 +410,12 @@ async def merge_tags(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        )
+        ) from None
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except HTTPException:
         # Propagate deliberate HTTPExceptions (e.g., merging into self) unchanged
         raise
@@ -417,7 +424,7 @@ async def merge_tags(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while merging tags"
-        )
+        ) from None
 
 
 # Entry-Tag Association Operations
@@ -448,18 +455,18 @@ async def add_tag_to_entry(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tag not found"
-        )
+        ) from None
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while adding tag to entry"
-        )
+        ) from None
 
 
 @router.delete(
@@ -486,18 +493,18 @@ async def remove_tag_from_entry(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tag not found"
-        )
+        ) from None
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while removing tag from entry"
-        )
+        ) from None
 
 
 @router.get(
@@ -523,13 +530,13 @@ async def get_entry_tags(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving entry tags"
-        )
+        ) from None
 
 
 @router.post(
@@ -568,13 +575,13 @@ async def bulk_add_tags_to_entry(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while adding tags to entry"
-        )
+        ) from None
 
 
 @router.get(
@@ -607,9 +614,9 @@ async def get_entries_by_tag(
                 id=entry.id,
                 title=entry.title or "Untitled",
                 content_plain_text=(
-                    entry.content_plain_text[:200] + "..."
+                    (entry.content_plain_text or "")[:200] + "..."
                     if len(entry.content_plain_text or "") > 200
-                    else entry.content_plain_text or ""
+                    else (entry.content_plain_text or "")
                 ),
                 journal_id=entry.journal_id,
                 created_at=entry.created_at,
@@ -624,4 +631,4 @@ async def get_entries_by_tag(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Tag not found"
-        )
+        ) from None

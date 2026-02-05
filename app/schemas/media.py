@@ -3,12 +3,13 @@ Media and import job schemas.
 """
 import uuid
 from datetime import datetime
-from typing import Optional, Any, Dict
+from typing import Any, Dict, Optional
+
 from pydantic import BaseModel, Field, computed_field
 
 from app.models.enums import JobStatus
-from app.schemas.entry import EntryMediaResponse
 from app.models.integration import AssetType
+from app.schemas.entry import EntryMediaResponse
 
 
 class ImmichImportJobResponse(BaseModel):

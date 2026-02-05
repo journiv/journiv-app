@@ -4,27 +4,28 @@ License service for managing Journiv Plus licenses.
 This service handles license operations and instance management.
 """
 import logging
-from typing import Optional, Dict, Any
 from datetime import datetime, timezone
-from sqlmodel import Session, select
+from typing import Any, Dict, Optional
 
-from app.models.instance_detail import InstanceDetail
-from app.plus.plus_client import PlusServerClient
-from app.plus.exceptions import (
-    PlusServerError,
-    PlusRateLimitError,
-    PlusNetworkError,
-    PlusRegistrationError,
-    PlusHTTPError,
-)
+from sqlmodel import Session
+
 from app.core.exceptions import (
-    LicenseResetInstallIdMismatchError,
     LicenseResetEmailMismatchError,
+    LicenseResetInstallIdMismatchError,
     LicenseResetRateLimitedError,
 )
-from app.core.license_cache import get_license_cache
 from app.core.instance import get_instance_strict
+from app.core.license_cache import get_license_cache
 from app.core.logging_config import LogCategory
+from app.models.instance_detail import InstanceDetail
+from app.plus.exceptions import (
+    PlusHTTPError,
+    PlusNetworkError,
+    PlusRateLimitError,
+    PlusRegistrationError,
+    PlusServerError,
+)
+from app.plus.plus_client import PlusServerClient
 
 logger = logging.getLogger(LogCategory.APP)
 
@@ -269,4 +270,3 @@ class LicenseService:
             "error_message": upstream_error if upstream_error else None,
             "upstream_status": upstream_status
         }
-

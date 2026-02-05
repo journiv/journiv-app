@@ -5,19 +5,19 @@ import uuid
 from typing import Annotated
 from urllib.parse import urlencode
 
+from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
-from authlib.integrations.starlette_client import OAuthError
 from sqlmodel import Session, select
 
 from app.core.config import settings
 from app.core.database import get_session
-from app.core.oidc import oauth, build_pkce
+from app.core.logging_config import log_error, log_info, log_user_action, log_warning
+from app.core.oidc import build_pkce, oauth
 from app.core.security import create_access_token, create_refresh_token
-from app.core.logging_config import log_info, log_error, log_user_action, log_warning
+from app.models.external_identity import ExternalIdentity
 from app.schemas.auth import LoginResponse
 from app.services.user_service import UserService
-from app.models.external_identity import ExternalIdentity
 
 router = APIRouter(prefix="/auth/oidc", tags=["authentication"])
 
@@ -145,10 +145,10 @@ async def oidc_callback(
         )
     except OAuthError as exc:
         log_error(f"OIDC token exchange failed: {exc.error}")
-        raise HTTPException(status_code=400, detail=f"OIDC authentication failed: {exc.error}")
+        raise HTTPException(status_code=400, detail=f"OIDC authentication failed: {exc.error}") from None
 
     # Extract claims from ID token or userinfo
-    id_token = token.get("id_token")
+    token.get("id_token")
     claims = token.get("userinfo") or token.get("id_token_claims") or {}
 
     # Some providers require an explicit userinfo call
@@ -157,7 +157,7 @@ async def oidc_callback(
             claims = await oauth.journiv_oidc.userinfo(token=token)
         except Exception as exc:
             log_error(f"Failed to fetch OIDC userinfo: {exc}")
-            raise HTTPException(status_code=400, detail="Failed to retrieve user information")
+            raise HTTPException(status_code=400, detail="Failed to retrieve user information") from None
 
     # Verify nonce if present
     if claims.get("nonce") and claims["nonce"] != cached_data["nonce"]:
@@ -234,7 +234,7 @@ async def oidc_callback(
         )
     except Exception as exc:
         log_error(f"Failed to provision user from OIDC: {exc}")
-        raise HTTPException(status_code=403, detail=str(exc))
+        raise HTTPException(status_code=403, detail=str(exc)) from None
 
     # Create Journiv access and refresh tokens
     access_token = create_access_token(data={"sub": str(user.id)})
@@ -310,7 +310,7 @@ async def oidc_exchange(request: Request):
     try:
         body = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid request body")
+        raise HTTPException(status_code=400, detail="Invalid request body") from None
 
     ticket = body.get("ticket")
 
@@ -386,4 +386,4 @@ async def oidc_logout(request: Request):
 
     except Exception as exc:
         log_error(f"OIDC logout failed: {exc}")
-        raise HTTPException(status_code=500, detail="OIDC logout failed")
+        raise HTTPException(status_code=500, detail="OIDC logout failed") from None

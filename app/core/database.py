@@ -11,9 +11,10 @@ from sqlalchemy import event
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel, create_engine, Session, select
+from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.core.config import settings, PROJECT_ROOT
+from app.core.config import PROJECT_ROOT, settings
+from app.core.logging_config import _sanitize_data
 from app.middleware.request_logging import request_id_ctx, request_path_ctx
 
 logger = logging.getLogger(__name__)
@@ -22,8 +23,7 @@ logger = logging.getLogger(__name__)
 database_url = settings.effective_database_url
 database_type = settings.database_type
 
-# Sanitize database URL for logging using logging_config sanitization
-from app.core.logging_config import _sanitize_data
+
 safe_database_url = _sanitize_data(database_url)
 
 logger.info(f"Using {database_type} database: {safe_database_url}")
@@ -95,8 +95,9 @@ def create_db_and_tables():
     try:
         # Run Alembic migrations using API instead of subprocess
         logger.info("Running database migrations...")
-        from alembic import command
         from alembic.config import Config
+
+        from alembic import command
 
         # Create Alembic config
         alembic_cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
@@ -258,9 +259,9 @@ def seed_prompts(session: Session):
 
 def seed_instance_details(session: Session):
     """Seed the singleton InstanceDetail row and invalidate license cache if needed."""
-    from app.models.instance_detail import InstanceDetail
     from app.core.install_id import generate_install_id
     from app.core.license_cache import get_license_cache
+    from app.models.instance_detail import InstanceDetail
 
     install_id = None
     old_install_id = None
@@ -288,7 +289,7 @@ def seed_instance_details(session: Session):
                 else:
                     instance = session.exec(select(InstanceDetail).limit(1).with_for_update()).first()
                 if not instance:
-                    raise RuntimeError("Failed to create or retrieve InstanceDetail after concurrent creation")
+                    raise RuntimeError("Failed to create or retrieve InstanceDetail after concurrent creation") from None
                 if instance.install_id:
                     install_id = instance.install_id
                 else:
@@ -336,10 +337,10 @@ def seed_instance_details(session: Session):
     if install_id:
         try:
             cache = get_license_cache()
-            cache.invalidate(install_id)
+            cache.invalidate(install_id, ["info"])
             logger.info(f"Invalidated license cache for install_id={install_id}")
             if old_install_id:
-                cache.invalidate(old_install_id)
+                cache.invalidate(old_install_id, ["info"])
                 logger.info(f"Invalidated license cache for old install_id={old_install_id}")
         except Exception as e:
             logger.warning(f"Failed to invalidate license cache: {e}")

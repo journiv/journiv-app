@@ -1,15 +1,16 @@
 """
 Upload manager for handling import file uploads.
 """
-import uuid
 import asyncio
+import uuid
 from pathlib import Path
 
-from fastapi import UploadFile, HTTPException
+from fastapi import HTTPException, UploadFile
 
 from app.core.config import settings
 from app.core.logging_config import log_error, log_file_upload
-from app.utils.import_export import MediaHandler, ZipHandler
+from app.utils.import_export.media_handler import MediaHandler
+from app.utils.import_export.zip_handler import ZipHandler
 
 
 class UploadManager:

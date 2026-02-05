@@ -8,12 +8,12 @@ IMPORTANT: This file maps to the ACTUAL database schema, not an idealized versio
 Fields marked as placeholders are not yet implemented in the database but reserved
 for future use to maintain backward compatibility with the export format.
 """
-from datetime import datetime, date
-from typing import List, Optional, Dict, Any
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.enums import JobStatus, ImportSourceType, ExportType
-
+from app.models.enums import ExportType, ImportSourceType, JobStatus
 
 # ============================================================================
 # Core DTOs - Mapped to Actual Database Schema

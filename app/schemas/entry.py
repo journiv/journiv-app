@@ -2,11 +2,12 @@
 Entry schemas.
 """
 import uuid
-from datetime import datetime, date
-from typing import Optional, Dict, Any, Literal, List, Union
+from datetime import date, datetime
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.models.enums import MediaType, UploadStatus
 from app.schemas.base import TimestampMixin
 
 
@@ -164,7 +165,6 @@ class EntryPreviewResponse(TimestampMixin):
     media_count: int = 0
 
 
-from app.models.enums import MediaType, UploadStatus
 
 
 class EntryMediaBase(BaseModel):

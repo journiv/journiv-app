@@ -6,11 +6,11 @@ streaks, entry counts, and word counts.
 """
 import uuid
 from datetime import date
-from typing import Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from pydantic import field_validator
 from sqlalchemy import Column, ForeignKey
-from sqlmodel import Field, Relationship, Index, CheckConstraint
+from sqlmodel import CheckConstraint, Field, Index, Relationship
 
 from .base import BaseModel
 

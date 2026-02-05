@@ -13,8 +13,8 @@ logger = logging.getLogger(__name__)
 # Try to import slowapi, with fallback if not available
 try:
     from slowapi import Limiter
-    from slowapi.util import get_remote_address
     from slowapi.errors import RateLimitExceeded
+    from slowapi.util import get_remote_address
     SLOWAPI_AVAILABLE = True
 except ImportError:
     SLOWAPI_AVAILABLE = False
@@ -204,6 +204,7 @@ def get_rate_limit(endpoint_type: str, endpoint_name: str) -> str:
 def rate_limit_exceeded_handler(request: Request, exc):
     """Custom rate limit exceeded handler."""
     from fastapi.responses import JSONResponse
+
     from app.middleware.request_logging import request_id_ctx
 
     request_id = request_id_ctx.get()

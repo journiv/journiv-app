@@ -1,11 +1,11 @@
 """
 Weather endpoints for fetching weather data.
 """
-from typing import Annotated
 from datetime import datetime, timezone
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
 import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.api.dependencies import get_current_user
 from app.core.logging_config import log_error, log_warning, redact_coordinates
@@ -107,7 +107,7 @@ async def fetch_weather(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Weather service temporarily unavailable."
-        )
+        ) from None
     except Exception as e:
         log_error(
             e,
@@ -117,4 +117,4 @@ async def fetch_weather(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while fetching weather data"
-        )
+        ) from None

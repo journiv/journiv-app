@@ -5,11 +5,10 @@ import asyncio
 
 from app.core.celery_app import celery_app
 from app.core.database import get_session_context
-from app.core.logging_config import log_info, log_warning, log_error, log_debug
-from app.services.license_service import LicenseService
-from app.plus.plus_client import PlusServerClient
 from app.core.instance import get_instance_strict
-from app.core.license_cache import get_license_cache
+from app.core.logging_config import log_debug, log_error, log_info, log_warning
+from app.plus.plus_client import PlusServerClient
+from app.services.license_service import LicenseService
 
 
 def _run_async(coro):

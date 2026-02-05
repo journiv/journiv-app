@@ -6,30 +6,29 @@ import asyncio
 import time
 import uuid
 from datetime import datetime
-from typing import Optional, Tuple, Dict, Any
 from pathlib import Path
+from typing import Any, Dict, Optional, Tuple
 
 import aiofiles
 import aiofiles.os
 import httpx
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.core.encryption import decrypt_token
-from app.models.import_job import ImportJob
-from app.models.enums import JobStatus, ImportSourceType, MediaType, UploadStatus
-from app.models.user import User
+from app.core.http_client import get_http_client
+from app.core.logging_config import log_error, log_info, log_warning
+from app.core.media_signing import normalize_delta_media_ids
+from app.core.scoped_cache import ScopedCache
+from app.integrations import immich
 from app.models.entry import Entry, EntryMedia
-from app.models.integration import Integration, IntegrationProvider, ImportMode
+from app.models.enums import ImportSourceType, JobStatus, MediaType, UploadStatus
+from app.models.import_job import ImportJob
+from app.models.integration import ImportMode, Integration, IntegrationProvider
+from app.models.user import User
 from app.schemas.entry import EntryMediaCreate
 from app.services.entry_service import EntryService
 from app.services.media_service import MediaService
-from app.integrations import immich
-
-from app.core.logging_config import log_debug, log_info, log_error, log_warning
-from app.core.media_signing import normalize_delta_media_ids
-from app.core.scoped_cache import ScopedCache
 from app.utils.quill_delta import extract_plain_text
-from app.core.http_client import get_http_client
 
 # Batch size for parallel downloads (configurable in future)
 COPY_MODE_BATCH_SIZE = 3
@@ -234,10 +233,14 @@ class ImportJobService:
                 else:
                     existing.external_metadata = {**existing.external_metadata, **metadata["external_metadata"]}
 
-            if file_path: existing.file_path = file_path
-            if file_size: existing.file_size = file_size
-            if checksum: existing.checksum = checksum
-            if thumbnail_path: existing.thumbnail_path = thumbnail_path
+            if file_path:
+                existing.file_path = file_path
+            if file_size:
+                existing.file_size = file_size
+            if checksum:
+                existing.checksum = checksum
+            if thumbnail_path:
+                existing.thumbnail_path = thumbnail_path
 
             existing.upload_status = upload_status
 
@@ -528,6 +531,7 @@ class ImportJobService:
 
         # Create new session for background task
         thread_session = Session(engine)
+        job: ImportJob | None = None
         try:
             thread_service = ImportJobService(thread_session)
             # Fetch job
@@ -539,6 +543,9 @@ class ImportJobService:
             if not job:
                 log_error(f"Import job {job_id} not found")
                 return
+
+            if job.entry_id is None:
+                raise ValueError(f"Import job {job_id} missing entry_id")
 
             # Mark as processing
             job.mark_running()
@@ -569,7 +576,8 @@ class ImportJobService:
             base_url = integration.base_url.rstrip('/')
 
             # Get asset IDs
-            asset_ids = job.result_data.get("asset_ids", [])
+            result_data = job.result_data or {}
+            asset_ids = result_data.get("asset_ids", [])
 
             # Phase 1: Download thumbnails in parallel batches
             thumbnail_cache = await thread_service._process_thumbnail_phase(
@@ -606,7 +614,7 @@ class ImportJobService:
 
         except Exception as e:
             log_error(e)
-            if 'job' in locals():
+            if job is not None:
                 job.mark_failed(str(e)[:2000])
                 thread_session.add(job)
                 thread_session.commit()
@@ -625,6 +633,7 @@ class ImportJobService:
         from app.core.database import engine
 
         thread_session = Session(engine)
+        job: ImportJob | None = None
         try:
             thread_service = ImportJobService(thread_session)
             job = thread_session.exec(
@@ -635,6 +644,9 @@ class ImportJobService:
             if not job:
                 log_error(f"Import job {job_id} not found")
                 return
+
+            if job.entry_id is None:
+                raise ValueError(f"Import job {job_id} missing entry_id")
 
             job.mark_running()
             thread_session.add(job)
@@ -655,7 +667,8 @@ class ImportJobService:
 
             api_key = decrypt_token(integration.access_token_encrypted)
             base_url = integration.base_url.rstrip('/')
-            asset_ids = job.result_data.get("asset_ids", [])
+            result_data = job.result_data or {}
+            asset_ids = result_data.get("asset_ids", [])
 
             processed = 0
             failed = 0
@@ -696,6 +709,8 @@ class ImportJobService:
                 thread_session.commit()
 
             if failed_asset_ids:
+                if job.result_data is None:
+                    job.result_data = {}
                 job.result_data["failed_asset_ids"] = failed_asset_ids
 
             if job.failed_items == 0 and job.status not in {JobStatus.FAILED, JobStatus.PARTIAL, JobStatus.CANCELLED}:
@@ -705,7 +720,7 @@ class ImportJobService:
 
         except Exception as e:
             log_error(e)
-            if 'job' in locals():
+            if job is not None:
                 job.mark_failed(str(e))
                 thread_session.add(job)
                 thread_session.commit()
@@ -729,6 +744,10 @@ class ImportJobService:
         Downloads and saves thumbnails for quick UI display.
         Does NOT create EntryMedia records yet - that happens in Phase 2 only if original succeeds.
         """
+        if job.entry_id is None:
+            raise ValueError(f"Import job {job.id} missing entry_id")
+
+        entry_id = job.entry_id
         batch_size = COPY_MODE_BATCH_SIZE
         thumbnail_cache = {}
 
@@ -740,7 +759,7 @@ class ImportJobService:
                     base_url=base_url,
                     api_key=api_key,
                     user_id=str(job.user_id),
-                    entry_id=job.entry_id,
+                    entry_id=entry_id,
                     integration=integration,
                     session=session
                 )
@@ -749,7 +768,7 @@ class ImportJobService:
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for asset_id, result in zip(batch, results):
+            for asset_id, result in zip(batch, results, strict=False):
                 if isinstance(result, Exception):
                     log_error(result)
                     # Record error but don't fail yet - original might succeed
@@ -784,6 +803,10 @@ class ImportJobService:
         """
         from app.core.database import engine
 
+        if job.entry_id is None:
+            raise ValueError(f"Import job {job.id} missing entry_id")
+
+        entry_id = job.entry_id
         batch_size = COPY_MODE_BATCH_SIZE
 
         async def _process_single_asset(current_asset_id: str):
@@ -794,7 +817,7 @@ class ImportJobService:
                     base_url=base_url,
                     api_key=api_key,
                     user_id=str(job.user_id),
-                    entry_id=job.entry_id,
+                    entry_id=entry_id,
                     integration=integration,
                     session=task_session,
                     thumbnail_info=thumbnail_cache.get(current_asset_id),
@@ -812,7 +835,7 @@ class ImportJobService:
 
             processed = 0
             failed = 0
-            for asset_id, result in zip(batch, results):
+            for asset_id, result in zip(batch, results, strict=False):
                 if isinstance(result, Exception):
                     log_error(result)
                     self._mark_media_failed(job.entry_id, asset_id, session, str(result), commit=False)
@@ -843,6 +866,7 @@ class ImportJobService:
         Download thumbnail from Immich.
         Returns thumbnail content and metadata for Phase 2 to save with correct filename.
         """
+        asset_metadata: Optional[dict] = None
         try:
             # Fetch asset metadata
             asset_metadata = await immich.get_asset_info(base_url, api_key, asset_id)
@@ -866,7 +890,7 @@ class ImportJobService:
 
         except Exception as e:
             log_error(f"Error in _download_and_save_thumbnail for {asset_id}: {e}")
-            return None, asset_metadata if 'asset_metadata' in locals() else None
+            return None, asset_metadata
 
     async def _download_and_save_original(
         self,
@@ -898,8 +922,8 @@ class ImportJobService:
             filename = metadata["original_filename"]
 
             # Stream download to temp file to avoid OOM on large videos
-            import tempfile
             import os
+            import tempfile
             temp_file_path = None
 
             try:
@@ -964,7 +988,7 @@ class ImportJobService:
                     thumbnail_path_obj = self.media_service._get_thumbnail_path(
                         thumbnail_filename,
                         media_type,
-                        user_id=user_id
+                        user_id=str(user_id)
                     )
 
                     if thumbnail_path_obj:
@@ -1101,7 +1125,7 @@ class ImportJobService:
 
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                for asset_id, result in zip(batch, results):
+                for _asset_id, result in zip(batch, results, strict=False):
                     if isinstance(result, Exception):
                         log_error(result)
                         failed_count += 1
@@ -1135,9 +1159,9 @@ class ImportJobService:
             # Find EntryMedia record
             media = session.exec(
                 select(EntryMedia)
-                .join(Entry, Entry.id == EntryMedia.entry_id)
-                .where(Entry.user_id == user_id)
-                .where(EntryMedia.external_asset_id == asset_id)
+                .join(Entry, col(Entry.id) == col(EntryMedia.entry_id))
+                .where(col(Entry.user_id) == user_id)
+                .where(col(EntryMedia.external_asset_id) == asset_id)
                 .where(EntryMedia.external_provider == "immich")
             ).first()
 
@@ -1157,7 +1181,7 @@ class ImportJobService:
                 return False
 
             # Download thumbnail
-            thumbnail_path, _ = await self._download_and_save_thumbnail(
+            thumbnail_content, _ = await self._download_and_save_thumbnail(
                 asset_id=asset_id,
                 base_url=base_url,
                 api_key=api_key,
@@ -1167,7 +1191,42 @@ class ImportJobService:
                 session=session
             )
 
-            if thumbnail_path:
+            if thumbnail_content:
+                try:
+                    stored_filename = Path(media.file_path or "").name
+                    if not stored_filename:
+                        log_warning(f"Missing file path for asset {asset_id}")
+                        return False
+
+                    if media.media_type == MediaType.IMAGE:
+                        thumbnail_filename = f"thumb_{stored_filename}"
+                    elif media.media_type == MediaType.VIDEO:
+                        thumbnail_filename = f"thumb_{Path(stored_filename).stem}.jpg"
+                    else:
+                        thumbnail_filename = f"thumb_{stored_filename}"
+
+                    thumbnail_path_obj = self.media_service._get_thumbnail_path(
+                        thumbnail_filename,
+                        media.media_type,
+                        user_id=str(user_id)
+                    )
+
+                    if not thumbnail_path_obj:
+                        log_warning(f"Cannot save thumbnail for media type: {media.media_type}")
+                        return False
+
+                    thumbnail_path_obj.parent.mkdir(parents=True, exist_ok=True)
+                    tmp_thumbnail_path = thumbnail_path_obj.with_suffix(".tmp")
+                    async with aiofiles.open(tmp_thumbnail_path, 'wb') as f:
+                        await f.write(thumbnail_content)
+                        await f.flush()
+                    await aiofiles.os.rename(tmp_thumbnail_path, thumbnail_path_obj)
+
+                    thumbnail_path = str(thumbnail_path_obj.relative_to(self.media_service.media_root))
+                except Exception as e:
+                    log_warning(f"Failed to save thumbnail for asset {asset_id}: {e}")
+                    return False
+
                 # Update EntryMedia record
                 media.thumbnail_path = thumbnail_path
                 session.add(media)

@@ -4,16 +4,21 @@ User endpoints.
 import hashlib
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session
 
-from app.api.dependencies import get_current_user, _get_user_cache
+from app.api.dependencies import _get_user_cache, get_current_user
 from app.core.config import settings
 from app.core.database import get_session
-from app.core.logging_config import log_user_action, log_error
+from app.core.logging_config import log_error, log_user_action
 from app.models.user import User
-from app.schemas.user import UserResponse, UserUpdate, UserSettingsResponse, UserSettingsUpdate
+from app.schemas.user import (
+    UserResponse,
+    UserSettingsResponse,
+    UserSettingsUpdate,
+    UserUpdate,
+)
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -98,14 +103,14 @@ async def update_current_user(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         # Handle unexpected errors
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating user"
-        )
+        ) from None
 
     log_user_action(current_user.email, "Updated user", request_id="")
 
@@ -182,7 +187,7 @@ async def delete_current_user(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while deleting user account"
-        )
+        ) from None
 
 
 @router.get(
@@ -212,7 +217,7 @@ async def get_current_user_settings(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Settings not found"
-        )
+        ) from None
 
 
 @router.put(
@@ -247,10 +252,10 @@ async def update_current_user_settings(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating settings"
-        )
+        ) from None

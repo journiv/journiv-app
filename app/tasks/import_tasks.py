@@ -8,12 +8,12 @@ from sqlmodel import Session
 
 from app.core.celery_app import celery_app
 from app.core.database import engine
-from app.core.logging_config import log_info, log_warning, log_error
+from app.core.logging_config import log_error, log_info
+from app.models.enums import ImportSourceType
 from app.models.import_job import ImportJob
-from app.models.enums import JobStatus, ImportSourceType
 from app.services.import_service import ImportService
-from app.utils.import_export.constants import ProgressStages
 from app.utils.import_export import validate_import_data
+from app.utils.import_export.constants import ProgressStages
 from app.utils.import_export.progress_utils import create_throttled_progress_callback
 
 
@@ -33,7 +33,7 @@ def process_import_job(self, job_id: str):
     with Session(engine) as db:
         try:
             # Get job
-            job = db.query(ImportJob).filter(ImportJob.id == job_uuid).first()
+            job = db.get(ImportJob, job_uuid)
             if not job:
                 log_error(f"Import job not found: {job_id}", job_id=job_id)
                 return {
@@ -55,6 +55,8 @@ def process_import_job(self, job_id: str):
             db.commit()
 
             # Extract import data (skip for Day One - has custom extraction)
+            if not job.file_path:
+                raise ValueError("Import job must have a file_path")
             file_path = Path(job.file_path)
 
             if job.source_type == ImportSourceType.DAYONE:
@@ -92,6 +94,8 @@ def process_import_job(self, job_id: str):
 
             # Import based on source type
             if job.source_type == ImportSourceType.JOURNIV:
+                if data is None:
+                    raise ValueError("Import data must be present for Journiv import")
                 summary = import_service.import_journiv_data(
                     user_id=job.user_id,
                     data=data,
@@ -149,7 +153,8 @@ def process_import_job(self, job_id: str):
             # Mark as failed
             user_id = None
             try:
-                job = db.query(ImportJob).filter(ImportJob.id == job_uuid).first()
+                db.rollback()
+                job = db.get(ImportJob, job_uuid)
                 if job:
                     user_id = str(job.user_id)
                     job.mark_failed(str(e))
@@ -157,8 +162,10 @@ def process_import_job(self, job_id: str):
 
                     # Try to clean up temp files even on failure
                     if job.file_path:
+                        file_p = Path(str(job.file_path))
                         import_service = ImportService(db)
-                        import_service.cleanup_temp_files(Path(job.file_path))
+                        import_service.cleanup_temp_files(file_p)
+                        log_info(f"Cleaned up temp files for job {job_id}")
             except Exception as cleanup_error:
                 log_error(cleanup_error, job_id=job_id, user_id=user_id, context="cleanup")
 

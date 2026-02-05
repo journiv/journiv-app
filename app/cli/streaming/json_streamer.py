@@ -6,9 +6,10 @@ preventing memory exhaustion on multi-GB exports.
 """
 import json
 from pathlib import Path
-from typing import Iterator, Dict, Any
+from typing import Any, Dict, Iterator
+
 import ijson
-from ijson.common import JSONError, IncompleteJSONError
+from ijson.common import IncompleteJSONError, JSONError
 
 
 def stream_parse_journiv_data(file_path: Path) -> Iterator[Dict[str, Any]]:

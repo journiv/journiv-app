@@ -11,7 +11,7 @@ from app.api.dependencies import get_current_admin_user
 from app.core.database import get_session
 from app.core.logging_config import log_info, log_warning
 from app.models.user import User
-from app.schemas.version import VersionInfoResponse, ForceVersionCheckResponse
+from app.schemas.version import ForceVersionCheckResponse, VersionInfoResponse
 from app.services.version_checker import VersionChecker, format_wait_time
 
 router = APIRouter(prefix="/instance/version", tags=["version"])

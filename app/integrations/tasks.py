@@ -16,24 +16,23 @@ Scheduling:
 import asyncio
 from typing import Any, Awaitable, Callable
 
-from sqlalchemy.pool import NullPool
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
-from app.models.integration import IntegrationProvider
+from app.core.logging_config import log_error, log_info
 from app.integrations.service import (
-    sync_integration,
-    sync_all_integrations,
     add_assets_to_integration_album,
-    remove_assets_from_integration_album
+    remove_assets_from_integration_album,
+    sync_all_integrations,
+    sync_integration,
 )
+from app.models.integration import IntegrationProvider
 from app.models.user import User
 
-from app.core.logging_config import log_info, log_error
 
 def _build_async_database_url() -> str:
     url = make_url(settings.effective_database_url)
@@ -53,7 +52,7 @@ async_engine = create_async_engine(
     echo=False,
     poolclass=NullPool
 )
-async_session_factory = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
+async_session_factory = async_sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
 
 
 async def _run_with_session(task_func: Callable[..., Awaitable[Any]], *args, **kwargs) -> Any:
@@ -62,13 +61,14 @@ async def _run_with_session(task_func: Callable[..., Awaitable[Any]], *args, **k
 
 
 def _run_async(task_func: Callable[..., Awaitable[Any]], *args, **kwargs) -> Any:
-    log_info(f"Starting background task: {task_func.__name__}")
+    task_name = getattr(task_func, "__name__", task_func.__class__.__name__)
+    log_info(f"Starting background task: {task_name}")
     try:
         result = asyncio.run(_run_with_session(task_func, *args, **kwargs))
-        log_info(f"Completed background task: {task_func.__name__}")
+        log_info(f"Completed background task: {task_name}")
         return result
     except Exception as e:
-        log_error(e, task_name=task_func.__name__)
+        log_error(e, task_name=task_name)
         raise
 
 

@@ -18,8 +18,8 @@ The signature is computed over:
 - SHA256 hash of canonical JSON body
 """
 
-import hmac
 import hashlib
+import hmac
 import json
 from typing import Any, Dict
 

@@ -2,8 +2,9 @@
 Plus-scoped tag schemas for backend-to-plus communication.
 """
 import uuid
-from typing import List, Optional
 from datetime import datetime
+from typing import List, Optional
+
 from pydantic import BaseModel
 
 

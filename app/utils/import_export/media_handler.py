@@ -5,9 +5,8 @@ Handles file validation, checksum calculation, and media deduplication.
 """
 import hashlib
 import mimetypes
-import logging
 from pathlib import Path
-from typing import Optional, Tuple, BinaryIO, ClassVar, Union
+from typing import BinaryIO, ClassVar, Optional, Tuple
 
 
 class MediaHandler:

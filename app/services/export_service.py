@@ -7,28 +7,29 @@ import json
 import tempfile
 from datetime import timedelta
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Callable
+from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from sqlmodel import col
 
 from app.core.config import settings
 from app.core.logging_config import log_info, log_warning
 from app.core.time_utils import utc_now
-from app.models import User, Journal, Entry, EntryMedia, Mood, Tag
-from app.models.export_job import ExportJob
+from app.models import Entry, EntryMedia, Journal, Mood, User
 from app.models.enums import ExportType
+from app.models.export_job import ExportJob
 from app.schemas.dto import (
-    JournivExportDTO,
-    JournalDTO,
     EntryDTO,
+    JournalDTO,
+    JournivExportDTO,
     MediaDTO,
     MoodDefinitionDTO,
-    UserSettingsDTO,
     MoodLogDTO,
+    UserSettingsDTO,
 )
-from app.utils.import_export import ZipHandler, MediaHandler, validate_export_data
+from app.utils.import_export import MediaHandler, ZipHandler, validate_export_data
 from app.utils.import_export.constants import ExportConfig
 
 
@@ -70,7 +71,9 @@ class ExportService:
             ValueError: If export type is invalid or user not found
         """
         # Validate user exists
-        user = self.db.query(User).filter(User.id == user_id).first()
+        user = self.db.execute(
+            select(User).where(col(User.id) == user_id)
+        ).unique().scalar_one_or_none()
         if not user:
             raise ValueError(f"User not found: {user_id}")
         self._media_export_map.clear()
@@ -112,18 +115,21 @@ class ExportService:
         Raises:
             ValueError: If user not found
         """
-        user = self.db.query(User).filter(User.id == user_id).first()
+        user = self.db.execute(
+            select(User).where(col(User.id) == user_id)
+        ).unique().scalar_one_or_none()
         if not user:
             raise ValueError(f"User not found: {user_id}")
 
-        journals_query = self.db.query(Journal).filter(Journal.user_id == user_id)
+        journals_statement = select(Journal).where(col(Journal.user_id) == user_id)
 
         if export_type == ExportType.JOURNAL and journal_ids:
             # Selective journal export
             journal_uuids = [UUID(jid) for jid in journal_ids]
-            journals_query = journals_query.filter(Journal.id.in_(journal_uuids))
+            journals_statement = journals_statement.where(col(Journal.id).in_(journal_uuids))
 
-        journals = journals_query.all()
+        journals_result = self.db.execute(journals_statement)
+        journals = list(journals_result.unique().scalars().all())
         if total_entries is None:
             total_entries = self.count_entries(user_id, export_type, journal_ids)
 
@@ -288,14 +294,17 @@ class ExportService:
         journal_ids: Optional[List[str]] = None,
     ) -> int:
         """Count the number of entries that will be included in the export."""
-        query = self.db.query(func.count(Entry.id)).join(Journal, Entry.journal_id == Journal.id)
-        query = query.filter(Journal.user_id == user_id)
+        query = (
+            select(func.count(Entry.id))
+            .join(Journal, Entry.journal_id == Journal.id)
+            .where(Journal.user_id == user_id)
+        )
 
         if export_type == ExportType.JOURNAL and journal_ids:
             journal_uuids = [UUID(jid) for jid in journal_ids]
-            query = query.filter(Entry.journal_id.in_(journal_uuids))
+            query = query.where(col(Entry.journal_id).in_(journal_uuids))
 
-        return int(query.scalar() or 0)
+        return int(self.db.execute(query).scalar_one() or 0)
 
     def _convert_journal_to_dto(
         self,
@@ -310,21 +319,17 @@ class ExportService:
         - journal.color -> color (enum to string)
         - journal.is_archived, entry_count, last_entry_at included
         """
-        from sqlalchemy.orm import joinedload
-        from app.models.mood import MoodLog
+        # Get all entries for this journal without eager loading to avoid duplicate row issues
+        from sqlalchemy.orm import lazyload
 
-        # Get all entries for this journal with eager loading
-        entries = (
-            self.db.query(Entry)
-            .filter(Entry.journal_id == journal.id)
-            .options(
-                joinedload(Entry.tags),
-                joinedload(Entry.mood_log).joinedload(MoodLog.mood),
-                joinedload(Entry.media),
-            )
-            .order_by(Entry.entry_datetime_utc)
-            .all()
+        entries_statement = (
+            select(Entry)
+            .where(col(Entry.journal_id) == journal.id)
+            .options(lazyload("*"))
+            .order_by(col(Entry.entry_datetime_utc))
         )
+        entries_result = self.db.execute(entries_statement)
+        entries = list(entries_result.unique().scalars().all())
 
         entry_dtos = []
         for entry in entries:
@@ -477,7 +482,8 @@ class ExportService:
         - mood.category -> category
         - Placeholders: score, color set to None
         """
-        moods = self.db.query(Mood).all()
+        moods_result = self.db.execute(select(Mood))
+        moods = list(moods_result.unique().scalars().all())
 
         mood_dtos = []
         for mood in moods:
@@ -560,6 +566,7 @@ class ExportService:
 
     def _build_media_export_path(self, media: EntryMedia) -> str:
         """Build a sanitized relative path for media inside the export ZIP."""
-        original_name = media.original_filename or Path(media.file_path).name
+        file_path = media.file_path or ""
+        original_name = media.original_filename or (Path(file_path).name if file_path else "media")
         safe_name = self.media_handler.sanitize_filename(original_name)
         return f"{media.entry_id}/{media.id}_{safe_name}"

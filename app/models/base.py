@@ -7,7 +7,8 @@ Uses timezone-aware UTC datetimes following modern Python best practices.
 import uuid
 from datetime import datetime
 
-from sqlmodel import SQLModel, Field
+from sqlmodel import Field, SQLModel
+
 from app.core.time_utils import utc_now
 
 

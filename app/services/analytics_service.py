@@ -2,19 +2,19 @@
 Analytics service for managing analytics data.
 """
 import uuid
-from datetime import datetime, date, timedelta, timezone
-from typing import Optional, Dict, Any
+from datetime import date, timedelta
+from typing import Any, Dict, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlmodel import Session, select, func
+from sqlmodel import Session, col, func, select
 
-from app.core.logging_config import log_info, log_error
-from app.models.analytics import WritingStreak
+from app.core.logging_config import log_error, log_info
 from app.core.time_utils import utc_now
+from app.models.analytics import WritingStreak
 from app.models.entry import Entry
 from app.models.journal import Journal
 from app.models.mood import MoodLog
-from app.models.tag import Tag, EntryTagLink
+from app.models.tag import EntryTagLink, Tag
 
 
 class AnalyticsService:
@@ -147,7 +147,7 @@ class AnalyticsService:
                 func.coalesce(func.sum(Entry.word_count), 0).label("total_words"),
             ).where(
                 Entry.user_id == user_id,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
         ).first()
 
@@ -181,9 +181,9 @@ class AnalyticsService:
             select(Entry)
             .where(
                 Entry.user_id == user_id,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
-            .order_by(Entry.entry_date.desc())
+            .order_by(col(Entry.entry_date).desc())
         ).all()
 
         unique_dates = sorted(
@@ -261,7 +261,7 @@ class AnalyticsService:
         # Get entries by day
         entries_by_day = self.session.exec(
             select(
-                Entry.entry_date.label('entry_date'),
+                col(Entry.entry_date).label('entry_date'),
                 func.count(Entry.id).label('entry_count'),
                 func.sum(Entry.word_count).label('total_words')
             )
@@ -269,16 +269,16 @@ class AnalyticsService:
                 Entry.user_id == user_id,
                 Entry.entry_date >= start_date,
                 Entry.entry_date <= end_date,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
             .group_by(Entry.entry_date)
-            .order_by(Entry.entry_date)
+            .order_by(col(Entry.entry_date))
         ).all()
 
         # Get mood patterns
         mood_patterns = self.session.exec(
             select(
-                MoodLog.logged_date.label('mood_date'),
+                col(MoodLog.logged_date).label('mood_date'),
                 func.count(MoodLog.id).label('mood_count')
             )
             .where(
@@ -287,7 +287,7 @@ class AnalyticsService:
                 MoodLog.logged_date <= end_date
             )
             .group_by(MoodLog.logged_date)
-            .order_by(MoodLog.logged_date)
+            .order_by(col(MoodLog.logged_date))
         ).all()
 
         # Get tag usage
@@ -303,7 +303,7 @@ class AnalyticsService:
                 Entry.user_id == user_id,
                 Entry.entry_date >= start_date,
                 Entry.entry_date <= end_date,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
             .group_by(Tag.name)
             .order_by(func.count(EntryTagLink.entry_id).desc())
@@ -346,7 +346,7 @@ class AnalyticsService:
             .where(
                 Entry.user_id == user_id,
                 Entry.entry_datetime_utc >= month_start,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
         ).one() or 0
 
@@ -355,7 +355,7 @@ class AnalyticsService:
             .where(
                 Entry.user_id == user_id,
                 Entry.entry_datetime_utc >= month_start,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
         ).one() or 0
 
@@ -369,7 +369,7 @@ class AnalyticsService:
                 Entry.user_id == user_id,
                 Entry.entry_datetime_utc >= last_month_start,
                 Entry.entry_datetime_utc < month_start,
-                Entry.is_draft.is_(False),
+                col(Entry.is_draft).is_(False),
             )
         ).one() or 0
 
@@ -391,7 +391,7 @@ class AnalyticsService:
         """Get analytics for all journals of a user."""
         # Get journal stats
         journal_stats = self.session.exec(
-            select(
+            select(  # type: ignore[no-matching-overload]
                 Journal.id,
                 Journal.title,
                 func.count(Entry.id).label('entry_count'),
@@ -400,7 +400,7 @@ class AnalyticsService:
             )
             .outerjoin(
                 Entry,
-                (Journal.id == Entry.journal_id) & (Entry.is_draft.is_(False))
+                (col(Journal.id) == col(Entry.journal_id)) & (col(Entry.is_draft).is_(False))
             )
             .where(
                 Journal.user_id == user_id,

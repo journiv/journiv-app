@@ -129,7 +129,7 @@ def decrypt_token(encrypted_token: str) -> str:
             "Failed to decrypt token. This may indicate the token is corrupted "
             "or the SECRET_KEY has changed. "
             "The user may need to reconnect their integration."
-        )
+        ) from None
     except Exception as e:
         log_error(e, action="token_decryption")
         raise

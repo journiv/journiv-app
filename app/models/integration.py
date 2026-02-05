@@ -13,17 +13,16 @@ Extension Points:
 - Add external_id for mapping to provider's ID system
 - Include timestamps for sync management
 """
+import json
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, TYPE_CHECKING, Any, Dict
-import json
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from pydantic import HttpUrl
-from sqlalchemy import Column, ForeignKey, Text, String, UniqueConstraint
-from sqlmodel import Field, Relationship, Index
+from sqlalchemy import Column, ForeignKey, String, Text, UniqueConstraint
+from sqlmodel import Field, Index, Relationship
 
-from app.models.base import BaseModel, TimestampMixin
+from app.models.base import BaseModel
 
 if TYPE_CHECKING:
     from app.models.user import User

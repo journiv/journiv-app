@@ -1,26 +1,28 @@
 """
 License management API endpoints for Journiv Plus.
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy.orm import Session
+import logging
+from typing import Annotated
 
-from app.api.dependencies import get_db, get_current_admin_user
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlmodel import Session
+
+from app.api.dependencies import get_current_admin_user, get_db
 from app.core.exceptions import (
-    LicenseResetInstallIdMismatchError,
     LicenseResetEmailMismatchError,
+    LicenseResetInstallIdMismatchError,
     LicenseResetRateLimitedError,
 )
 from app.core.logging_config import log_error, log_user_action
 from app.models.user import User
 from app.schemas.license import (
+    LicenseInfoResponse,
     LicenseRegisterRequest,
     LicenseRegisterResponse,
-    LicenseInfoResponse,
     LicenseResetRequest,
     LicenseResetResponse,
 )
 from app.services.license_service import LicenseService
-import logging
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/instance/license", tags=["license"])
@@ -40,8 +42,8 @@ router = APIRouter(prefix="/instance/license", tags=["license"])
 async def register_license(
     http_request: Request,
     request: LicenseRegisterRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
 ) -> LicenseRegisterResponse:
     """
     Register a Plus license to this installation.
@@ -82,7 +84,7 @@ async def register_license(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during license registration"
-        )
+        ) from None
 
 
 @router.get(
@@ -100,9 +102,9 @@ async def register_license(
 )
 async def get_license_info(
     http_request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_admin_user)],
     refresh: bool = False,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
 ) -> LicenseInfoResponse:
     """
     Get detailed information about the current Plus license.
@@ -135,7 +137,7 @@ async def get_license_info(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred retrieving license information"
-        )
+        ) from None
 
 
 @router.post(
@@ -153,8 +155,8 @@ async def get_license_info(
 async def reset_license(
     http_request: Request,
     request: LicenseResetRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_admin_user)
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_admin_user)]
 ) -> LicenseResetResponse:
     """
     Unbind the Plus license from this installation.
@@ -205,12 +207,12 @@ async def reset_license(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="install_id does not match this installation"
-        )
+        ) from None
     except LicenseResetEmailMismatchError as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(e)
-        )
+        ) from None
     except LicenseResetRateLimitedError as e:
         retry_after = e.retry_after
         wait_minutes = max(1, retry_after // 60)
@@ -221,7 +223,7 @@ async def reset_license(
                 "detail": f"Please wait {wait_minutes} minute(s) before resetting again",
                 "retry_after": retry_after
             }
-        )
+        ) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -233,4 +235,4 @@ async def reset_license(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred during license unbind"
-        )
+        ) from None

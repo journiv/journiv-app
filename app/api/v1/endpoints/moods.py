@@ -3,20 +3,17 @@ Mood endpoints.
 """
 import uuid
 from datetime import date
-from typing import Annotated, List, Optional, Dict, Any
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
-from app.core.exceptions import MoodNotFoundError, EntryNotFoundError
+from app.core.exceptions import EntryNotFoundError, MoodNotFoundError
 from app.core.logging_config import log_error
 from app.models.user import User
-from app.schemas.mood import (
-    MoodResponse,
-    MoodLogCreate, MoodLogUpdate, MoodLogResponse
-)
+from app.schemas.mood import MoodLogCreate, MoodLogResponse, MoodLogUpdate, MoodResponse
 from app.services.mood_service import MoodService
 
 router = APIRouter(prefix="/moods", tags=["moods"])
@@ -35,7 +32,7 @@ router = APIRouter(prefix="/moods", tags=["moods"])
 async def get_all_moods(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    category: Optional[str] = Query(None)
+    category: Annotated[Optional[str], Query()] = None
 ):
     """
     Get all system moods, optionally filtered by category.
@@ -66,7 +63,7 @@ async def get_all_moods(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving moods"
-        )
+        ) from None
 
 
 @router.get(
@@ -80,12 +77,12 @@ async def get_all_moods(
 async def get_user_mood_logs(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    mood_id: Optional[str] = Query(None),
-    entry_id: Optional[str] = Query(None),
-    start_date: Optional[str] = Query(None),
-    end_date: Optional[str] = Query(None)
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    mood_id: Annotated[Optional[str], Query()] = None,
+    entry_id: Annotated[Optional[str], Query()] = None,
+    start_date: Annotated[Optional[str], Query()] = None,
+    end_date: Annotated[Optional[str], Query()] = None
 ):
     """
     Get mood logs for the current user with optional filters.
@@ -103,7 +100,7 @@ async def get_user_mood_logs(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid mood_id format"
-                )
+                ) from None
 
         parsed_entry_id: Optional[uuid.UUID] = None
         if entry_id and entry_id.strip():
@@ -113,7 +110,7 @@ async def get_user_mood_logs(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid entry_id format"
-                )
+                ) from None
 
         parsed_start_date: Optional[date] = None
         if start_date and start_date.strip():
@@ -123,7 +120,7 @@ async def get_user_mood_logs(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid start_date format (YYYY-MM-DD)"
-                )
+                ) from None
 
         parsed_end_date: Optional[date] = None
         if end_date and end_date.strip():
@@ -133,7 +130,7 @@ async def get_user_mood_logs(
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid end_date format (YYYY-MM-DD)"
-                )
+                ) from None
 
         mood_logs = mood_service.get_user_mood_logs(
             current_user.id, limit, offset, parsed_mood_id, parsed_entry_id, parsed_start_date, parsed_end_date
@@ -146,7 +143,7 @@ async def get_user_mood_logs(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving mood logs"
-        )
+        ) from None
 
 
 # User Mood Logging - IMPORTANT: /log/recent must come BEFORE /log/{mood_log_id}
@@ -161,7 +158,7 @@ async def get_user_mood_logs(
 async def get_recent_moods(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    limit: int = Query(10, ge=1, le=50)
+    limit: Annotated[int, Query(ge=1, le=50)] = 10
 ):
     """
     Get recent mood logs for the current user.
@@ -177,7 +174,7 @@ async def get_recent_moods(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving recent moods"
-        )
+        ) from None
 
 
 @router.post(
@@ -205,23 +202,23 @@ async def log_mood(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Mood not found"
-        )
+        ) from None
     except EntryNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Entry not found"
-        )
+        ) from None
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while logging mood"
-        )
+        ) from None
 
 
 @router.get(
@@ -255,7 +252,7 @@ async def get_mood_log(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving mood log"
-        )
+        ) from None
 
 
 @router.put(
@@ -283,18 +280,18 @@ async def update_mood_log(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Mood log not found"
-        )
+        ) from None
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while updating mood log"
-        )
+        ) from None
 
 
 @router.delete(
@@ -319,13 +316,13 @@ async def delete_mood_log(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Mood log not found"
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while deleting mood log"
-        )
+        ) from None
 
 
 # Mood Analytics
@@ -340,8 +337,8 @@ async def delete_mood_log(
 async def get_mood_statistics(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    start_date: Optional[date] = Query(None),
-    end_date: Optional[date] = Query(None)
+    start_date: Annotated[Optional[date], Query()] = None,
+    end_date: Annotated[Optional[date], Query()] = None
 ):
     """
     Get mood statistics for the current user.
@@ -357,7 +354,7 @@ async def get_mood_statistics(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving mood statistics"
-        )
+        ) from None
 
 
 @router.get(
@@ -386,7 +383,7 @@ async def get_mood_streak(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving mood streak"
-        )
+        ) from None
 
 
 @router.get(
@@ -419,10 +416,10 @@ async def get_mood(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Mood not found"
-        )
+        ) from None
     except Exception as e:
         log_error(e, request_id="", user_email=current_user.email)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while retrieving mood"
-        )
+        ) from None

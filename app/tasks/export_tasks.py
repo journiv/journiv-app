@@ -7,7 +7,7 @@ from sqlmodel import Session
 
 from app.core.celery_app import celery_app
 from app.core.database import engine
-from app.core.logging_config import log_info, log_warning, log_error
+from app.core.logging_config import log_error, log_info, log_warning
 from app.models.export_job import ExportJob
 from app.services.export_service import ExportService
 from app.utils.import_export.constants import ProgressStages
@@ -30,7 +30,7 @@ def process_export_job(job_id: str):
     with Session(engine) as db:
         try:
             # Get job
-            job = db.query(ExportJob).filter(ExportJob.id == job_uuid).first()
+            job = db.get(ExportJob, job_uuid)
             if not job:
                 log_error(f"Export job not found: {job_id}", job_id=job_id)
                 return {
@@ -126,7 +126,7 @@ def process_export_job(job_id: str):
             # Mark as failed
             user_id = None
             try:
-                job = db.query(ExportJob).filter(ExportJob.id == job_uuid).first()
+                job = db.get(ExportJob, job_uuid)
                 if job:
                     user_id = str(job.user_id)
                     job.mark_failed(str(e))

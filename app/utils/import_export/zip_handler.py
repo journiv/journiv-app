@@ -3,16 +3,16 @@ ZIP file handling utilities for import/export.
 
 Handles creation and extraction of ZIP archives for data exports/imports.
 """
-import zipfile
-import json
-import shutil
 import gc
+import json
 import logging
+import shutil
+import zipfile
 from pathlib import Path
-from typing import Optional, List, Dict, Any, Callable
+from typing import Any, Callable, Dict, List, Optional
 
 from app.core.config import settings
-from app.core.logging_config import log_warning, log_error
+from app.core.logging_config import log_error, log_warning
 from app.utils.import_export.media_handler import MediaHandler
 
 logger = logging.getLogger(__name__)
@@ -157,7 +157,7 @@ class ZipHandler:
                         # Path is outside extract_to directory
                         raise ValueError(
                             f"ZIP contains unsafe path: {info.filename}"
-                        )
+                        ) from None
 
                 # Extract all files
                 zipf.extractall(extract_to)
@@ -346,7 +346,7 @@ class ZipHandler:
 
                 # Ensure extract_to exists
                 extract_to.mkdir(parents=True, exist_ok=True)
-                extract_to_resolved = extract_to.resolve()
+                extract_to.resolve()
 
                 # Get file list
                 entries = zipf.infolist()
@@ -390,7 +390,7 @@ class ZipHandler:
                     try:
                         target_path.relative_to(target_dir.resolve())
                     except ValueError:
-                        raise ValueError(f"ZIP contains unsafe path: {info.filename}")
+                        raise ValueError(f"ZIP contains unsafe path: {info.filename}") from None
 
                     # Extract single file to appropriate destination
                     target_path.parent.mkdir(parents=True, exist_ok=True)
@@ -437,7 +437,7 @@ class ZipHandler:
                                 if target_path.exists():
                                     target_path.unlink()
                                     logger.info(f"Deleted invalid media file: {target_path}")
-                            except Exception as cleanup_exc:
+                            except Exception:
                                 # Log but don't fail the whole extraction for a cleanup error
                                 logger.exception(
                                     f"Failed to delete invalid media file {target_path}"

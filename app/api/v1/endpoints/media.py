@@ -5,48 +5,58 @@ import inspect
 import logging
 import uuid
 from pathlib import Path
-from typing import Annotated, Optional, AsyncGenerator
+from typing import Annotated, AsyncGenerator, Optional
 
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Header, Query
+import httpx
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
+from starlette.background import BackgroundTask
 
 from app.api.dependencies import get_current_user, get_current_user_detached
 from app.core import database as database_module
+from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.exceptions import (
+    EntryNotFoundError,
+    FileTooLargeError,
+    FileValidationError,
+    InvalidFileTypeError,
+    MediaNotFoundError,
+)
+from app.core.logging_config import LogCategory
 from app.core.media_signing import (
     attach_signed_urls,
     is_signature_expired,
 )
-from app.core.exceptions import (
-    MediaNotFoundError,
-    EntryNotFoundError,
-    FileTooLargeError,
-    InvalidFileTypeError,
-    FileValidationError
-)
 from app.core.signing import verify_media_signature
-from app.core.logging_config import LogCategory
-from app.models.enums import UploadStatus
+from app.integrations.service import fetch_proxy_asset
 from app.models.user import User
 from app.schemas.entry import EntryMediaResponse
+from app.schemas.media import (
+    ImmichImportJobResponse,
+    ImmichImportRequest,
+    ImmichImportStartResponse,
+    MediaBatchSignItem,
+    MediaBatchSignRequest,
+    MediaBatchSignResponse,
+    MediaSignedUrlResponse,
+)
 from app.services import entry_service as entry_service_module
 from app.services import media_service as media_service_module
 from app.services.import_job_service import ImportJobService
-from app.schemas.media import (
-    ImmichImportRequest,
-    ImmichImportStartResponse,
-    ImmichImportJobResponse,
-    MediaSignedUrlResponse,
-    MediaBatchSignRequest,
-    MediaBatchSignResponse,
-    MediaBatchSignItem,
-)
-from app.core.celery_app import celery_app
-from app.integrations.service import fetch_proxy_asset
-import httpx
-from starlette.background import BackgroundTask
+
 
 async def _close_httpx_stream(response: httpx.Response) -> None:
     """Ensure streamed HTTP responses release network resources."""
@@ -148,9 +158,9 @@ class SignedMediaRequest:
 
 def verify_signed_media_request(
     media_id: uuid.UUID,
-    uid: uuid.UUID = Query(..., alias="uid"),
-    exp: int = Query(..., alias="exp"),
-    sig: str = Query(..., alias="sig"),
+    uid: Annotated[uuid.UUID, Query(alias="uid")],
+    exp: Annotated[int, Query(alias="exp")],
+    sig: Annotated[str, Query(alias="sig")],
     media_type: str = "journiv",
     variant: str = "original",
 ) -> SignedMediaRequest:
@@ -201,9 +211,9 @@ def verify_signed_media_request(
 )
 async def upload_media(
     current_user: Annotated[User, Depends(get_current_user_detached)],
-    file: UploadFile = File(...),
-    entry_id: uuid.UUID = Form(...),
-    alt_text: Optional[str] = Form(None),
+    file: Annotated[UploadFile, File()],
+    entry_id: Annotated[uuid.UUID, Form()],
+    alt_text: Annotated[Optional[str], Form()] = None,
 ):
     """
     Upload a media file.
@@ -252,22 +262,22 @@ async def upload_media(
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=str(e)
-        )
+        ) from None
     except FileValidationError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except InvalidFileTypeError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except EntryNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Entry not found"
-        )
+        ) from None
     except Exception as e:
         error_logger.error(
             "Unexpected error uploading media",
@@ -277,7 +287,7 @@ async def upload_media(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while uploading file"
-        )
+        ) from None
 
 
 @router.delete(
@@ -313,7 +323,7 @@ async def delete_media(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Media not found"
-        )
+        ) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -324,7 +334,7 @@ async def delete_media(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while deleting media"
-        )
+        ) from None
 
 
 @router.get(
@@ -406,7 +416,7 @@ async def batch_sign_media(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to sign media URLs"
-        )
+        ) from None
 
 
 @router.get(
@@ -420,10 +430,10 @@ async def batch_sign_media(
 )
 async def get_media_signed(
     media_id: uuid.UUID,
-    uid: uuid.UUID = Query(..., alias="uid"),
-    exp: int = Query(..., alias="exp"),
-    sig: str = Query(..., alias="sig"),
-    range_header: Optional[str] = Header(None, alias="range")
+    uid: Annotated[uuid.UUID, Query(alias="uid")],
+    exp: Annotated[int, Query(alias="exp")],
+    sig: Annotated[str, Query(alias="sig")],
+    range_header: Annotated[Optional[str], Header(alias="range")] = None
 ):
     """Get media file by ID using a short-lived signed URL."""
     if is_signature_expired(exp, settings.media_signed_url_grace_seconds):
@@ -496,7 +506,7 @@ async def get_media_signed(
                 response.raise_for_status()
             except httpx.HTTPStatusError as e:
                 await _close_httpx_stream(response)
-                raise HTTPException(status_code=e.response.status_code, detail="Provider error")
+                raise HTTPException(status_code=e.response.status_code, detail="Provider error") from None
 
             # Forward headers
             response_headers = {
@@ -554,17 +564,17 @@ async def get_media_signed(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Media not found"
-        )
+        ) from None
     except ValueError as e:
         if "Range" in str(e):
             raise HTTPException(
                 status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
                 detail=str(e)
-            )
+            ) from None
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
-        )
+        ) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -573,7 +583,7 @@ async def get_media_signed(
             extra={"media_id": str(media_id)},
             exc_info=True
         )
-        raise HTTPException(status_code=500, detail="Failed to serve file")
+        raise HTTPException(status_code=500, detail="Failed to serve file") from None
 
 
 @router.get(
@@ -586,9 +596,9 @@ async def get_media_signed(
 )
 async def get_media_thumbnail_signed(
     media_id: uuid.UUID,
-    uid: uuid.UUID = Query(..., alias="uid"),
-    exp: int = Query(..., alias="exp"),
-    sig: str = Query(..., alias="sig"),
+    uid: Annotated[uuid.UUID, Query(alias="uid")],
+    exp: Annotated[int, Query(alias="exp")],
+    sig: Annotated[str, Query(alias="sig")],
 ):
     """Get media thumbnail by ID using a short-lived signed URL."""
     if is_signature_expired(exp, settings.media_signed_url_grace_seconds):
@@ -667,7 +677,7 @@ async def get_media_thumbnail_signed(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Thumbnail not found"
-        )
+        ) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -678,7 +688,7 @@ async def get_media_thumbnail_signed(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to serve thumbnail"
-        )
+        ) from None
 
 
 @router.get(
@@ -707,7 +717,7 @@ async def get_media_info(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Media not found"
-        )
+        ) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -718,7 +728,7 @@ async def get_media_info(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get media information"
-        )
+        ) from None
 
 
 @router.get(
@@ -747,7 +757,7 @@ async def get_supported_formats(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get supported formats"
-        )
+        ) from None
 
 
 
@@ -776,7 +786,7 @@ async def import_from_immich_async(
     - LINK_ONLY: Creates placeholder media and processes metadata asynchronously
     - COPY: Creates placeholder media and processes downloads asynchronously
     """
-    from app.models.integration import Integration, IntegrationProvider, ImportMode
+    from app.models.integration import ImportMode, Integration, IntegrationProvider
     from app.services.import_job_service import ImportJobService
 
     try:
@@ -848,7 +858,7 @@ async def import_from_immich_async(
              select(EntryMedia)
              .where(EntryMedia.entry_id == request.entry_id)
              .where(EntryMedia.external_provider == "immich")
-             .where(EntryMedia.external_asset_id.in_(request.asset_ids))
+             .where(col(EntryMedia.external_asset_id).in_(request.asset_ids))
         ).all()
         file_logger.debug(
             "[IMMICH_IMPORT] Placeholder fetch completed",
@@ -884,7 +894,7 @@ async def import_from_immich_async(
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to queue Immich import job"
-                )
+                ) from None
         else:
             try:
                 celery_app.send_task(
@@ -914,7 +924,7 @@ async def import_from_immich_async(
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Failed to queue Immich import job"
-                )
+                ) from None
 
         file_logger.info(
             f"Created async import job {job.id}: processing in background",
@@ -968,7 +978,7 @@ async def import_from_immich_async(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start import job"
-        )
+        ) from None
 
 
 @router.get(
@@ -1036,9 +1046,8 @@ async def repair_immich_thumbnails(
     """
     Repair missing thumbnails for Immich media.
     """
-    from app.models.integration import Integration, IntegrationProvider
     from app.models.entry import Entry, EntryMedia
-    from sqlmodel import select
+    from app.models.integration import Integration, IntegrationProvider
 
     try:
         # Verify Immich integration exists and is active
@@ -1057,12 +1066,12 @@ async def repair_immich_thumbnails(
         # Find EntryMedia records that need thumbnail repair
         media_to_repair = session.exec(
             select(EntryMedia)
-            .join(Entry, Entry.id == EntryMedia.entry_id)
+            .join(Entry, col(Entry.id) == col(EntryMedia.entry_id))
             .where(Entry.user_id == current_user.id)
             .where(EntryMedia.external_provider == "immich")
-            .where(EntryMedia.external_asset_id.isnot(None))
+            .where(col(EntryMedia.external_asset_id).is_not(None))
             .where(
-                (EntryMedia.thumbnail_path.is_(None)) |
+                (col(EntryMedia.thumbnail_path).is_(None)) |
                 (EntryMedia.thumbnail_path == "")
             )
         ).all()
@@ -1090,7 +1099,7 @@ async def repair_immich_thumbnails(
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to start thumbnail repair"
-            )
+            ) from None
 
         file_logger.info(
             f"Scheduled thumbnail repair for {len(media_to_repair)} Immich media",
@@ -1114,7 +1123,7 @@ async def repair_immich_thumbnails(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to start thumbnail repair"
-        )
+        ) from None
 
 
 @router.post(
@@ -1156,7 +1165,7 @@ async def process_entry_media(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Entry not found"
-        )
+        ) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -1168,4 +1177,4 @@ async def process_entry_media(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while processing media"
-        )
+        ) from None

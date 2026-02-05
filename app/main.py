@@ -2,40 +2,50 @@
 Main FastAPI application for Journiv.
 """
 
-import time
-import socket
-import mimetypes
 import logging
-from pathlib import Path
-from urllib.parse import urlparse
+import mimetypes
+import socket
+import time
 from contextlib import asynccontextmanager
+from datetime import timedelta
+from pathlib import Path
+from typing import Any, cast
+from urllib.parse import urlparse
 
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import JSONResponse, FileResponse, Response
-from starlette.staticfiles import StaticFiles
-from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from fastapi.responses import FileResponse, JSONResponse
+from starlette.middleware.sessions import SessionMiddleware
+from starlette.staticfiles import StaticFiles
 
 from app.api.v1.api import api_router
+from app.core.cache import create_cache
 from app.core.config import settings
 from app.core.database import init_db
-from app.core.cache import create_cache
 from app.core.exceptions import (
-    JournivAppException, UserNotFoundError, UserAlreadyExistsError,
-    InvalidCredentialsError, JournalNotFoundError, EntryNotFoundError,
-    MoodNotFoundError, PromptNotFoundError, MediaNotFoundError,
-    FileTooLargeError, InvalidFileTypeError, FileValidationError,
-    TagNotFoundError, UnauthorizedError,
+    EntryNotFoundError,
+    FileTooLargeError,
+    FileValidationError,
+    InvalidCredentialsError,
+    InvalidFileTypeError,
+    JournalNotFoundError,
+    JournivAppException,
+    MediaNotFoundError,
+    MoodNotFoundError,
+    PromptNotFoundError,
+    TagNotFoundError,
+    UnauthorizedError,
+    UserAlreadyExistsError,
+    UserNotFoundError,
 )
-from app.core.logging_config import setup_logging, log_info, log_warning, log_error
 from app.core.http_client import close_http_client
+from app.core.logging_config import log_error, log_info, log_warning, setup_logging
 from app.core.rate_limiting import limiter, rate_limit_exceeded_handler
-from app.middleware.request_logging import request_id_ctx, RequestLoggingMiddleware
 from app.middleware.csp_middleware import create_csp_middleware
-from app.models.integration import Integration
+from app.middleware.request_logging import RequestLoggingMiddleware, request_id_ctx
 
 # -----------------------------------------------------------------------------
 # Startup / Shutdown
@@ -98,6 +108,7 @@ app = FastAPI(
 app.state.limiter = limiter
 try:
     from slowapi.errors import RateLimitExceeded
+
     from app.core.rate_limiting import SLOWAPI_AVAILABLE
     if SLOWAPI_AVAILABLE:
         app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
@@ -112,7 +123,7 @@ cors_enabled = bool(settings.enable_cors)
 cors_origins = settings.cors_origins or []
 if cors_enabled:
     app.add_middleware(
-        CORSMiddleware,
+        cast(Any, CORSMiddleware),
         allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
@@ -183,12 +194,12 @@ else:
 
 # GZip Middleware.
 # This compresses responses (HTML, JSON, JS, CSS, etc.) larger than 1KB.
-app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.add_middleware(cast(Any, GZipMiddleware), minimum_size=1024)
 
-app.add_middleware(TrustedHostMiddleware, allowed_hosts=trusted_hosts)
+app.add_middleware(cast(Any, TrustedHostMiddleware), allowed_hosts=trusted_hosts)
 
 # Logging Middleware
-app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(cast(Any, RequestLoggingMiddleware))
 
 # CSP / HSTS Middleware
 CSPMiddlewareClass = create_csp_middleware(
@@ -199,11 +210,11 @@ CSPMiddlewareClass = create_csp_middleware(
     csp_report_uri=settings.csp_report_uri
     or ("/api/v1/security/csp-report" if settings.environment == "production" else None),
 )
-app.add_middleware(CSPMiddlewareClass)
+app.add_middleware(cast(Any, CSPMiddlewareClass))
 
 # Session Middleware (required for OIDC state management with Authlib)
 app.add_middleware(
-    SessionMiddleware,
+    cast(Any, SessionMiddleware),
     secret_key=settings.secret_key,
     https_only=(settings.environment == "production"),
     same_site="lax",  # required for OIDC redirects to keep cookies alive
@@ -325,12 +336,6 @@ else:
 # -----------------------------------------------------------------------------
 # Flutter Web PWA Mount (with 1-week caching)
 # -----------------------------------------------------------------------------
-import logging, mimetypes
-from datetime import timedelta
-from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 
 log = logging.getLogger("uvicorn")
 WEB_BUILD_PATH = Path(__file__).resolve().parent.parent / "web"
