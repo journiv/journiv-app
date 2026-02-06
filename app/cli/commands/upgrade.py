@@ -4,6 +4,7 @@ Upgrade commands for Journiv data transformations.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Annotated, Any, Optional
@@ -34,7 +35,7 @@ UPGRADE_STEPS = [
 ]
 
 _DAYONE_MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
-_DAYONE_PLACEHOLDER_RE = re.compile(r"DAYONE_(PHOTO|VIDEO):([\\w-]+)")
+_DAYONE_PLACEHOLDER_RE = re.compile(r"DAYONE_(PHOTO|VIDEO):([\w-]+)")
 
 
 def _resolve_alembic_ini() -> Path:
@@ -133,6 +134,38 @@ def _build_dayone_placeholder_map(entry: Entry) -> dict[str, str]:
             if identifier:
                 placeholder_map[identifier] = media_id
 
+    if placeholder_map:
+        return placeholder_map
+
+    # Fallback: map by order_in_entry if filenames aren't md5-based.
+    order_to_media_id: dict[int, str] = {}
+    for media in entry.media or []:
+        if not media.file_metadata:
+            continue
+        try:
+            meta = json.loads(media.file_metadata)
+        except Exception:
+            continue
+        order = meta.get("order_in_entry")
+        if isinstance(order, int):
+            order_to_media_id[order] = str(media.id)
+
+    for item in media_items:
+        if not isinstance(item, dict):
+            continue
+        order = item.get("orderInEntry") or item.get("order_in_entry")
+        if not isinstance(order, int):
+            continue
+        media_id = order_to_media_id.get(order)
+        if not media_id:
+            continue
+        md5_hash = item.get("md5")
+        identifier = item.get("identifier")
+        if md5_hash:
+            placeholder_map[md5_hash] = media_id
+        if identifier:
+            placeholder_map[identifier] = media_id
+
     return placeholder_map
 
 
@@ -200,7 +233,7 @@ def _upgrade_dayone_inline_media(session: Session, batch_size: int, logger) -> i
     while True:
         query = (
             select(Entry)
-            .where(col(Entry.content_plain_text).contains("DAYONE_"))
+            .where(col(Entry.content_delta).is_not(None))
             .order_by(col(Entry.id))
             .limit(batch_size)
             .options(selectinload(Entry.media))  # type: ignore[arg-type]
