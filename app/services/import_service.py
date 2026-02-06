@@ -87,6 +87,36 @@ class ImportService:
         return replace_media_ids(content_delta, id_map)
 
     @staticmethod
+    def _build_dayone_placeholder_map(
+        entry_dto: EntryDTO,
+        legacy_media_id_map: Dict[str, str],
+    ) -> Dict[str, str]:
+        """Build Day One md5/identifier -> media_id map for placeholder replacement."""
+        import_metadata = entry_dto.import_metadata or {}
+        if import_metadata.get("source") != "dayone":
+            return {}
+
+        raw_dayone = import_metadata.get("raw_dayone") or {}
+        media_items = (raw_dayone.get("photos") or []) + (raw_dayone.get("videos") or [])
+        placeholder_map: Dict[str, str] = {}
+
+        for item in media_items:
+            if not isinstance(item, dict):
+                continue
+            identifier = item.get("identifier")
+            if not identifier:
+                continue
+            media_id = legacy_media_id_map.get(identifier)
+            if not media_id:
+                continue
+            placeholder_map[identifier] = media_id
+            md5_hash = item.get("md5")
+            if md5_hash:
+                placeholder_map[md5_hash] = media_id
+
+        return placeholder_map
+
+    @staticmethod
     def _add_warning(summary: ImportResultSummary, message: str, category: str):
         """Add a warning to summary and increment category count."""
         summary.warnings.append(message)
@@ -780,9 +810,13 @@ class ImportService:
             if legacy_media_id and media_result.get("media_id"):
                 legacy_media_id_map[legacy_media_id] = media_result["media_id"]
 
-        # Replace legacy Journiv media IDs in content with newly imported IDs.
-        if entry.content_delta and legacy_media_id_map:
-            entry.content_delta = self._replace_media_ids_in_delta(entry.content_delta, legacy_media_id_map)
+        # Replace legacy Journiv media IDs (and Day One placeholders) in content with newly imported IDs.
+        dayone_placeholder_map = self._build_dayone_placeholder_map(entry_dto, legacy_media_id_map)
+        replacement_map = dict(legacy_media_id_map)
+        if dayone_placeholder_map:
+            replacement_map.update(dayone_placeholder_map)
+        if entry.content_delta and replacement_map:
+            entry.content_delta = self._replace_media_ids_in_delta(entry.content_delta, replacement_map)
             plain_text = extract_plain_text(entry.content_delta)
             entry.content_plain_text = plain_text or None
             entry.word_count = len(plain_text.split()) if plain_text else 0

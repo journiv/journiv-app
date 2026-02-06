@@ -14,7 +14,7 @@ from app.core.logging_config import log_warning
 from app.core.time_utils import ensure_utc, local_date_for_user, normalize_timezone
 from app.schemas.dto import EntryDTO, JournalDTO, MediaDTO
 from app.utils.import_export.media_handler import MediaHandler
-from app.utils.quill_delta import wrap_plain_text
+from app.utils.quill_delta import wrap_dayone_text, wrap_plain_text
 
 from .models import (
     DayOneEntry,
@@ -164,7 +164,10 @@ class DayOneToJournivMapper:
                 else:
                     content = text
 
-        content_delta = wrap_plain_text(content)
+        if content and "DAYONE_" in content:
+            content_delta = wrap_dayone_text(content)
+        else:
+            content_delta = wrap_plain_text(content)
         plain_text = content or ""
         word_count = len(plain_text.split()) if plain_text else 0
 

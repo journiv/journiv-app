@@ -7,7 +7,7 @@ CLI Name: journiv-admin
 import typer
 
 from app import __version__ as app_version
-from app.cli.commands import auth, import_cmd, migrate
+from app.cli.commands import auth, import_cmd, migrate, upgrade
 
 app = typer.Typer(
     name="journiv-admin",
@@ -25,3 +25,4 @@ def version():
 app.add_typer(import_cmd.app, name="import")
 app.add_typer(auth.app, name="auth")
 app.add_typer(migrate.app, name="migrate")
+app.add_typer(upgrade.app, name="upgrade")

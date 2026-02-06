@@ -3,6 +3,7 @@ Utilities for working with Quill Delta payloads.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, Optional
 
 
@@ -149,6 +150,48 @@ def wrap_plain_text(text: Optional[str]) -> Dict[str, Any]:
     return {"ops": [{"insert": safe_text}]} if safe_text else {"ops": [{"insert": "\n"}]}
 
 
+_DAYONE_PLACEHOLDER_RE = re.compile(r'DAYONE_(PHOTO|VIDEO):([\w-]+)')
+
+
+def wrap_dayone_text(text: Optional[str]) -> Dict[str, Any]:
+    """Wrap Day One text into a Quill Delta, converting placeholders to embeds."""
+    if not text:
+        return {"ops": [{"insert": "\n"}]}
+
+    ops: list[Dict[str, Any]] = []
+    cursor = 0
+
+    for match in _DAYONE_PLACEHOLDER_RE.finditer(text):
+        start, end = match.span()
+        if start > cursor:
+            ops.append({"insert": text[cursor:start]})
+
+        media_type = match.group(1)
+        media_id = match.group(2)
+        key = "image" if media_type == "PHOTO" else "video"
+        ops.append({"insert": {key: media_id}})
+
+        next_char = text[end:end + 1]
+        if next_char != "\n":
+            ops.append({"insert": "\n"})
+
+        cursor = end
+
+    if cursor < len(text):
+        ops.append({"insert": text[cursor:]})
+
+    if not ops:
+        return {"ops": [{"insert": "\n"}]}
+
+    last_insert = ops[-1].get("insert")
+    if isinstance(last_insert, dict):
+        ops.append({"insert": "\n"})
+    elif isinstance(last_insert, str) and not last_insert.endswith("\n"):
+        ops.append({"insert": "\n"})
+
+    return {"ops": ops}
+
+
 def replace_media_ids(
     delta: Optional[Dict[str, Any]],
     id_map: Dict[str, str],
@@ -167,4 +210,3 @@ def replace_media_ids(
 
     result = transform_delta_media(delta, transform_id)
     return result if result else {"ops": []}
-
