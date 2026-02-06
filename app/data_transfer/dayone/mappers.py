@@ -406,7 +406,9 @@ class DayOneToJournivMapper:
             identifier = match.group(1)
             if identifier in video_ids:
                 return f"DAYONE_VIDEO:{identifier}"
-            return f"DAYONE_PHOTO:{identifier}"
+            if identifier in photo_ids:
+                return f"DAYONE_PHOTO:{identifier}"
+            return identifier
 
         pattern = re.compile(r"!\[[^\]]*\]\(dayone-moment://([A-Za-z0-9-]+)\)")
         updated = pattern.sub(repl, text)
