@@ -16,7 +16,7 @@ from rich.console import Console
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 from rich.table import Table
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app import __version__ as app_version
 from app.cli.commands.utils import confirm_action
@@ -146,13 +146,13 @@ def _upgrade_dayone_inline_media(session: Session, batch_size: int, logger) -> i
     while True:
         query = (
             select(Entry)
-            .where(Entry.content_plain_text.contains("DAYONE_"))
-            .order_by(Entry.id)
+            .where(col(Entry.content_plain_text).contains("DAYONE_"))
+            .order_by(col(Entry.id))
             .limit(batch_size)
-            .options(selectinload(Entry.media))
+            .options(selectinload(Entry.media))  # type: ignore[arg-type]
         )
         if last_id is not None:
-            query = query.where(Entry.id > last_id)
+            query = query.where(col(Entry.id) > last_id)
 
         entries = session.exec(query).all()
         if not entries:
