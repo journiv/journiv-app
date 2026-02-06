@@ -7,6 +7,7 @@ Converts Day One data structures to Journiv DTOs.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -169,7 +170,11 @@ class DayOneToJournivMapper:
                 if title and text == title:
                     content = None
                 else:
-                    content = text
+                    content = DayOneToJournivMapper._replace_dayone_moment_links(
+                        text,
+                        photos=dayone_entry.photos,
+                        videos=dayone_entry.videos,
+                    )
 
         if content_delta is None:
             if content and "DAYONE_" in content:
@@ -379,6 +384,36 @@ class DayOneToJournivMapper:
             "raw_dayone": raw_dayone,
             "normalized_timezone": normalized_timezone,
         }
+
+    @staticmethod
+    def _replace_dayone_moment_links(
+        text: str,
+        photos: Optional[List[DayOnePhoto]] = None,
+        videos: Optional[List[DayOneVideo]] = None,
+    ) -> str:
+        """
+        Replace Day One dayone-moment:// links in markdown with placeholders.
+
+        Example: ![](dayone-moment://IDENTIFIER) -> DAYONE_PHOTO:IDENTIFIER
+        """
+        if "dayone-moment://" not in text:
+            return text
+
+        photo_ids = {p.identifier for p in photos or [] if p.identifier}
+        video_ids = {v.identifier for v in videos or [] if v.identifier}
+
+        def repl(match: re.Match) -> str:
+            identifier = match.group(1)
+            if identifier in video_ids:
+                return f"DAYONE_VIDEO:{identifier}"
+            return f"DAYONE_PHOTO:{identifier}"
+
+        pattern = re.compile(r"!\[[^\]]*\]\(dayone-moment://([A-Za-z0-9-]+)\)")
+        updated = pattern.sub(repl, text)
+        # Also handle bare dayone-moment://ID tokens.
+        pattern_bare = re.compile(r"dayone-moment://([A-Za-z0-9-]+)")
+        updated = pattern_bare.sub(repl, updated)
+        return updated
 
     @staticmethod
     def _strip_title_from_delta(delta: Dict[str, Any], title: str) -> Dict[str, Any]:
