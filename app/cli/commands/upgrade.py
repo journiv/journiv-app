@@ -23,11 +23,7 @@ from app.cli.commands.utils import confirm_action
 from app.cli.logging import setup_cli_logging
 from app.core.database import engine
 from app.models.entry import Entry
-from app.utils.quill_delta import (
-    extract_plain_text,
-    replace_media_ids,
-    wrap_dayone_text,
-)
+from app.utils.quill_delta import extract_plain_text
 
 app = typer.Typer(help="Upgrade commands", invoke_without_command=True)
 console = Console()
@@ -38,6 +34,7 @@ UPGRADE_STEPS = [
 ]
 
 _DAYONE_MD5_RE = re.compile(r"^[a-fA-F0-9]{32}$")
+_DAYONE_PLACEHOLDER_RE = re.compile(r"DAYONE_(PHOTO|VIDEO):([\\w-]+)")
 
 
 def _resolve_alembic_ini() -> Path:
@@ -139,6 +136,63 @@ def _build_dayone_placeholder_map(entry: Entry) -> dict[str, str]:
     return placeholder_map
 
 
+def _replace_dayone_placeholders_in_delta(
+    delta: dict[str, Any],
+    placeholder_map: dict[str, str],
+) -> tuple[dict[str, Any], bool]:
+    ops = delta.get("ops")
+    if not isinstance(ops, list):
+        return delta, False
+
+    updated_ops: list[dict[str, Any]] = []
+    changed = False
+
+    for op in ops:
+        if not isinstance(op, dict):
+            updated_ops.append(op)
+            continue
+
+        insert = op.get("insert")
+        attrs = op.get("attributes") if isinstance(op.get("attributes"), dict) else None
+
+        if isinstance(insert, str):
+            cursor = 0
+            for match in _DAYONE_PLACEHOLDER_RE.finditer(insert):
+                start, end = match.span()
+                if start > cursor:
+                    text = insert[cursor:start]
+                    text_op: dict[str, Any] = {"insert": text}
+                    if attrs:
+                        text_op["attributes"] = attrs
+                    updated_ops.append(text_op)
+
+                media_type = match.group(1)
+                token = match.group(2)
+                media_id = placeholder_map.get(token)
+                if media_id:
+                    key = "image" if media_type == "PHOTO" else "video"
+                    updated_ops.append({"insert": {key: media_id}})
+                    changed = True
+                else:
+                    text_op: dict[str, Any] = {"insert": match.group(0)}
+                    if attrs:
+                        text_op["attributes"] = attrs
+                    updated_ops.append(text_op)
+
+                cursor = end
+
+            if cursor < len(insert):
+                text = insert[cursor:]
+                text_op = {"insert": text}
+                if attrs:
+                    text_op["attributes"] = attrs
+                updated_ops.append(text_op)
+        else:
+            updated_ops.append(op)
+
+    return {"ops": updated_ops}, changed
+
+
 def _upgrade_dayone_inline_media(session: Session, batch_size: int, logger) -> int:
     migrated = 0
     last_id = None
@@ -180,11 +234,16 @@ def _upgrade_dayone_inline_media(session: Session, batch_size: int, logger) -> i
                 last_id = entry.id
                 continue
 
-            new_delta = wrap_dayone_text(text)
-            new_delta = replace_media_ids(new_delta, placeholder_map)
-            entry.content_delta = new_delta
-            session.add(entry)
-            migrated += 1
+            new_delta, changed = _replace_dayone_placeholders_in_delta(
+                entry.content_delta, placeholder_map
+            )
+            if changed:
+                entry.content_delta = new_delta
+                plain_text = extract_plain_text(new_delta)
+                entry.content_plain_text = plain_text or None
+                entry.word_count = len(plain_text.split()) if plain_text else 0
+                session.add(entry)
+                migrated += 1
             last_id = entry.id
 
         session.commit()
