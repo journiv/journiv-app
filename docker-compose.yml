@@ -20,7 +20,7 @@ x-celery-common: &celery-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - app_data:/data
+    - ./data/app:/data
   depends_on:
     postgres:
       condition: service_healthy
@@ -46,7 +46,7 @@ x-app-common: &app-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - app_data:/data
+    - ./data/app:/data
   depends_on:
     postgres:
       condition: service_healthy
@@ -76,7 +76,7 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD} # must provide a password in .env file
       - POSTGRES_DB=${POSTGRES_DB:-journiv_prod}
     volumes:
-      - postgres_data:/var/lib/postgresql
+      - ./data/postgres:/var/lib/postgresql
     networks:
       - backend
     restart: unless-stopped
@@ -109,7 +109,7 @@ services:
     container_name: journiv-valkey-cache
     restart: unless-stopped
     volumes:
-      - valkey_data:/data
+      - ./data/valkey:/data
     networks:
       - backend
     healthcheck:
@@ -188,11 +188,6 @@ services:
           memory: 1g
         reservations:
           memory: 256m
-
-volumes:
-  app_data:
-  postgres_data:
-  valkey_data:
 
 networks:
   backend:

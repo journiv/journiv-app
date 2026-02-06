@@ -18,7 +18,7 @@ x-celery-common: &celery-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - app_data:/data
+    - ./data/app:/data
   environment:
     DB_DRIVER: sqlite
     DATABASE_URL: sqlite:////data/journiv.db
@@ -45,7 +45,7 @@ x-app-common: &app-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - app_data:/data
+    - ./data/app:/data
   environment:
     DB_DRIVER: sqlite
     DATABASE_URL: sqlite:////data/journiv.db
@@ -74,7 +74,7 @@ services:
     container_name: journiv-valkey-cache
     restart: unless-stopped
     volumes:
-      - valkey_data:/data
+      - ./data/valkey:/data
     networks:
       - backend
     healthcheck:
@@ -152,10 +152,6 @@ services:
           memory: 1g
         reservations:
           memory: 256m
-
-volumes:
-  app_data:
-  valkey_data:
 
 networks:
   backend:

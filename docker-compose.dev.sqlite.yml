@@ -38,7 +38,7 @@ services:
     container_name: journiv-dev-valkey
     restart: unless-stopped
     volumes:
-      - valkey_data:/data
+      - ./data/valkey:/data
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 10s
@@ -125,9 +125,6 @@ services:
           memory: 1g
         reservations:
           memory: 256m
-
-volumes:
-  valkey_data:
 
 networks:
   default:
