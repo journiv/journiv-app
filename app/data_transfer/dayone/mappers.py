@@ -3,6 +3,7 @@ Day One to Journiv mappers.
 
 Converts Day One data structures to Journiv DTOs.
 """
+
 from __future__ import annotations
 
 import json
@@ -14,7 +15,7 @@ from app.core.logging_config import log_warning
 from app.core.time_utils import ensure_utc, local_date_for_user, normalize_timezone
 from app.schemas.dto import EntryDTO, JournalDTO, MediaDTO
 from app.utils.import_export.media_handler import MediaHandler
-from app.utils.quill_delta import wrap_dayone_text, wrap_plain_text
+from app.utils.quill_delta import extract_plain_text, wrap_dayone_text, wrap_plain_text
 
 from .models import (
     DayOneEntry,
@@ -42,7 +43,9 @@ class DayOneToJournivMapper:
     """
 
     @staticmethod
-    def map_journal(dayone_journal: DayOneJournal, mapped_entries: Optional[List[EntryDTO]] = None) -> JournalDTO:
+    def map_journal(
+        dayone_journal: DayOneJournal, mapped_entries: Optional[List[EntryDTO]] = None
+    ) -> JournalDTO:
         """
         Map Day One journal to Journiv JournalDTO.
 
@@ -63,9 +66,7 @@ class DayOneToJournivMapper:
         if dayone_journal.entries:
             # Find most recent entry
             sorted_entries = sorted(
-                dayone_journal.entries,
-                key=lambda e: e.creation_date,
-                reverse=True
+                dayone_journal.entries, key=lambda e: e.creation_date, reverse=True
             )
             last_entry_at = sorted_entries[0].creation_date
             # Find earliest entry
@@ -73,15 +74,14 @@ class DayOneToJournivMapper:
 
         # Map entries
         entries = mapped_entries or [
-            DayOneToJournivMapper.map_entry(entry)
-            for entry in dayone_journal.entries
+            DayOneToJournivMapper.map_entry(entry) for entry in dayone_journal.entries
         ]
 
         return JournalDTO(
             title=title,
             description=f"Imported from Day One journal '{dayone_journal.name}'",
             color=None,  # Day One doesn't have journal colors
-            icon=None,   # Day One doesn't have journal icons
+            icon=None,  # Day One doesn't have journal icons
             is_favorite=False,
             is_archived=False,
             entry_count=entry_count,
@@ -108,6 +108,7 @@ class DayOneToJournivMapper:
         """
         title = None
         content: Optional[str] = None
+        content_delta: Optional[Dict[str, Any]] = None
 
         # Try to parse richText first
         if dayone_entry.rich_text:
@@ -124,36 +125,42 @@ class DayOneToJournivMapper:
                         has_embedded_objects = True
                     text = block.get("text")
                     if text and text.strip():
-                        attrs = block.get("attributes", {}) if isinstance(block.get("attributes"), dict) else {}
-                        line_attrs = attrs.get("line", {}) if isinstance(attrs.get("line"), dict) else {}
+                        attrs = (
+                            block.get("attributes", {})
+                            if isinstance(block.get("attributes"), dict)
+                            else {}
+                        )
+                        line_attrs = (
+                            attrs.get("line", {})
+                            if isinstance(attrs.get("line"), dict)
+                            else {}
+                        )
                         if line_attrs.get("header") != 1:
                             has_body_text = True
 
-                # Convert richText to Markdown (with photo placeholders)
-                # We'll replace placeholders with actual paths after entry creation
-                markdown = DayOneRichTextParser.convert_to_markdown(
+                # Convert richText to quill delta (with media placeholders)
+                # We'll replace placeholders with actual media uuid after entry creation
+                delta = DayOneRichTextParser.convert_to_delta(
                     richtext,
                     photos=dayone_entry.photos,
                     videos=dayone_entry.videos,
-                    entry_id=None  # Will be updated after entry creation
+                    entry_id=None,  # Will be updated after entry creation
                 )
-                if markdown and markdown.strip():
-                    content = markdown
+                if delta and isinstance(delta, dict):
+                    content_delta = delta
                     if title and not has_body_text:
                         if has_embedded_objects:
-                            lines = content.splitlines()
-                            if lines and lines[0].lstrip().startswith("# "):
-                                content = "\n".join(lines[1:]).strip() or None
+                            content_delta = (
+                                DayOneToJournivMapper._strip_title_from_delta(
+                                    content_delta, title
+                                )
+                            )
                         else:
-                            content = None
+                            content_delta = wrap_plain_text(None)
                     elif title:
-                        lines = content.splitlines()
-                        if lines:
-                            first_line = lines[0].lstrip()
-                            if first_line.startswith("#"):
-                                header_text = first_line.lstrip("#").strip()
-                                if header_text == title:
-                                    content = "\n".join(lines[1:]).strip() or None
+                        content_delta = DayOneToJournivMapper._strip_title_from_delta(
+                            content_delta, title
+                        )
 
         # Fallback to plain text if richText not available
         if content is None and dayone_entry.text:
@@ -164,11 +171,15 @@ class DayOneToJournivMapper:
                 else:
                     content = text
 
-        if content and "DAYONE_" in content:
-            content_delta = wrap_dayone_text(content)
-        else:
-            content_delta = wrap_plain_text(content)
-        plain_text = content or ""
+        if content_delta is None:
+            if content and "DAYONE_" in content:
+                content_delta = wrap_dayone_text(content)
+            else:
+                content_delta = wrap_plain_text(content)
+
+        plain_text = extract_plain_text(content_delta)
+        if not plain_text.strip():
+            plain_text = ""
         word_count = len(plain_text.split()) if plain_text else 0
 
         # Parse timestamps
@@ -189,8 +200,8 @@ class DayOneToJournivMapper:
         longitude = None
 
         if dayone_entry.location:
-            location_json, latitude, longitude = (
-                DayOneToJournivMapper._map_location(dayone_entry.location)
+            location_json, latitude, longitude = DayOneToJournivMapper._map_location(
+                dayone_entry.location
             )
 
         # Map weather data
@@ -198,13 +209,13 @@ class DayOneToJournivMapper:
         weather_summary = None
 
         if dayone_entry.weather:
-            weather_json, weather_summary = (
-                DayOneToJournivMapper._map_weather(dayone_entry.weather)
+            weather_json, weather_summary = DayOneToJournivMapper._map_weather(
+                dayone_entry.weather
             )
 
         # Map tags (normalize to lowercase)
         tags = []
-        for tag in (dayone_entry.tags or []):
+        for tag in dayone_entry.tags or []:
             cleaned = tag.strip().lower()
             if cleaned and cleaned not in tags:
                 tags.append(cleaned)
@@ -223,8 +234,7 @@ class DayOneToJournivMapper:
         # We just track the external IDs here
 
         import_metadata = DayOneToJournivMapper._build_entry_import_metadata(
-            dayone_entry,
-            entry_timezone
+            dayone_entry, entry_timezone
         )
 
         return EntryDTO(
@@ -246,7 +256,7 @@ class DayOneToJournivMapper:
             # Related data
             tags=tags,
             mood_log=None,  # Day One doesn't have mood logs
-            media=media,    # Will be populated during import
+            media=media,  # Will be populated during import
             prompt_text=None,
             created_at=creation_date_utc,
             updated_at=modified_date_utc,
@@ -255,7 +265,7 @@ class DayOneToJournivMapper:
 
     @staticmethod
     def _map_location(
-        location: DayOneLocation
+        location: DayOneLocation,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[float], Optional[float]]:
         """
         Map Day One location to Journiv location format.
@@ -265,11 +275,16 @@ class DayOneToJournivMapper:
         """
         # Extract street address if present in extra fields
         # Day One location model has extra="allow" so street may be in __pydantic_extra__
-        street = getattr(location, "street", None) or getattr(location, "__pydantic_extra__", {}).get("street")
+        street = getattr(location, "street", None) or getattr(
+            location, "__pydantic_extra__", {}
+        ).get("street")
 
         # Build structured location JSON
         location_json = {
-            "name": location.place_name or location.locality_name or location.administrative_area or location.country,
+            "name": location.place_name
+            or location.locality_name
+            or location.administrative_area
+            or location.country,
             "street": street,
             "locality": location.locality_name,
             "admin_area": location.administrative_area,
@@ -286,7 +301,7 @@ class DayOneToJournivMapper:
 
     @staticmethod
     def _map_weather(
-        weather: DayOneWeather
+        weather: DayOneWeather,
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         Map Day One weather to Journiv weather format.
@@ -322,7 +337,9 @@ class DayOneToJournivMapper:
         return weather_json, weather_summary
 
     @staticmethod
-    def _prune_media_list(media_list: Optional[List[Dict[str, Any]]]) -> List[Dict[str, str]]:
+    def _prune_media_list(
+        media_list: Optional[List[Dict[str, Any]]],
+    ) -> List[Dict[str, str]]:
         pruned = []
         for item in media_list or []:
             if not isinstance(item, dict):
@@ -341,7 +358,9 @@ class DayOneToJournivMapper:
         dayone_entry: DayOneEntry,
         normalized_timezone: str,
     ) -> Dict[str, Any]:
-        raw_dayone = dayone_entry.model_dump(by_alias=True, mode="json", exclude_none=True)
+        raw_dayone = dayone_entry.model_dump(
+            by_alias=True, mode="json", exclude_none=True
+        )
         raw_dayone.pop("text", None)
 
         photos = DayOneToJournivMapper._prune_media_list(raw_dayone.get("photos"))
@@ -360,6 +379,65 @@ class DayOneToJournivMapper:
             "raw_dayone": raw_dayone,
             "normalized_timezone": normalized_timezone,
         }
+
+    @staticmethod
+    def _strip_title_from_delta(delta: Dict[str, Any], title: str) -> Dict[str, Any]:
+        if not title or not isinstance(delta, dict):
+            return delta
+        ops = delta.get("ops")
+        if not isinstance(ops, list):
+            return delta
+
+        line_text_parts: list[str] = []
+        newline_index: Optional[int] = None
+
+        for idx, op in enumerate(ops):
+            if not isinstance(op, dict):
+                return delta
+            insert = op.get("insert")
+            if isinstance(insert, dict):
+                return delta
+            if not isinstance(insert, str):
+                continue
+            if "\n" in insert:
+                before, after = insert.split("\n", 1)
+                if before:
+                    line_text_parts.append(before)
+                newline_index = idx
+                break
+            line_text_parts.append(insert)
+
+        if newline_index is None:
+            return delta
+
+        newline_op = ops[newline_index]
+        attrs = newline_op.get("attributes", {}) if isinstance(newline_op, dict) else {}
+        if not isinstance(attrs, dict):
+            return delta
+        if attrs.get("header") is None:
+            return delta
+
+        line_text = "".join(line_text_parts).strip()
+        if line_text != title:
+            return delta
+
+        new_ops: list[Dict[str, Any]] = []
+        # Drop ops up to the newline op
+        for idx, op in enumerate(ops):
+            if idx < newline_index:
+                continue
+            if idx == newline_index:
+                insert = op.get("insert")
+                if isinstance(insert, str) and "\n" in insert:
+                    _, after = insert.split("\n", 1)
+                    if after:
+                        new_ops.append({"insert": after})
+                continue
+            new_ops.append(op)
+
+        if not new_ops:
+            return {"ops": [{"insert": "\n"}]}
+        return {"ops": new_ops}
 
     @staticmethod
     def _map_media_common(
@@ -403,7 +481,9 @@ class DayOneToJournivMapper:
         file_metadata_str = json.dumps(file_metadata) if file_metadata else None
 
         try:
-            relative_path = media_path.relative_to(media_base_dir) if media_base_dir else media_path
+            relative_path = (
+                media_path.relative_to(media_base_dir) if media_base_dir else media_path
+            )
         except ValueError:
             relative_path = media_path
 
@@ -454,7 +534,7 @@ class DayOneToJournivMapper:
             log_warning(
                 f"Media file not found for photo {photo.identifier}",
                 photo_id=photo.identifier,
-                entry_id=entry_external_id
+                entry_id=entry_external_id,
             )
             return None
 
@@ -467,7 +547,7 @@ class DayOneToJournivMapper:
             media_type = "unknown"
 
         # Use centralized MIME type mapping
-        mime_type = MediaHandler.MIME_TYPE_MAP.get(ext, 'application/octet-stream')
+        mime_type = MediaHandler.MIME_TYPE_MAP.get(ext, "application/octet-stream")
 
         # Build file metadata JSON
         file_metadata = {
@@ -518,13 +598,13 @@ class DayOneToJournivMapper:
             log_warning(
                 f"Media file not found for video {video.identifier}",
                 video_id=video.identifier,
-                entry_id=entry_external_id
+                entry_id=entry_external_id,
             )
             return None
 
         # Determine MIME type from file extension using centralized mapping
         ext = media_path.suffix.lower()
-        mime_type = MediaHandler.MIME_TYPE_MAP.get(ext, 'video/mp4')
+        mime_type = MediaHandler.MIME_TYPE_MAP.get(ext, "video/mp4")
 
         # Build file metadata JSON
         file_metadata = {
