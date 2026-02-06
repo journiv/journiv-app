@@ -29,7 +29,7 @@ from app.utils.quill_delta import (
     wrap_dayone_text,
 )
 
-app = typer.Typer(help="Upgrade commands")
+app = typer.Typer(help="Upgrade commands", invoke_without_command=True)
 console = Console()
 
 MIN_SUPPORTED_REVISION = "b7a1c2d3e4f5"
@@ -193,7 +193,7 @@ def _upgrade_dayone_inline_media(session: Session, batch_size: int, logger) -> i
     return migrated
 
 
-@app.command("upgrade")
+@app.callback()
 def run_upgrade(
     batch_size: Annotated[
         int, typer.Option("--batch-size", "-b", help="Entries processed per batch")
