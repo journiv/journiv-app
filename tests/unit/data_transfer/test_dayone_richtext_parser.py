@@ -1,9 +1,8 @@
 """
 Unit tests for Day One RichText parser.
 
-Tests title extraction and richText -> Markdown conversion.
+Tests title extraction and richText -> Quill Delta conversion.
 """
-import pytest
 from app.data_transfer.dayone.richtext_parser import DayOneRichTextParser
 
 
@@ -112,8 +111,8 @@ class TestDayOneRichTextParser:
         title = DayOneRichTextParser.extract_title(richtext)
         assert title is None
 
-    def test_convert_to_markdown_header_1(self):
-        """Test converting header:1 to Markdown."""
+    def test_convert_to_delta_header_1(self):
+        """Test converting header:1 to Delta."""
         richtext = {
             "contents": [
                 {
@@ -123,11 +122,11 @@ class TestDayOneRichTextParser:
             ]
         }
 
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext)
-        assert markdown == "# My Title"
+        delta = DayOneRichTextParser.convert_to_delta(richtext)
+        assert delta == {"ops": [{"insert": "My Title"}, {"insert": "\n", "attributes": {"header": 1}}]}
 
-    def test_convert_to_markdown_header_0_plain_text(self):
-        """Test converting header:0 to plain text."""
+    def test_convert_to_delta_header_0_plain_text(self):
+        """Test converting header:0 to plain text delta."""
         richtext = {
             "contents": [
                 {
@@ -137,10 +136,10 @@ class TestDayOneRichTextParser:
             ]
         }
 
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext)
-        assert markdown == "Plain paragraph"
+        delta = DayOneRichTextParser.convert_to_delta(richtext)
+        assert delta == {"ops": [{"insert": "Plain paragraph"}, {"insert": "\n"}]}
 
-    def test_convert_to_markdown_mixed_headers_and_text(self):
+    def test_convert_to_delta_mixed_headers_and_text(self):
         """Test converting mix of headers and text."""
         richtext = {
             "contents": [
@@ -159,12 +158,20 @@ class TestDayOneRichTextParser:
             ]
         }
 
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext)
-        expected = "# Title\n\nFirst paragraph\n\nSecond paragraph"
-        assert markdown == expected
+        delta = DayOneRichTextParser.convert_to_delta(richtext)
+        assert delta == {
+            "ops": [
+                {"insert": "Title"},
+                {"insert": "\n", "attributes": {"header": 1}},
+                {"insert": "First paragraph"},
+                {"insert": "\n"},
+                {"insert": "Second paragraph"},
+                {"insert": "\n"},
+            ]
+        }
 
-    def test_convert_to_markdown_embedded_photo_without_entry_id(self):
-        """Test embedded photo creates placeholder when entry_id not provided."""
+    def test_convert_to_delta_embedded_photo_without_entry_id(self):
+        """Test embedded photo creates image embed with md5 placeholder."""
         # Create mock photo object
         class MockPhoto:
             def __init__(self, identifier, md5):
@@ -187,40 +194,12 @@ class TestDayOneRichTextParser:
             ]
         }
 
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext, photos=photos, entry_id=None)
-        expected = "# Photo Entry\n\nDAYONE_PHOTO:abc123"
-        assert markdown == expected
+        delta = DayOneRichTextParser.convert_to_delta(richtext, photos=photos, entry_id=None)
+        assert {"insert": "Photo Entry"} in delta["ops"]
+        assert {"insert": {"image": "abc123"}} in delta["ops"]
 
-    def test_convert_to_markdown_embedded_photo_with_entry_id(self):
-        """Test embedded photo creates proper markdown with entry_id."""
-        class MockPhoto:
-            def __init__(self, identifier, md5):
-                self.identifier = identifier
-                self.md5 = md5
-
-        photos = [MockPhoto("PHOTO-UUID-1", "abc123")]
-
-        richtext = {
-            "contents": [
-                {
-                    "attributes": {"line": {"header": 1}},
-                    "text": "Photo Entry\n"
-                },
-                {
-                    "embeddedObjects": [
-                        {"identifier": "PHOTO-UUID-1", "type": "photo"}
-                    ]
-                }
-            ]
-        }
-
-        entry_id = "entry-123"
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext, photos=photos, entry_id=entry_id)
-        expected = "# Photo Entry\n\nDAYONE_PHOTO:abc123"
-        assert markdown == expected
-
-    def test_convert_to_markdown_embedded_video_placeholder(self):
-        """Test embedded video creates placeholder when video list is provided."""
+    def test_convert_to_delta_embedded_video_placeholder(self):
+        """Test embedded video creates video embed with md5 placeholder."""
         class MockVideo:
             def __init__(self, identifier, md5):
                 self.identifier = identifier
@@ -241,10 +220,11 @@ class TestDayOneRichTextParser:
             ]
         }
 
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext, videos=videos, entry_id=None)
-        assert markdown == "Video Entry\n\nDAYONE_VIDEO:vid123"
+        delta = DayOneRichTextParser.convert_to_delta(richtext, videos=videos, entry_id=None)
+        assert {"insert": "Video Entry"} in delta["ops"]
+        assert {"insert": {"video": "vid123"}} in delta["ops"]
 
-    def test_convert_to_markdown_embedded_photo_not_found(self):
+    def test_convert_to_delta_embedded_photo_not_found(self):
         """Test embedded photo not in photos list is skipped with warning."""
         richtext = {
             "contents": [
@@ -260,48 +240,9 @@ class TestDayOneRichTextParser:
         }
 
         # No photos provided
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext, photos=None, entry_id=None)
-        # Photo placeholder should not appear
-        assert "DAYONE_PHOTO:" not in markdown
-        assert markdown == "Text"
-
-    def test_replace_photo_placeholders(self):
-        """Test replacing photo placeholders with Journiv media shortcode format."""
-        content = "# Title\n\nDAYONE_PHOTO:photo1\n\nSome text\n\nDAYONE_PHOTO:photo2"
-        photo_map = {
-            "photo1": "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA",
-            "photo2": "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB"
-        }
-
-        result = DayOneRichTextParser.replace_photo_placeholders(content, photo_map)
-
-        assert "DAYONE_PHOTO:" not in result
-        assert "![[media:AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA]]" in result
-        assert "![[media:BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB]]" in result
-
-    def test_replace_photo_placeholders_missing_photo(self):
-        """Test placeholder removal when photo not in map."""
-        content = "# Title\n\nDAYONE_PHOTO:photo1\n\nDAYONE_PHOTO:missing"
-        photo_map = {
-            "photo1": "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
-        }
-
-        result = DayOneRichTextParser.replace_photo_placeholders(content, photo_map)
-
-        # First photo should be replaced with Journiv media shortcode format
-        assert "![[media:AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA]]" in result
-        # Missing photo placeholder should be removed silently
-        assert "DAYONE_PHOTO:missing" not in result
-
-    def test_replace_placeholders_with_uuid_identifier(self):
-        """Test placeholders with UUIDs (hyphens) are replaced."""
-        content = "DAYONE_VIDEO:CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC"
-        photo_map = {
-            "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC": "media-test-1"
-        }
-
-        result = DayOneRichTextParser.replace_photo_placeholders(content, photo_map)
-        assert result == "![[media:media-test-1]]"
+        delta = DayOneRichTextParser.convert_to_delta(richtext, photos=None, entry_id=None)
+        assert {"insert": {"image": "MISSING-PHOTO"}} not in delta["ops"]
+        assert delta == {"ops": [{"insert": "Text"}, {"insert": "\n"}]}
 
     def test_real_dayone_export_example(self):
         """Test with real Day One export richText structure."""
@@ -314,7 +255,7 @@ class TestDayOneRichTextParser:
         title = DayOneRichTextParser.extract_title(richtext)
         assert title == "Sample Title"
 
-        # Test markdown conversion
+        # Test delta conversion
         class MockPhoto:
             def __init__(self, identifier, md5):
                 self.identifier = identifier
@@ -325,15 +266,11 @@ class TestDayOneRichTextParser:
             MockPhoto("DDDDDDDD-DDDD-DDDD-DDDD-DDDDDDDDDDDD", "photo2_md5")
         ]
 
-        markdown = DayOneRichTextParser.convert_to_markdown(richtext, photos=photos, entry_id=None)
-
-        # Should have header
-        assert "# Sample Title" in markdown
-        # Should have paragraph
-        assert "Sample paragraph" in markdown
-        # Should have photo placeholders
-        assert "DAYONE_PHOTO:photo1_md5" in markdown
-        assert "DAYONE_PHOTO:photo2_md5" in markdown
+        delta = DayOneRichTextParser.convert_to_delta(richtext, photos=photos, entry_id=None)
+        assert {"insert": "Sample Title"} in delta["ops"]
+        assert {"insert": "Sample paragraph"} in delta["ops"]
+        assert {"insert": {"image": "photo1_md5"}} in delta["ops"]
+        assert {"insert": {"image": "photo2_md5"}} in delta["ops"]
 
     def test_strip_markdown_removes_formatting(self):
         """Test _strip_markdown removes formatting characters."""

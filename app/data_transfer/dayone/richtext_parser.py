@@ -148,8 +148,8 @@ class DayOneRichTextParser:
         for block in contents:
             if "text" in block:
                 raw_text = block["text"]
-                text = raw_text.rstrip("\n")
                 has_newline = raw_text.endswith("\n")
+                text = raw_text.rstrip("\n").rstrip()
 
                 attrs = block.get("attributes", {})
                 line_attrs = attrs.get("line", {})

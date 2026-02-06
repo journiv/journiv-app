@@ -98,6 +98,16 @@ def _build_dayone_placeholder_map(entry: Entry) -> dict[str, str]:
     md5_to_media_id: dict[str, str] = {}
 
     for media in entry.media or []:
+        if media.external_asset_id:
+            placeholder_map[media.external_asset_id] = str(media.id)
+        if isinstance(media.external_metadata, dict):
+            identifier = media.external_metadata.get("identifier")
+            md5_hash = media.external_metadata.get("md5")
+            if identifier:
+                placeholder_map[identifier] = str(media.id)
+            if md5_hash:
+                placeholder_map[md5_hash] = str(media.id)
+
         md5 = _extract_md5_candidate(media.original_filename) or _extract_md5_candidate(
             media.file_path
         )

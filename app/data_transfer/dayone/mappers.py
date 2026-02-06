@@ -452,6 +452,9 @@ class DayOneToJournivMapper:
         duration: Optional[float],
         date: Optional[datetime],
         file_metadata: Dict[str, Any],
+        external_provider: Optional[str] = None,
+        external_asset_id: Optional[str] = None,
+        external_metadata: Optional[Dict[str, Any]] = None,
     ) -> MediaDTO:
         """
         Common media mapping logic for photos and videos.
@@ -509,6 +512,10 @@ class DayOneToJournivMapper:
             created_at=date or datetime.now(timezone.utc),
             updated_at=date or datetime.now(timezone.utc),
             external_id=identifier,
+            external_provider=external_provider,
+            external_asset_id=external_asset_id,
+            external_created_at=date,
+            external_metadata=external_metadata,
         )
 
     @staticmethod
@@ -561,6 +568,12 @@ class DayOneToJournivMapper:
             "order_in_entry": photo.order_in_entry,
         }
 
+        external_asset_id = photo.md5 or photo.identifier
+        external_metadata = {
+            "identifier": photo.identifier,
+            "md5": photo.md5,
+        }
+
         return DayOneToJournivMapper._map_media_common(
             media_path=media_path,
             identifier=photo.identifier,
@@ -573,6 +586,9 @@ class DayOneToJournivMapper:
             duration=photo.duration,
             date=photo.date,
             file_metadata=file_metadata,
+            external_provider=None,
+            external_asset_id=external_asset_id,
+            external_metadata=external_metadata,
         )
 
     @staticmethod
@@ -611,6 +627,12 @@ class DayOneToJournivMapper:
             "order_in_entry": video.order_in_entry,
         }
 
+        external_asset_id = video.md5 or video.identifier
+        external_metadata = {
+            "identifier": video.identifier,
+            "md5": video.md5,
+        }
+
         return DayOneToJournivMapper._map_media_common(
             media_path=media_path,
             identifier=video.identifier,
@@ -623,4 +645,7 @@ class DayOneToJournivMapper:
             duration=video.duration,
             date=video.date,
             file_metadata=file_metadata,
+            external_provider=None,
+            external_asset_id=external_asset_id,
+            external_metadata=external_metadata,
         )

@@ -114,6 +114,10 @@ class ImportService:
             if md5_hash:
                 placeholder_map[md5_hash] = media_id
 
+        for media_dto in entry_dto.media:
+            if media_dto.external_asset_id and media_dto.external_asset_id in legacy_media_id_map:
+                placeholder_map[media_dto.external_asset_id] = legacy_media_id_map[media_dto.external_asset_id]
+
         return placeholder_map
 
     @staticmethod
@@ -807,8 +811,11 @@ class ImportService:
             elif media_result.get("deduplicated"):
                 result["media_deduplicated"] += 1
 
-            if legacy_media_id and media_result.get("media_id"):
-                legacy_media_id_map[legacy_media_id] = media_result["media_id"]
+            if media_result.get("media_id"):
+                if legacy_media_id:
+                    legacy_media_id_map[legacy_media_id] = media_result["media_id"]
+                if media_dto.external_asset_id:
+                    legacy_media_id_map[media_dto.external_asset_id] = media_result["media_id"]
 
         # Replace legacy Journiv media IDs (and Day One placeholders) in content with newly imported IDs.
         dayone_placeholder_map = self._build_dayone_placeholder_map(entry_dto, legacy_media_id_map)
