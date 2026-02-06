@@ -20,7 +20,7 @@ x-celery-common: &celery-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - ./data/app:/data
+    - ./data:/data
   depends_on:
     postgres:
       condition: service_healthy
@@ -46,7 +46,7 @@ x-app-common: &app-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - ./data/app:/data
+    - ./data:/data
   depends_on:
     postgres:
       condition: service_healthy

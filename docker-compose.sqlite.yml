@@ -18,7 +18,7 @@ x-celery-common: &celery-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - ./data/app:/data
+    - ./data:/data
   environment:
     DB_DRIVER: sqlite
     DATABASE_URL: sqlite:////data/journiv.db
@@ -45,7 +45,7 @@ x-app-common: &app-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
   env_file: .env
   volumes:
-    - ./data/app:/data
+    - ./data:/data
   environment:
     DB_DRIVER: sqlite
     DATABASE_URL: sqlite:////data/journiv.db
