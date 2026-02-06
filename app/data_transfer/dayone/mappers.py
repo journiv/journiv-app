@@ -408,7 +408,12 @@ class DayOneToJournivMapper:
                 return f"DAYONE_VIDEO:{identifier}"
             if identifier in photo_ids:
                 return f"DAYONE_PHOTO:{identifier}"
-            return identifier
+            log_warning(
+                "Unresolved Day One moment identifier; defaulting to photo",
+                identifier=identifier,
+                context="dayone_moment_link",
+            )
+            return f"DAYONE_PHOTO:{identifier}"
 
         pattern = re.compile(r"!\[[^\]]*\]\(dayone-moment://([A-Za-z0-9-]+)\)")
         updated = pattern.sub(repl, text)
