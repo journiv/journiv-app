@@ -56,6 +56,8 @@ RUN uv sync --locked --no-editable --no-install-project
 # =========================
 FROM python:3.12-slim-bookworm AS runtime
 
+ARG REQUIRE_PLUS_FEATURES=false
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
   PYTHONUNBUFFERED=1 \
   PYTHONPATH=/app \
@@ -87,6 +89,11 @@ RUN chmod +x /app/bin/migrator /usr/local/bin/migrator && echo "✅ Dart migrati
 
 # Copy app code and assets
 COPY app/ app/
+
+# Validate Plus module presence in release builds
+RUN if [ "$REQUIRE_PLUS_FEATURES" = "true" ]; then \
+      ls -lh /app/app/plus/plus_features*.so; \
+    fi
 
 # Copy database migration files
 COPY alembic/ alembic/

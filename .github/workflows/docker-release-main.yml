@@ -16,6 +16,18 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Determine backend root
+        run: |
+          set -eo pipefail
+          if [ -f "Dockerfile" ] && [ -d "app" ]; then
+            echo "BACKEND_DIR=." >> "$GITHUB_ENV"
+          elif [ -f "journiv-backend/Dockerfile" ] && [ -d "journiv-backend/app" ]; then
+            echo "BACKEND_DIR=journiv-backend" >> "$GITHUB_ENV"
+          else
+            echo "ERROR: Could not locate backend root (expected Dockerfile + app/)"
+            exit 1
+          fi
+
       - name: Download Plus native modules (latest release)
         env:
           GH_TOKEN: ${{ secrets.PLUS_FEATURES_REPO_TOKEN }}
@@ -31,14 +43,16 @@ jobs:
           DOWNLOAD_DIR=$(mktemp -d)
           trap "rm -rf $DOWNLOAD_DIR" EXIT
           gh release download latest -R "$PLUS_FEATURES_REPO" -p "*.so" -D "$DOWNLOAD_DIR"
+          echo "Downloaded assets:"
+          ls -lh "$DOWNLOAD_DIR"
 
-          mkdir -p app/plus
-          mv "$DOWNLOAD_DIR"/*.so app/plus/
-          if ! ls app/plus/*.so 1> /dev/null 2>&1; then
-            echo "ERROR: No .so files were downloaded"
+          mkdir -p "$BACKEND_DIR/app/plus"
+          if ! ls "$DOWNLOAD_DIR"/plus_features*.so 1> /dev/null 2>&1; then
+            echo "ERROR: No plus_features*.so files were downloaded"
             exit 1
           fi
-          ls -lh app/plus/
+          mv "$DOWNLOAD_DIR"/plus_features*.so "$BACKEND_DIR/app/plus/"
+          ls -lh "$BACKEND_DIR/app/plus/"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -55,7 +69,8 @@ jobs:
       - name: Build and Push (main tag)
         uses: docker/build-push-action@v5
         with:
-          context: .
+          context: ${{ env.BACKEND_DIR }}
+          file: ${{ env.BACKEND_DIR }}/Dockerfile
           push: true
           # Add a tag based on the short commit SHA for immutability
           tags: |
@@ -64,3 +79,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            REQUIRE_PLUS_FEATURES=true
