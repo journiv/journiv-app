@@ -92,7 +92,7 @@ COPY app/ app/
 
 # Validate Plus module presence in release builds
 RUN if [ "$REQUIRE_PLUS_FEATURES" = "true" ]; then \
-      ls -lh /app/app/plus/plus_features*.so; \
+      ls -lh /app/app/plus/plus_features.cpython-312-*.so; \
     fi
 
 # Copy database migration files
