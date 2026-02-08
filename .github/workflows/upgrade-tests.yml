@@ -26,10 +26,10 @@ on:
       old_version:
         description: "Old version to upgrade from (Docker tag)"
         required: false
-        default: "0.1.0-beta.18"
+        default: "0.1.0-beta.19"
 
 env:
-  OLD_VERSION: ${{ github.event.inputs.old_version || '0.1.0-beta.18' }}
+  OLD_VERSION: ${{ github.event.inputs.old_version || '0.1.0-beta.19' }}
   NEW_VERSION: ci-latest
 
 jobs:
