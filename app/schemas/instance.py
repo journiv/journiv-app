@@ -12,3 +12,5 @@ class InstanceConfigResponse(BaseModel):
     allowed_file_extensions: Optional[List[str]] = None
     disable_signup: bool
     immich_base_url: Optional[str] = None
+    oidc_enabled: bool  # Whether OIDC authentication is available
+    oidc_only: bool  # Whether OIDC is the only allowed authentication method

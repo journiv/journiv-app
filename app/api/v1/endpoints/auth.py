@@ -9,6 +9,7 @@ from jose import JWTError
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.exceptions import InvalidCredentialsError, UnauthorizedError
 from app.core.logging_config import log_error, log_user_action, log_warning
@@ -50,6 +51,17 @@ async def register(
 
         # Check if this is the first user (bootstrap override)
         is_first = user_service.is_first_user()
+
+        # Block password signup if OIDC-only mode is enabled (unless first user)
+        if not is_first and settings.oidc_only:
+            log_warning(
+                "Password signup rejected because OIDC-only mode is enabled",
+                user_email=user_data.email
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="Password registration is disabled. Please sign in with OIDC."
+            )
 
         # Block signup if disabled (unless this is the first user)
         if not is_first and user_service.is_signup_disabled():

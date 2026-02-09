@@ -32,4 +32,6 @@ async def get_instance_config() -> InstanceConfigResponse:
         allowed_file_extensions=settings.allowed_file_extensions,
         disable_signup=settings.disable_signup,
         immich_base_url=settings.immich_base_url,
+        oidc_enabled=settings.oidc_enabled,
+        oidc_only=settings.oidc_only,
     )

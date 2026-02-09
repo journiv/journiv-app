@@ -210,15 +210,24 @@ async def oidc_callback(
         if email:
             local_user_by_email = user_service.get_user_by_email(email)
 
-        # Block login ONLY if neither an external identity nor a local user exists.
-        if not external_identity and not local_user_by_email:
+        # Allow OIDC auto-provisioning even when DISABLE_SIGNUP=true
+        # Block login ONLY if:
+        # 1. No external identity exists, AND
+        # 2. No local user exists, AND
+        # 3. OIDC auto-provision is disabled
+        #
+        # This allows OIDC users to auto-register even when password signup is disabled
+        can_oidc_provision = settings.oidc_auto_provision and settings.oidc_enabled
+
+        if not external_identity and not local_user_by_email and not can_oidc_provision:
             log_warning(
-                "OIDC login rejected because signup is disabled",
+                "OIDC login rejected because no existing user/identity found and auto-provision is disabled",
                 issuer=issuer,
                 subject=subject,
-                user_email=email
+                user_email=email,
+                oidc_auto_provision=settings.oidc_auto_provision
             )
-            raise HTTPException(status_code=403, detail="Sign up is disabled")
+            raise HTTPException(status_code=403, detail="Sign up is disabled and your account is not registered")
 
     try:
         # First user always gets provisioned as admin (bootstrap override)

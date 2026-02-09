@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     oidc_disable_ssl_verify: bool = False  # Only for local development with self-signed certs
     oidc_allow_insecure_prod: bool = False  # Allow OIDC over HTTP (INSECURE). Recommended only for advanced users in isolated homelabs. Default: false
     oidc_require_verified_email: bool = True # Require OIDC to indicate email has been verified
+    oidc_only: bool = False  # OIDC-only mode: disable password auth, only allow OIDC
 
     # Redis Configuration (for OIDC state/cache and Celery)
     redis_url: Optional[str] = None  # e.g., "redis://localhost:6379/0"
@@ -900,6 +901,23 @@ class Settings(BaseSettings):
             logger.warning(
                 "OIDC_ALLOW_INSECURE_PROD=true — running OIDC over HTTP is insecure and not recommended."
             )
+        return self
+
+    @model_validator(mode='after')
+    def validate_oidc_only_requirements(self) -> 'Settings':
+        """Validate that OIDC_ONLY requires OIDC to be enabled."""
+        if self.oidc_only and not self.oidc_enabled:
+            raise ValueError(
+                "OIDC_ONLY=true requires OIDC_ENABLED=true. "
+                "Enable OIDC or disable OIDC_ONLY mode."
+            )
+
+        if self.oidc_only and not self.oidc_auto_provision:
+            logger.warning(
+                "OIDC_ONLY=true with OIDC_AUTO_PROVISION=false means only admin-created users "
+                "can link their accounts via OIDC. New users cannot register."
+            )
+
         return self
 
 
