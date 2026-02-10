@@ -2,10 +2,10 @@
 Mood schemas.
 """
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, field_serializer
+from pydantic import BaseModel, field_validator
 
 from app.schemas.base import TimestampMixin
 
@@ -13,8 +13,47 @@ from app.schemas.base import TimestampMixin
 class MoodBase(BaseModel):
     """Base mood schema."""
     name: str
+    key: Optional[str] = None
     icon: Optional[str] = None
+    color_value: Optional[int] = None
     category: str
+    score: int
+    position: int = 0
+    is_active: bool = True
+    user_id: Optional[uuid.UUID] = None
+
+
+class MoodCreate(BaseModel):
+    name: str
+    icon: Optional[str] = None
+    color_value: Optional[int] = None
+    score: int
+    position: Optional[int] = None
+
+    @field_validator("score")
+    @classmethod
+    def validate_score(cls, value: int) -> int:
+        if value < 1 or value > 5:
+            raise ValueError("Score must be between 1 and 5")
+        return value
+
+
+class MoodUpdate(BaseModel):
+    name: Optional[str] = None
+    icon: Optional[str] = None
+    color_value: Optional[int] = None
+    score: Optional[int] = None
+    position: Optional[int] = None
+    is_active: Optional[bool] = None
+
+    @field_validator("score")
+    @classmethod
+    def validate_score(cls, value: Optional[int]) -> Optional[int]:
+        if value is None:
+            return value
+        if value < 1 or value > 5:
+            raise ValueError("Score must be between 1 and 5")
+        return value
 
 
 class MoodResponse(MoodBase, TimestampMixin):
@@ -22,42 +61,13 @@ class MoodResponse(MoodBase, TimestampMixin):
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    is_hidden: bool = False
+    sort_order: Optional[int] = None
 
 
-class MoodLogBase(BaseModel):
-    """Base mood log schema."""
-    mood_id: uuid.UUID
-    note: Optional[str] = None
-    logged_datetime_utc: Optional[datetime] = None
-    logged_timezone: Optional[str] = None
+class MoodVisibilityUpdate(BaseModel):
+    is_hidden: bool
 
 
-class MoodLogCreate(MoodLogBase):
-    """Mood log creation schema."""
-    entry_id: Optional[uuid.UUID] = None
-
-
-class MoodLogUpdate(BaseModel):
-    """Mood log update schema."""
-    mood_id: Optional[uuid.UUID] = None
-    note: Optional[str] = None
-    logged_datetime_utc: Optional[datetime] = None
-    logged_timezone: Optional[str] = None
-
-
-class MoodLogResponse(MoodLogBase, TimestampMixin):
-    """Mood log response schema."""
-    id: uuid.UUID
-    user_id: uuid.UUID
-    entry_id: Optional[uuid.UUID] = None
-    created_at: datetime
-    logged_date: date = Field(description="The date this mood represents")
-    logged_datetime_utc: datetime
-    logged_timezone: str
-    mood: Optional[MoodResponse] = None
-    entry_date: Optional[date] = Field(None, description="Date from associated entry if available (deprecated, use logged_date)")
-
-    @field_serializer('logged_date', 'entry_date')
-    def serialize_dates(self, v: Optional[date], _info) -> Optional[str]:
-        """Serialize date to ISO format string."""
-        return v.isoformat() if v else None
+class MoodReorderRequest(BaseModel):
+    mood_ids: list[uuid.UUID]

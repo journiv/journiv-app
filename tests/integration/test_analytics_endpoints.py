@@ -126,22 +126,30 @@ def analytics_dataset(
     _assign_tags(streak_entries[-2]["id"], ["gratitude", "focus"])
     tag_usage = {"gratitude": 2, "focus": 1}
 
-    # Mood logs to exercise writing pattern mood tracking.
+    # Moments with moods to exercise writing pattern mood tracking.
     moods = api_client.list_moods(token)
-    if not moods:
-        pytest.skip("Analytics tests require at least one mood to be configured.")
-    mood_id = moods[0]["id"]
+    if moods:
+        mood_id = moods[0]["id"]
+    else:
+        mood = api_client.create_mood(
+            token,
+            name=f"Analytics Mood {utc_date.strftime('%Y%m%d')}",
+            score=4,
+            icon=":)",
+            color_value=0x10B981,
+        )
+        mood_id = mood["id"]
     mood_dates = {
         streak_entries[-1]["date"].isoformat(),
         streak_entries[-2]["date"].isoformat(),
     }
     for entry in streak_entries[-2:]:
-        api_client.create_mood_log(
+        api_client.create_moment(
             token,
-            entry_id=entry["id"],
-            mood_id=mood_id,
             logged_date=entry["date"].isoformat(),
-            notes="Analytics coverage",
+            primary_mood_id=mood_id,
+            note="Analytics coverage",
+            logged_timezone="UTC",
         )
 
     return AnalyticsSeedData(

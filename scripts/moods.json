@@ -1,102 +1,52 @@
 [
   {
-    "name": "Happy",
-    "icon": "😊",
-    "category": "positive"
+    "name": "Awesome",
+    "key": "awesome",
+    "icon": "smilePlus",
+    "color_value": 4278241363,
+    "category": "positive",
+    "score": 5,
+    "position": 10,
+    "is_active": true
   },
   {
-    "name": "Excited",
-    "icon": "🤩",
-    "category": "positive"
+    "name": "Good",
+    "key": "good",
+    "icon": "smile",
+    "color_value": 4282613575,
+    "category": "positive",
+    "score": 4,
+    "position": 20,
+    "is_active": true
   },
   {
-    "name": "Grateful",
-    "icon": "🙏",
-    "category": "positive"
+    "name": "Meh",
+    "key": "meh",
+    "icon": "meh",
+    "color_value": 4294165007,
+    "category": "neutral",
+    "score": 3,
+    "position": 30,
+    "is_active": true
   },
   {
-    "name": "Calm",
-    "icon": "😌",
-    "category": "positive"
+    "name": "Bad",
+    "key": "bad",
+    "icon": "frown",
+    "color_value": 4294679552,
+    "category": "negative",
+    "score": 2,
+    "position": 40,
+    "is_active": true
   },
   {
-    "name": "Focused",
-    "icon": "🎯",
-    "category": "positive"
-  },
-  {
-    "name": "Sad",
-    "icon": "😢",
-    "category": "negative"
-  },
-  {
-    "name": "Angry",
-    "icon": "😠",
-    "category": "negative"
-  },
-  {
-    "name": "Stressed",
-    "icon": "😫",
-    "category": "negative"
-  },
-  {
-    "name": "Lonely",
-    "icon": "😔",
-    "category": "negative"
-  },
-  {
-    "name": "Tired",
-    "icon": "😴",
-    "category": "negative"
-  },
-  {
-    "name": "Neutral",
-    "icon": "😐",
-    "category": "neutral"
-  },
-  {
-    "name": "Confused",
-    "icon": "😕",
-    "category": "neutral"
-  },
-  {
-    "name": "Curious",
-    "icon": "🤔",
-    "category": "neutral"
-  },
-  {
-    "name": "Surprised",
-    "icon": "😮",
-    "category": "neutral"
-  },
-  {
-    "name": "Anxious",
-    "icon": "😰",
-    "category": "negative"
-  },
-  {
-    "name": "Proud",
-    "icon": "😤",
-    "category": "positive"
-  },
-  {
-    "name": "Hopeful",
-    "icon": "🌟",
-    "category": "positive"
-  },
-  {
-    "name": "Disappointed",
-    "icon": "😞",
-    "category": "negative"
-  },
-  {
-    "name": "Relaxed",
-    "icon": "😌",
-    "category": "positive"
-  },
-  {
-    "name": "Motivated",
-    "icon": "💪",
-    "category": "positive"
+    "name": "Awful",
+    "key": "awful",
+    "icon": "angry",
+    "color_value": 4293212725,
+    "category": "negative",
+    "score": 1,
+    "position": 50,
+    "is_active": true
   }
 ]

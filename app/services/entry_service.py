@@ -1,6 +1,7 @@
 """
 Entry service for managing journal entries.
 """
+import logging
 import uuid
 from datetime import date, datetime
 from pathlib import Path
@@ -462,6 +463,9 @@ class EntryService:
         entry_data: EntryCreate | EntryDraftCreate,
         *,
         is_draft: bool = False,
+        skip_moment_sync: bool = False,
+        commit: bool = True,
+        run_side_effects: bool = True,
     ) -> Entry:
         """Create a new entry in a journal.
 
@@ -531,8 +535,11 @@ class EntryService:
 
         try:
             self.session.add(entry)
-            self._commit()
-            self.session.refresh(entry)
+            if commit:
+                self._commit()
+                self.session.refresh(entry)
+            else:
+                self.session.flush()
         except SQLAlchemyError as exc:
             self.session.rollback()
             log_error(exc)
@@ -542,26 +549,48 @@ class EntryService:
             f"Entry created for user {user_id} in journal {entry.journal_id}: {entry.id} (draft={is_draft})"
         )
 
-        if not is_draft:
-            try:
-                from app.services.journal_service import JournalService
-                JournalService(self.session).recalculate_journal_entry_count(entry.journal_id, user_id)
-            except JournalNotFoundError:
-                log_warning(f"Journal missing during entry recount for user {user_id}: {entry.journal_id}")
-            except SQLAlchemyError as exc:
-                log_error(exc)
-            except Exception as exc:
-                log_error(exc)
-
-            # Update writing streak analytics
-            try:
-                from app.services.analytics_service import AnalyticsService
-                analytics_service = AnalyticsService(self.session)
-                analytics_service.update_writing_streak(user_id, entry.entry_date)
-            except Exception as exc:
-                log_error(exc)
+        if not is_draft and run_side_effects and commit:
+            self._run_entry_side_effects(entry, user_id, skip_moment_sync=skip_moment_sync)
 
         return entry
+
+    def _run_entry_side_effects(
+        self,
+        entry: Entry,
+        user_id: uuid.UUID,
+        *,
+        skip_moment_sync: bool,
+    ) -> None:
+        try:
+            from app.services.journal_service import JournalService
+            JournalService(self.session).recalculate_journal_entry_count(entry.journal_id, user_id)
+        except JournalNotFoundError:
+            log_warning(f"Journal missing during entry recount for user {user_id}: {entry.journal_id}")
+        except SQLAlchemyError as exc:
+            log_error(exc)
+        except Exception as exc:
+            log_error(exc)
+
+        # Update writing streak analytics
+        try:
+            from app.services.analytics_service import AnalyticsService
+            analytics_service = AnalyticsService(self.session)
+            analytics_service.update_writing_streak(user_id, entry.entry_date)
+        except Exception as exc:
+            log_error(exc)
+
+        if not skip_moment_sync:
+            # Ensure moment exists for this entry
+            try:
+                from app.services.moment_service import MomentService
+                moment_service = MomentService(self.session)
+                moment_service.ensure_moment_for_entry(
+                    user_id,
+                    entry,
+                    activity_ids=None,
+                )
+            except Exception as exc:
+                log_error(exc)
 
     def finalize_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
         """Finalize a draft entry."""
@@ -586,22 +615,7 @@ class EntryService:
             log_error(exc)
             raise
 
-        try:
-            from app.services.journal_service import JournalService
-            JournalService(self.session).recalculate_journal_entry_count(entry.journal_id, user_id)
-        except JournalNotFoundError:
-            log_warning(f"Journal missing during entry recount for user {user_id}: {entry.journal_id}")
-        except SQLAlchemyError as exc:
-            log_error(exc)
-        except Exception as exc:
-            log_error(exc)
-
-        try:
-            from app.services.analytics_service import AnalyticsService
-            analytics_service = AnalyticsService(self.session)
-            analytics_service.update_writing_streak(user_id, entry.entry_date)
-        except Exception as exc:
-            log_error(exc)
+        self._run_entry_side_effects(entry, user_id, skip_moment_sync=False)
 
         log_info(f"Entry finalized for user {user_id}: {entry.id}")
         return entry
@@ -855,6 +869,32 @@ class EntryService:
                 log_error(exc)
 
         log_info(f"Entry updated for user {user_id}: {entry.id}")
+
+        if (
+            timestamp_changed
+            or entry_data.entry_timezone is not None
+            or entry_data.entry_date is not None
+            or entry_data.location_json is not None
+            or entry_data.weather_json is not None
+            or entry_data.latitude is not None
+            or entry_data.longitude is not None
+        ):
+            try:
+                from app.services.moment_service import MomentService
+                moment_service = MomentService(self.session)
+                moment = moment_service.ensure_moment_for_entry(user_id, entry)
+                moment.logged_at = entry.entry_datetime_utc
+                moment.logged_date = entry.entry_date
+                moment.logged_timezone = entry.entry_timezone
+                moment.location_data = entry.location_json
+                moment.weather_data = entry.weather_json
+                moment.updated_at = utc_now()
+                self.session.add(moment)
+                self._commit()
+            except Exception as exc:
+                log_error(exc)
+                # Don't fail entry update if activity linking fails
+
         return entry
 
     async def delete_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> bool:
@@ -1114,10 +1154,25 @@ class EntryService:
     ) -> EntryMedia:
         """Add media to an entry."""
         # Verify the entry belongs to the user
-        self._get_owned_entry(entry_id, user_id)
+        entry = self._get_owned_entry(entry_id, user_id)
+        moment_id = None
+        try:
+            from app.models.moment import Moment
+            moment = self.session.exec(
+                select(Moment).where(Moment.entry_id == entry.id, Moment.user_id == user_id)
+            ).first()
+            moment_id = moment.id if moment else None
+        except Exception:
+            logging.exception(
+                "Failed to resolve moment for entry media add: entry_id=%s user_id=%s",
+                entry_id,
+                user_id,
+            )
+            moment_id = None
 
         media = EntryMedia(
             entry_id=entry_id,
+            moment_id=moment_id,
             media_type=media_data.media_type,
             file_path=media_data.file_path,
             original_filename=media_data.original_filename,

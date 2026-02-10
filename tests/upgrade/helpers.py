@@ -97,26 +97,25 @@ def get_moods(token: str) -> list[Dict[str, Any]]:
     return get_client().list_moods(token)
 
 
-def create_mood_log(
+def create_moment(
     token: str,
-    entry_id: str,
     mood_id: str,
-    notes: str,
+    note: str,
     logged_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create a mood log. Defaults logged_date to today if not provided."""
-    return get_client().create_mood_log(
+    """Create a mood moment. Defaults logged_date to today if not provided."""
+    return get_client().create_moment(
         token,
-        entry_id=entry_id,
-        mood_id=mood_id,
-        notes=notes,
+        primary_mood_id=mood_id,
+        note=note,
         logged_date=logged_date or date.today().isoformat(),
+        logged_timezone="UTC",
     )
 
 
-def get_mood_logs(token: str) -> list[Dict[str, Any]]:
-    """Get all mood logs."""
-    return get_client().list_mood_logs(token)
+def get_moments(token: str) -> list[Dict[str, Any]]:
+    """Get moments."""
+    return get_client().list_moments(token, limit=100)
 
 
 def upload_media(

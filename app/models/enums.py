@@ -106,6 +106,32 @@ class JournalColor(str, Enum):
     STONE = "#78716C"
 
 
+class GoalType(str, Enum):
+    """Goal direction."""
+    ACHIEVE = "achieve"
+    AVOID = "avoid"
+
+
+class GoalFrequency(str, Enum):
+    """Goal frequency."""
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
+class GoalLogStatus(str, Enum):
+    """Goal log status for a period."""
+    SUCCESS = "success"
+    FAIL = "fail"
+    SKIPPED = "skipped"
+
+
+class GoalLogSource(str, Enum):
+    """Goal log origin."""
+    AUTO = "auto"
+    MANUAL = "manual"
+
+
 class JobStatus(str, Enum):
     """Status for import/export jobs."""
     PENDING = "pending"

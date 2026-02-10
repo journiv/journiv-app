@@ -9,7 +9,7 @@ from tests.upgrade.helpers import (
     get_journals,
     get_entries,
     get_tags,
-    get_mood_logs,
+    get_moments,
     get_user_settings,
     wait_for_ready,
     http_get
@@ -112,30 +112,30 @@ def test_verify_tags_exist():
     print(f"All tags verified")
 
 
-def test_verify_mood_logs_exist():
-    """Verify mood logs still exist after upgrade (if they were created)."""
-    print("\n=== Verifying mood logs ===")
+def test_verify_moments_exist():
+    """Verify moments still exist after upgrade (if they were created)."""
+    print("\n=== Verifying moments ===")
 
     token = login(TEST_EMAIL, TEST_PASSWORD)
 
     try:
-        mood_logs = get_mood_logs(token)
-        print(f"Found {len(mood_logs)} mood logs")
+        moments = get_moments(token)
+        print(f"Found {len(moments)} moments")
 
-        if len(mood_logs) > 0:
-            # Verify mood log structure if they exist
-            for mood_log in mood_logs[:min(3, len(mood_logs))]:
-                assert "id" in mood_log, "Mood log missing 'id' field"
-                assert "mood_id" in mood_log or "entry_id" in mood_log, "Mood log missing mood_id/entry_id"
+        if len(moments) > 0:
+            # Verify moment structure if they exist
+            for moment in moments[:min(3, len(moments))]:
+                assert "id" in moment, "Moment missing 'id' field"
+                assert "primary_mood_id" in moment, "Moment missing primary_mood_id"
 
-                notes = mood_log.get("notes", "No notes")
-                print(f"Mood log: {notes[:50]}")
+                note = moment.get("note", "No note")
+                print(f"Moment: {note[:50]}")
 
-            print(f"All mood logs verified")
+            print("All moments verified")
         else:
-            print("No mood logs found (may not have been created in OLD version)")
+            print("No moments found (may not have been created in OLD version)")
     except Exception as e:
-        print(f"Mood logs not available (skipping verification): {e}")
+        print(f"Moments not available (skipping verification): {e}")
 
 
 def test_verify_user_settings_readable():
@@ -166,7 +166,7 @@ def test_verify_data_integrity():
     tags = get_tags(token)
 
     try:
-        mood_logs = get_mood_logs(token)
+        mood_logs = get_moments(token)
     except Exception:
         mood_logs = []
 
@@ -175,7 +175,7 @@ def test_verify_data_integrity():
     print(f"  Journals: {len(journals)}")
     print(f"  Entries: {len(entries)}")
     print(f"  Tags: {len(tags)}")
-    print(f"  Mood logs: {len(mood_logs)}")
+    print(f"  Moments: {len(mood_logs)}")
 
     assert len(journals) >= 2, "Missing journals after upgrade"
     assert len(entries) >= 4, "Missing entries after upgrade"
@@ -208,7 +208,7 @@ def test_no_data_loss():
     tags = get_tags(token)
 
     try:
-        mood_logs = get_mood_logs(token)
+        mood_logs = get_moments(token)
     except Exception:
         mood_logs = []
 
@@ -221,7 +221,7 @@ def test_no_data_loss():
     print(f"  Journals: {expected_journals} → {len(journals)}")
     print(f"  Entries: {expected_entries} → {len(entries)}")
     print(f"  Tags: {expected_tags} → {len(tags)}")
-    print(f"  Mood logs: {len(mood_logs)} (optional - depends on OLD version features)")
+    print(f"  Moments: {len(mood_logs)} (optional - depends on OLD version features)")
 
     assert len(journals) >= expected_journals, f"Data loss detected: journals {len(journals)} < {expected_journals}"
     assert len(entries) >= expected_entries, f"Data loss detected: entries {len(entries)} < {expected_entries}"
@@ -240,7 +240,7 @@ if __name__ == "__main__":
     test_verify_journals_exist()
     test_verify_entries_exist()
     test_verify_tags_exist()
-    test_verify_mood_logs_exist()
+    test_verify_moments_exist()
     test_verify_user_settings_readable()
     test_verify_data_integrity()
     test_verify_new_api_functionality()

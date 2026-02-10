@@ -37,6 +37,11 @@ class MoodNotFoundError(JournivAppException):
     pass
 
 
+class MoodAlreadyExistsError(JournivAppException):
+    """Raised when a mood already exists."""
+    pass
+
+
 class PromptNotFoundError(JournivAppException):
     """Raised when a prompt is not found."""
     pass

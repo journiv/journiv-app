@@ -25,7 +25,7 @@ class ProgressStages:
 class ExportConfig:
     """Configuration constants for export operations."""
 
-    EXPORT_VERSION = "1.0"
+    EXPORT_VERSION = "1.2"
     DATA_FILENAME = "data.json"
 
 

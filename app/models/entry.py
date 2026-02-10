@@ -32,12 +32,12 @@ from .enums import MediaType, UploadStatus
 
 if TYPE_CHECKING:
     from .journal import Journal
-    from .mood import MoodLog
+    from .moment import Moment
     from .prompt import Prompt
     from .tag import Tag
     from .user import User
 
-# Import EntryTagLink from separate file to avoid circular imports
+# Import link models from separate files to avoid circular imports
 from .entry_tag_link import EntryTagLink
 
 
@@ -146,9 +146,9 @@ class Entry(BaseModel, table=True):
         back_populates="entry",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    mood_log: Optional["MoodLog"] = Relationship(
+    moment: Optional["Moment"] = Relationship(
         back_populates="entry",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False}
+        sa_relationship_kwargs={"uselist": False}
     )
     tags: List["Tag"] = Relationship(
         back_populates="entries",
@@ -246,10 +246,18 @@ class EntryMedia(BaseModel, table=True):
     """
     __tablename__ = "entry_media"
 
-    entry_id: uuid.UUID = Field(
+    entry_id: Optional[uuid.UUID] = Field(
+        default=None,
         sa_column=Column(
             ForeignKey("entry.id", ondelete="CASCADE"),
-            nullable=False
+            nullable=True
+        )
+    )
+    moment_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("moment.id", ondelete="CASCADE"),
+            nullable=True,
         )
     )
     media_type: MediaType = Field(
@@ -314,22 +322,29 @@ class EntryMedia(BaseModel, table=True):
     )
 
     # Relations
-    entry: "Entry" = Relationship(back_populates="media")
+    entry: Optional["Entry"] = Relationship(back_populates="media")
+    moment: Optional["Moment"] = Relationship()
 
     # Table constraints and indexes
     __table_args__ = (
         # Performance indexes for critical queries
         Index('idx_entry_media_entry_id', 'entry_id'),
+        Index('idx_entry_media_moment_id', 'moment_id'),
         Index('idx_entry_media_type', 'media_type'),
         Index('idx_entry_media_status', 'upload_status'),
         Index('idx_entry_media_checksum', 'checksum'),
         Index('idx_entry_media_external_provider', 'external_provider', 'external_asset_id'),
         UniqueConstraint('entry_id', 'checksum', name='uq_entry_media_entry_checksum'),
+        UniqueConstraint('moment_id', 'checksum', name='uq_entry_media_moment_checksum'),
         # Constraints
         # Either local file (file_path + file_size) OR external link (external_provider)
         CheckConstraint(
             '(file_path IS NOT NULL AND file_size > 0) OR (external_provider IS NOT NULL)',
             name='check_media_source'
+        ),
+        CheckConstraint(
+            '(entry_id IS NOT NULL) OR (moment_id IS NOT NULL)',
+            name='check_media_entry_or_moment'
         ),
         CheckConstraint('file_size IS NULL OR file_size > 0', name='check_file_size_positive'),
         CheckConstraint('duration IS NULL OR duration >= 0', name='check_duration_non_negative'),

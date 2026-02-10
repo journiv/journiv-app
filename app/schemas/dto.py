@@ -69,26 +69,40 @@ class MediaDTO(BaseModel):
     external_id: Optional[str] = Field(None, description="Original ID from source system (legacy use) or external asset ID")
 
 
-class MoodLogDTO(BaseModel):
+class MomentMoodActivityDTO(BaseModel):
     """
-    Mood log entry for import/export.
-
-    Maps to: MoodLog model (app/models/mood.py)
-    Note: Mood is stored via relationship to Mood definition, not directly on Entry.
+    Mood/activity association within a moment for import/export.
     """
-    # Actual MoodLog fields
-    mood_name: str = Field(..., description="Name of the mood (references Mood.name)")
-    note: Optional[str] = Field(None, max_length=500, description="Optional note about the mood")
-    logged_date: date = Field(..., description="Date this mood represents")
-    logged_datetime_utc: datetime = Field(..., description="UTC timestamp when mood was logged")
-    logged_timezone: str = Field(default="UTC", description="IANA timezone for the mood log")
+    mood_name: Optional[str] = Field(None, description="Mood name (references Mood.name)")
+    activity_name: Optional[str] = Field(None, description="Activity name (user-defined)")
 
-    # Timestamps (inherited from BaseModel)
-    created_at: datetime = Field(..., description="Mood log creation time in UTC")
-    updated_at: datetime = Field(..., description="Mood log last update time in UTC")
 
-    # PLACEHOLDER: For import compatibility with other apps
-    mood_score: Optional[int] = Field(None, ge=-5, le=5, description="PLACEHOLDER: Mood score (not in DB)")
+class MomentDTO(BaseModel):
+    """
+    Moment for import/export.
+
+    Maps to: Moment model (app/models/moment.py) and MomentMoodActivity links.
+    """
+    logged_at: datetime = Field(..., description="UTC timestamp when moment occurred")
+    logged_date: date = Field(..., description="User's local date for this moment")
+    logged_timezone: str = Field(default="UTC", description="IANA timezone for moment context")
+    note: Optional[str] = Field(None, max_length=500, description="Optional note for the moment")
+    location_data: Optional[Dict[str, Any]] = Field(None, description="Structured location data")
+    weather_data: Optional[Dict[str, Any]] = Field(None, description="Structured weather data")
+    primary_mood_name: Optional[str] = Field(None, description="Primary mood name")
+    mood_activity: List[MomentMoodActivityDTO] = Field(default_factory=list, description="Mood/activity links")
+    media: List["MediaDTO"] = Field(default_factory=list, description="Media attached to moment")
+
+    created_at: datetime = Field(..., description="Moment creation time in UTC")
+    updated_at: datetime = Field(..., description="Moment last update time in UTC")
+
+    @field_validator('logged_timezone', mode='before')
+    @classmethod
+    def normalize_timezone(cls, v):
+        """Normalize timezone to ensure it's never None or empty."""
+        if not v or v == "":
+            return "UTC"
+        return v
 
 
 class EntryDTO(BaseModel):
@@ -138,7 +152,7 @@ class EntryDTO(BaseModel):
 
     # Related data
     tags: List[str] = Field(default_factory=list, description="List of tag names")
-    mood_log: Optional[MoodLogDTO] = Field(None, description="Associated mood log")
+    moment: Optional[MomentDTO] = Field(None, description="Associated moment (new format)")
     media: List[MediaDTO] = Field(default_factory=list, description="Attached media files")
 
     # Prompt information (if entry was created from prompt)
@@ -261,11 +275,12 @@ class UserSettingsDTO(BaseModel):
     push_notifications: bool = Field(default=True, description="Whether push notifications are enabled")
     reminder_time: Optional[str] = Field(None, description="Daily reminder time in HH:MM format")
     writing_goal_daily: int = Field(default=500, description="Daily writing goal in words")
+    start_of_week_day: int = Field(default=0, ge=0, le=6, description="Week start day (0=Mon ... 6=Sun)")
 
     # PLACEHOLDER: For import compatibility, not in database yet
     date_format: Optional[str] = Field(None, description="PLACEHOLDER: Date format preference (not in DB)")
     time_format: Optional[str] = Field(None, description="PLACEHOLDER: Time format 12h/24h (not in DB)")
-    first_day_of_week: Optional[int] = Field(None, ge=0, le=6, description="PLACEHOLDER: First day of week (not in DB)")
+    first_day_of_week: Optional[int] = Field(None, ge=0, le=6, description="PLACEHOLDER: First day of week (legacy)")
 
 
 # ============================================================================
@@ -279,7 +294,7 @@ class JournivExportDTO(BaseModel):
     This is the top-level structure for full exports.
     """
     # Metadata
-    export_version: str = Field("1.1", description="Export format version")
+    export_version: str = Field("1.2", description="Export format version")
     export_date: datetime = Field(..., description="When export was created (UTC)")
     app_version: str = Field(..., description="Journiv version that created export")
 
@@ -291,6 +306,7 @@ class JournivExportDTO(BaseModel):
     # Data
     journals: List[JournalDTO] = Field(..., description="All journals with their entries")
     mood_definitions: List[MoodDefinitionDTO] = Field(default_factory=list, description="System mood definitions")
+    moments: List[MomentDTO] = Field(default_factory=list, description="Standalone moments without entries")
 
     # Statistics (for reference only, not imported)
     stats: Optional[Dict[str, Any]] = Field(
@@ -376,10 +392,10 @@ class ImportResultSummary(BaseModel):
     """
     journals_created: int = Field(0, description="Number of journals created")
     entries_created: int = Field(0, description="Number of entries created")
+    moments_created: int = Field(0, description="Number of moments created")
     media_files_imported: int = Field(0, description="Number of media files imported")
     tags_created: int = Field(0, description="Number of new tags created")
     moods_created: int = Field(0, description="Number of new mood definitions created")
-    mood_logs_created: int = Field(0, description="Number of mood logs created")
 
     # Deduplication stats
     media_files_deduplicated: int = Field(0, description="Media files deduplicated by checksum")
@@ -413,8 +429,7 @@ DATABASE SCHEMA MAPPING NOTES:
 
 2. MOOD SYSTEM:
    - Mood definitions: Stored in 'mood' table (name, icon, category)
-   - Mood logs: Stored in 'mood_log' table (links user, entry, mood)
-   - Entry relationship: Optional one-to-one via Entry.mood_log
+   - Mood links stored in moment_mood_activity, primary mood stored on moment
    - Placeholders: score, emoji, color (not in database)
 
 3. ENTRY LOCATION:
@@ -447,7 +462,6 @@ DATABASE SCHEMA MAPPING NOTES:
 7. TIMESTAMPS:
    - All models inherit from BaseModel: id, created_at, updated_at, is_deleted
    - Entry has: entry_date (date), entry_datetime_utc (datetime), entry_timezone (str)
-   - MoodLog has: logged_date (date), logged_datetime_utc (datetime), logged_timezone (str)
 
 8. ENUM TYPES:
    - MediaType: image, video, audio, unknown
@@ -462,7 +476,6 @@ DATABASE SCHEMA MAPPING NOTES:
 PLACEHOLDER FIELDS (for future implementation):
 - MediaDTO: caption (use alt_text instead)
 - MoodDefinitionDTO: emoji, score, color (only name, icon, category exist)
-- MoodLogDTO: mood_score (not stored, added for Day one import compatibility)
 - EntryDTO: temperature (not persisted in DB, use weather_json instead; added for Day One import compatibility)
 - UserSettingsDTO: date_format, time_format, first_day_of_week
 

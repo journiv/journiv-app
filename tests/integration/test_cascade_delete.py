@@ -1,7 +1,6 @@
 """
 Behavioural tests that assert cascades through the public API surface.
 """
-from datetime import date
 
 from tests.integration.helpers import (
     EndpointCase,
@@ -62,17 +61,8 @@ def test_deleting_entry_removes_related_artifacts(
     api_user: ApiUser,
     entry_factory,
 ):
-    """Deleting an entry should remove pins, media, and mood logs associated with it."""
+    """Deleting an entry should remove pins and media associated with it."""
     entry = entry_factory(title="Cascade Entry")
-    moods = api_client.list_moods(api_user.access_token)
-    if moods:
-        api_client.create_mood_log(
-            api_user.access_token,
-            entry_id=entry["id"],
-            mood_id=moods[0]["id"],
-            logged_date=date.today().isoformat(),
-            notes="Cascade mood",
-        )
 
     api_client.upload_media(
         api_user.access_token,
@@ -84,9 +74,6 @@ def test_deleting_entry_removes_related_artifacts(
 
     api_client.pin_entry(api_user.access_token, entry["id"])
     api_client.delete_entry(api_user.access_token, entry["id"])
-
-    mood_logs = api_client.list_mood_logs(api_user.access_token)
-    assert all(log["entry_id"] != entry["id"] for log in mood_logs)
 
     entries = api_client.list_entries(api_user.access_token, limit=50)
     assert all(item["id"] != entry["id"] for item in entries)

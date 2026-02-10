@@ -1180,6 +1180,10 @@ class ImportJobService:
                 log_warning(f"Integration not found for user {user_id}")
                 return False
 
+            if media.entry_id is None:
+                log_warning(f"EntryMedia missing entry_id for asset {asset_id}")
+                return False
+
             # Download thumbnail
             thumbnail_content, _ = await self._download_and_save_thumbnail(
                 asset_id=asset_id,

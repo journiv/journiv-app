@@ -17,6 +17,7 @@ celery_app = Celery(
     include=[
         "app.tasks.import_tasks",
         "app.tasks.export_tasks",
+        "app.tasks.goal_tasks",
         "app.tasks.version_check",
         "app.tasks.license_refresh",
         "app.tasks.immich_import_tasks",
@@ -46,6 +47,10 @@ celery_app.conf.update(
         "sync-integrations-interval": {
             "task": "app.integrations.tasks.sync_all_providers_task",
             "schedule": timedelta(hours=settings.integration_sync_interval_hours),
+        },
+        "close-goal-periods-interval": {
+            "task": "app.tasks.goal_tasks.close_goal_periods",
+            "schedule": timedelta(hours=1),
         },
     },
     task_track_started=True,

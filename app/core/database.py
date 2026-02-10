@@ -180,8 +180,7 @@ def seed_initial_data():
     # Set SKIP_DATA_SEEDING=false to enable seeding in workers (e.g., for development)
     skip_data_seeding = os.getenv("SKIP_DATA_SEEDING", "true").lower() in ("true", "1", "yes")
     if skip_data_seeding:
-        logger.info("Skipping data seeding in worker (already performed by entrypoint script)")
-        return
+        logger.info("Skipping mood/prompt seeding in worker (already performed by entrypoint script)")
 
     logger.info("Checking if initial data seeding is needed...")
 
@@ -191,21 +190,22 @@ def seed_initial_data():
             from app.models.mood import Mood
             from app.models.prompt import Prompt
 
-            # Check if moods exist
-            existing_moods = session.exec(select(Mood)).first()
-            if not existing_moods:
-                logger.info("Seeding moods data...")
-                seed_moods(session)
-            else:
-                logger.info("Moods already exist, skipping mood seeding")
+            if not skip_data_seeding:
+                # Check if moods exist
+                existing_moods = session.exec(select(Mood)).first()
+                if not existing_moods:
+                    logger.info("Seeding moods data...")
+                    seed_moods(session)
+                else:
+                    logger.info("Moods already exist, skipping mood seeding")
 
-            # Check if prompts exist
-            existing_prompts = session.exec(select(Prompt)).first()
-            if not existing_prompts:
-                logger.info("Seeding prompts data...")
-                seed_prompts(session)
-            else:
-                logger.info("Prompts already exist, skipping prompt seeding")
+                # Check if prompts exist
+                existing_prompts = session.exec(select(Prompt)).first()
+                if not existing_prompts:
+                    logger.info("Seeding prompts data...")
+                    seed_prompts(session)
+                else:
+                    logger.info("Prompts already exist, skipping prompt seeding")
 
             # Seed instance details
             seed_instance_details(session)

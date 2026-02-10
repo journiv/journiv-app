@@ -260,7 +260,6 @@ class DayOneToJournivMapper:
             import_metadata=import_metadata,
             # Related data
             tags=tags,
-            mood_log=None,  # Day One doesn't have mood logs
             media=media,  # Will be populated during import
             prompt_text=None,
             created_at=creation_date_utc,

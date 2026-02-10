@@ -57,6 +57,8 @@ def _build_entry_responses(
     ).all()
     media_by_entry: dict[uuid.UUID, list[EntryMedia]] = defaultdict(list)
     for media in media_items:
+        if media.entry_id is None:
+            continue
         media_by_entry[media.entry_id].append(media)
 
     immich_integration = session.exec(

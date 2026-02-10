@@ -16,13 +16,20 @@ from .enums import Theme, UserRole
 if TYPE_CHECKING:
     from app.models.integration import Integration
 
+    from .activity import Activity
+    from .activity_group import ActivityGroup
     from .analytics import WritingStreak
     from .entry import Entry
     from .external_identity import ExternalIdentity
+    from .goal import Goal, GoalLog
+    from .goal_category import GoalCategory
     from .journal import Journal
-    from .mood import MoodLog
+    from .moment import Moment
+    from .mood import Mood
+    from .mood_group import MoodGroup, UserMoodGroupPreference
     from .prompt import Prompt
     from .tag import Tag
+    from .user_mood_preference import UserMoodPreference
 
 
 class User(BaseModel, table=True):
@@ -65,10 +72,6 @@ class User(BaseModel, table=True):
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    mood_logs: List["MoodLog"] = Relationship(
-        back_populates="user",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
     settings: Optional["UserSettings"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan", "uselist": False}
@@ -89,7 +92,48 @@ class User(BaseModel, table=True):
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+    moments: List["Moment"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
     integrations: List["Integration"] = Relationship(
+                back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+
+    activities: List["Activity"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    activity_groups: List["ActivityGroup"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    moods: List["Mood"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    mood_preferences: List["UserMoodPreference"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    mood_groups: List["MoodGroup"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    mood_group_preferences: List["UserMoodGroupPreference"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    goals: List["Goal"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    goal_categories: List["GoalCategory"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    goal_logs: List["GoalLog"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
@@ -156,6 +200,7 @@ class UserSettings(TimestampMixin, table=True):
     push_notifications: bool = Field(default=True)
     reminder_time: Optional[str] = Field(None, max_length=5)  # HH:MM format
     writing_goal_daily: int = Field(default=500, ge=1, le=10000)  # Words per day (default: 500)
+    start_of_week_day: int = Field(default=0, ge=0, le=6)  # 0=Monday ... 6=Sunday
     theme: str = Field(default="light", max_length=20)  # light, dark, auto
 
     # Relations
@@ -165,6 +210,7 @@ class UserSettings(TimestampMixin, table=True):
     __table_args__ = (
         # Constraints
         CheckConstraint('writing_goal_daily > 0', name='check_goal_positive'),
+        CheckConstraint('start_of_week_day >= 0 AND start_of_week_day <= 6', name='check_start_of_week_day_valid'),
         CheckConstraint("theme IN ('light', 'dark', 'auto')", name='check_theme_valid'),
     )
 

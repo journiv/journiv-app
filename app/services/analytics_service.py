@@ -13,7 +13,7 @@ from app.core.time_utils import utc_now
 from app.models.analytics import WritingStreak
 from app.models.entry import Entry
 from app.models.journal import Journal
-from app.models.mood import MoodLog
+from app.models.moment import Moment
 from app.models.tag import EntryTagLink, Tag
 
 
@@ -275,19 +275,20 @@ class AnalyticsService:
             .order_by(col(Entry.entry_date))
         ).all()
 
-        # Get mood patterns
+        # Get mood patterns (primary mood per moment)
         mood_patterns = self.session.exec(
             select(
-                col(MoodLog.logged_date).label('mood_date'),
-                func.count(MoodLog.id).label('mood_count')
+                col(Moment.logged_date).label('mood_date'),
+                func.count(Moment.id).label('mood_count')
             )
             .where(
-                MoodLog.user_id == user_id,
-                MoodLog.logged_date >= start_date,
-                MoodLog.logged_date <= end_date
+                Moment.user_id == user_id,
+                col(Moment.primary_mood_id).is_not(None),
+                col(Moment.logged_date) >= start_date,
+                col(Moment.logged_date) <= end_date
             )
-            .group_by(MoodLog.logged_date)
-            .order_by(col(MoodLog.logged_date))
+            .group_by(col(Moment.logged_date))
+            .order_by(col(Moment.logged_date))
         ).all()
 
         # Get tag usage

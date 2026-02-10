@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, cast
 from uuid import UUID
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 from sqlmodel import col, select
@@ -18,16 +18,17 @@ from app.core.config import settings
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.time_utils import local_date_for_user, normalize_timezone, utc_now
 from app.data_transfer.dayone import DayOneParser, DayOneToJournivMapper
-from app.models import Entry, EntryMedia, Journal, Mood, MoodLog, Tag, User
+from app.models import Activity, Entry, EntryMedia, Journal, Mood, Tag, User
 from app.models.enums import ImportSourceType, JournalColor, MediaType, UploadStatus
 from app.models.import_job import ImportJob
+from app.models.moment import Moment, MomentMoodActivity
 from app.schemas.dto import (
     EntryDTO,
     ImportResultSummary,
     JournalDTO,
     JournivExportDTO,
     MediaDTO,
-    MoodLogDTO,
+    MomentDTO,
 )
 from app.services.media_storage_service import MediaStorageService
 from app.utils.import_export import (
@@ -384,7 +385,6 @@ class ImportService:
                     # Update summary
                     summary.journals_created += 1
                     summary.entries_created += result["entries_created"]
-                    summary.mood_logs_created += result["mood_logs_created"]
                     summary.media_files_imported += result["media_imported"]
                     summary.media_files_deduplicated += result["media_deduplicated"]
                     summary.tags_created += result["tags_created"]
@@ -468,10 +468,10 @@ class ImportService:
         existing_tag_names = self._get_existing_tag_names(user_id)
         existing_mood_names = self._get_existing_mood_names(user_id)
 
-        if export_dto.export_version != ExportConfig.EXPORT_VERSION:
+        if not self._is_supported_export_version(export_dto.export_version):
             raise ValueError(
                 f"Incompatible export version {export_dto.export_version}. "
-                f"Expected {ExportConfig.EXPORT_VERSION}."
+                f"Expected {ExportConfig.EXPORT_VERSION} or earlier in the same major version."
             )
 
         if total_entries is None:
@@ -532,7 +532,6 @@ class ImportService:
                     # Update summary
                     summary.journals_created += 1
                     summary.entries_created += result["entries_created"]
-                    summary.mood_logs_created += result["mood_logs_created"]
                     summary.media_files_imported += result["media_imported"]
                     summary.media_files_deduplicated += result["media_deduplicated"]
                     summary.tags_created += result["tags_created"]
@@ -558,15 +557,33 @@ class ImportService:
                     self._add_warning(summary, warning_msg, "Skipped (journal error)")
                     summary.entries_skipped += len(journal_dto.entries)
 
+            if export_dto.moments:
+                for moment_dto in export_dto.moments:
+                    try:
+                        created_moment_id = self._import_moment(
+                            user_id=user_id,
+                            moment_dto=moment_dto,
+                            media_dir=media_dir,
+                            existing_media_checksums=existing_media_checksums,
+                            summary=summary,
+                            record_mapping=record_mapping,
+                        )
+                        self.db.commit()
+                        if created_moment_id and hasattr(summary, "moments_created"):
+                            summary.moments_created += 1
+                    except Exception as moment_error:
+                        self.db.rollback()
+                        warning_msg = f"Failed to import moment: {moment_error}"
+                        log_warning(warning_msg, user_id=str(user_id))
+                        self._add_warning(summary, warning_msg, "Skipped (moment error)")
+
             log_info(
                 f"Import completed: {summary.journals_created} journals, "
                 f"{summary.entries_created} entries, "
-                f"{summary.mood_logs_created} mood logs, "
                 f"{summary.media_files_imported} media files",
                 user_id=str(user_id),
                 journals_created=summary.journals_created,
                 entries_created=summary.entries_created,
-                mood_logs_created=summary.mood_logs_created,
                 media_files_imported=summary.media_files_imported
             )
 
@@ -640,7 +657,6 @@ class ImportService:
 
         result = {
             "entries_created": 0,
-            "mood_logs_created": 0,
             "media_imported": 0,
             "media_deduplicated": 0,
             "tags_created": 0,
@@ -663,7 +679,6 @@ class ImportService:
                 )
 
                 result["entries_created"] += 1
-                result["mood_logs_created"] += entry_result["mood_logs_created"]
                 result["media_imported"] += entry_result["media_imported"]
                 result["media_deduplicated"] += entry_result["media_deduplicated"]
                 result["tags_created"] += entry_result["tags_created"]
@@ -767,24 +782,19 @@ class ImportService:
             record_mapping("entries", entry_dto.external_id, entry.id)
 
         result = {
-            "mood_logs_created": 0,
             "media_imported": 0,
             "media_deduplicated": 0,
             "tags_created": 0,
             "tags_reused": 0,
         }
 
-        # Import mood log if present
-        if entry_dto.mood_log:
-            mood_log_created = self._import_mood_log(
-                entry_id=entry.id,
-                user_id=user_id,
-                mood_log_dto=entry_dto.mood_log,
-                existing_mood_names=existing_mood_names,
-                summary=summary,
-            )
-            if mood_log_created:
-                result["mood_logs_created"] += 1
+        moment = self._import_moment_for_entry(
+            entry=entry,
+            entry_dto=entry_dto,
+            user_id=user_id,
+            existing_mood_names=existing_mood_names,
+            summary=summary,
+        )
 
         # Import media
         legacy_media_id_map: Dict[str, str] = {}
@@ -799,6 +809,7 @@ class ImportService:
                     pass
             media_result = self._import_media(
                 entry_id=entry.id,
+                moment_id=moment.id if moment else None,
                 user_id=user_id,
                 media_dto=media_dto,
                 media_dir=media_dir,
@@ -843,60 +854,240 @@ class ImportService:
 
         return result
 
-    def _import_mood_log(
-        self,
-        entry_id: UUID,
-        user_id: UUID,
-        mood_log_dto: MoodLogDTO,
-        existing_mood_names: set,
-        summary: ImportResultSummary,
-    ) -> bool:
-        """
-        Import a mood log entry.
-
-        Returns:
-            True if mood log was created, False otherwise
-        """
-        # Find mood by name (case-insensitive, since existing records might store mixed case)
-        mood_name_lower = mood_log_dto.mood_name.lower()
-        mood = (
-            self.db.query(Mood)
-            .filter(func.lower(Mood.name) == mood_name_lower)
+    def _get_or_create_activity(self, user_id: UUID, activity_name: str) -> Optional[Activity]:
+        if not activity_name:
+            return None
+        name = activity_name.strip()
+        if not name:
+            return None
+        existing = (
+            self.db.execute(
+                select(Activity).where(
+                    col(Activity.user_id) == user_id,
+                    func.lower(col(Activity.name)) == name.lower(),
+                )
+            )
+            .scalars()
             .first()
         )
+        if existing:
+            return existing
+        activity = Activity(user_id=user_id, name=name)
+        self.db.add(activity)
+        self.db.flush()
+        return activity
 
-        if not mood:
-            warning_msg = f"Mood not found: '{mood_log_dto.mood_name}', skipping mood log"
-            log_warning(warning_msg, user_id=str(user_id), mood_name=mood_log_dto.mood_name, entry_id=str(entry_id))
-            summary.warnings.append(warning_msg)
-            return False
+    def _import_moment_for_entry(
+        self,
+        entry: Entry,
+        entry_dto: EntryDTO,
+        user_id: UUID,
+        existing_mood_names: set,
+        summary: ImportResultSummary,
+    ) -> Optional[Moment]:
+        moment_dto = entry_dto.moment
 
-        # Recalculate logged_date from UTC timestamp and timezone to avoid DST drift
-        logged_timezone = normalize_timezone(mood_log_dto.logged_timezone)
-        recalculated_logged_date = local_date_for_user(
-            mood_log_dto.logged_datetime_utc,
-            logged_timezone
-        )
+        logged_at = entry.entry_datetime_utc
+        logged_timezone = normalize_timezone(entry.entry_timezone)
+        logged_date = local_date_for_user(logged_at, logged_timezone)
+        note = None
+        location_data = entry.location_json
+        weather_data = entry.weather_json
+        primary_mood_name = None
+        mood_activity_items = []
 
-        # Create mood log
-        mood_log = MoodLog(
+        if moment_dto:
+            logged_at = moment_dto.logged_at or logged_at
+            logged_timezone = normalize_timezone(moment_dto.logged_timezone or logged_timezone)
+            logged_date = local_date_for_user(logged_at, logged_timezone)
+            note = moment_dto.note
+            location_data = moment_dto.location_data
+            weather_data = moment_dto.weather_data
+            primary_mood_name = moment_dto.primary_mood_name
+            mood_activity_items = moment_dto.mood_activity
+        moment = Moment(
             user_id=user_id,
-            entry_id=entry_id,
-            mood_id=mood.id,
-            note=mood_log_dto.note,
-            logged_date=recalculated_logged_date,  # Recalculated local date
-            logged_datetime_utc=mood_log_dto.logged_datetime_utc,
+            entry_id=entry.id,
+            primary_mood_id=None,
+            logged_at=logged_at,
+            logged_date=logged_date,
             logged_timezone=logged_timezone,
-            # Preserve original timestamps from export
-            created_at=mood_log_dto.created_at,
-            updated_at=mood_log_dto.updated_at,
+            note=note,
+            location_data=location_data,
+            weather_data=weather_data,
+            created_at=entry.created_at,
+            updated_at=entry.updated_at,
         )
-        self.db.add(mood_log)
-        return True
+        self.db.add(moment)
+        self.db.flush()
+
+        if primary_mood_name:
+            mood = (
+                self.db.query(Mood)
+                .filter(func.lower(Mood.name) == primary_mood_name.lower())
+                .first()
+            )
+            if mood:
+                moment.primary_mood_id = mood.id
+            else:
+                warning_msg = f"Mood not found: '{primary_mood_name}', skipping moment primary mood"
+                log_warning(warning_msg, user_id=str(user_id), mood_name=primary_mood_name, entry_id=str(entry.id))
+                summary.warnings.append(warning_msg)
+
+        if mood_activity_items:
+            for item in mood_activity_items:
+                mood_id = None
+                activity_id = None
+                if item.mood_name:
+                    mood = (
+                        self.db.query(Mood)
+                        .filter(func.lower(Mood.name) == item.mood_name.lower())
+                        .first()
+                    )
+                    if mood:
+                        mood_id = mood.id
+                    else:
+                        warning_msg = f"Mood not found: '{item.mood_name}', skipping moment mood link"
+                        log_warning(warning_msg, user_id=str(user_id), mood_name=item.mood_name, entry_id=str(entry.id))
+                        summary.warnings.append(warning_msg)
+                if item.activity_name:
+                    activity = self._get_or_create_activity(user_id, item.activity_name)
+                    activity_id = activity.id if activity else None
+                if mood_id is None and activity_id is None:
+                    continue
+                self.db.add(
+                    MomentMoodActivity(
+                        moment_id=moment.id,
+                        mood_id=mood_id,
+                        activity_id=activity_id,
+                    )
+                )
+        elif primary_mood_name:
+            mood = (
+                self.db.query(Mood)
+                .filter(func.lower(Mood.name) == primary_mood_name.lower())
+                .first()
+            )
+            if mood:
+                self.db.add(
+                    MomentMoodActivity(
+                        moment_id=moment.id,
+                        mood_id=mood.id,
+                        activity_id=None,
+                    )
+                )
+        self.db.flush()
+        return moment
+
+    def _import_moment(
+        self,
+        user_id: UUID,
+        moment_dto: MomentDTO,
+        media_dir: Optional[Path],
+        existing_media_checksums: set,
+        summary: ImportResultSummary,
+        record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
+    ) -> Optional[Moment]:
+        logged_at = moment_dto.logged_at or utc_now()
+        logged_timezone = normalize_timezone(moment_dto.logged_timezone)
+        logged_date = local_date_for_user(logged_at, logged_timezone)
+
+        moment = Moment(
+            user_id=user_id,
+            entry_id=None,
+            primary_mood_id=None,
+            logged_at=logged_at,
+            logged_date=logged_date,
+            logged_timezone=logged_timezone,
+            note=moment_dto.note,
+            location_data=moment_dto.location_data,
+            weather_data=moment_dto.weather_data,
+            created_at=moment_dto.created_at,
+            updated_at=moment_dto.updated_at,
+        )
+        self.db.add(moment)
+        self.db.flush()
+
+        if moment_dto.primary_mood_name:
+            mood = (
+                self.db.query(Mood)
+                .filter(func.lower(Mood.name) == moment_dto.primary_mood_name.lower())
+                .first()
+            )
+            if mood:
+                moment.primary_mood_id = mood.id
+            else:
+                warning_msg = f"Mood not found: '{moment_dto.primary_mood_name}', skipping moment primary mood"
+                log_warning(warning_msg, user_id=str(user_id), mood_name=moment_dto.primary_mood_name)
+                summary.warnings.append(warning_msg)
+
+        links_created = 0
+        for item in moment_dto.mood_activity:
+            mood_id = None
+            activity_id = None
+            if item.mood_name:
+                mood = (
+                    self.db.query(Mood)
+                    .filter(func.lower(Mood.name) == item.mood_name.lower())
+                    .first()
+                )
+                if mood:
+                    mood_id = mood.id
+                else:
+                    warning_msg = f"Mood not found: '{item.mood_name}', skipping moment mood link"
+                    log_warning(warning_msg, user_id=str(user_id), mood_name=item.mood_name)
+                    summary.warnings.append(warning_msg)
+            if item.activity_name:
+                activity = self._get_or_create_activity(user_id, item.activity_name)
+                activity_id = activity.id if activity else None
+            if mood_id is None and activity_id is None:
+                continue
+            self.db.add(
+                MomentMoodActivity(
+                    moment_id=moment.id,
+                    mood_id=mood_id,
+                    activity_id=activity_id,
+                )
+            )
+            links_created += 1
+
+        if links_created == 0 and moment.primary_mood_id:
+            self.db.add(
+                MomentMoodActivity(
+                    moment_id=moment.id,
+                    mood_id=moment.primary_mood_id,
+                    activity_id=None,
+                )
+            )
+
+        for media_dto in moment_dto.media:
+            media_result = self._import_media(
+                entry_id=None,
+                moment_id=moment.id,
+                user_id=user_id,
+                media_dto=media_dto,
+                media_dir=media_dir,
+                existing_checksums=existing_media_checksums,
+                summary=summary,
+                record_mapping=None,
+            )
+            if media_result["imported"]:
+                summary.media_files_imported += 1
+            elif media_result.get("deduplicated"):
+                summary.media_files_deduplicated += 1
+
+        if record_mapping:
+            external_id = getattr(moment_dto, "external_id", None)
+            if external_id:
+                record_mapping("moments", external_id, moment.id)
+
+        self.db.flush()
+        return moment
 
     def _handle_entry_media_race_condition(
         self,
-        entry_id: UUID,
+        entry_id: Optional[UUID],
+        moment_id: Optional[UUID],
         checksum: str,
         user_id: UUID,
         media_dto: MediaDTO,
@@ -919,21 +1110,25 @@ class ImportService:
         Returns:
             Result dict if existing EntryMedia found, None otherwise
         """
-        existing_entry_media = (
-            self.db.query(EntryMedia)
-            .filter(
-                col(EntryMedia.entry_id) == entry_id,
-                col(EntryMedia.checksum) == checksum
-            )
-            .first()
-        )
+        filters = [col(EntryMedia.checksum) == checksum]
+        if entry_id:
+            filters.append(col(EntryMedia.entry_id) == entry_id)
+        else:
+            filters.append(col(EntryMedia.entry_id).is_(None))
+        if moment_id:
+            filters.append(col(EntryMedia.moment_id) == moment_id)
+        else:
+            filters.append(col(EntryMedia.moment_id).is_(None))
+
+        existing_entry_media = self.db.query(EntryMedia).filter(*filters).first()
 
         if existing_entry_media:
             log_info(
                 f"Media already associated with entry ({context}), using existing record",
                 checksum=checksum,
                 user_id=str(user_id),
-                entry_id=str(entry_id),
+                entry_id=str(entry_id) if entry_id else None,
+                moment_id=str(moment_id) if moment_id else None,
                 media_id=str(existing_entry_media.id)
             )
             if record_mapping and media_dto.external_id:
@@ -952,12 +1147,13 @@ class ImportService:
 
     def _import_media(
         self,
-        entry_id: UUID,
+        entry_id: Optional[UUID],
         user_id: UUID,
         media_dto: MediaDTO,
         media_dir: Optional[Path],
         existing_checksums: set,
         summary: ImportResultSummary,
+        moment_id: Optional[UUID] = None,
         record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
     ) -> Dict[str, Any]:
         """
@@ -975,14 +1171,26 @@ class ImportService:
         # Skip check if this is an external link-only media
         if not media_dir and not is_external_link_only:
             warning_msg = f"No media directory, skipping media: {media_dto.filename}"
-            log_warning(warning_msg, user_id=str(user_id), media_filename=media_dto.filename, entry_id=str(entry_id))
+            log_warning(
+                warning_msg,
+                user_id=str(user_id),
+                media_filename=media_dto.filename,
+                entry_id=str(entry_id) if entry_id else None,
+                moment_id=str(moment_id) if moment_id else None,
+            )
             summary.warnings.append(warning_msg)
             summary.media_files_skipped += 1
             return {"imported": False, "deduplicated": False, "stored_relative_path": None, "media_id": None}
 
         if not media_dto.file_path and not media_dto.external_provider:
             warning_msg = f"Missing file_path for media: {media_dto.filename}"
-            log_warning(warning_msg, user_id=str(user_id), media_filename=media_dto.filename, entry_id=str(entry_id))
+            log_warning(
+                warning_msg,
+                user_id=str(user_id),
+                media_filename=media_dto.filename,
+                entry_id=str(entry_id) if entry_id else None,
+                moment_id=str(moment_id) if moment_id else None,
+            )
             summary.warnings.append(warning_msg)
             summary.media_files_skipped += 1
             return {"imported": False, "deduplicated": False, "stored_relative_path": None, "media_id": None}
@@ -995,6 +1203,7 @@ class ImportService:
             file_size = media_dto.file_size if media_dto.file_size and media_dto.file_size > 0 else None
             media = self._create_media_record(
                 entry_id=entry_id,
+                moment_id=moment_id,
                 file_path=None,
                 media_dto=media_dto,
                 checksum=media_dto.checksum,
@@ -1046,7 +1255,8 @@ class ImportService:
                 user_id=str(user_id),
                 media_filename=media_dto.filename,
                 file_path=media_dto.file_path,
-                entry_id=str(entry_id),
+                entry_id=str(entry_id) if entry_id else None,
+                moment_id=str(moment_id) if moment_id else None,
             )
             self._add_warning(summary, warning_msg, "Security warning")
             summary.media_files_skipped += 1
@@ -1054,7 +1264,14 @@ class ImportService:
 
         if not resolved_source.exists():
             warning_msg = f"Media file not found: {resolved_source}"
-            log_warning(warning_msg, user_id=str(user_id), media_filename=media_dto.filename, file_path=str(resolved_source), entry_id=str(entry_id))
+            log_warning(
+                warning_msg,
+                user_id=str(user_id),
+                media_filename=media_dto.filename,
+                file_path=str(resolved_source),
+                entry_id=str(entry_id) if entry_id else None,
+                moment_id=str(moment_id) if moment_id else None,
+            )
             self._add_warning(summary, warning_msg, "Skipped (missing media)")
             summary.media_files_skipped += 1
             return {"imported": False, "deduplicated": False, "stored_relative_path": None, "media_id": None}
@@ -1073,21 +1290,25 @@ class ImportService:
         # check for existing EntryMedia before storing the file to avoid unnecessary I/O
         # For external media, checksum might be None, so we skip this check if media is strictly external and has no checksum
         if media_dto.checksum:
-            existing_entry_media = (
-                self.db.query(EntryMedia)
-                .filter(
-                    col(EntryMedia.entry_id) == entry_id,
-                    col(EntryMedia.checksum) == media_dto.checksum
-                )
-                .first()
-            )
+            early_filters = [col(EntryMedia.checksum) == media_dto.checksum]
+            if entry_id:
+                early_filters.append(col(EntryMedia.entry_id) == entry_id)
+            else:
+                early_filters.append(col(EntryMedia.entry_id).is_(None))
+            if moment_id:
+                early_filters.append(col(EntryMedia.moment_id) == moment_id)
+            else:
+                early_filters.append(col(EntryMedia.moment_id).is_(None))
+
+            existing_entry_media = self.db.query(EntryMedia).filter(*early_filters).first()
 
             if existing_entry_media:
                 log_info(
                     "Media already associated with entry (early check), skipping duplicate",
                     checksum=media_dto.checksum,
                     user_id=str(user_id),
-                    entry_id=str(entry_id),
+                    entry_id=str(entry_id) if entry_id else None,
+                    moment_id=str(moment_id) if moment_id else None,
                     media_id=str(existing_entry_media.id)
                 )
                 if record_mapping and media_dto.external_id:
@@ -1127,21 +1348,25 @@ class ImportService:
 
         # Check if EntryMedia record already exists for this entry and checksum
         # This prevents duplicate media within the same entry (handles cases where checksum wasn't in DTO)
-        existing_entry_media = (
-            self.db.query(EntryMedia)
-            .filter(
-                col(EntryMedia.entry_id) == entry_id,
-                col(EntryMedia.checksum) == checksum
-            )
-            .first()
-        )
+        dedupe_filters = [col(EntryMedia.checksum) == checksum]
+        if entry_id:
+            dedupe_filters.append(col(EntryMedia.entry_id) == entry_id)
+        else:
+            dedupe_filters.append(col(EntryMedia.entry_id).is_(None))
+        if moment_id:
+            dedupe_filters.append(col(EntryMedia.moment_id) == moment_id)
+        else:
+            dedupe_filters.append(col(EntryMedia.moment_id).is_(None))
+
+        existing_entry_media = self.db.query(EntryMedia).filter(*dedupe_filters).first()
 
         if existing_entry_media:
             log_info(
                 "Media already associated with entry, skipping duplicate",
                 checksum=checksum,
                 user_id=str(user_id),
-                entry_id=str(entry_id),
+                entry_id=str(entry_id) if entry_id else None,
+                moment_id=str(moment_id) if moment_id else None,
                 media_id=str(existing_entry_media.id)
             )
             if record_mapping and media_dto.external_id:
@@ -1160,11 +1385,12 @@ class ImportService:
         if was_deduplicated:
             existing_media = (
                 self.db.query(EntryMedia)
-                .join(Entry)
-                .join(Journal)
+                .outerjoin(Entry)
+                .outerjoin(Journal)
+                .outerjoin(Moment, col(EntryMedia.moment_id) == col(Moment.id))
                 .filter(
-                    col(Journal.user_id) == user_id,
-                    col(EntryMedia.checksum) == checksum
+                    col(EntryMedia.checksum) == checksum,
+                    or_(col(Journal.user_id) == user_id, col(Moment.user_id) == user_id),
                 )
                 .first()
             )
@@ -1173,6 +1399,7 @@ class ImportService:
                 # Create new EntryMedia record referencing the same file
                 media = EntryMedia(
                     entry_id=entry_id,
+                    moment_id=moment_id,
                     file_path=existing_media.file_path,
                     original_filename=media_dto.filename,
                     media_type=existing_media.media_type,
@@ -1196,9 +1423,10 @@ class ImportService:
                 except IntegrityError as exc:
                     self.db.rollback()
                     # Race condition: EntryMedia was created by concurrent import
-                    if "uq_entry_media_entry_checksum" in str(exc):
+                    if "uq_entry_media_entry_checksum" in str(exc) or "uq_entry_media_moment_checksum" in str(exc):
                         result = self._handle_entry_media_race_condition(
                             entry_id=entry_id,
+                            moment_id=moment_id,
                             checksum=checksum,
                             user_id=user_id,
                             media_dto=media_dto,
@@ -1211,7 +1439,13 @@ class ImportService:
                     raise
                 except SQLAlchemyError as exc:
                     self.db.rollback()
-                    log_error(exc, user_id=str(user_id), entry_id=str(entry_id), checksum=checksum)
+                    log_error(
+                        exc,
+                        user_id=str(user_id),
+                        entry_id=str(entry_id) if entry_id else None,
+                        moment_id=str(moment_id) if moment_id else None,
+                        checksum=checksum,
+                    )
                     raise
 
                 if record_mapping and media_dto.external_id:
@@ -1246,6 +1480,7 @@ class ImportService:
 
         media = self._create_media_record(
             entry_id=entry_id,
+            moment_id=moment_id,
             file_path=relative_path, # This might be None for pure external links if logic allowed it, but here relative_path is derived from storage service
             media_dto=media_dto,
             checksum=checksum,
@@ -1259,9 +1494,10 @@ class ImportService:
         except IntegrityError as exc:
             self.db.rollback()
             # Race condition: EntryMedia was created by concurrent import
-            if "uq_entry_media_entry_checksum" in str(exc):
+            if "uq_entry_media_entry_checksum" in str(exc) or "uq_entry_media_moment_checksum" in str(exc):
                 result = self._handle_entry_media_race_condition(
                     entry_id=entry_id,
+                    moment_id=moment_id,
                     checksum=checksum,
                     user_id=user_id,
                     media_dto=media_dto,
@@ -1335,11 +1571,12 @@ class ImportService:
 
     def _create_media_record(
         self,
-        entry_id: UUID,
+        entry_id: Optional[UUID],
         file_path: Optional[str],
         media_dto: MediaDTO,
         checksum: Optional[str],
         file_size: Optional[int] = None,
+        moment_id: Optional[UUID] = None,
     ) -> EntryMedia:
         """
         Create an EntryMedia record from DTO.
@@ -1349,6 +1586,7 @@ class ImportService:
 
         Args:
             entry_id: Entry ID to associate media with
+            moment_id: Moment ID to associate media with (for standalone moments)
             file_path: Relative path to media file (optional for external media)
             media_dto: Media DTO with metadata
             checksum: File checksum (optional for external media)
@@ -1366,6 +1604,7 @@ class ImportService:
 
         return EntryMedia(
             entry_id=entry_id,
+            moment_id=moment_id,
             file_path=file_path,
             original_filename=media_dto.filename,
             media_type=media_type,
@@ -1463,6 +1702,21 @@ class ImportService:
         """
         moods = self.db.execute(select(Mood.name)).all()
         return {m[0].lower() for m in moods}
+
+    def _is_supported_export_version(self, version: str) -> bool:
+        try:
+            major_str, minor_str = version.split(".")
+            current_major_str, current_minor_str = ExportConfig.EXPORT_VERSION.split(".")
+            major = int(major_str)
+            minor = int(minor_str)
+            current_major = int(current_major_str)
+            current_minor = int(current_minor_str)
+        except Exception:
+            return False
+
+        if major != current_major:
+            return False
+        return minor <= current_minor
 
     @staticmethod
     def count_entries_in_data(data: Dict[str, Any]) -> int:

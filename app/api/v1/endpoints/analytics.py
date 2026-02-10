@@ -194,4 +194,3 @@ async def get_analytics_dashboard(
         )
         raise HTTPException(status_code=500, detail="An error occurred while fetching analytics dashboard") from None
 
-

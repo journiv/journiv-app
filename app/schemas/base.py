@@ -11,6 +11,8 @@ class TimestampMixin(BaseModel):
 
     Ensures datetime fields are always serialized as UTC ISO 8601 with 'Z' suffix.
     """
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     @field_serializer('created_at', 'updated_at', check_fields=False)
     def serialize_datetime(self, dt: datetime, _info):

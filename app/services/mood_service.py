@@ -1,22 +1,27 @@
 """
 Mood service for handling mood-related operations.
 """
-import threading
+import re
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, select
 
-from app.core.exceptions import EntryNotFoundError, MoodNotFoundError
+from app.core.db_utils import normalize_uuid_list
+from app.core.exceptions import (
+    MoodAlreadyExistsError,
+    MoodNotFoundError,
+    ValidationError,
+)
 from app.core.logging_config import log_error
-from app.core.time_utils import ensure_utc, local_date_for_user, to_utc, utc_now
-from app.models.entry import Entry
+from app.core.time_utils import utc_now
 from app.models.enums import MoodCategory
-from app.models.mood import Mood, MoodLog
-from app.schemas.mood import MoodLogCreate, MoodLogUpdate
+from app.models.moment import Moment, MomentMoodActivity
+from app.models.mood import Mood
+from app.models.mood_group import MoodGroup, MoodGroupLink
+from app.models.user_mood_preference import UserMoodPreference
 
 DEFAULT_MOOD_PAGE_LIMIT = 50
 MAX_MOOD_PAGE_LIMIT = 100
@@ -25,56 +30,8 @@ MAX_MOOD_PAGE_LIMIT = 100
 class MoodService:
     """Service class for mood operations."""
 
-    _mood_cache: Dict[str, List[Mood]] = {}
-    _cache_lock = threading.RLock()
-
     def __init__(self, session: Session):
         self.session = session
-
-    @staticmethod
-    def _cache_key(category: Optional[str] = None) -> str:
-        return category or "__all__"
-
-    @classmethod
-    def invalidate_mood_cache(cls) -> None:
-        """Clear the mood cache. Thread-safe."""
-        with cls._cache_lock:
-            cls._mood_cache.clear()
-
-    @classmethod
-    def _store_cache(cls, key: str, moods: List[Mood]) -> None:
-        """Store moods in cache. Thread-safe."""
-        with cls._cache_lock:
-            # Create copies to avoid session-related issues
-            cls._mood_cache[key] = [
-                Mood(
-                    id=mood.id,
-                    name=mood.name,
-                    icon=mood.icon,
-                    category=mood.category,
-                    created_at=mood.created_at,
-                    updated_at=mood.updated_at
-                ) for mood in moods
-            ]
-
-    @classmethod
-    def _get_cached_moods(cls, key: str) -> Optional[List[Mood]]:
-        """Get moods from cache. Thread-safe."""
-        with cls._cache_lock:
-            cached = cls._mood_cache.get(key)
-            if cached is None:
-                return None
-            # Return copies to avoid session-related issues
-            return [
-                Mood(
-                    id=mood.id,
-                    name=mood.name,
-                    icon=mood.icon,
-                    category=mood.category,
-                    created_at=mood.created_at,
-                    updated_at=mood.updated_at
-                ) for mood in cached
-            ]
 
     @staticmethod
     def _normalize_limit(limit: int) -> int:
@@ -90,34 +47,85 @@ class MoodService:
             raise MoodNotFoundError(f"Invalid mood category '{category}'") from exc
 
     @staticmethod
-    def _normalize_mood_name(mood_name: str) -> str:
-        """Normalize mood name for lookup - handles case variations and common aliases."""
-        if not mood_name:
-            raise MoodNotFoundError("Mood name cannot be empty")
+    def _category_from_score(score: int) -> str:
+        if score >= 4:
+            return MoodCategory.POSITIVE.value
+        if score <= 2:
+            return MoodCategory.NEGATIVE.value
+        return MoodCategory.NEUTRAL.value
 
-        # Normalize case and strip whitespace
-        normalized = mood_name.strip().lower()
+    @staticmethod
+    def _tier_group_name(score: int) -> str:
+        if score >= 5:
+            return "Very Positive"
+        if score == 4:
+            return "Positive"
+        if score == 3:
+            return "Neutral"
+        if score == 2:
+            return "Negative"
+        return "Very Negative"
 
-        # Handle common mood name variations/aliases
-        mood_aliases = {
-            'happy': ['joy', 'cheerful', 'glad', 'pleased'],
-            'sad': ['unhappy', 'down', 'blue', 'melancholy'],
-            'angry': ['mad', 'furious', 'irritated', 'annoyed'],
-            'excited': ['thrilled', 'pumped', 'enthusiastic'],
-            'calm': ['peaceful', 'serene', 'relaxed', 'tranquil'],
-            'stressed': ['anxious', 'worried', 'overwhelmed'],
-            'grateful': ['thankful', 'appreciative'],
-            'focused': ['concentrated', 'attentive', 'mindful'],
-            'tired': ['exhausted', 'sleepy', 'drained'],
-            'lonely': ['isolated', 'alone', 'disconnected']
-        }
-
-        # Check if normalized name matches any alias
-        for mood, aliases in mood_aliases.items():
-            if normalized == mood or normalized in aliases:
-                return mood
-
+    @staticmethod
+    def _slugify_key(name: str) -> str:
+        normalized = name.strip().lower()
+        normalized = re.sub(r"\s+", "-", normalized)
+        normalized = re.sub(r"[^a-z0-9-]", "", normalized)
+        normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
         return normalized
+
+    def _generate_unique_key(self, user_id: uuid.UUID, name: str) -> str:
+        base_key = self._slugify_key(name) or "mood"
+        base_key = base_key[:50]
+        candidate = base_key
+        suffix = 2
+        while self.session.exec(
+            select(Mood.id).where(
+                (col(Mood.user_id) == user_id) | (col(Mood.user_id).is_(None)),
+                col(Mood.key) == candidate,
+            )
+        ).first():
+            suffix_value = f"-{suffix}"
+            max_base_len = max(1, 50 - len(suffix_value))
+            candidate = f"{base_key[:max_base_len]}{suffix_value}"
+            suffix += 1
+        return candidate
+
+    def _get_tier_group_id(self, score: int) -> Optional[uuid.UUID]:
+        group_name = self._tier_group_name(score)
+        statement = select(MoodGroup.id).where(
+            col(MoodGroup.user_id).is_(None),
+            col(MoodGroup.name) == group_name,
+        )
+        return self.session.exec(statement).first()
+
+    def _ensure_tier_group_link(self, mood: Mood) -> None:
+        group_id = self._get_tier_group_id(mood.score)
+        if not group_id:
+            return
+        existing_link = self.session.exec(
+            select(MoodGroupLink)
+            .join(
+                MoodGroup,
+                col(MoodGroupLink.mood_group_id) == col(MoodGroup.id),
+            )
+            .where(
+                col(MoodGroupLink.mood_id) == mood.id,
+                col(MoodGroup.user_id).is_(None),
+            )
+        ).first()
+        if existing_link and existing_link.mood_group_id == group_id:
+            if existing_link.position != mood.position:
+                existing_link.position = mood.position
+            return
+        if existing_link:
+            self.session.delete(existing_link)
+        link = MoodGroupLink(
+            mood_group_id=group_id,
+            mood_id=mood.id,
+            position=mood.position,
+        )
+        self.session.add(link)
 
     def _commit(self) -> None:
         try:
@@ -127,45 +135,62 @@ class MoodService:
             log_error(exc)
             raise
 
-    def _normalize_log_timestamp(
+    def get_moods_for_user(
         self,
-        *,
-        logged_date: Optional[date],
-        logged_datetime_utc: Optional[datetime],
-        logged_timezone: Optional[str],
-        fallback_timezone: str
-    ) -> tuple[datetime, str, date]:
-        timezone_name = (logged_timezone or fallback_timezone or "UTC").strip() or "UTC"
+        user_id: uuid.UUID,
+        category: Optional[str] = None,
+        include_hidden: bool = False,
+    ) -> List[Dict[str, Any]]:
+        """Get moods visible to a user (system + user-defined), optionally filtered."""
+        normalized_category = self._normalize_category(category) if category else None
+        statement = (
+            select(Mood, UserMoodPreference.is_hidden, UserMoodPreference.sort_order)
+            .outerjoin(
+                UserMoodPreference,
+                (col(UserMoodPreference.mood_id) == col(Mood.id))
+                & (col(UserMoodPreference.user_id) == user_id),
+            )
+            .where(
+                col(Mood.is_active).is_(True),
+                (col(Mood.user_id).is_(None) | (col(Mood.user_id) == user_id)),
+            )
+        )
+        if normalized_category:
+            statement = statement.where(col(Mood.category) == normalized_category)
+        if not include_hidden:
+            statement = statement.where(
+                (col(UserMoodPreference.is_hidden).is_(None))
+                | (col(UserMoodPreference.is_hidden).is_(False))
+            )
 
-        if logged_datetime_utc is not None:
-            normalized_dt = ensure_utc(logged_datetime_utc)
-        elif logged_date is not None:
-            local_now = datetime.now(ZoneInfo(timezone_name))
-            local_dt = datetime.combine(logged_date, local_now.time())
-            normalized_dt = to_utc(local_dt, timezone_name)
-        else:
-            normalized_dt = utc_now()
-
-        derived_date = local_date_for_user(normalized_dt, timezone_name)
-        return normalized_dt, timezone_name, derived_date
-
-    @staticmethod
-    def _as_utc(dt: datetime) -> datetime:
-        if dt.tzinfo is None:
-            return dt.replace(tzinfo=ZoneInfo("UTC"))
-        return dt.astimezone(ZoneInfo("UTC"))
-
-    # Mood Management (System moods)
-    def get_all_moods(self) -> List[Mood]:
-        """Get all system moods."""
-        cache_key = self._cache_key()
-        cached = self._get_cached_moods(cache_key)
-        if cached is not None:
-            return cached
-
-        statement = select(Mood).order_by(Mood.category, Mood.name)
-        moods = list(self.session.exec(statement))
-        self._store_cache(cache_key, moods)
+        statement = statement.order_by(
+            func.coalesce(
+                col(UserMoodPreference.sort_order),
+                col(Mood.position),
+            ).asc(),
+            col(Mood.name).asc(),
+        )
+        rows = list(self.session.exec(statement))
+        moods: List[Dict[str, Any]] = []
+        for mood, is_hidden, sort_order in rows:
+            moods.append(
+                {
+                    "id": mood.id,
+                    "name": mood.name,
+                    "key": mood.key,
+                    "icon": mood.icon,
+                    "color_value": mood.color_value,
+                    "category": mood.category,
+                    "score": mood.score,
+                    "position": mood.position,
+                    "is_active": mood.is_active,
+                    "user_id": mood.user_id,
+                    "created_at": mood.created_at,
+                    "updated_at": mood.updated_at,
+                    "is_hidden": bool(is_hidden) if is_hidden is not None else False,
+                    "sort_order": sort_order,
+                }
+            )
         return moods
 
     def get_mood_by_id(self, mood_id: uuid.UUID) -> Optional[Mood]:
@@ -173,256 +198,252 @@ class MoodService:
         statement = select(Mood).where(Mood.id == mood_id)
         return self.session.exec(statement).first()
 
-    def get_moods_by_category(self, category: str) -> List[Mood]:
-        """Get moods by category."""
-        normalized = self._normalize_category(category)
-        cache_key = self._cache_key(normalized)
-        cached = self._get_cached_moods(cache_key)
-        if cached is not None:
-            return cached
-
-        statement = select(Mood).where(Mood.category == normalized).order_by(Mood.name)
-        moods = list(self.session.exec(statement))
-        self._store_cache(cache_key, moods)
-        return moods
-
     def find_mood_by_name(self, mood_name: str) -> Optional[Mood]:
-        """Find a mood by name with symbolic lookup support."""
-        normalized_name = self._normalize_mood_name(mood_name)
-
-        # First try exact match (case-insensitive)
-        statement = select(Mood).where(func.lower(Mood.name) == normalized_name)
-        mood = self.session.exec(statement).first()
-
-        if mood:
-            return mood
-
-        # If no exact match, try partial match
-        statement = select(Mood).where(func.lower(Mood.name).like(f"%{normalized_name}%"))
-        moods = list(self.session.exec(statement))
-
-        if len(moods) == 1:
-            return moods[0]
-        elif len(moods) > 1:
-            # Multiple matches - return the first one or raise an error
-            # Could be enhanced to return all matches
-            return moods[0]
-
-        return None
-
-
-    # Mood Logging (User moods)
-    def log_mood(self, user_id: uuid.UUID, mood_log_data: MoodLogCreate) -> MoodLog:
-        """Log a mood for a user."""
-        from app.services.user_service import UserService
-
-        # Verify the mood exists
-        mood = self.get_mood_by_id(mood_log_data.mood_id)
-        if not mood:
-            raise MoodNotFoundError("Mood not found")
-
-        if mood_log_data.entry_id:
-            entry = self.session.exec(
-                select(Entry).where(
-                    Entry.id == mood_log_data.entry_id,
-                    Entry.user_id == user_id
-                )
-            ).first()
-            if not entry:
-                raise EntryNotFoundError("Entry not found")
-            logged_datetime_utc = self._as_utc(entry.entry_datetime_utc)
-            logged_timezone = entry.entry_timezone
-            logged_date = entry.entry_date
-
-            # Check if a mood_log already exists for this entry
-            existing_mood_logs = self.get_user_mood_logs(
-                user_id=user_id,
-                limit=1,
-                offset=0,
-                entry_id=mood_log_data.entry_id
-            )
-
-            if existing_mood_logs:
-                # Update existing mood_log instead of creating a new one
-                existing_mood_log = existing_mood_logs[0]
-                update_data = MoodLogUpdate(
-                    mood_id=mood_log_data.mood_id,
-                    note=mood_log_data.note,
-                    logged_datetime_utc=logged_datetime_utc,
-                    logged_timezone=logged_timezone
-                )
-                return self.update_mood_log(existing_mood_log.id, user_id, update_data)
-        else:
-            user_service = UserService(self.session)
-            user_tz = user_service.get_user_timezone(user_id)
-            logged_datetime_utc, logged_timezone, logged_date = self._normalize_log_timestamp(
-                logged_date=None,
-                logged_datetime_utc=mood_log_data.logged_datetime_utc,
-                logged_timezone=mood_log_data.logged_timezone,
-                fallback_timezone=user_tz
-            )
-
-        mood_log = MoodLog(
-            user_id=user_id,
-            mood_id=mood_log_data.mood_id,
-            entry_id=mood_log_data.entry_id,
-            note=mood_log_data.note,
-            logged_date=logged_date,
-            logged_datetime_utc=logged_datetime_utc,
-            logged_timezone=logged_timezone
-        )
-
-        self.session.add(mood_log)
-        self._commit()
-        self.session.refresh(mood_log)
-        return mood_log
-
-    def get_user_mood_logs(
-        self,
-        user_id: uuid.UUID,
-        limit: int = 50,
-        offset: int = 0,
-        mood_id: Optional[uuid.UUID] = None,
-        entry_id: Optional[uuid.UUID] = None,
-        start_date: Optional[date] = None,
-        end_date: Optional[date] = None
-    ) -> List[MoodLog]:
-        """Get mood logs for a user with optional filters."""
-        statement = select(MoodLog).where(MoodLog.user_id == user_id)
-
-        if mood_id:
-            statement = statement.where(MoodLog.mood_id == mood_id)
-
-        if entry_id:
-            statement = statement.where(MoodLog.entry_id == entry_id)
-
-        if start_date:
-            statement = statement.where(MoodLog.logged_date >= start_date)
-
-        if end_date:
-            statement = statement.where(MoodLog.logged_date <= end_date)
-
-        statement = statement.order_by(col(MoodLog.logged_datetime_utc).desc()).offset(offset).limit(self._normalize_limit(limit))
-        return list(self.session.exec(statement))
-
-    def get_mood_log_by_id(self, mood_log_id: uuid.UUID, user_id: uuid.UUID) -> Optional[MoodLog]:
-        """Get a specific mood log by ID for a user."""
-        statement = select(MoodLog).where(
-            MoodLog.id == mood_log_id,
-            MoodLog.user_id == user_id
-        )
+        """Find a mood by name (case-insensitive)."""
+        if not mood_name:
+            raise ValidationError("Mood name cannot be empty")
+        normalized = mood_name.strip().lower()
+        statement = select(Mood).where(func.lower(Mood.name) == normalized)
         return self.session.exec(statement).first()
 
-    def update_mood_log(self, mood_log_id: uuid.UUID, user_id: uuid.UUID, mood_log_data: MoodLogUpdate) -> MoodLog:
-        """Update a mood log."""
-        mood_log = self.get_mood_log_by_id(mood_log_id, user_id)
-        if not mood_log:
-            raise MoodNotFoundError("Mood log not found")
+    def create_user_mood(self, user_id: uuid.UUID, data: Dict[str, Any]) -> Mood:
+        """Create a user-defined mood."""
+        name = data.get("name", "").strip()
+        if not name:
+            raise ValidationError("Mood name cannot be empty")
 
-        if mood_log_data.mood_id is not None:
-            # Verify the new mood exists
-            mood = self.get_mood_by_id(mood_log_data.mood_id)
-            if not mood:
-                raise MoodNotFoundError("Mood not found")
-            mood_log.mood_id = mood_log_data.mood_id
+        existing = self.session.exec(
+            select(Mood).where(
+                Mood.user_id == user_id,
+                func.lower(Mood.name) == name.lower(),
+            )
+        ).first()
+        if existing:
+            raise MoodAlreadyExistsError("Mood name already exists")
 
-        if mood_log_data.note is not None:
-            mood_log.note = mood_log_data.note
+        score_raw = data.get("score", 3)
+        try:
+            score = int(score_raw) if score_raw is not None else 3
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Mood score must be between 1 and 5") from exc
+        if score < 1 or score > 5:
+            raise ValidationError("Mood score must be between 1 and 5")
+        category = self._category_from_score(score)
+        position = data.get("position")
+        if position is None:
+            max_position = self.session.exec(
+                select(func.coalesce(func.max(Mood.position), 0)).where(
+                    (col(Mood.user_id) == user_id) | (col(Mood.user_id).is_(None))
+                )
+            ).one()
+            position = int(max_position) + 10
 
-        if mood_log_data.logged_timezone is not None:
-            tz_value = (mood_log_data.logged_timezone or "UTC").strip() or "UTC"
-            mood_log.logged_timezone = tz_value
-        timestamp_changed = False
-
-        if mood_log_data.logged_datetime_utc is not None:
-            mood_log.logged_datetime_utc = ensure_utc(mood_log_data.logged_datetime_utc)
-            timestamp_changed = True
-
-        if timestamp_changed or mood_log_data.logged_timezone is not None:
-            base_dt = self._as_utc(mood_log.logged_datetime_utc)
-            mood_log.logged_date = local_date_for_user(base_dt, mood_log.logged_timezone)
-
-        mood_log.updated_at = utc_now()
-        self.session.add(mood_log)
+        key = self._generate_unique_key(user_id, name)
+        mood = Mood(
+            name=name,
+            key=key,
+            icon=data.get("icon"),
+            color_value=data.get("color_value"),
+            score=score,
+            category=category,
+            position=position,
+            user_id=user_id,
+            is_active=True,
+        )
+        self.session.add(mood)
+        self.session.flush()
+        self._ensure_tier_group_link(mood)
         self._commit()
-        self.session.refresh(mood_log)
-        return mood_log
+        self.session.refresh(mood)
+        return mood
 
-    def delete_mood_log(self, mood_log_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-        """Delete a mood log."""
-        mood_log = self.get_mood_log_by_id(mood_log_id, user_id)
-        if not mood_log:
-            raise MoodNotFoundError("Mood log not found")
+    def update_user_mood(self, user_id: uuid.UUID, mood: Mood, data: Dict[str, Any]) -> Mood:
+        """Update a user-defined mood."""
+        if mood.user_id != user_id:
+            raise MoodNotFoundError("Mood not found")
 
-        self.session.delete(mood_log)
+        if "name" in data and data["name"] is not None:
+            name = data["name"].strip()
+            if not name:
+                raise ValidationError("Mood name cannot be empty")
+            duplicate = self.session.exec(
+                select(Mood).where(
+                    Mood.user_id == user_id,
+                    func.lower(Mood.name) == name.lower(),
+                    Mood.id != mood.id,
+                )
+            ).first()
+            if duplicate:
+                raise MoodAlreadyExistsError("Mood name already exists")
+            mood.name = name
+
+        if "icon" in data and data["icon"] is not None:
+            mood.icon = data["icon"]
+        if "color_value" in data and data["color_value"] is not None:
+            try:
+                mood.color_value = int(data["color_value"])
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("color_value must be an integer") from exc
+        if "score" in data and data["score"] is not None:
+            try:
+                score = int(data["score"])
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("Mood score must be between 1 and 5") from exc
+            if score < 1 or score > 5:
+                raise ValidationError("Mood score must be between 1 and 5")
+            mood.score = score
+            mood.category = self._category_from_score(score)
+        if "position" in data and data["position"] is not None:
+            try:
+                mood.position = int(data["position"])
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("position must be an integer") from exc
+        if "is_active" in data and data["is_active"] is not None:
+            mood.is_active = bool(data["is_active"])
+
+        mood.updated_at = utc_now()
+        self.session.flush()
+        self._ensure_tier_group_link(mood)
         self._commit()
-        return True
+        self.session.refresh(mood)
+        return mood
+
+    def delete_user_mood(self, user_id: uuid.UUID, mood: Mood) -> None:
+        """Soft delete a user-defined mood."""
+        if mood.user_id != user_id:
+            raise MoodNotFoundError("Mood not found")
+        mood.is_active = False
+        mood.updated_at = utc_now()
+        self._commit()
+
+    def set_mood_hidden(self, user_id: uuid.UUID, mood_id: uuid.UUID, is_hidden: bool) -> None:
+        """Set per-user mood visibility."""
+        mood = self.get_mood_by_id(mood_id)
+        if not mood:
+            raise MoodNotFoundError("Mood not found")
+        if not mood.is_active or (mood.user_id is not None and mood.user_id != user_id):
+            raise MoodNotFoundError("Mood not found")
+        preference = self.session.exec(
+            select(UserMoodPreference).where(
+                UserMoodPreference.user_id == user_id,
+                UserMoodPreference.mood_id == mood_id,
+            )
+        ).first()
+        if preference:
+            preference.is_hidden = is_hidden
+            preference.updated_at = utc_now()
+        else:
+            preference = UserMoodPreference(
+                user_id=user_id,
+                mood_id=mood_id,
+                sort_order=mood.position,
+                is_hidden=is_hidden,
+            )
+            self.session.add(preference)
+        self._commit()
+
+    def reorder_moods(self, user_id: uuid.UUID, mood_ids: List[uuid.UUID]) -> None:
+        """Persist per-user mood ordering for the unified list."""
+        if not mood_ids:
+            return
+
+        allowed = set(
+            self.session.exec(
+                select(Mood.id).where(
+                    col(Mood.is_active).is_(True),
+                    (col(Mood.user_id).is_(None)) | (col(Mood.user_id) == user_id),
+                )
+            ).all()
+        )
+        missing = [mood_id for mood_id in mood_ids if mood_id not in allowed]
+        if missing:
+            raise MoodNotFoundError("One or more moods not found")
+
+        existing = {
+            pref.mood_id: pref
+            for pref in self.session.exec(
+                select(UserMoodPreference).where(
+                    UserMoodPreference.user_id == user_id,
+                    col(UserMoodPreference.mood_id).in_(normalize_uuid_list(mood_ids)),
+                )
+            ).all()
+        }
+
+        for index, mood_id in enumerate(mood_ids):
+            pref = existing.get(mood_id)
+            if pref:
+                pref.sort_order = index
+                pref.updated_at = utc_now()
+            else:
+                self.session.add(
+                    UserMoodPreference(
+                        user_id=user_id,
+                        mood_id=mood_id,
+                        sort_order=index,
+                        is_hidden=False,
+                    )
+                )
+
+        self._commit()
 
     def get_mood_statistics(
         self,
         user_id: uuid.UUID,
         start_date: Optional[date] = None,
-        end_date: Optional[date] = None
+        end_date: Optional[date] = None,
     ) -> Dict[str, Any]:
-        """Get mood statistics for a user."""
-        # Default to last 30 days if no date range provided
+        """Get mood statistics for a user based on moments."""
         if not end_date:
             end_date = utc_now().date()
         if not start_date:
             start_date = end_date - timedelta(days=30)
 
-        # Get mood counts
-        mood_counts_rows = list(self.session.exec(
-            select(
-                Mood.name,
-                Mood.category,
-                func.count(MoodLog.id).label('count')
+        mood_counts = list(
+            self.session.exec(
+                select(
+                    Mood.name,
+                    Mood.category,
+                    func.count(MomentMoodActivity.id).label("count"),
+                )
+                .join(MomentMoodActivity, Mood.id == MomentMoodActivity.mood_id)
+                .join(Moment, Moment.id == MomentMoodActivity.moment_id)
+                .where(
+                    col(Moment.user_id) == user_id,
+                    col(Mood.is_active).is_(True),
+                    col(Moment.logged_date) >= start_date,
+                    col(Moment.logged_date) <= end_date,
+                )
+                .group_by(Mood.name, Mood.category)
+                .order_by(func.count(MomentMoodActivity.id).desc())
             )
-            .join(MoodLog, Mood.id == MoodLog.mood_id)
-            .where(
-                MoodLog.user_id == user_id,
-                MoodLog.logged_date >= start_date,
-                MoodLog.logged_date <= end_date
-            )
-            .group_by(Mood.id, Mood.name, Mood.category)
-            .order_by(func.count(MoodLog.id).desc())
-        ))
-        mood_counts = [row._mapping for row in mood_counts_rows]
+        )
 
-        # Get daily mood trends
-        daily_moods_rows = list(self.session.exec(
-            select(
-                col(MoodLog.logged_date).label('date'),
-                Mood.category,
-                func.count(MoodLog.id).label('count')
+        daily_moods = list(
+            self.session.exec(
+                select(
+                    col(Moment.logged_date).label("date"),
+                    Mood.category,
+                    func.count(MomentMoodActivity.id).label("count"),
+                )
+                .join(MomentMoodActivity, Moment.id == MomentMoodActivity.moment_id)
+                .join(Mood, Mood.id == MomentMoodActivity.mood_id)
+                .where(
+                    col(Moment.user_id) == user_id,
+                    col(Moment.logged_date) >= start_date,
+                    col(Moment.logged_date) <= end_date,
+                )
+                .group_by(col(Moment.logged_date), Mood.category)
+                .order_by(col(Moment.logged_date))
             )
-            .join(Mood, col(Mood.id) == MoodLog.mood_id)
-            .where(
-                MoodLog.user_id == user_id,
-                MoodLog.logged_date >= start_date,
-                MoodLog.logged_date <= end_date
-            )
-            .group_by(col(MoodLog.logged_date), Mood.category)
-            .order_by(col(MoodLog.logged_date))
-        ))
-        daily_moods = [row._mapping for row in daily_moods_rows]
+        )
 
-        # Get most frequent mood
         most_frequent = mood_counts[0] if mood_counts else None
-
-        # Calculate mood distribution
-        total_logs = sum(row["count"] for row in mood_counts)
-        mood_distribution = {
-            'positive': 0,
-            'negative': 0,
-            'neutral': 0
-        }
-
+        total_logs = sum(count.count for count in mood_counts) if mood_counts else 0
+        mood_distribution: Dict[str, int] = {}
         for mood_count in mood_counts:
-            category = mood_count["category"]
-            mood_distribution[category] = mood_distribution.get(category, 0) + mood_count["count"]
-
-        # Convert to percentages
+            mood_distribution[mood_count.category] = (
+                mood_distribution.get(mood_count.category, 0) + mood_count.count
+            )
         if total_logs > 0:
             for category in mood_distribution:
                 mood_distribution[category] = round(
@@ -430,180 +451,78 @@ class MoodService:
                 )
 
         return {
-            'total_logs': total_logs,
-            'date_range': {
-                'start_date': start_date.isoformat(),
-                'end_date': end_date.isoformat()
+            "total_logs": total_logs,
+            "date_range": {
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
             },
-            'mood_distribution': mood_distribution,
-            'most_frequent_mood': {
-                'name': most_frequent["name"],
-                'category': most_frequent["category"],
-                'count': most_frequent["count"]
-            } if most_frequent else None,
-            'mood_counts': [
+            "mood_distribution": mood_distribution,
+            "most_frequent_mood": {
+                "name": most_frequent.name,
+                "category": most_frequent.category,
+                "count": most_frequent.count,
+            }
+            if most_frequent
+            else None,
+            "mood_counts": [
                 {
-                    'name': count["name"],
-                    'category': count["category"],
-                    'count': count["count"],
-                    'percentage': round((count["count"] / total_logs) * 100, 2) if total_logs > 0 else 0
+                    "mood": count.name,
+                    "category": count.category,
+                    "count": count.count,
                 }
                 for count in mood_counts
             ],
-            'daily_trends': [
+            "daily_trends": [
                 {
-                    'date': trend["date"],
-                    'category': trend["category"],
-                    'count': trend["count"]
+                    "date": str(trend.date),
+                    "category": trend.category,
+                    "count": trend.count,
                 }
                 for trend in daily_moods
-            ]
+            ],
         }
-
-    def get_recent_moods(self, user_id: uuid.UUID, limit: int = 10) -> List[MoodLog]:
-        """Get recent mood logs for a user."""
-        statement = (
-            select(MoodLog)
-            .join(Mood, col(MoodLog.mood_id) == Mood.id)
-            .where(MoodLog.user_id == user_id)
-            .order_by(col(MoodLog.logged_datetime_utc).desc())
-            .limit(limit)
-        )
-        mood_logs = list(self.session.exec(statement))
-
-        # Load the mood relationship for each mood log
-        for mood_log in mood_logs:
-            if not hasattr(mood_log, 'mood') or mood_log.mood is None:
-                mood = self.get_mood_by_id(mood_log.mood_id)
-                if mood:
-                    mood_log.mood = mood
-
-        return mood_logs
 
     def get_mood_streak(self, user_id: uuid.UUID) -> Dict[str, Any]:
-        """Get current mood logging streak for a user."""
-        from app.core.time_utils import local_date_for_user
-        from app.services.user_service import UserService
-
-        # Get all mood log dates for the user
-        mood_dates = list(self.session.exec(
-            select(col(MoodLog.logged_date).label('date'))
-            .where(MoodLog.user_id == user_id)
-            .distinct()
-            .order_by(col(MoodLog.logged_date).desc())
-        ))
+        """Get current mood logging streak for a user based on moments."""
+        mood_dates = list(
+            self.session.exec(
+                select(col(Moment.logged_date))
+                .where(
+                    Moment.user_id == user_id,
+                    col(Moment.primary_mood_id).is_not(None),
+                )
+                .group_by(col(Moment.logged_date))
+                .order_by(col(Moment.logged_date).desc())
+            )
+        )
 
         if not mood_dates:
-            return {'current_streak': 0, 'longest_streak': 0}
+            return {
+                "current_streak": 0,
+                "total_days_logged": 0,
+                "last_logged_date": None,
+            }
 
-        # Calculate current streak
-        current_streak = 0
-        # Get today's date in user's timezone
-        user_service = UserService(self.session)
-        user_tz = user_service.get_user_timezone(user_id)
-        today = local_date_for_user(utc_now(), user_tz)
-        yesterday = today - timedelta(days=1)
-
-        # Check if user logged mood today or yesterday
-        # mood_dates now contains date objects directly from logged_date field
         latest_date = mood_dates[0]
-        if latest_date == today or latest_date == yesterday:
-            current_streak = 1
-            for i in range(1, len(mood_dates)):
-                expected_date = today - timedelta(days=i)
-                mood_date = mood_dates[i]
-                if mood_date == expected_date:
-                    current_streak += 1
-                else:
-                    break
+        today = date.today()
+        if latest_date < (today - timedelta(days=1)):
+            return {
+                "current_streak": 0,
+                "total_days_logged": len(mood_dates),
+                "last_logged_date": latest_date,
+            }
 
-        # Calculate longest streak
-        longest_streak = 1
-        temp_streak = 1
+        current_streak = 1
+        expected_date = latest_date
         for i in range(1, len(mood_dates)):
-            current_date = mood_dates[i]
-            previous_date = mood_dates[i-1]
-            if (previous_date - current_date).days == 1:
-                temp_streak += 1
-                longest_streak = max(longest_streak, temp_streak)
+            expected_date = expected_date - timedelta(days=1)
+            if mood_dates[i] == expected_date:
+                current_streak += 1
             else:
-                temp_streak = 1
+                break
 
         return {
-            'current_streak': current_streak,
-            'longest_streak': longest_streak,
-            'total_days_logged': len(mood_dates)
+            "current_streak": current_streak,
+            "total_days_logged": len(mood_dates),
+            "last_logged_date": latest_date,
         }
-
-    # Bulk Operations
-    def bulk_update_mood_logs(
-        self,
-        user_id: uuid.UUID,
-        updates: List[Dict[str, Any]]
-    ) -> List[MoodLog]:
-        """Bulk update multiple mood logs for a user."""
-        if not updates:
-            return []
-
-        # Validate all mood log IDs belong to the user
-        mood_log_ids = [update.get('id') for update in updates if 'id' in update]
-        if mood_log_ids:
-            existing_logs = self.session.exec(
-                select(MoodLog).where(
-                    col(MoodLog.id).in_(mood_log_ids),
-                    MoodLog.user_id == user_id
-                )
-            ).all()
-
-            if len(existing_logs) != len(mood_log_ids):
-                raise MoodNotFoundError("One or more mood logs not found")
-
-        updated_logs = []
-        for update_data in updates:
-            mood_log_id = update_data.get('id')
-            if not mood_log_id:
-                continue
-
-            mood_log = self.get_mood_log_by_id(mood_log_id, user_id)
-            if not mood_log:
-                continue
-
-            # Update fields
-            if 'mood_id' in update_data:
-                mood = self.get_mood_by_id(update_data['mood_id'])
-                if not mood:
-                    raise MoodNotFoundError("Mood not found")
-                mood_log.mood_id = update_data['mood_id']
-
-            if 'note' in update_data:
-                mood_log.note = update_data['note']
-
-            mood_log.updated_at = utc_now()
-            self.session.add(mood_log)
-            updated_logs.append(mood_log)
-
-        self._commit()
-        return updated_logs
-
-    def bulk_delete_mood_logs(self, user_id: uuid.UUID, mood_log_ids: List[uuid.UUID]) -> int:
-        """Bulk delete mood logs for a user."""
-        if not mood_log_ids:
-            return 0
-
-        # Verify all logs belong to user
-        existing_logs = self.session.exec(
-            select(MoodLog).where(
-                col(MoodLog.id).in_(mood_log_ids),
-                MoodLog.user_id == user_id
-            )
-        ).all()
-
-        if len(existing_logs) != len(mood_log_ids):
-            raise MoodNotFoundError("One or more mood logs not found")
-
-        # Delete all logs
-        for mood_log in existing_logs:
-            self.session.delete(mood_log)
-
-        self._commit()
-        return len(existing_logs)

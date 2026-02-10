@@ -22,6 +22,7 @@ from sqlmodel import Session, col, select
 from app.cli.commands.utils import confirm_action
 from app.cli.logging import setup_cli_logging
 from app.core.database import engine
+from app.core.db_utils import normalize_uuid_list
 from app.models.entry import Entry, EntryMedia
 from app.models.enums import MediaType
 from app.schemas.entry import QuillDelta
@@ -384,7 +385,9 @@ def migrate_content(
 
                 if updates:
                     entries = session.exec(
-                        select(Entry).where(col(Entry.id).in_([u["entry_id"] for u in updates]))
+                        select(Entry).where(
+                            col(Entry.id).in_(normalize_uuid_list(u["entry_id"] for u in updates))
+                        )
                     ).all()
                     entry_map = {entry.id: entry for entry in entries}
                     for update in updates:

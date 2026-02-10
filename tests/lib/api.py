@@ -416,33 +416,71 @@ class JournivApiClient:
     def list_moods(self, token: str) -> list[Dict[str, Any]]:
         return self.request("GET", "/moods/", token=token, expected=(200,)).json()
 
-    def create_mood_log(
+    def create_mood(
         self,
         token: str,
         *,
-        entry_id: str,
-        mood_id: str,
-        logged_date: str,
-        notes: str = "",
+        name: str,
+        score: int = 3,
+        icon: Optional[str] = None,
+        color_value: Optional[int] = None,
     ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"name": name, "score": score}
+        if icon is not None:
+            payload["icon"] = icon
+        if color_value is not None:
+            payload["color_value"] = color_value
         return self.request(
             "POST",
-            "/moods/log",
+            "/moods/",
             token=token,
-            json={
-                "entry_id": entry_id,
-                "mood_id": mood_id,
-                "logged_date": logged_date,
-                "notes": notes,
-            },
+            json=payload,
             expected=(201,),
         ).json()
 
-    def list_mood_logs(self, token: str) -> list[Dict[str, Any]]:
-        data = self.request("GET", "/moods/logs", token=token, expected=(200,)).json()
-        if isinstance(data, dict) and "items" in data:
-            return data["items"]
-        return data
+    # ------------------------------------------------------------------ #
+    # Moment helpers
+    # ------------------------------------------------------------------ #
+    def create_moment(
+        self,
+        token: str,
+        *,
+        logged_date: Optional[str] = None,
+        primary_mood_id: Optional[str] = None,
+        note: str | None = None,
+        mood_activity: Optional[list[Dict[str, Any]]] = None,
+        logged_timezone: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {}
+        if logged_date is not None:
+            payload["logged_date"] = logged_date
+        if logged_timezone is not None:
+            payload["logged_timezone"] = logged_timezone
+        if note is not None:
+            payload["note"] = note
+        if primary_mood_id is not None:
+            payload["primary_mood_id"] = primary_mood_id
+            if mood_activity is None:
+                mood_activity = [{"mood_id": primary_mood_id}]
+        if mood_activity is not None:
+            payload["mood_activity"] = mood_activity
+        return self.request(
+            "POST",
+            "/moments",
+            token=token,
+            json=payload,
+            expected=(200, 201),
+        ).json()
+
+    def list_moments(self, token: str, **params: Any) -> list[Dict[str, Any]]:
+        response = self.request(
+            "GET",
+            "/moments",
+            token=token,
+            params=params,
+            expected=(200,),
+        ).json()
+        return response.get("items", [])
 
     # ------------------------------------------------------------------ #
     # Prompt helpers

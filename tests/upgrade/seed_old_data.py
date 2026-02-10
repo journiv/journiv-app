@@ -13,14 +13,14 @@ from tests.upgrade.helpers import (
     create_entry,
     create_tag,
     get_moods,
-    create_mood_log,
+    create_moment,
     upload_media,
     get_user_settings,
     wait_for_ready,
     get_entries,
     get_journals,
     get_tags,
-    get_mood_logs
+    get_moments
 )
 
 
@@ -143,43 +143,40 @@ def test_seed_data():
             mood_id = moods[0]["id"]
             mood_name = moods[0].get("name", "Unknown")
 
-            # Create mood logs for entries
-            print(f"\nCreating mood logs (using mood: {mood_name})...")
+            # Create moments with moods
+            print(f"\nCreating moments with moods (using mood: {mood_name})...")
             try:
-                mood_log1 = create_mood_log(
+                mood_log1 = create_moment(
                     token,
-                    entry1_j1["id"],
                     mood_id,
                     "Productive meeting",
                     (date.today() - timedelta(days=2)).isoformat()
                 )
-                print(f"Created mood log for entry: {entry1_j1['title']}")
+                print(f"Created mood moment: {mood_log1.get('id', 'unknown-id')}")
             except Exception as e:
-                print(f"Mood logs not supported in this version (skipping): {e}")
+                print(f"Mood moments not supported in this version (skipping): {e}")
 
             try:
-                mood_log2 = create_mood_log(
+                mood_log2 = create_moment(
                     token,
-                    entry1_j2["id"],
                     mood_id,
                     "Feeling great after hiking",
                     (date.today() - timedelta(days=3)).isoformat()
                 )
-                print(f"Created mood log for entry: {entry1_j2['title']}")
+                print(f"Created mood moment: {mood_log2.get('id', 'unknown-id')}")
             except Exception as e:
-                print(f" Mood logs not supported in this version (skipping)")
+                print(f"Mood moments not supported in this version (skipping): {e}")
 
             try:
-                mood_log3 = create_mood_log(
+                mood_log3 = create_moment(
                     token,
-                    entry2_j2["id"],
                     mood_id,
                     "Peaceful and grateful",
                     date.today().isoformat()
                 )
-                print(f"Created mood log for entry: {entry2_j2['title']}")
+                print(f"Created mood moment: {mood_log3.get('id', 'unknown-id')}")
             except Exception as e:
-                print(f" Mood logs not supported in this version (skipping)")
+                print(f"Mood moments not supported in this version (skipping): {e}")
         else:
             print("No system moods available (may not be supported in this version)")
     except Exception as e:
@@ -221,14 +218,14 @@ def test_seed_data():
     tags = get_tags(token)
 
     try:
-        mood_logs = get_mood_logs(token)
+        mood_logs = get_moments(token)
     except Exception:
         mood_logs = []
 
     print(f"Journals created: {len(journals)}")
     print(f"Entries created: {len(entries)}")
     print(f"Tags created: {len(tags)}")
-    print(f"Mood logs created: {len(mood_logs)}")
+    print(f"Mood moments created: {len(mood_logs)}")
 
     # Assertions
     assert len(journals) >= 2, f"Expected at least 2 journals, got {len(journals)}"

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, EmailStr, HttpUrl, validator
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, validator
 
 from app.models.enums import UserRole
 from app.schemas.base import TimestampMixin
@@ -83,6 +83,7 @@ class UserSettingsBase(BaseModel):
     push_notifications: bool = True
     reminder_time: Optional[str] = None
     writing_goal_daily: Optional[int] = None
+    start_of_week_day: int = Field(0, ge=0, le=6)  # 0=Monday ... 6=Sunday
     theme: str = "light"
 
 
@@ -98,6 +99,7 @@ class UserSettingsUpdate(BaseModel):
     push_notifications: Optional[bool] = None
     reminder_time: Optional[str] = None
     writing_goal_daily: Optional[int] = None
+    start_of_week_day: Optional[int] = Field(None, ge=0, le=6)
     theme: Optional[str] = None
 
     @validator('time_zone')
@@ -107,6 +109,12 @@ class UserSettingsUpdate(BaseModel):
             from app.core.time_utils import validate_timezone
             if not validate_timezone(v):
                 raise ValueError(f'Invalid timezone: "{v}". Must be a valid IANA timezone name (e.g., "America/New_York", "Europe/London", "Asia/Tokyo")')
+        return v
+
+    @validator('start_of_week_day')
+    def validate_start_of_week_day(cls, v):
+        if v is not None and (v < 0 or v > 6):
+            raise ValueError("start_of_week_day must be between 0 and 6")
         return v
 
 

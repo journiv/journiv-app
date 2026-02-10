@@ -15,18 +15,21 @@ from sqlalchemy.orm import Session
 from sqlmodel import col
 
 from app.core.config import settings
+from app.core.db_utils import normalize_uuid_list
 from app.core.logging_config import log_info, log_warning
 from app.core.time_utils import utc_now
-from app.models import Entry, EntryMedia, Journal, Mood, User
+from app.models import Activity, Entry, EntryMedia, Journal, Mood, User
 from app.models.enums import ExportType
 from app.models.export_job import ExportJob
+from app.models.moment import Moment, MomentMoodActivity
 from app.schemas.dto import (
     EntryDTO,
     JournalDTO,
     JournivExportDTO,
     MediaDTO,
+    MomentDTO,
+    MomentMoodActivityDTO,
     MoodDefinitionDTO,
-    MoodLogDTO,
     UserSettingsDTO,
 )
 from app.utils.import_export import MediaHandler, ZipHandler, validate_export_data
@@ -156,11 +159,31 @@ class ExportService:
         # Get user settings
         user_settings = self._get_user_settings(user)
 
+        # Get standalone moments (no entry)
+        moments = list(
+            self.db.execute(
+                select(Moment)
+                .where(
+                    col(Moment.user_id) == user_id,
+                    col(Moment.entry_id).is_(None),
+                )
+                .order_by(col(Moment.logged_at))
+            )
+            .scalars()
+            .all()
+        )
+        moment_prefetch = self._build_moment_prefetch(moments, include_media=True)
+        moment_dtos = [
+            self._convert_moment_to_dto(moment, include_media=True, prefetch=moment_prefetch)
+            for moment in moments
+        ]
+
         # Calculate statistics
         total_entries = sum(len(j.entries) for j in journal_dtos)
         total_media = sum(
             len(e.media) for j in journal_dtos for e in j.entries
         )
+        total_media += sum(len(m.media) for m in moment_dtos)
 
         stats = {
             "journal_count": len(journal_dtos),
@@ -179,6 +202,7 @@ class ExportService:
             user_settings=user_settings,
             journals=journal_dtos,
             mood_definitions=mood_dtos,
+            moments=moment_dtos,
             stats=stats,
         )
 
@@ -319,21 +343,28 @@ class ExportService:
         - journal.color -> color (enum to string)
         - journal.is_archived, entry_count, last_entry_at included
         """
-        # Get all entries for this journal without eager loading to avoid duplicate row issues
-        from sqlalchemy.orm import lazyload
+        from sqlalchemy.orm import joinedload
 
         entries_statement = (
             select(Entry)
             .where(col(Entry.journal_id) == journal.id)
-            .options(lazyload("*"))
+            .options(
+                joinedload(Entry.tags),  # type: ignore[arg-type]
+                joinedload(Entry.media),  # type: ignore[arg-type]
+                joinedload(Entry.prompt),  # type: ignore[arg-type]
+                joinedload(Entry.moment),  # type: ignore[arg-type]
+            )
             .order_by(col(Entry.entry_datetime_utc))
         )
         entries_result = self.db.execute(entries_statement)
         entries = list(entries_result.unique().scalars().all())
 
+        moments = [entry.moment for entry in entries if entry.moment]
+        moment_prefetch = self._build_moment_prefetch(moments, include_media=False)
+
         entry_dtos = []
         for entry in entries:
-            entry_dtos.append(self._convert_entry_to_dto(entry))
+            entry_dtos.append(self._convert_entry_to_dto(entry, moment_prefetch))
             if entry_progress_callback:
                 entry_progress_callback()
 
@@ -352,7 +383,11 @@ class ExportService:
             updated_at=journal.updated_at,
         )
 
-    def _convert_entry_to_dto(self, entry: Entry) -> EntryDTO:
+    def _convert_entry_to_dto(
+        self,
+        entry: Entry,
+        moment_prefetch: Optional[dict] = None,
+    ) -> EntryDTO:
         """
         Convert Entry model to EntryDTO.
 
@@ -360,23 +395,16 @@ class ExportService:
         - All three datetime fields: entry_date, entry_datetime_utc, entry_timezone
         - Structured fields: location_json, latitude, longitude, weather_json, weather_summary
         - entry.word_count, entry.is_pinned included
-        - Creates MoodLogDTO from entry.mood_log if exists
+        - Includes moment data if present
         """
         tags = [tag.name for tag in entry.tags] if entry.tags else []
 
-        # Get mood log as MoodLogDTO
-        mood_log_dto = None
-        if entry.mood_log and entry.mood_log.mood:
-            mood_log_dto = MoodLogDTO(
-                mood_name=entry.mood_log.mood.name,
-                note=entry.mood_log.note,
-                logged_date=entry.mood_log.logged_date,
-                logged_datetime_utc=entry.mood_log.logged_datetime_utc,
-                logged_timezone=entry.mood_log.logged_timezone,
-                # Preserve original timestamps from database
-                created_at=entry.mood_log.created_at,
-                updated_at=entry.mood_log.updated_at,
-                mood_score=None,  # PLACEHOLDER: Not in database
+        moment_dto = None
+        if entry.moment:
+            moment_dto = self._convert_moment_to_dto(
+                entry.moment,
+                include_media=False,
+                prefetch=moment_prefetch,
             )
 
         # Get media
@@ -402,7 +430,7 @@ class ExportService:
             is_pinned=entry.is_pinned,  # Include pinned status
             is_draft=entry.is_draft,
             tags=tags,
-            mood_log=mood_log_dto,  # Use MoodLogDTO instead of separate fields
+            moment=moment_dto,
             # Structured location/weather fields
             location_json=entry.location_json,
             latitude=entry.latitude,
@@ -416,6 +444,219 @@ class ExportService:
             prompt_text=prompt_text,
             created_at=entry.created_at,
             updated_at=entry.updated_at,
+        )
+
+    def _build_moment_prefetch(self, moments: List[Moment], *, include_media: bool) -> dict:
+        if not moments:
+            return {
+                "links_by_moment": {},
+                "mood_map": {},
+                "activity_map": {},
+                "media_map": {},
+            }
+        moment_ids = [moment.id for moment in moments]
+        links = (
+            self.db.execute(
+                select(MomentMoodActivity).where(
+                    col(MomentMoodActivity.moment_id).in_(moment_ids)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        links_by_moment: dict[UUID, list[MomentMoodActivity]] = {
+            moment_id: [] for moment_id in moment_ids
+        }
+        mood_ids: set[UUID] = set()
+        activity_ids: set[UUID] = set()
+        for link in links:
+            links_by_moment[link.moment_id].append(link)
+            if link.mood_id:
+                mood_ids.add(link.mood_id)
+            if link.activity_id:
+                activity_ids.add(link.activity_id)
+
+        for moment in moments:
+            if moment.primary_mood_id:
+                mood_ids.add(moment.primary_mood_id)
+
+        mood_map: dict[UUID, Mood] = {}
+        if mood_ids:
+            mood_map = {
+                mood.id: mood
+                for mood in self.db.execute(
+                    select(Mood).where(col(Mood.id).in_(normalize_uuid_list(mood_ids)))
+                )
+                .scalars()
+                .all()
+            }
+
+        activity_map: dict[UUID, Activity] = {}
+        if activity_ids:
+            activity_map = {
+                activity.id: activity
+                for activity in self.db.execute(
+                    select(Activity).where(col(Activity.id).in_(normalize_uuid_list(activity_ids)))
+                )
+                .scalars()
+                .all()
+            }
+
+        media_map: dict[UUID, list[EntryMedia]] = {
+            moment_id: [] for moment_id in moment_ids
+        }
+        if include_media:
+            media_rows = (
+                self.db.execute(
+                    select(EntryMedia).where(col(EntryMedia.moment_id).in_(moment_ids))
+                )
+                .scalars()
+                .all()
+            )
+            for media in media_rows:
+                if media.moment_id:
+                    media_map[media.moment_id].append(media)
+
+        return {
+            "links_by_moment": links_by_moment,
+            "mood_map": mood_map,
+            "activity_map": activity_map,
+            "media_map": media_map,
+        }
+
+    def _convert_moment_to_dto(
+        self,
+        moment: Moment,
+        *,
+        include_media: bool,
+        prefetch: Optional[dict] = None,
+    ) -> MomentDTO:
+        prefetch = prefetch or {}
+        mood_map: dict[UUID, Mood] = prefetch.get("mood_map", {})
+        activity_map: dict[UUID, Activity] = prefetch.get("activity_map", {})
+        links_by_moment: dict[UUID, list[MomentMoodActivity]] = prefetch.get("links_by_moment", {})
+        media_map: dict[UUID, list[EntryMedia]] = prefetch.get("media_map", {})
+
+        mood_name = None
+        if moment.primary_mood_id:
+            mood = mood_map.get(moment.primary_mood_id)
+            if mood is None:
+                mood = (
+                    self.db.execute(
+                        select(Mood).where(col(Mood.id) == moment.primary_mood_id)
+                    )
+                    .scalars()
+                    .first()
+                )
+            mood_name = mood.name if mood else None
+
+        links = links_by_moment.get(moment.id)
+        if links is None:
+            links = (
+                self.db.execute(
+                    select(MomentMoodActivity).where(
+                        col(MomentMoodActivity.moment_id) == moment.id
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        missing_mood_ids = {
+            link.mood_id
+            for link in links
+            if link.mood_id and link.mood_id not in mood_map
+        }
+        if missing_mood_ids:
+            mood_rows = (
+                self.db.execute(
+                    select(Mood).where(col(Mood.id).in_(normalize_uuid_list(missing_mood_ids)))
+                )
+                .scalars()
+                .all()
+            )
+            for mood in mood_rows:
+                mood_map[mood.id] = mood
+
+        missing_activity_ids = {
+            link.activity_id
+            for link in links
+            if link.activity_id and link.activity_id not in activity_map
+        }
+        if missing_activity_ids:
+            activity_rows = (
+                self.db.execute(
+                    select(Activity).where(
+                        col(Activity.id).in_(normalize_uuid_list(missing_activity_ids))
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for activity in activity_rows:
+                activity_map[activity.id] = activity
+
+        mood_activity = []
+        for link in links:
+            mood = mood_map.get(link.mood_id) if link.mood_id else None
+            activity = activity_map.get(link.activity_id) if link.activity_id else None
+            mood_activity.append(
+                MomentMoodActivityDTO(
+                    mood_name=mood.name if mood else None,
+                    activity_name=activity.name if activity else None,
+                )
+            )
+
+        media_dtos = []
+        if include_media:
+            moment_media = media_map.get(moment.id)
+            if moment_media is None:
+                moment_media = (
+                    self.db.execute(
+                        select(EntryMedia).where(col(EntryMedia.moment_id) == moment.id)
+                    )
+                    .scalars()
+                    .all()
+                )
+            for media in moment_media:
+                media_dtos.append(self._convert_media_to_dto(media))
+
+        logged_date = moment.logged_date
+        if logged_date is None:
+            if moment.logged_at is not None:
+                logged_date = moment.logged_at.date()
+                log_warning(
+                    "Moment logged_date missing; derived from logged_at",
+                    moment_id=str(moment.id),
+                    user_id=str(moment.user_id),
+                )
+            elif moment.created_at is not None:
+                logged_date = moment.created_at.date()
+                log_warning(
+                    "Moment logged_date/logged_at missing; derived from created_at",
+                    moment_id=str(moment.id),
+                    user_id=str(moment.user_id),
+                )
+            else:
+                logged_date = utc_now().date()
+                log_warning(
+                    "Moment logged_date/logged_at/created_at missing; using current date",
+                    moment_id=str(moment.id),
+                    user_id=str(moment.user_id),
+                )
+
+        return MomentDTO(
+            logged_at=moment.logged_at,
+            logged_date=logged_date,
+            logged_timezone=moment.logged_timezone,
+            note=moment.note,
+            location_data=moment.location_data,
+            weather_data=moment.weather_data,
+            primary_mood_name=mood_name,
+            mood_activity=mood_activity,
+            media=media_dtos,
+            created_at=moment.created_at,
+            updated_at=moment.updated_at,
         )
 
     def _convert_media_to_dto(self, media: EntryMedia) -> MediaDTO:
@@ -517,6 +758,7 @@ class ExportService:
             push_notifications=user.settings.push_notifications,
             reminder_time=user.settings.reminder_time,
             writing_goal_daily=user.settings.writing_goal_daily,
+            start_of_week_day=user.settings.start_of_week_day,
             date_format="YYYY-MM-DD",  # PLACEHOLDER: UserSettings doesn't have this field
             time_format="24h",  # PLACEHOLDER: UserSettings doesn't have this field
             first_day_of_week=0,  # PLACEHOLDER: UserSettings doesn't have this field
@@ -562,6 +804,30 @@ class ExportService:
                             source_path=str(source_path)
                         )
 
+        for moment in export_data.moments:
+            for media in moment.media:
+                if not media.file_path:
+                    log_warning(
+                        f"Media {media.filename} has no file_path, skipping",
+                        user_id=str(user_id),
+                        media_filename=media.filename
+                    )
+                    continue
+
+                source_path = self._media_export_map.get(media.file_path)
+                if not source_path:
+                    source_path = Path(settings.media_root) / media.file_path
+
+                if source_path.exists():
+                    media_files[media.file_path] = source_path
+                else:
+                    log_warning(
+                        f"Media file not found: {source_path} (file_path: {media.file_path})",
+                        user_id=str(user_id),
+                        file_path=media.file_path,
+                        source_path=str(source_path)
+                    )
+
         return media_files
 
     def _build_media_export_path(self, media: EntryMedia) -> str:
@@ -569,4 +835,5 @@ class ExportService:
         file_path = media.file_path or ""
         original_name = media.original_filename or (Path(file_path).name if file_path else "media")
         safe_name = self.media_handler.sanitize_filename(original_name)
-        return f"{media.entry_id}/{media.id}_{safe_name}"
+        parent_id = media.entry_id or media.moment_id or "media"
+        return f"{parent_id}/{media.id}_{safe_name}"
