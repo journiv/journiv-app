@@ -603,6 +603,9 @@ class ImportService:
                     record_mapping=record_mapping,
                 )
 
+            # Persist entity imports before journal processing to narrow rollback scope.
+            self.db.commit()
+
             # Import journals and entries with per-journal commits
             for journal_dto in export_dto.journals:
                 try:
