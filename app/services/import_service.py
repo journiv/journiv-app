@@ -18,17 +18,45 @@ from app.core.config import settings
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.time_utils import local_date_for_user, normalize_timezone, utc_now
 from app.data_transfer.dayone import DayOneParser, DayOneToJournivMapper
-from app.models import Activity, Entry, EntryMedia, Journal, Mood, Tag, User
+from app.models import (
+    Activity,
+    ActivityGroup,
+    Entry,
+    EntryMedia,
+    Goal,
+    GoalCategory,
+    GoalLog,
+    Journal,
+    Mood,
+    MoodGroup,
+    MoodGroupLink,
+    Tag,
+    User,
+    UserMoodGroupPreference,
+    UserMoodPreference,
+)
 from app.models.enums import ImportSourceType, JournalColor, MediaType, UploadStatus
+from app.models.goal import GoalManualLog
 from app.models.import_job import ImportJob
 from app.models.moment import Moment, MomentMoodActivity
 from app.schemas.dto import (
+    ActivityDTO,
+    ActivityGroupDTO,
     EntryDTO,
+    GoalCategoryDTO,
+    GoalDTO,
+    GoalLogDTO,
+    GoalManualLogDTO,
     ImportResultSummary,
     JournalDTO,
     JournivExportDTO,
     MediaDTO,
     MomentDTO,
+    MoodDefinitionDTO,
+    MoodGroupDTO,
+    MoodGroupLinkDTO,
+    MoodGroupPreferenceDTO,
+    MoodPreferenceDTO,
 )
 from app.services.media_storage_service import MediaStorageService
 from app.utils.import_export import (
@@ -268,7 +296,6 @@ class ImportService:
             # Track existing items for deduplication
             existing_media_checksums = self._get_existing_media_checksums(user_id)
             existing_tag_names = self._get_existing_tag_names(user_id)
-            existing_mood_names = self._get_existing_mood_names(user_id)
 
             entries_processed = 0
 
@@ -375,8 +402,10 @@ class ImportService:
                         id_mapper=id_mapper,
                         existing_media_checksums=existing_media_checksums,
                         existing_tag_names=existing_tag_names,
-                        existing_mood_names=existing_mood_names,
                         summary=summary,
+                        mood_id_map={},
+                        activity_id_map={},
+                        moment_id_map={},
                         entry_progress_callback=handle_entry_progress,
                         record_mapping=record_mapping,
                     )
@@ -466,7 +495,15 @@ class ImportService:
         # Track existing items for deduplication
         existing_media_checksums = self._get_existing_media_checksums(user_id)
         existing_tag_names = self._get_existing_tag_names(user_id)
-        existing_mood_names = self._get_existing_mood_names(user_id)
+
+        # ID maps for new entities
+        mood_id_map: Dict[str, UUID] = {}
+        mood_group_id_map: Dict[str, UUID] = {}
+        activity_group_id_map: Dict[str, UUID] = {}
+        activity_id_map: Dict[str, UUID] = {}
+        goal_category_id_map: Dict[str, UUID] = {}
+        goal_id_map: Dict[str, UUID] = {}
+        moment_id_map: Dict[str, UUID] = {}
 
         if not self._is_supported_export_version(export_dto.export_version):
             raise ValueError(
@@ -492,25 +529,79 @@ class ImportService:
             summary.id_mappings.setdefault(entity_type, {})[external_id] = str(new_id)
 
         try:
-            # Import mood definitions first
+            # Import mood definitions first (system + custom)
             if export_dto.mood_definitions:
-                for mood_dto in export_dto.mood_definitions:
-                    mood_name_lower = mood_dto.name.lower()
-                    if mood_name_lower not in existing_mood_names:
-                        # Create new mood definition
-                        mood = Mood(
-                            name=mood_dto.name,  # Will be normalized to lowercase by validator
-                            icon=mood_dto.icon,
-                            category=mood_dto.category,
-                        )
-                        self.db.add(mood)
-                        summary.moods_created += 1
-                        existing_mood_names.add(mood_name_lower)
-                    else:
-                        summary.moods_reused += 1
+                mood_id_map = self._import_mood_definitions(
+                    user_id=user_id,
+                    mood_definitions=export_dto.mood_definitions,
+                    summary=summary,
+                    record_mapping=record_mapping,
+                )
 
-            # Flush to get mood IDs
-            self.db.flush()
+            # Import mood groups and preferences
+            if export_dto.mood_groups:
+                mood_group_id_map = self._import_mood_groups(
+                    user_id=user_id,
+                    mood_groups=export_dto.mood_groups,
+                    summary=summary,
+                    record_mapping=record_mapping,
+                )
+            if export_dto.mood_group_links:
+                self._import_mood_group_links(
+                    mood_group_links=export_dto.mood_group_links,
+                    mood_id_map=mood_id_map,
+                    mood_group_id_map=mood_group_id_map,
+                    summary=summary,
+                )
+            if export_dto.mood_preferences:
+                self._import_mood_preferences(
+                    user_id=user_id,
+                    mood_preferences=export_dto.mood_preferences,
+                    mood_id_map=mood_id_map,
+                    summary=summary,
+                )
+            if export_dto.mood_group_preferences:
+                self._import_mood_group_preferences(
+                    user_id=user_id,
+                    mood_group_preferences=export_dto.mood_group_preferences,
+                    mood_group_id_map=mood_group_id_map,
+                    summary=summary,
+                )
+
+            # Import activity groups/activities
+            if export_dto.activity_groups:
+                activity_group_id_map = self._import_activity_groups(
+                    user_id=user_id,
+                    activity_groups=export_dto.activity_groups,
+                    summary=summary,
+                    record_mapping=record_mapping,
+                )
+            if export_dto.activities:
+                activity_id_map = self._import_activities(
+                    user_id=user_id,
+                    activities=export_dto.activities,
+                    activity_group_id_map=activity_group_id_map,
+                    summary=summary,
+                    record_mapping=record_mapping,
+                )
+
+            # Import goal categories/goals
+            if export_dto.goal_categories:
+                goal_category_id_map = self._import_goal_categories(
+                    user_id=user_id,
+                    goal_categories=export_dto.goal_categories,
+                    summary=summary,
+                    record_mapping=record_mapping,
+                )
+            if export_dto.goals:
+                goal_id_map = self._import_goals(
+                    user_id=user_id,
+                    goals=export_dto.goals,
+                    activity_id_map=activity_id_map,
+                    goal_category_id_map=goal_category_id_map,
+                    summary=summary,
+                    record_mapping=record_mapping,
+                )
 
             # Import journals and entries with per-journal commits
             for journal_dto in export_dto.journals:
@@ -522,8 +613,10 @@ class ImportService:
                         id_mapper=id_mapper,
                         existing_media_checksums=existing_media_checksums,
                         existing_tag_names=existing_tag_names,
-                        existing_mood_names=existing_mood_names,
                         summary=summary,
+                        mood_id_map=mood_id_map,
+                        activity_id_map=activity_id_map,
+                        moment_id_map=moment_id_map,
                         entry_progress_callback=handle_entry_progress,
                         record_mapping=record_mapping,
                     )
@@ -560,22 +653,55 @@ class ImportService:
             if export_dto.moments:
                 for moment_dto in export_dto.moments:
                     try:
-                        created_moment_id = self._import_moment(
+                        created_moment = self._import_moment(
                             user_id=user_id,
                             moment_dto=moment_dto,
                             media_dir=media_dir,
                             existing_media_checksums=existing_media_checksums,
                             summary=summary,
                             record_mapping=record_mapping,
+                            mood_id_map=mood_id_map,
+                            activity_id_map=activity_id_map,
                         )
                         self.db.commit()
-                        if created_moment_id and hasattr(summary, "moments_created"):
+                        if created_moment and hasattr(summary, "moments_created"):
                             summary.moments_created += 1
+                        if created_moment and moment_dto.external_id:
+                            moment_id_map[moment_dto.external_id] = created_moment.id
                     except Exception as moment_error:
                         self.db.rollback()
                         warning_msg = f"Failed to import moment: {moment_error}"
                         log_warning(warning_msg, user_id=str(user_id))
                         self._add_warning(summary, warning_msg, "Skipped (moment error)")
+
+            # Import goal logs after moments are created (to preserve moment references)
+            if export_dto.goal_logs or export_dto.goal_manual_logs:
+                try:
+                    if export_dto.goal_logs:
+                        self._import_goal_logs(
+                            user_id=user_id,
+                            goal_logs=export_dto.goal_logs,
+                            goal_id_map=goal_id_map,
+                            moment_id_map=moment_id_map,
+                            summary=summary,
+                            record_mapping=record_mapping,
+                        )
+                    if export_dto.goal_manual_logs:
+                        self._import_goal_manual_logs(
+                            user_id=user_id,
+                            goal_manual_logs=export_dto.goal_manual_logs,
+                            goal_id_map=goal_id_map,
+                            summary=summary,
+                            record_mapping=record_mapping,
+                        )
+                    self.db.commit()
+                except Exception as goal_log_error:
+                    self.db.rollback()
+                    warning_msg = f"Failed to import goal logs: {goal_log_error}"
+                    log_warning(warning_msg, user_id=str(user_id))
+                    self._add_warning(summary, warning_msg, "Skipped (goal log error)")
+
+            self.db.commit()
 
             log_info(
                 f"Import completed: {summary.journals_created} journals, "
@@ -606,8 +732,10 @@ class ImportService:
         id_mapper: IDMapper,
         existing_media_checksums: set,
         existing_tag_names: set,
-        existing_mood_names: set,
         summary: ImportResultSummary,
+        mood_id_map: Dict[str, UUID],
+        activity_id_map: Dict[str, UUID],
+        moment_id_map: Dict[str, UUID],
         entry_progress_callback: Optional[Callable[[], None]] = None,
         record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
     ) -> Dict[str, int]:
@@ -673,8 +801,10 @@ class ImportService:
                     media_dir=media_dir,
                     existing_media_checksums=existing_media_checksums,
                     existing_tag_names=existing_tag_names,
-                    existing_mood_names=existing_mood_names,
                     summary=summary,
+                    mood_id_map=mood_id_map,
+                    activity_id_map=activity_id_map,
+                    moment_id_map=moment_id_map,
                     record_mapping=record_mapping,
                 )
 
@@ -734,8 +864,10 @@ class ImportService:
         media_dir: Optional[Path],
         existing_media_checksums: set,
         existing_tag_names: set,
-        existing_mood_names: set,
         summary: ImportResultSummary,
+        mood_id_map: Dict[str, UUID],
+        activity_id_map: Dict[str, UUID],
+        moment_id_map: Dict[str, UUID],
         record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
     ) -> Dict[str, int]:
         """Import a single entry with media and tags."""
@@ -792,9 +924,16 @@ class ImportService:
             entry=entry,
             entry_dto=entry_dto,
             user_id=user_id,
-            existing_mood_names=existing_mood_names,
             summary=summary,
+            mood_id_map=mood_id_map,
+            activity_id_map=activity_id_map,
         )
+        if moment and entry_dto.moment and entry_dto.moment.external_id:
+            moment_id_map[entry_dto.moment.external_id] = moment.id
+            if record_mapping:
+                record_mapping("moments", entry_dto.moment.external_id, moment.id)
+        if moment:
+            summary.moments_created += 1
 
         # Import media
         legacy_media_id_map: Dict[str, str] = {}
@@ -877,13 +1016,53 @@ class ImportService:
         self.db.flush()
         return activity
 
+    def _resolve_mood_id(
+        self,
+        user_id: UUID,
+        mood_name: Optional[str],
+        mood_external_id: Optional[str],
+        mood_id_map: Dict[str, UUID],
+    ) -> Optional[UUID]:
+        if mood_external_id and mood_external_id in mood_id_map:
+            return mood_id_map[mood_external_id]
+        if not mood_name:
+            return None
+        mood = (
+            self.db.execute(
+                select(Mood)
+                .where(
+                    func.lower(Mood.name) == mood_name.lower(),
+                    or_(col(Mood.user_id) == user_id, col(Mood.user_id).is_(None)),
+                )
+                .order_by(col(Mood.user_id).is_(None))
+            )
+            .scalars()
+            .first()
+        )
+        return mood.id if mood else None
+
+    def _resolve_activity_id(
+        self,
+        user_id: UUID,
+        activity_name: Optional[str],
+        activity_external_id: Optional[str],
+        activity_id_map: Dict[str, UUID],
+    ) -> Optional[UUID]:
+        if activity_external_id and activity_external_id in activity_id_map:
+            return activity_id_map[activity_external_id]
+        if not activity_name:
+            return None
+        activity = self._get_or_create_activity(user_id, activity_name)
+        return activity.id if activity else None
+
     def _import_moment_for_entry(
         self,
         entry: Entry,
         entry_dto: EntryDTO,
         user_id: UUID,
-        existing_mood_names: set,
         summary: ImportResultSummary,
+        mood_id_map: Dict[str, UUID],
+        activity_id_map: Dict[str, UUID],
     ) -> Optional[Moment]:
         moment_dto = entry_dto.moment
 
@@ -894,6 +1073,7 @@ class ImportService:
         location_data = entry.location_json
         weather_data = entry.weather_json
         primary_mood_name = None
+        primary_mood_external_id = None
         mood_activity_items = []
 
         if moment_dto:
@@ -904,7 +1084,16 @@ class ImportService:
             location_data = moment_dto.location_data
             weather_data = moment_dto.weather_data
             primary_mood_name = moment_dto.primary_mood_name
+            primary_mood_external_id = moment_dto.primary_mood_external_id
             mood_activity_items = moment_dto.mood_activity
+        moment_created_at = entry.created_at
+        moment_updated_at = entry.updated_at
+        if moment_dto:
+            if moment_dto.created_at:
+                moment_created_at = moment_dto.created_at
+            if moment_dto.updated_at:
+                moment_updated_at = moment_dto.updated_at
+
         moment = Moment(
             user_id=user_id,
             entry_id=entry.id,
@@ -915,44 +1104,58 @@ class ImportService:
             note=note,
             location_data=location_data,
             weather_data=weather_data,
-            created_at=entry.created_at,
-            updated_at=entry.updated_at,
+            created_at=moment_created_at,
+            updated_at=moment_updated_at,
         )
         self.db.add(moment)
         self.db.flush()
 
-        if primary_mood_name:
-            mood = (
-                self.db.query(Mood)
-                .filter(func.lower(Mood.name) == primary_mood_name.lower())
-                .first()
+        if primary_mood_name or primary_mood_external_id:
+            mood_id = self._resolve_mood_id(
+                user_id=user_id,
+                mood_name=primary_mood_name,
+                mood_external_id=primary_mood_external_id,
+                mood_id_map=mood_id_map,
             )
-            if mood:
-                moment.primary_mood_id = mood.id
+            if mood_id:
+                moment.primary_mood_id = mood_id
             else:
-                warning_msg = f"Mood not found: '{primary_mood_name}', skipping moment primary mood"
-                log_warning(warning_msg, user_id=str(user_id), mood_name=primary_mood_name, entry_id=str(entry.id))
+                warning_msg = (
+                    f"Mood not found: '{primary_mood_name or primary_mood_external_id}', "
+                    "skipping moment primary mood"
+                )
+                log_warning(
+                    warning_msg,
+                    user_id=str(user_id),
+                    mood_name=primary_mood_name,
+                    entry_id=str(entry.id),
+                )
                 summary.warnings.append(warning_msg)
 
         if mood_activity_items:
             for item in mood_activity_items:
-                mood_id = None
-                activity_id = None
-                if item.mood_name:
-                    mood = (
-                        self.db.query(Mood)
-                        .filter(func.lower(Mood.name) == item.mood_name.lower())
-                        .first()
+                mood_id = self._resolve_mood_id(
+                    user_id=user_id,
+                    mood_name=item.mood_name,
+                    mood_external_id=item.mood_external_id,
+                    mood_id_map=mood_id_map,
+                )
+                if mood_id is None and item.mood_name:
+                    warning_msg = f"Mood not found: '{item.mood_name}', skipping moment mood link"
+                    log_warning(
+                        warning_msg,
+                        user_id=str(user_id),
+                        mood_name=item.mood_name,
+                        entry_id=str(entry.id),
                     )
-                    if mood:
-                        mood_id = mood.id
-                    else:
-                        warning_msg = f"Mood not found: '{item.mood_name}', skipping moment mood link"
-                        log_warning(warning_msg, user_id=str(user_id), mood_name=item.mood_name, entry_id=str(entry.id))
-                        summary.warnings.append(warning_msg)
-                if item.activity_name:
-                    activity = self._get_or_create_activity(user_id, item.activity_name)
-                    activity_id = activity.id if activity else None
+                    summary.warnings.append(warning_msg)
+
+                activity_id = self._resolve_activity_id(
+                    user_id=user_id,
+                    activity_name=item.activity_name,
+                    activity_external_id=item.activity_external_id,
+                    activity_id_map=activity_id_map,
+                )
                 if mood_id is None and activity_id is None:
                     continue
                 self.db.add(
@@ -962,20 +1165,14 @@ class ImportService:
                         activity_id=activity_id,
                     )
                 )
-        elif primary_mood_name:
-            mood = (
-                self.db.query(Mood)
-                .filter(func.lower(Mood.name) == primary_mood_name.lower())
-                .first()
-            )
-            if mood:
-                self.db.add(
-                    MomentMoodActivity(
-                        moment_id=moment.id,
-                        mood_id=mood.id,
-                        activity_id=None,
-                    )
+        elif moment.primary_mood_id:
+            self.db.add(
+                MomentMoodActivity(
+                    moment_id=moment.id,
+                    mood_id=moment.primary_mood_id,
+                    activity_id=None,
                 )
+            )
         self.db.flush()
         return moment
 
@@ -987,7 +1184,12 @@ class ImportService:
         existing_media_checksums: set,
         summary: ImportResultSummary,
         record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
+        mood_id_map: Optional[Dict[str, UUID]] = None,
+        activity_id_map: Optional[Dict[str, UUID]] = None,
     ) -> Optional[Moment]:
+        mood_id_map = mood_id_map or {}
+        activity_id_map = activity_id_map or {}
+
         logged_at = moment_dto.logged_at or utc_now()
         logged_timezone = normalize_timezone(moment_dto.logged_timezone)
         logged_date = local_date_for_user(logged_at, logged_timezone)
@@ -1002,44 +1204,48 @@ class ImportService:
             note=moment_dto.note,
             location_data=moment_dto.location_data,
             weather_data=moment_dto.weather_data,
-            created_at=moment_dto.created_at,
-            updated_at=moment_dto.updated_at,
+            created_at=moment_dto.created_at or utc_now(),
+            updated_at=moment_dto.updated_at or utc_now(),
         )
         self.db.add(moment)
         self.db.flush()
 
-        if moment_dto.primary_mood_name:
-            mood = (
-                self.db.query(Mood)
-                .filter(func.lower(Mood.name) == moment_dto.primary_mood_name.lower())
-                .first()
+        if moment_dto.primary_mood_name or moment_dto.primary_mood_external_id:
+            mood_id = self._resolve_mood_id(
+                user_id=user_id,
+                mood_name=moment_dto.primary_mood_name,
+                mood_external_id=moment_dto.primary_mood_external_id,
+                mood_id_map=mood_id_map,
             )
-            if mood:
-                moment.primary_mood_id = mood.id
+            if mood_id:
+                moment.primary_mood_id = mood_id
             else:
-                warning_msg = f"Mood not found: '{moment_dto.primary_mood_name}', skipping moment primary mood"
+                warning_msg = (
+                    f"Mood not found: '{moment_dto.primary_mood_name or moment_dto.primary_mood_external_id}', "
+                    "skipping moment primary mood"
+                )
                 log_warning(warning_msg, user_id=str(user_id), mood_name=moment_dto.primary_mood_name)
                 summary.warnings.append(warning_msg)
 
         links_created = 0
         for item in moment_dto.mood_activity:
-            mood_id = None
-            activity_id = None
-            if item.mood_name:
-                mood = (
-                    self.db.query(Mood)
-                    .filter(func.lower(Mood.name) == item.mood_name.lower())
-                    .first()
-                )
-                if mood:
-                    mood_id = mood.id
-                else:
-                    warning_msg = f"Mood not found: '{item.mood_name}', skipping moment mood link"
-                    log_warning(warning_msg, user_id=str(user_id), mood_name=item.mood_name)
-                    summary.warnings.append(warning_msg)
-            if item.activity_name:
-                activity = self._get_or_create_activity(user_id, item.activity_name)
-                activity_id = activity.id if activity else None
+            mood_id = self._resolve_mood_id(
+                user_id=user_id,
+                mood_name=item.mood_name,
+                mood_external_id=item.mood_external_id,
+                mood_id_map=mood_id_map,
+            )
+            if mood_id is None and item.mood_name:
+                warning_msg = f"Mood not found: '{item.mood_name}', skipping moment mood link"
+                log_warning(warning_msg, user_id=str(user_id), mood_name=item.mood_name)
+                summary.warnings.append(warning_msg)
+
+            activity_id = self._resolve_activity_id(
+                user_id=user_id,
+                activity_name=item.activity_name,
+                activity_external_id=item.activity_external_id,
+                activity_id_map=activity_id_map,
+            )
             if mood_id is None and activity_id is None:
                 continue
             self.db.add(
@@ -1702,6 +1908,595 @@ class ImportService:
         """
         moods = self.db.execute(select(Mood.name)).all()
         return {m[0].lower() for m in moods}
+
+    def _import_mood_definitions(
+        self,
+        user_id: UUID,
+        mood_definitions: list[MoodDefinitionDTO],
+        summary: ImportResultSummary,
+        record_mapping: Callable[[str, Optional[str], UUID], None],
+    ) -> Dict[str, UUID]:
+        """Import mood definitions and return external_id -> mood_id map."""
+        existing = (
+            self.db.execute(
+                select(Mood).where(
+                    or_(col(Mood.user_id) == user_id, col(Mood.user_id).is_(None))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        system_by_key: Dict[str, Mood] = {}
+        system_by_name: Dict[str, Mood] = {}
+        user_by_key: Dict[str, Mood] = {}
+        user_by_name: Dict[str, Mood] = {}
+        for mood in existing:
+            if mood.user_id is None:
+                if mood.key:
+                    system_by_key[mood.key] = mood
+                system_by_name[mood.name.lower()] = mood
+            else:
+                if mood.key:
+                    user_by_key[mood.key] = mood
+                user_by_name[mood.name.lower()] = mood
+
+        mood_id_map: Dict[str, UUID] = {}
+        for mood_dto in mood_definitions:
+            is_custom = bool(getattr(mood_dto, "is_custom", False))
+            lookup_key = mood_dto.key or ""
+            lookup_name = mood_dto.name.lower()
+            existing_mood = None
+
+            if is_custom:
+                if lookup_key and lookup_key in user_by_key:
+                    existing_mood = user_by_key[lookup_key]
+                elif lookup_name in user_by_name:
+                    existing_mood = user_by_name[lookup_name]
+            else:
+                if lookup_key and lookup_key in system_by_key:
+                    existing_mood = system_by_key[lookup_key]
+                elif lookup_name in system_by_name:
+                    existing_mood = system_by_name[lookup_name]
+
+            mood_name_for_insert = mood_dto.name
+
+            if existing_mood:
+                if is_custom and existing_mood.user_id == user_id:
+                    existing_mood.icon = mood_dto.icon
+                    existing_mood.key = mood_dto.key
+                    existing_mood.color_value = mood_dto.color_value
+                    if mood_dto.score is not None:
+                        existing_mood.score = mood_dto.score
+                    existing_mood.position = mood_dto.position
+                    existing_mood.is_active = mood_dto.is_active
+                    existing_mood.category = mood_dto.category
+                    if mood_dto.updated_at:
+                        existing_mood.updated_at = mood_dto.updated_at
+                summary.moods_reused += 1
+                mood_id = existing_mood.id
+            else:
+                mood = Mood(
+                    name=mood_name_for_insert,
+                    category=mood_dto.category,
+                    icon=mood_dto.icon,
+                    key=mood_dto.key,
+                    color_value=mood_dto.color_value,
+                    score=mood_dto.score or 3,
+                    position=mood_dto.position,
+                    is_active=mood_dto.is_active,
+                    user_id=user_id if is_custom else None,
+                    created_at=mood_dto.created_at or utc_now(),
+                    updated_at=mood_dto.updated_at or utc_now(),
+                )
+                self.db.add(mood)
+                self.db.flush()
+                summary.moods_created += 1
+                mood_id = mood.id
+                if is_custom:
+                    user_by_name[mood.name.lower()] = mood
+                    if lookup_key:
+                        user_by_key[lookup_key] = mood
+                else:
+                    system_by_name[mood.name.lower()] = mood
+                    if lookup_key:
+                        system_by_key[lookup_key] = mood
+
+            if mood_dto.external_id:
+                mood_id_map[mood_dto.external_id] = mood_id
+                record_mapping("moods", mood_dto.external_id, mood_id)
+
+        self.db.flush()
+        return mood_id_map
+
+    def _import_mood_groups(
+        self,
+        user_id: UUID,
+        mood_groups: list[MoodGroupDTO],
+        summary: ImportResultSummary,
+        record_mapping: Callable[[str, Optional[str], UUID], None],
+    ) -> Dict[str, UUID]:
+        """Import mood groups and return external_id -> group_id map."""
+        mood_group_id_map: Dict[str, UUID] = {}
+        for group_dto in mood_groups:
+            is_custom = bool(getattr(group_dto, "is_custom", True))
+            query = select(MoodGroup).where(
+                func.lower(MoodGroup.name) == group_dto.name.lower()
+            )
+            if is_custom:
+                query = query.where(col(MoodGroup.user_id) == user_id)
+            else:
+                query = query.where(col(MoodGroup.user_id).is_(None))
+            existing = self.db.execute(query).scalars().first()
+
+            if existing:
+                if is_custom and existing.user_id == user_id:
+                    existing.icon = group_dto.icon
+                    existing.color_value = group_dto.color_value
+                    existing.position = group_dto.position
+                    if group_dto.updated_at:
+                        existing.updated_at = group_dto.updated_at
+                group_id = existing.id
+            else:
+                # Skip creating system groups if missing to avoid global side-effects.
+                if not is_custom:
+                    warning_msg = f"System mood group not found: '{group_dto.name}', skipping"
+                    self._add_warning(summary, warning_msg, "Skipped (mood group)")
+                    continue
+                group = MoodGroup(
+                    user_id=user_id,
+                    name=group_dto.name,
+                    icon=group_dto.icon,
+                    color_value=group_dto.color_value,
+                    position=group_dto.position,
+                    created_at=group_dto.created_at or utc_now(),
+                    updated_at=group_dto.updated_at or utc_now(),
+                )
+                self.db.add(group)
+                self.db.flush()
+                summary.mood_groups_created += 1
+                group_id = group.id
+
+            if group_dto.external_id:
+                mood_group_id_map[group_dto.external_id] = group_id
+                record_mapping("mood_groups", group_dto.external_id, group_id)
+
+        self.db.flush()
+        return mood_group_id_map
+
+    def _import_mood_group_links(
+        self,
+        mood_group_links: list[MoodGroupLinkDTO],
+        mood_id_map: Dict[str, UUID],
+        mood_group_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+    ) -> None:
+        """Import mood group links."""
+        for link_dto in mood_group_links:
+            group_id = mood_group_id_map.get(link_dto.mood_group_external_id)
+            mood_id = mood_id_map.get(link_dto.mood_external_id)
+            if not group_id or not mood_id:
+                warning_msg = (
+                    "Skipping mood group link due to missing group or mood mapping"
+                )
+                self._add_warning(summary, warning_msg, "Skipped (mood group link)")
+                continue
+
+            existing = (
+                self.db.execute(
+                    select(MoodGroupLink).where(
+                        col(MoodGroupLink.mood_group_id) == group_id,
+                        col(MoodGroupLink.mood_id) == mood_id,
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                existing.position = link_dto.position
+                if link_dto.updated_at:
+                    existing.updated_at = link_dto.updated_at
+                continue
+
+            link = MoodGroupLink(
+                mood_group_id=group_id,
+                mood_id=mood_id,
+                position=link_dto.position,
+                created_at=link_dto.created_at or utc_now(),
+                updated_at=link_dto.updated_at or utc_now(),
+            )
+            self.db.add(link)
+            summary.mood_group_links_created += 1
+
+        self.db.flush()
+
+    def _import_mood_preferences(
+        self,
+        user_id: UUID,
+        mood_preferences: list[MoodPreferenceDTO],
+        mood_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+    ) -> None:
+        """Import user mood preferences."""
+        for pref_dto in mood_preferences:
+            mood_id = mood_id_map.get(pref_dto.mood_external_id)
+            if not mood_id:
+                warning_msg = "Skipping mood preference due to missing mood mapping"
+                self._add_warning(summary, warning_msg, "Skipped (mood preference)")
+                continue
+
+            existing = (
+                self.db.execute(
+                    select(UserMoodPreference).where(
+                        col(UserMoodPreference.user_id) == user_id,
+                        col(UserMoodPreference.mood_id) == mood_id,
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                existing.sort_order = pref_dto.sort_order
+                existing.is_hidden = pref_dto.is_hidden
+                if pref_dto.updated_at:
+                    existing.updated_at = pref_dto.updated_at
+            else:
+                pref = UserMoodPreference(
+                    user_id=user_id,
+                    mood_id=mood_id,
+                    sort_order=pref_dto.sort_order,
+                    is_hidden=pref_dto.is_hidden,
+                    created_at=pref_dto.created_at or utc_now(),
+                    updated_at=pref_dto.updated_at or utc_now(),
+                )
+                self.db.add(pref)
+                summary.mood_preferences_imported += 1
+
+        self.db.flush()
+
+    def _import_mood_group_preferences(
+        self,
+        user_id: UUID,
+        mood_group_preferences: list[MoodGroupPreferenceDTO],
+        mood_group_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+    ) -> None:
+        """Import user mood group preferences."""
+        for pref_dto in mood_group_preferences:
+            group_id = mood_group_id_map.get(pref_dto.mood_group_external_id)
+            if not group_id:
+                warning_msg = "Skipping mood group preference due to missing group mapping"
+                self._add_warning(summary, warning_msg, "Skipped (mood group preference)")
+                continue
+
+            existing = (
+                self.db.execute(
+                    select(UserMoodGroupPreference).where(
+                        col(UserMoodGroupPreference.user_id) == user_id,
+                        col(UserMoodGroupPreference.mood_group_id) == group_id,
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                existing.sort_order = pref_dto.sort_order
+                existing.is_hidden = pref_dto.is_hidden
+                if pref_dto.updated_at:
+                    existing.updated_at = pref_dto.updated_at
+            else:
+                pref = UserMoodGroupPreference(
+                    user_id=user_id,
+                    mood_group_id=group_id,
+                    sort_order=pref_dto.sort_order,
+                    is_hidden=pref_dto.is_hidden,
+                    created_at=pref_dto.created_at or utc_now(),
+                    updated_at=pref_dto.updated_at or utc_now(),
+                )
+                self.db.add(pref)
+                summary.mood_group_preferences_imported += 1
+
+        self.db.flush()
+
+    def _import_activity_groups(
+        self,
+        user_id: UUID,
+        activity_groups: list[ActivityGroupDTO],
+        summary: ImportResultSummary,
+        record_mapping: Callable[[str, Optional[str], UUID], None],
+    ) -> Dict[str, UUID]:
+        """Import activity groups and return external_id -> group_id map."""
+        activity_group_id_map: Dict[str, UUID] = {}
+        for group_dto in activity_groups:
+            existing = (
+                self.db.execute(
+                    select(ActivityGroup).where(
+                        col(ActivityGroup.user_id) == user_id,
+                        func.lower(ActivityGroup.name) == group_dto.name.lower(),
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                group_id = existing.id
+            else:
+                group = ActivityGroup(
+                    user_id=user_id,
+                    name=group_dto.name,
+                    color_value=group_dto.color_value,
+                    icon=group_dto.icon,
+                    position=group_dto.position,
+                    created_at=group_dto.created_at or utc_now(),
+                    updated_at=group_dto.updated_at or utc_now(),
+                )
+                self.db.add(group)
+                self.db.flush()
+                summary.activity_groups_created += 1
+                group_id = group.id
+
+            if group_dto.external_id:
+                activity_group_id_map[group_dto.external_id] = group_id
+                record_mapping("activity_groups", group_dto.external_id, group_id)
+
+        self.db.flush()
+        return activity_group_id_map
+
+    def _import_activities(
+        self,
+        user_id: UUID,
+        activities: list[ActivityDTO],
+        activity_group_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+        record_mapping: Callable[[str, Optional[str], UUID], None],
+    ) -> Dict[str, UUID]:
+        """Import activities and return external_id -> activity_id map."""
+        activity_id_map: Dict[str, UUID] = {}
+        for activity_dto in activities:
+            existing = (
+                self.db.execute(
+                    select(Activity).where(
+                        col(Activity.user_id) == user_id,
+                        func.lower(Activity.name) == activity_dto.name.lower(),
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                activity_id = existing.id
+            else:
+                group_id = None
+                if activity_dto.group_external_id:
+                    group_id = activity_group_id_map.get(activity_dto.group_external_id)
+                activity = Activity(
+                    user_id=user_id,
+                    name=activity_dto.name,
+                    icon=activity_dto.icon,
+                    color=activity_dto.color,
+                    position=activity_dto.position or 0,
+                    group_id=group_id,
+                    created_at=activity_dto.created_at or utc_now(),
+                    updated_at=activity_dto.updated_at or utc_now(),
+                )
+                self.db.add(activity)
+                self.db.flush()
+                summary.activities_created += 1
+                activity_id = activity.id
+
+            if activity_dto.external_id:
+                activity_id_map[activity_dto.external_id] = activity_id
+                record_mapping("activities", activity_dto.external_id, activity_id)
+
+        self.db.flush()
+        return activity_id_map
+
+    def _import_goal_categories(
+        self,
+        user_id: UUID,
+        goal_categories: list[GoalCategoryDTO],
+        summary: ImportResultSummary,
+        record_mapping: Callable[[str, Optional[str], UUID], None],
+    ) -> Dict[str, UUID]:
+        """Import goal categories and return external_id -> category_id map."""
+        category_id_map: Dict[str, UUID] = {}
+        for category_dto in goal_categories:
+            existing = (
+                self.db.execute(
+                    select(GoalCategory).where(
+                        col(GoalCategory.user_id) == user_id,
+                        func.lower(GoalCategory.name) == category_dto.name.lower(),
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                category_id = existing.id
+            else:
+                category = GoalCategory(
+                    user_id=user_id,
+                    name=category_dto.name,
+                    color_value=category_dto.color_value,
+                    icon=category_dto.icon,
+                    position=category_dto.position or 0,
+                    created_at=category_dto.created_at or utc_now(),
+                    updated_at=category_dto.updated_at or utc_now(),
+                )
+                self.db.add(category)
+                self.db.flush()
+                summary.goal_categories_created += 1
+                category_id = category.id
+
+            if category_dto.external_id:
+                category_id_map[category_dto.external_id] = category_id
+                record_mapping("goal_categories", category_dto.external_id, category_id)
+
+        self.db.flush()
+        return category_id_map
+
+    def _import_goals(
+        self,
+        user_id: UUID,
+        goals: list[GoalDTO],
+        activity_id_map: Dict[str, UUID],
+        goal_category_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+        record_mapping: Callable[[str, Optional[str], UUID], None],
+    ) -> Dict[str, UUID]:
+        """Import goals and return external_id -> goal_id map."""
+        goal_id_map: Dict[str, UUID] = {}
+        for goal_dto in goals:
+            activity_id = None
+            if goal_dto.activity_external_id:
+                activity_id = activity_id_map.get(goal_dto.activity_external_id)
+            category_id = None
+            if goal_dto.category_external_id:
+                category_id = goal_category_id_map.get(goal_dto.category_external_id)
+
+            goal = Goal(
+                user_id=user_id,
+                activity_id=activity_id,
+                category_id=category_id,
+                title=goal_dto.title,
+                goal_type=goal_dto.goal_type,
+                frequency_type=goal_dto.frequency_type,
+                target_count=goal_dto.target_count,
+                reminder_time=goal_dto.reminder_time,
+                is_paused=goal_dto.is_paused,
+                icon=goal_dto.icon,
+                color_value=goal_dto.color_value,
+                position=goal_dto.position,
+                archived_at=goal_dto.archived_at,
+                created_at=goal_dto.created_at or utc_now(),
+                updated_at=goal_dto.updated_at or utc_now(),
+            )
+            self.db.add(goal)
+            self.db.flush()
+            summary.goals_created += 1
+
+            if goal_dto.external_id:
+                goal_id_map[goal_dto.external_id] = goal.id
+                record_mapping("goals", goal_dto.external_id, goal.id)
+
+        self.db.flush()
+        return goal_id_map
+
+    def _import_goal_logs(
+        self,
+        user_id: UUID,
+        goal_logs: list[GoalLogDTO],
+        goal_id_map: Dict[str, UUID],
+        moment_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+        record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
+    ) -> None:
+        """Import goal logs."""
+        for log_dto in goal_logs:
+            goal_id = goal_id_map.get(log_dto.goal_external_id)
+            if not goal_id:
+                warning_msg = "Skipping goal log due to missing goal mapping"
+                self._add_warning(summary, warning_msg, "Skipped (goal log)")
+                continue
+            moment_id = None
+            if log_dto.moment_external_id:
+                mapped_moment_id = moment_id_map.get(log_dto.moment_external_id)
+                if mapped_moment_id is not None:
+                    moment_id = mapped_moment_id
+
+            existing = (
+                self.db.execute(
+                    select(GoalLog).where(
+                        col(GoalLog.goal_id) == goal_id,
+                        col(GoalLog.period_start) == log_dto.period_start,
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                existing.logged_date = log_dto.logged_date
+                existing.period_end = log_dto.period_end
+                existing.status = log_dto.status
+                existing.count = log_dto.count
+                existing.source = log_dto.source
+                existing.last_updated_at = log_dto.last_updated_at or existing.last_updated_at or utc_now()
+                if moment_id is not None:
+                    existing.moment_id = moment_id
+                if log_dto.updated_at:
+                    existing.updated_at = log_dto.updated_at
+                if record_mapping and log_dto.external_id:
+                    record_mapping("goal_logs", log_dto.external_id, existing.id)
+                continue
+
+            log = GoalLog(
+                goal_id=goal_id,
+                user_id=user_id,
+                logged_date=log_dto.logged_date,
+                period_start=log_dto.period_start,
+                period_end=log_dto.period_end,
+                status=log_dto.status,
+                count=log_dto.count,
+                source=log_dto.source,
+                last_updated_at=log_dto.last_updated_at or utc_now(),
+                moment_id=moment_id,
+                created_at=log_dto.created_at or utc_now(),
+                updated_at=log_dto.updated_at or utc_now(),
+            )
+            self.db.add(log)
+            summary.goal_logs_created += 1
+            if record_mapping and log_dto.external_id:
+                record_mapping("goal_logs", log_dto.external_id, log.id)
+
+        self.db.flush()
+
+    def _import_goal_manual_logs(
+        self,
+        user_id: UUID,
+        goal_manual_logs: list[GoalManualLogDTO],
+        goal_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+        record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
+    ) -> None:
+        """Import manual goal logs."""
+        for log_dto in goal_manual_logs:
+            goal_id = goal_id_map.get(log_dto.goal_external_id)
+            if not goal_id:
+                warning_msg = "Skipping manual goal log due to missing goal mapping"
+                self._add_warning(summary, warning_msg, "Skipped (manual goal log)")
+                continue
+
+            existing = (
+                self.db.execute(
+                    select(GoalManualLog).where(
+                        col(GoalManualLog.goal_id) == goal_id,
+                        col(GoalManualLog.logged_date) == log_dto.logged_date,
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                existing.status = log_dto.status
+                if log_dto.updated_at:
+                    existing.updated_at = log_dto.updated_at
+                if record_mapping and log_dto.external_id:
+                    record_mapping("goal_manual_logs", log_dto.external_id, existing.id)
+                continue
+
+            log = GoalManualLog(
+                goal_id=goal_id,
+                user_id=user_id,
+                logged_date=log_dto.logged_date,
+                status=log_dto.status,
+                created_at=log_dto.created_at or utc_now(),
+                updated_at=log_dto.updated_at or utc_now(),
+            )
+            self.db.add(log)
+            summary.goal_manual_logs_created += 1
+            if record_mapping and log_dto.external_id:
+                record_mapping("goal_manual_logs", log_dto.external_id, log.id)
+
+        self.db.flush()
 
     def _is_supported_export_version(self, version: str) -> bool:
         try:

@@ -18,18 +18,44 @@ from app.core.config import settings
 from app.core.db_utils import normalize_uuid_list
 from app.core.logging_config import log_info, log_warning
 from app.core.time_utils import utc_now
-from app.models import Activity, Entry, EntryMedia, Journal, Mood, User
+from app.models import (
+    Activity,
+    ActivityGroup,
+    Entry,
+    EntryMedia,
+    Goal,
+    GoalCategory,
+    GoalLog,
+    Journal,
+    Mood,
+    MoodGroup,
+    MoodGroupLink,
+    User,
+    UserMoodGroupPreference,
+    UserMoodPreference,
+)
 from app.models.enums import ExportType
 from app.models.export_job import ExportJob
+from app.models.goal import GoalManualLog
 from app.models.moment import Moment, MomentMoodActivity
 from app.schemas.dto import (
+    ActivityDTO,
+    ActivityGroupDTO,
     EntryDTO,
+    GoalCategoryDTO,
+    GoalDTO,
+    GoalLogDTO,
+    GoalManualLogDTO,
     JournalDTO,
     JournivExportDTO,
     MediaDTO,
     MomentDTO,
     MomentMoodActivityDTO,
     MoodDefinitionDTO,
+    MoodGroupDTO,
+    MoodGroupLinkDTO,
+    MoodGroupPreferenceDTO,
+    MoodPreferenceDTO,
     UserSettingsDTO,
 )
 from app.utils.import_export import MediaHandler, ZipHandler, validate_export_data
@@ -153,8 +179,24 @@ class ExportService:
             )
             journal_dtos.append(journal_dto)
 
-        # Get custom mood definitions
-        mood_dtos = self._get_mood_definitions()
+        # Get mood definitions (system + user custom)
+        mood_dtos = self._get_mood_definitions(user_id)
+
+        # Get mood preferences/groups
+        mood_preference_dtos = self._get_mood_preferences(user_id)
+        mood_group_dtos = self._get_mood_groups(user_id)
+        mood_group_link_dtos = self._get_mood_group_links(user_id)
+        mood_group_preference_dtos = self._get_mood_group_preferences(user_id)
+
+        # Get activity groups/activities
+        activity_group_dtos = self._get_activity_groups(user_id)
+        activity_dtos = self._get_activities(user_id)
+
+        # Get goals and categories/logs
+        goal_category_dtos = self._get_goal_categories(user_id)
+        goal_dtos = self._get_goals(user_id)
+        goal_log_dtos = self._get_goal_logs(user_id)
+        goal_manual_log_dtos = self._get_goal_manual_logs(user_id)
 
         # Get user settings
         user_settings = self._get_user_settings(user)
@@ -189,6 +231,13 @@ class ExportService:
             "journal_count": len(journal_dtos),
             "entry_count": total_entries,
             "media_count": total_media,
+            "mood_count": len(mood_dtos),
+            "mood_group_count": len(mood_group_dtos),
+            "activity_count": len(activity_dtos),
+            "activity_group_count": len(activity_group_dtos),
+            "goal_count": len(goal_dtos),
+            "goal_category_count": len(goal_category_dtos),
+            "goal_log_count": len(goal_log_dtos),
             "export_size_estimate": "calculated_during_zip_creation",
         }
 
@@ -202,6 +251,16 @@ class ExportService:
             user_settings=user_settings,
             journals=journal_dtos,
             mood_definitions=mood_dtos,
+            mood_preferences=mood_preference_dtos,
+            mood_groups=mood_group_dtos,
+            mood_group_links=mood_group_link_dtos,
+            mood_group_preferences=mood_group_preference_dtos,
+            activities=activity_dtos,
+            activity_groups=activity_group_dtos,
+            goal_categories=goal_category_dtos,
+            goals=goal_dtos,
+            goal_logs=goal_log_dtos,
+            goal_manual_logs=goal_manual_log_dtos,
             moments=moment_dtos,
             stats=stats,
         )
@@ -381,6 +440,7 @@ class ExportService:
             import_metadata=journal.import_metadata,
             created_at=journal.created_at,
             updated_at=journal.updated_at,
+            external_id=str(journal.id),
         )
 
     def _convert_entry_to_dto(
@@ -444,6 +504,7 @@ class ExportService:
             prompt_text=prompt_text,
             created_at=entry.created_at,
             updated_at=entry.updated_at,
+            external_id=str(entry.id),
         )
 
     def _build_moment_prefetch(self, moments: List[Moment], *, include_media: bool) -> dict:
@@ -604,6 +665,8 @@ class ExportService:
                 MomentMoodActivityDTO(
                     mood_name=mood.name if mood else None,
                     activity_name=activity.name if activity else None,
+                    mood_external_id=str(mood.id) if mood else None,
+                    activity_external_id=str(activity.id) if activity else None,
                 )
             )
 
@@ -653,10 +716,12 @@ class ExportService:
             location_data=moment.location_data,
             weather_data=moment.weather_data,
             primary_mood_name=mood_name,
+            primary_mood_external_id=str(moment.primary_mood_id) if moment.primary_mood_id else None,
             mood_activity=mood_activity,
             media=media_dtos,
             created_at=moment.created_at,
             updated_at=moment.updated_at,
+            external_id=str(moment.id),
         )
 
     def _convert_media_to_dto(self, media: EntryMedia) -> MediaDTO:
@@ -713,17 +778,20 @@ class ExportService:
             external_id=str(media.id),
         )
 
-    def _get_mood_definitions(self) -> List[MoodDefinitionDTO]:
+    def _get_mood_definitions(self, user_id: UUID) -> List[MoodDefinitionDTO]:
         """
-        Get mood definitions (system-wide, not user-specific as of now).
+        Get mood definitions (system + user custom).
 
         Maps database fields to DTO structure:
         - mood.name -> name
         - mood.icon -> icon (also mapped to emoji for compatibility)
         - mood.category -> category
-        - Placeholders: score, color set to None
         """
-        moods_result = self.db.execute(select(Mood))
+        moods_result = self.db.execute(
+            select(Mood).where(
+                col(Mood.user_id).is_(None) | (col(Mood.user_id) == user_id)
+            )
+        )
         moods = list(moods_result.unique().scalars().all())
 
         mood_dtos = []
@@ -732,9 +800,17 @@ class ExportService:
                 name=mood.name,
                 category=mood.category,
                 icon=mood.icon,  # Use icon field
+                key=mood.key,
+                color_value=mood.color_value,
+                score=mood.score,
+                position=mood.position,
+                is_active=mood.is_active,
+                is_custom=mood.user_id is not None,
+                created_at=mood.created_at,
+                updated_at=mood.updated_at,
+                external_id=str(mood.id),
                 emoji=mood.icon or "",  # PLACEHOLDER: Map icon to emoji for compatibility
-                score=None,  # PLACEHOLDER: Mood model doesn't have score
-                color=None,  # PLACEHOLDER: Mood model doesn't have color
+                color=None,  # PLACEHOLDER: Mood model doesn't have color string
             )
             mood_dtos.append(mood_dto)
 
@@ -763,6 +839,263 @@ class ExportService:
             time_format="24h",  # PLACEHOLDER: UserSettings doesn't have this field
             first_day_of_week=0,  # PLACEHOLDER: UserSettings doesn't have this field
         )
+
+    def _get_activity_groups(self, user_id: UUID) -> List[ActivityGroupDTO]:
+        """Get activity groups for export."""
+        groups = (
+            self.db.execute(
+                select(ActivityGroup)
+                .where(col(ActivityGroup.user_id) == user_id)
+                .order_by(col(ActivityGroup.position), col(ActivityGroup.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            ActivityGroupDTO(
+                name=group.name,
+                color_value=group.color_value,
+                icon=group.icon,
+                position=group.position,
+                created_at=group.created_at,
+                updated_at=group.updated_at,
+                external_id=str(group.id),
+            )
+            for group in groups
+        ]
+
+    def _get_activities(self, user_id: UUID) -> List[ActivityDTO]:
+        """Get activities for export."""
+        activities = (
+            self.db.execute(
+                select(Activity)
+                .where(col(Activity.user_id) == user_id)
+                .order_by(col(Activity.position), col(Activity.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            ActivityDTO(
+                name=activity.name,
+                icon=activity.icon,
+                color=activity.color,
+                position=activity.position,
+                group_external_id=str(activity.group_id) if activity.group_id else None,
+                created_at=activity.created_at,
+                updated_at=activity.updated_at,
+                external_id=str(activity.id),
+            )
+            for activity in activities
+        ]
+
+    def _get_goal_categories(self, user_id: UUID) -> List[GoalCategoryDTO]:
+        """Get goal categories for export."""
+        categories = (
+            self.db.execute(
+                select(GoalCategory)
+                .where(col(GoalCategory.user_id) == user_id)
+                .order_by(col(GoalCategory.position), col(GoalCategory.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            GoalCategoryDTO(
+                name=category.name,
+                color_value=category.color_value,
+                icon=category.icon,
+                position=category.position,
+                created_at=category.created_at,
+                updated_at=category.updated_at,
+                external_id=str(category.id),
+            )
+            for category in categories
+        ]
+
+    def _get_goals(self, user_id: UUID) -> List[GoalDTO]:
+        """Get goals for export."""
+        goals = (
+            self.db.execute(
+                select(Goal)
+                .where(col(Goal.user_id) == user_id)
+                .order_by(col(Goal.position), col(Goal.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            GoalDTO(
+                title=goal.title,
+                goal_type=goal.goal_type,
+                frequency_type=goal.frequency_type,
+                target_count=goal.target_count,
+                reminder_time=goal.reminder_time,
+                is_paused=goal.is_paused,
+                icon=goal.icon,
+                color_value=goal.color_value,
+                position=goal.position,
+                archived_at=goal.archived_at,
+                activity_external_id=str(goal.activity_id) if goal.activity_id else None,
+                category_external_id=str(goal.category_id) if goal.category_id else None,
+                created_at=goal.created_at,
+                updated_at=goal.updated_at,
+                external_id=str(goal.id),
+            )
+            for goal in goals
+        ]
+
+    def _get_goal_logs(self, user_id: UUID) -> List[GoalLogDTO]:
+        """Get goal logs for export."""
+        logs = (
+            self.db.execute(
+                select(GoalLog)
+                .where(col(GoalLog.user_id) == user_id)
+                .order_by(col(GoalLog.logged_date), col(GoalLog.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            GoalLogDTO(
+                goal_external_id=str(log.goal_id),
+                logged_date=log.logged_date,
+                period_start=log.period_start,
+                period_end=log.period_end,
+                status=log.status,
+                count=log.count,
+                source=log.source,
+                last_updated_at=log.last_updated_at,
+                moment_external_id=str(log.moment_id) if log.moment_id else None,
+                created_at=log.created_at,
+                updated_at=log.updated_at,
+                external_id=str(log.id),
+            )
+            for log in logs
+        ]
+
+    def _get_goal_manual_logs(self, user_id: UUID) -> List[GoalManualLogDTO]:
+        """Get manual goal logs for export."""
+        logs = (
+            self.db.execute(
+                select(GoalManualLog)
+                .where(col(GoalManualLog.user_id) == user_id)
+                .order_by(col(GoalManualLog.logged_date), col(GoalManualLog.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            GoalManualLogDTO(
+                goal_external_id=str(log.goal_id),
+                logged_date=log.logged_date,
+                status=log.status,
+                created_at=log.created_at,
+                updated_at=log.updated_at,
+                external_id=str(log.id),
+            )
+            for log in logs
+        ]
+
+    def _get_mood_groups(self, user_id: UUID) -> List[MoodGroupDTO]:
+        """Get mood groups for export."""
+        groups = (
+            self.db.execute(
+                select(MoodGroup)
+                .where(
+                    col(MoodGroup.user_id).is_(None) | (col(MoodGroup.user_id) == user_id)
+                )
+                .order_by(col(MoodGroup.position), col(MoodGroup.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            MoodGroupDTO(
+                name=group.name,
+                icon=group.icon,
+                color_value=group.color_value,
+                position=group.position,
+                is_custom=group.user_id is not None,
+                created_at=group.created_at,
+                updated_at=group.updated_at,
+                external_id=str(group.id),
+            )
+            for group in groups
+        ]
+
+    def _get_mood_group_links(self, user_id: UUID) -> List[MoodGroupLinkDTO]:
+        """Get mood group links for export."""
+        group_ids = (
+            self.db.execute(
+                select(col(MoodGroup.id)).where(
+                    col(MoodGroup.user_id).is_(None) | (col(MoodGroup.user_id) == user_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if not group_ids:
+            return []
+        links = (
+            self.db.execute(
+                select(MoodGroupLink).where(
+                    col(MoodGroupLink.mood_group_id).in_(group_ids)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            MoodGroupLinkDTO(
+                mood_group_external_id=str(link.mood_group_id),
+                mood_external_id=str(link.mood_id),
+                position=link.position,
+                created_at=link.created_at,
+                updated_at=link.updated_at,
+            )
+            for link in links
+        ]
+
+    def _get_mood_preferences(self, user_id: UUID) -> List[MoodPreferenceDTO]:
+        """Get user mood preferences for export."""
+        preferences = (
+            self.db.execute(
+                select(UserMoodPreference).where(col(UserMoodPreference.user_id) == user_id)
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            MoodPreferenceDTO(
+                mood_external_id=str(pref.mood_id),
+                sort_order=pref.sort_order,
+                is_hidden=pref.is_hidden,
+                created_at=pref.created_at,
+                updated_at=pref.updated_at,
+            )
+            for pref in preferences
+        ]
+
+    def _get_mood_group_preferences(self, user_id: UUID) -> List[MoodGroupPreferenceDTO]:
+        """Get user mood group preferences for export."""
+        preferences = (
+            self.db.execute(
+                select(UserMoodGroupPreference).where(col(UserMoodGroupPreference.user_id) == user_id)
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            MoodGroupPreferenceDTO(
+                mood_group_external_id=str(pref.mood_group_id),
+                sort_order=pref.sort_order,
+                is_hidden=pref.is_hidden,
+                created_at=pref.created_at,
+                updated_at=pref.updated_at,
+            )
+            for pref in preferences
+        ]
 
     def _collect_media_files(
         self, export_data: JournivExportDTO, user_id: UUID

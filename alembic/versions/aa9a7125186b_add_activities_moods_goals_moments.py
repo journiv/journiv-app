@@ -64,6 +64,68 @@ def _create_enum_types(dialect_name: str) -> None:
     )
 
 
+def _rebuild_mood_table_sqlite_without_unique_name() -> None:
+    op.execute("PRAGMA foreign_keys=OFF")
+    try:
+        op.execute(
+            """
+            CREATE TABLE "mood_new" (
+            \tid CHAR(32) NOT NULL,
+            \tcreated_at DATETIME NOT NULL,
+            \tupdated_at DATETIME NOT NULL,
+            \tname VARCHAR(100) NOT NULL,
+            \ticon VARCHAR(50),
+            \tcategory VARCHAR(50) NOT NULL,
+            \tuser_id CHAR(32),
+            \t"key" VARCHAR(50),
+            \tscore INTEGER DEFAULT '3' NOT NULL,
+            \tposition INTEGER DEFAULT '0' NOT NULL,
+            \tis_active BOOLEAN DEFAULT true NOT NULL,
+            \tPRIMARY KEY (id),
+            \tCONSTRAINT check_mood_name_not_empty CHECK (length(name) > 0),
+            \tCONSTRAINT check_mood_category CHECK (category IN ('positive', 'negative', 'neutral')),
+            \tCONSTRAINT fk_mood_user_id FOREIGN KEY(user_id) REFERENCES user (id) ON DELETE CASCADE,
+            \tCONSTRAINT check_mood_score_range CHECK (score >= 1 AND score <= 5)
+            )
+            """
+        )
+        op.execute(
+            """
+            INSERT INTO mood_new (
+                id,
+                created_at,
+                updated_at,
+                name,
+                icon,
+                category,
+                user_id,
+                "key",
+                score,
+                position,
+                is_active
+            )
+            SELECT
+                id,
+                created_at,
+                updated_at,
+                name,
+                icon,
+                category,
+                user_id,
+                "key",
+                score,
+                position,
+                is_active
+            FROM mood
+            """
+        )
+        op.execute("DROP TABLE mood")
+        op.execute("ALTER TABLE mood_new RENAME TO mood")
+        op.execute("CREATE INDEX IF NOT EXISTS ix_mood_id ON mood (id)")
+    finally:
+        op.execute("PRAGMA foreign_keys=ON")
+
+
 def upgrade() -> None:
     # --- d1e2f3a4b5c6_add_activity_tracking.py ---
     connection = op.get_bind()
@@ -89,49 +151,51 @@ def upgrade() -> None:
             )
 
         conn.execute(sa.text("PRAGMA foreign_keys=OFF"))
-        _normalize_uuid_column("user", "id")
-        _normalize_uuid_column("mood", "id")
-        _normalize_uuid_column("journal", "id")
-        _normalize_uuid_column("journal", "user_id")
-        _normalize_uuid_column("prompt", "id")
-        _normalize_uuid_column("prompt", "user_id")
-        _normalize_uuid_column("tag", "id")
-        _normalize_uuid_column("tag", "user_id")
-        _normalize_uuid_column("entry", "id")
-        _normalize_uuid_column("entry", "user_id")
-        _normalize_uuid_column("entry", "journal_id")
-        _normalize_uuid_column("entry", "prompt_id")
-        _normalize_uuid_column("entry_media", "id")
-        _normalize_uuid_column("entry_media", "entry_id")
-        _normalize_uuid_column("entry_tag_link", "entry_id")
-        _normalize_uuid_column("entry_tag_link", "tag_id")
-        _normalize_uuid_column("user_settings", "user_id")
-        _normalize_uuid_column("writing_streak", "id")
-        _normalize_uuid_column("writing_streak", "user_id")
-        _normalize_uuid_column("external_identities", "id")
-        _normalize_uuid_column("external_identities", "user_id")
-        _normalize_uuid_column("export_jobs", "id")
-        _normalize_uuid_column("export_jobs", "user_id")
-        _normalize_uuid_column("import_jobs", "id")
-        _normalize_uuid_column("import_jobs", "user_id")
-        _normalize_uuid_column("import_jobs", "entry_id")
-        _normalize_uuid_column("integration", "id")
-        _normalize_uuid_column("integration", "user_id")
-        _normalize_uuid_column("instance_details", "id")
-        _normalize_uuid_column("mood_log", "id")
-        _normalize_uuid_column("mood_log", "user_id")
-        _normalize_uuid_column("mood_log", "entry_id")
-        _normalize_uuid_column("mood_log", "mood_id")
-        _normalize_uuid_column("activity", "id")
-        _normalize_uuid_column("activity", "user_id")
-        _normalize_uuid_column("activity_log", "id")
-        _normalize_uuid_column("activity_log", "user_id")
-        _normalize_uuid_column("activity_log", "activity_id")
-        _normalize_uuid_column("entry_activity_link", "entry_id")
-        _normalize_uuid_column("entry_activity_link", "activity_id")
-        _normalize_uuid_column("mood_log_activity_link", "mood_log_id")
-        _normalize_uuid_column("mood_log_activity_link", "activity_id")
-        conn.execute(sa.text("PRAGMA foreign_keys=ON"))
+        try:
+            _normalize_uuid_column("user", "id")
+            _normalize_uuid_column("mood", "id")
+            _normalize_uuid_column("journal", "id")
+            _normalize_uuid_column("journal", "user_id")
+            _normalize_uuid_column("prompt", "id")
+            _normalize_uuid_column("prompt", "user_id")
+            _normalize_uuid_column("tag", "id")
+            _normalize_uuid_column("tag", "user_id")
+            _normalize_uuid_column("entry", "id")
+            _normalize_uuid_column("entry", "user_id")
+            _normalize_uuid_column("entry", "journal_id")
+            _normalize_uuid_column("entry", "prompt_id")
+            _normalize_uuid_column("entry_media", "id")
+            _normalize_uuid_column("entry_media", "entry_id")
+            _normalize_uuid_column("entry_tag_link", "entry_id")
+            _normalize_uuid_column("entry_tag_link", "tag_id")
+            _normalize_uuid_column("user_settings", "user_id")
+            _normalize_uuid_column("writing_streak", "id")
+            _normalize_uuid_column("writing_streak", "user_id")
+            _normalize_uuid_column("external_identities", "id")
+            _normalize_uuid_column("external_identities", "user_id")
+            _normalize_uuid_column("export_jobs", "id")
+            _normalize_uuid_column("export_jobs", "user_id")
+            _normalize_uuid_column("import_jobs", "id")
+            _normalize_uuid_column("import_jobs", "user_id")
+            _normalize_uuid_column("import_jobs", "entry_id")
+            _normalize_uuid_column("integration", "id")
+            _normalize_uuid_column("integration", "user_id")
+            _normalize_uuid_column("instance_details", "id")
+            _normalize_uuid_column("mood_log", "id")
+            _normalize_uuid_column("mood_log", "user_id")
+            _normalize_uuid_column("mood_log", "entry_id")
+            _normalize_uuid_column("mood_log", "mood_id")
+            _normalize_uuid_column("activity", "id")
+            _normalize_uuid_column("activity", "user_id")
+            _normalize_uuid_column("activity_log", "id")
+            _normalize_uuid_column("activity_log", "user_id")
+            _normalize_uuid_column("activity_log", "activity_id")
+            _normalize_uuid_column("entry_activity_link", "entry_id")
+            _normalize_uuid_column("entry_activity_link", "activity_id")
+            _normalize_uuid_column("mood_log_activity_link", "mood_log_id")
+            _normalize_uuid_column("mood_log_activity_link", "activity_id")
+        finally:
+            conn.execute(sa.text("PRAGMA foreign_keys=ON"))
 
     # Create activity table
     op.create_table(
@@ -933,6 +997,7 @@ def upgrade() -> None:
         )
     else:
         op.execute("DROP INDEX IF EXISTS mood_name_key")
+        _rebuild_mood_table_sqlite_without_unique_name()
 
     op.execute(
         """

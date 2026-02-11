@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import io
 import json
+import uuid
 import zipfile
 from datetime import date, datetime, timezone
 from typing import Any
@@ -129,6 +130,116 @@ class TestJournivImportExportE2E:
             expected=(200, 201),
         )
 
+        # Create activity group and activity
+        activity_group = api_client.create_activity_group(
+            api_user.access_token,
+            name="Health Group",
+            icon="💪",
+            color_value=0x22C55E,
+            position=1,
+        )
+        activity = api_client.create_activity(
+            api_user.access_token,
+            name="Exercise",
+            group_id=activity_group["id"],
+            icon="🏃",
+            color="#16A34A",
+            position=1,
+        )
+
+        # Create goal category and goal
+        goal_category = api_client.create_goal_category(
+            api_user.access_token,
+            name="Health Goals",
+            icon="🎯",
+            color_value=0x0EA5E9,
+            position=1,
+        )
+        goal = api_client.create_goal(
+            api_user.access_token,
+            title="Daily Exercise",
+            activity_id=activity["id"],
+            category_id=goal_category["id"],
+            goal_type="achieve",
+            frequency_type="daily",
+            target_count=1,
+            reminder_time="09:00",
+            is_paused=False,
+            icon="✅",
+            color_value=0x0EA5E9,
+            position=1,
+        )
+
+        # Create custom moods and mood group (ensure names are unique across system moods)
+        mood_name_one = f"Curious-{uuid.uuid4().hex[:8]}"
+        mood_name_two = f"Grounded-{uuid.uuid4().hex[:8]}"
+        custom_mood = api_client.create_mood(
+            api_user.access_token,
+            name=mood_name_one,
+            score=4,
+            icon="🧠",
+            color_value=0x8B5CF6,
+        )
+        custom_mood_two = api_client.create_mood(
+            api_user.access_token,
+            name=mood_name_two,
+            score=3,
+            icon="🌿",
+            color_value=0x10B981,
+        )
+
+        api_client.set_mood_visibility(
+            api_user.access_token,
+            custom_mood["id"],
+            is_hidden=True,
+        )
+
+        all_moods = api_client.list_moods(
+            api_user.access_token,
+            include_hidden=True,
+        )
+        mood_ids = [mood["id"] for mood in all_moods]
+        api_client.reorder_moods(api_user.access_token, mood_ids)
+
+        mood_group = api_client.create_mood_group(
+            api_user.access_token,
+            name="Morning Check-in",
+            mood_ids=[custom_mood["id"], custom_mood_two["id"]],
+            icon="☀️",
+            color_value=0xF59E0B,
+            position=1,
+        )
+        api_client.reorder_mood_group_moods(
+            api_user.access_token,
+            mood_group["id"],
+            mood_ids=[custom_mood_two["id"], custom_mood["id"]],
+        )
+        api_client.set_mood_group_visibility(
+            api_user.access_token,
+            mood_group["id"],
+            is_hidden=True,
+        )
+
+        api_client.reorder_mood_groups(
+            api_user.access_token,
+            updates=[{"id": mood_group["id"], "position": 1}],
+        )
+
+        # Create a moment with activity to generate auto goal log
+        api_client.create_moment(
+            api_user.access_token,
+            logged_date=date.today().isoformat(),
+            mood_activity=[{"mood_id": custom_mood_two["id"], "activity_id": activity["id"]}],
+        )
+
+        # Create a manual goal log entry
+        api_client.toggle_goal(
+            api_user.access_token,
+            goal["id"],
+            logged_date=date.today().isoformat(),
+            status="success",
+        )
+
         # 2. Request export with media
         export_job = api_client.request_export(
             api_user.access_token,
@@ -166,7 +277,63 @@ class TestJournivImportExportE2E:
                 data = json.load(f)
                 assert "journals" in data
                 assert "export_version" in data
+                assert "activities" in data
+                assert "activity_groups" in data
+                assert "goals" in data
+                assert "goal_categories" in data
+                assert "goal_logs" in data
+                assert "goal_manual_logs" in data
+                assert "mood_definitions" in data
+                assert "mood_groups" in data
+                assert "mood_group_links" in data
+                assert "mood_preferences" in data
+                assert "mood_group_preferences" in data
                 assert len(data["journals"]) == 2
+
+                assert any(g["name"] == "Health Group" for g in data["activity_groups"])
+                assert any(a["name"] == "Exercise" for a in data["activities"])
+                assert any(c["name"] == "Health Goals" for c in data["goal_categories"])
+                assert any(g["title"] == "Daily Exercise" for g in data["goals"])
+                assert any(
+                    m["name"] == mood_name_one and m.get("is_custom") is True
+                    for m in data["mood_definitions"]
+                )
+                assert any(
+                    m["name"] == mood_name_two and m.get("is_custom") is True
+                    for m in data["mood_definitions"]
+                )
+                assert any(g["name"] == "Morning Check-in" for g in data["mood_groups"])
+                assert len(data["goal_logs"]) >= 1
+                assert len(data["goal_manual_logs"]) >= 1
+
+                exported_mood = next(
+                    (m for m in data["mood_definitions"] if m["name"] == mood_name_one),
+                    None,
+                )
+                assert exported_mood is not None
+
+                exported_group = next(
+                    (g for g in data["mood_groups"] if g["name"] == "Morning Check-in"),
+                    None,
+                )
+                assert exported_group is not None
+
+                assert any(
+                    pref["mood_external_id"] == exported_mood["external_id"]
+                    and pref["is_hidden"] is True
+                    for pref in data["mood_preferences"]
+                )
+                assert any(
+                    pref["mood_group_external_id"] == exported_group["external_id"]
+                    and pref["is_hidden"] is True
+                    for pref in data["mood_group_preferences"]
+                )
+
+                assert any(
+                    link["mood_group_external_id"] == exported_group["external_id"]
+                    and link["mood_external_id"] == exported_mood["external_id"]
+                    for link in data["mood_group_links"]
+                )
 
         # 4. Create a new user and import the export
         import_user = make_api_user(api_client)
@@ -306,6 +473,101 @@ class TestJournivImportExportE2E:
         entry_tag_names = [t["name"] for t in entry_tags]
         assert "test-tag-1" in entry_tag_names
         assert "test-tag-2" in entry_tag_names
+
+        # Verify activities and activity groups were imported
+        imported_activity_groups = api_client.list_activity_groups(import_user.access_token)
+        assert any(g["name"] == "Health Group" for g in imported_activity_groups)
+
+        imported_activities = api_client.list_activities(import_user.access_token)
+        assert any(a["name"] == "Exercise" for a in imported_activities)
+
+        # Verify goals and categories were imported
+        imported_goal_categories = api_client.list_goal_categories(import_user.access_token)
+        assert any(c["name"] == "Health Goals" for c in imported_goal_categories)
+
+        imported_goals = api_client.list_goals(import_user.access_token)
+        assert any(g["title"] == "Daily Exercise" for g in imported_goals)
+
+        # Verify moods and mood groups with preferences were imported
+        imported_custom_mood = api_client.get_mood_by_name(
+            import_user.access_token,
+            name=mood_name_one,
+            include_hidden=True,
+        )
+        assert imported_custom_mood is not None
+        first_import_mood_id = imported_custom_mood["id"]
+        assert imported_custom_mood.get("is_hidden") is True
+
+        imported_group = api_client.get_mood_group_by_name(
+            import_user.access_token,
+            name="Morning Check-in",
+            include_hidden=True,
+        )
+        assert imported_group is not None
+        first_import_group_id = imported_group["id"]
+        assert imported_group.get("is_hidden") is True
+        group_moods = [m["name"] for m in imported_group.get("moods", [])]
+        assert mood_name_one in group_moods
+        assert mood_name_two in group_moods
+
+        # Re-import same export and ensure moods/mood groups are reused (no duplicates)
+        second_upload_response = api_client.upload_import(
+            import_user.access_token,
+            file_bytes=export_bytes,
+            filename="journiv_export_repeat.zip",
+            source_type="journiv",
+            expected=(202,),
+        )
+        second_job = second_upload_response.json()
+        completed_second_import = wait_for_import_completion(
+            api_client,
+            import_user.access_token,
+            second_job["id"],
+            timeout=120,
+        )
+        assert completed_second_import["status"] == "completed"
+
+        moods_after_second = api_client.get_moods_by_name(
+            import_user.access_token,
+            name=mood_name_one,
+            include_hidden=True,
+        )
+        assert len(moods_after_second) == 1
+        assert moods_after_second[0]["id"] == first_import_mood_id
+
+        groups_after_second = api_client.get_mood_groups_by_name(
+            import_user.access_token,
+            name="Morning Check-in",
+            include_hidden=True,
+        )
+        assert len(groups_after_second) == 1
+        assert groups_after_second[0]["id"] == first_import_group_id
+
+        # Verify logs survived by re-exporting imported data
+        roundtrip_export_job = api_client.request_export(
+            import_user.access_token,
+            export_type="full",
+            include_media=False,
+        )
+        completed_roundtrip_export = wait_for_export_completion(
+            api_client,
+            import_user.access_token,
+            roundtrip_export_job["id"],
+            timeout=120,
+        )
+        assert completed_roundtrip_export["status"] == "completed"
+
+        roundtrip_bytes = download_export(
+            api_client,
+            import_user.access_token,
+            roundtrip_export_job["id"],
+        )
+        with zipfile.ZipFile(io.BytesIO(roundtrip_bytes), "r") as zf:
+            with zf.open("data.json") as f:
+                roundtrip_data = json.load(f)
+                assert any(g["title"] == "Daily Exercise" for g in roundtrip_data["goals"])
+                assert len(roundtrip_data["goal_logs"]) >= 1
+                assert len(roundtrip_data["goal_manual_logs"]) >= 1
 
     def test_journiv_import_with_journals_and_entries(
         self,

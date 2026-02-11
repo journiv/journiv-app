@@ -411,10 +411,136 @@ class JournivApiClient:
         ).json()
 
     # ------------------------------------------------------------------ #
+    # Activity group helpers
+    # ------------------------------------------------------------------ #
+    def create_activity_group(
+        self,
+        token: str,
+        *,
+        name: str,
+        color_value: Optional[int] = None,
+        icon: Optional[str] = None,
+        position: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"name": name}
+        if color_value is not None:
+            payload["color_value"] = color_value
+        if icon is not None:
+            payload["icon"] = icon
+        if position is not None:
+            payload["position"] = position
+        return self.request(
+            "POST",
+            "/activity-groups/",
+            token=token,
+            json=payload,
+            expected=(201,),
+        ).json()
+
+    def list_activity_groups(self, token: str) -> list[Dict[str, Any]]:
+        return self.request(
+            "GET",
+            "/activity-groups/",
+            token=token,
+            expected=(200,),
+        ).json()
+
+    def reorder_activity_groups(
+        self, token: str, updates: list[Dict[str, Any]]
+    ) -> None:
+        self.request(
+            "PUT",
+            "/activity-groups/reorder",
+            token=token,
+            json={"updates": updates},
+            expected=(204,),
+        )
+
+    # ------------------------------------------------------------------ #
+    # Activity helpers
+    # ------------------------------------------------------------------ #
+    def create_activity(
+        self,
+        token: str,
+        *,
+        name: str,
+        group_id: Optional[str] = None,
+        icon: Optional[str] = None,
+        color: Optional[str] = None,
+        position: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"name": name}
+        if group_id is not None:
+            payload["group_id"] = group_id
+        if icon is not None:
+            payload["icon"] = icon
+        if color is not None:
+            payload["color"] = color
+        if position is not None:
+            payload["position"] = position
+        return self.request(
+            "POST",
+            "/activities",
+            token=token,
+            json=payload,
+            expected=(200, 201),
+        ).json()
+
+    def list_activities(
+        self, token: str, *, limit: int = 50, offset: int = 0
+    ) -> list[Dict[str, Any]]:
+        return self.request(
+            "GET",
+            "/activities",
+            token=token,
+            params={"limit": limit, "offset": offset},
+            expected=(200,),
+        ).json()
+
+    # ------------------------------------------------------------------ #
     # Mood helpers
     # ------------------------------------------------------------------ #
-    def list_moods(self, token: str) -> list[Dict[str, Any]]:
-        return self.request("GET", "/moods/", token=token, expected=(200,)).json()
+    def list_moods(
+        self,
+        token: str,
+        *,
+        category: Optional[str] = None,
+        include_hidden: bool = False,
+    ) -> list[Dict[str, Any]]:
+        params: Dict[str, Any] = {"include_hidden": include_hidden}
+        if category is not None:
+            params["category"] = category
+        return self.request(
+            "GET",
+            "/moods/",
+            token=token,
+            params=params,
+            expected=(200,),
+        ).json()
+
+    def get_moods_by_name(
+        self,
+        token: str,
+        *,
+        name: str,
+        include_hidden: bool = False,
+    ) -> list[Dict[str, Any]]:
+        moods = self.list_moods(token, include_hidden=include_hidden)
+        return [mood for mood in moods if mood.get("name") == name]
+
+    def get_mood_by_name(
+        self,
+        token: str,
+        *,
+        name: str,
+        include_hidden: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        matches = self.get_moods_by_name(
+            token,
+            name=name,
+            include_hidden=include_hidden,
+        )
+        return matches[0] if matches else None
 
     def create_mood(
         self,
@@ -437,6 +563,120 @@ class JournivApiClient:
             json=payload,
             expected=(201,),
         ).json()
+
+    def reorder_moods(self, token: str, mood_ids: list[str]) -> None:
+        self.request(
+            "PUT",
+            "/moods/reorder",
+            token=token,
+            json={"mood_ids": mood_ids},
+            expected=(204,),
+        )
+
+    def set_mood_visibility(self, token: str, mood_id: str, *, is_hidden: bool) -> None:
+        self.request(
+            "POST",
+            f"/moods/{mood_id}/visibility",
+            token=token,
+            json={"is_hidden": is_hidden},
+            expected=(204,),
+        )
+
+    # ------------------------------------------------------------------ #
+    # Mood group helpers
+    # ------------------------------------------------------------------ #
+    def create_mood_group(
+        self,
+        token: str,
+        *,
+        name: str,
+        mood_ids: Optional[list[str]] = None,
+        icon: Optional[str] = None,
+        color_value: Optional[int] = None,
+        position: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"name": name}
+        if mood_ids is not None:
+            payload["mood_ids"] = mood_ids
+        if icon is not None:
+            payload["icon"] = icon
+        if color_value is not None:
+            payload["color_value"] = color_value
+        if position is not None:
+            payload["position"] = position
+        return self.request(
+            "POST",
+            "/moods/groups",
+            token=token,
+            json=payload,
+            expected=(201,),
+        ).json()
+
+    def list_mood_groups(
+        self, token: str, *, include_hidden: bool = False
+    ) -> list[Dict[str, Any]]:
+        return self.request(
+            "GET",
+            "/moods/groups",
+            token=token,
+            params={"include_hidden": include_hidden},
+            expected=(200,),
+        ).json()
+
+    def get_mood_groups_by_name(
+        self,
+        token: str,
+        *,
+        name: str,
+        include_hidden: bool = False,
+    ) -> list[Dict[str, Any]]:
+        groups = self.list_mood_groups(token, include_hidden=include_hidden)
+        return [group for group in groups if group.get("name") == name]
+
+    def get_mood_group_by_name(
+        self,
+        token: str,
+        *,
+        name: str,
+        include_hidden: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        matches = self.get_mood_groups_by_name(
+            token,
+            name=name,
+            include_hidden=include_hidden,
+        )
+        return matches[0] if matches else None
+
+    def reorder_mood_groups(self, token: str, updates: list[Dict[str, Any]]) -> None:
+        self.request(
+            "PUT",
+            "/moods/groups/reorder",
+            token=token,
+            json={"updates": updates},
+            expected=(204,),
+        )
+
+    def reorder_mood_group_moods(
+        self, token: str, group_id: str, mood_ids: list[str]
+    ) -> None:
+        self.request(
+            "PUT",
+            f"/moods/groups/{group_id}/moods/reorder",
+            token=token,
+            json={"mood_ids": mood_ids},
+            expected=(204,),
+        )
+
+    def set_mood_group_visibility(
+        self, token: str, group_id: str, *, is_hidden: bool
+    ) -> None:
+        self.request(
+            "PUT",
+            f"/moods/groups/{group_id}/visibility",
+            token=token,
+            json={"is_hidden": is_hidden},
+            expected=(204,),
+        )
 
     # ------------------------------------------------------------------ #
     # Moment helpers
@@ -481,6 +721,114 @@ class JournivApiClient:
             expected=(200,),
         ).json()
         return response.get("items", [])
+
+    # ------------------------------------------------------------------ #
+    # Goal helpers
+    # ------------------------------------------------------------------ #
+    def create_goal_category(
+        self,
+        token: str,
+        *,
+        name: str,
+        color_value: Optional[int] = None,
+        icon: Optional[str] = None,
+        position: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"name": name}
+        if color_value is not None:
+            payload["color_value"] = color_value
+        if icon is not None:
+            payload["icon"] = icon
+        if position is not None:
+            payload["position"] = position
+        return self.request(
+            "POST",
+            "/goal-categories",
+            token=token,
+            json=payload,
+            expected=(200, 201),
+        ).json()
+
+    def list_goal_categories(self, token: str) -> list[Dict[str, Any]]:
+        return self.request(
+            "GET",
+            "/goal-categories",
+            token=token,
+            expected=(200,),
+        ).json()
+
+    def create_goal(
+        self,
+        token: str,
+        *,
+        title: str,
+        activity_id: Optional[str] = None,
+        category_id: Optional[str] = None,
+        goal_type: str = "achieve",
+        frequency_type: str = "daily",
+        target_count: int = 1,
+        reminder_time: Optional[str] = None,
+        is_paused: bool = False,
+        icon: Optional[str] = None,
+        color_value: Optional[int] = None,
+        position: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "title": title,
+            "goal_type": goal_type,
+            "frequency_type": frequency_type,
+            "target_count": target_count,
+            "is_paused": is_paused,
+        }
+        if activity_id is not None:
+            payload["activity_id"] = activity_id
+        if category_id is not None:
+            payload["category_id"] = category_id
+        if reminder_time is not None:
+            payload["reminder_time"] = reminder_time
+        if icon is not None:
+            payload["icon"] = icon
+        if color_value is not None:
+            payload["color_value"] = color_value
+        if position is not None:
+            payload["position"] = position
+        return self.request(
+            "POST",
+            "/goals",
+            token=token,
+            json=payload,
+            expected=(200, 201),
+        ).json()
+
+    def list_goals(
+        self, token: str, *, include_archived: bool = False
+    ) -> list[Dict[str, Any]]:
+        return self.request(
+            "GET",
+            "/goals",
+            token=token,
+            params={"include_archived": include_archived},
+            expected=(200,),
+        ).json()
+
+    def toggle_goal(
+        self,
+        token: str,
+        goal_id: str,
+        *,
+        logged_date: str,
+        status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {"logged_date": logged_date}
+        if status is not None:
+            payload["status"] = status
+        return self.request(
+            "POST",
+            f"/goals/{goal_id}/toggle",
+            token=token,
+            json=payload,
+            expected=(200,),
+        ).json()
 
     # ------------------------------------------------------------------ #
     # Prompt helpers

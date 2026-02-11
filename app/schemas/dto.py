@@ -13,7 +13,15 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.models.enums import ExportType, ImportSourceType, JobStatus
+from app.models.enums import (
+    ExportType,
+    GoalFrequency,
+    GoalLogSource,
+    GoalLogStatus,
+    GoalType,
+    ImportSourceType,
+    JobStatus,
+)
 
 # ============================================================================
 # Core DTOs - Mapped to Actual Database Schema
@@ -75,6 +83,14 @@ class MomentMoodActivityDTO(BaseModel):
     """
     mood_name: Optional[str] = Field(None, description="Mood name (references Mood.name)")
     activity_name: Optional[str] = Field(None, description="Activity name (user-defined)")
+    mood_external_id: Optional[str] = Field(
+        None,
+        description="Original mood ID from export (preferred for accurate mapping)",
+    )
+    activity_external_id: Optional[str] = Field(
+        None,
+        description="Original activity ID from export (preferred for accurate mapping)",
+    )
 
 
 class MomentDTO(BaseModel):
@@ -95,6 +111,11 @@ class MomentDTO(BaseModel):
 
     created_at: datetime = Field(..., description="Moment creation time in UTC")
     updated_at: datetime = Field(..., description="Moment last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+    primary_mood_external_id: Optional[str] = Field(
+        None,
+        description="Original mood ID for primary mood (preferred for mapping)",
+    )
 
     @field_validator('logged_timezone', mode='before')
     @classmethod
@@ -162,7 +183,7 @@ class EntryDTO(BaseModel):
     created_at: datetime = Field(..., description="Entry creation time in UTC")
     updated_at: datetime = Field(..., description="Entry last update time in UTC")
 
-    # Import tracking (not exported for regular users)
+    # Import tracking
     external_id: Optional[str] = Field(None, description="Original ID from source system")
 
     @model_validator(mode='before')
@@ -239,7 +260,7 @@ class JournalDTO(BaseModel):
     created_at: datetime = Field(..., description="Journal creation time in UTC")
     updated_at: datetime = Field(..., description="Journal last update time in UTC")
 
-    # Import tracking (not exported for regular users)
+    # Import tracking
     external_id: Optional[str] = Field(None, description="Original ID from source system")
 
 
@@ -248,18 +269,176 @@ class MoodDefinitionDTO(BaseModel):
     Mood definition for import/export.
 
     Maps to: Mood model (app/models/mood.py)
-    IMPORTANT: Mood model only has name, icon, and category.
-    Score, emoji, and color are PLACEHOLDERS.
     """
     # Actual Mood fields
     name: str = Field(..., description="Mood name (unique, lowercase)")
     category: str = Field(..., description="Mood category: positive, negative, neutral")
     icon: Optional[str] = Field(None, max_length=50, description="Mood icon")
+    key: Optional[str] = Field(None, description="Mood key (stable identifier)")
+    color_value: Optional[int] = Field(None, description="Mood color value")
+    score: Optional[int] = Field(None, ge=1, le=5, description="Mood score (1-5)")
+    position: int = Field(default=0, description="Mood sort position")
+    is_active: bool = Field(default=True, description="Whether mood is active/visible")
+    is_custom: bool = Field(default=False, description="Whether mood is user-specific")
+    created_at: Optional[datetime] = Field(None, description="Mood creation time in UTC")
+    updated_at: Optional[datetime] = Field(None, description="Mood last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
 
     # PLACEHOLDER: For import compatibility with other apps, not in database
     emoji: Optional[str] = Field(None, description="PLACEHOLDER: Mood emoji (not in DB, use icon)")
-    score: Optional[int] = Field(None, ge=-5, le=5, description="PLACEHOLDER: Mood score (not in DB)")
     color: Optional[str] = Field(None, description="PLACEHOLDER: Mood color (not in DB)")
+
+
+class MoodPreferenceDTO(BaseModel):
+    """
+    User mood visibility/order preferences for import/export.
+    """
+    mood_external_id: str = Field(..., description="Original mood ID from export")
+    sort_order: int = Field(default=0, description="User-specific sort order")
+    is_hidden: bool = Field(default=False, description="Whether mood is hidden")
+    created_at: datetime = Field(..., description="Preference creation time in UTC")
+    updated_at: datetime = Field(..., description="Preference last update time in UTC")
+
+
+class MoodGroupDTO(BaseModel):
+    """
+    Mood group for import/export.
+
+    Maps to: MoodGroup model (app/models/mood_group.py)
+    """
+    name: str = Field(..., description="Mood group name")
+    icon: Optional[str] = Field(None, description="Mood group icon")
+    color_value: Optional[int] = Field(None, description="Mood group color value")
+    position: int = Field(default=0, description="Mood group sort position")
+    is_custom: bool = Field(default=True, description="Whether group is user-specific")
+    created_at: datetime = Field(..., description="Mood group creation time in UTC")
+    updated_at: datetime = Field(..., description="Mood group last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+
+class MoodGroupLinkDTO(BaseModel):
+    """
+    Link between mood group and mood for import/export.
+    """
+    mood_group_external_id: str = Field(..., description="Original mood group ID")
+    mood_external_id: str = Field(..., description="Original mood ID")
+    position: int = Field(default=0, description="Position within the group")
+    created_at: datetime = Field(..., description="Link creation time in UTC")
+    updated_at: datetime = Field(..., description="Link last update time in UTC")
+
+
+class MoodGroupPreferenceDTO(BaseModel):
+    """
+    User mood group visibility/order preferences for import/export.
+    """
+    mood_group_external_id: str = Field(..., description="Original mood group ID")
+    sort_order: int = Field(default=0, description="User-specific sort order")
+    is_hidden: bool = Field(default=False, description="Whether mood group is hidden")
+    created_at: datetime = Field(..., description="Preference creation time in UTC")
+    updated_at: datetime = Field(..., description="Preference last update time in UTC")
+
+
+class ActivityGroupDTO(BaseModel):
+    """
+    Activity group for import/export.
+
+    Maps to: ActivityGroup model (app/models/activity_group.py)
+    """
+    name: str = Field(..., description="Activity group name")
+    color_value: Optional[int] = Field(None, description="Activity group color value")
+    icon: Optional[str] = Field(None, description="Activity group icon")
+    position: int = Field(default=0, description="Activity group sort position")
+    created_at: datetime = Field(..., description="Activity group creation time in UTC")
+    updated_at: datetime = Field(..., description="Activity group last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+
+class ActivityDTO(BaseModel):
+    """
+    Activity for import/export.
+
+    Maps to: Activity model (app/models/activity.py)
+    """
+    name: str = Field(..., description="Activity name")
+    icon: Optional[str] = Field(None, description="Activity icon")
+    color: Optional[str] = Field(None, description="Activity color")
+    position: int = Field(default=0, description="Activity sort position")
+    group_external_id: Optional[str] = Field(None, description="Original activity group ID")
+    created_at: datetime = Field(..., description="Activity creation time in UTC")
+    updated_at: datetime = Field(..., description="Activity last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+
+class GoalCategoryDTO(BaseModel):
+    """
+    Goal category for import/export.
+
+    Maps to: GoalCategory model (app/models/goal_category.py)
+    """
+    name: str = Field(..., description="Goal category name")
+    color_value: Optional[int] = Field(None, description="Goal category color value")
+    icon: Optional[str] = Field(None, description="Goal category icon")
+    position: int = Field(default=0, description="Goal category sort position")
+    created_at: datetime = Field(..., description="Goal category creation time in UTC")
+    updated_at: datetime = Field(..., description="Goal category last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+
+class GoalDTO(BaseModel):
+    """
+    Goal definition for import/export.
+
+    Maps to: Goal model (app/models/goal.py)
+    """
+    title: str = Field(..., description="Goal title")
+    goal_type: GoalType = Field(default=GoalType.ACHIEVE, description="Goal type")
+    frequency_type: GoalFrequency = Field(default=GoalFrequency.DAILY, description="Goal frequency")
+    target_count: int = Field(default=1, ge=1, description="Target count for completion")
+    reminder_time: Optional[str] = Field(None, description="Reminder time in HH:MM")
+    is_paused: bool = Field(default=False, description="Whether goal is paused")
+    icon: Optional[str] = Field(None, description="Goal icon")
+    color_value: Optional[int] = Field(None, description="Goal color value")
+    position: int = Field(default=0, description="Goal sort position")
+    archived_at: Optional[datetime] = Field(None, description="Archived timestamp if any")
+    activity_external_id: Optional[str] = Field(None, description="Original activity ID")
+    category_external_id: Optional[str] = Field(None, description="Original goal category ID")
+    created_at: datetime = Field(..., description="Goal creation time in UTC")
+    updated_at: datetime = Field(..., description="Goal last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+
+class GoalLogDTO(BaseModel):
+    """
+    Goal log for import/export.
+
+    Maps to: GoalLog model (app/models/goal.py)
+    """
+    goal_external_id: str = Field(..., description="Original goal ID")
+    logged_date: date = Field(..., description="Date the log applies to")
+    period_start: date = Field(..., description="Period start date")
+    period_end: date = Field(..., description="Period end date")
+    status: GoalLogStatus = Field(..., description="Goal log status")
+    count: int = Field(default=0, description="Progress count")
+    source: GoalLogSource = Field(default=GoalLogSource.AUTO, description="Log source")
+    last_updated_at: datetime = Field(..., description="Last updated timestamp")
+    moment_external_id: Optional[str] = Field(None, description="Original moment ID")
+    created_at: datetime = Field(..., description="Log creation time in UTC")
+    updated_at: datetime = Field(..., description="Log last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+
+class GoalManualLogDTO(BaseModel):
+    """
+    Manual goal log for import/export.
+
+    Maps to: GoalManualLog model (app/models/goal.py)
+    """
+    goal_external_id: str = Field(..., description="Original goal ID")
+    logged_date: date = Field(..., description="Logged date")
+    status: GoalLogStatus = Field(..., description="Manual log status")
+    created_at: datetime = Field(..., description="Manual log creation time in UTC")
+    updated_at: datetime = Field(..., description="Manual log last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
 
 
 class UserSettingsDTO(BaseModel):
@@ -294,7 +473,7 @@ class JournivExportDTO(BaseModel):
     This is the top-level structure for full exports.
     """
     # Metadata
-    export_version: str = Field("1.2", description="Export format version")
+    export_version: str = Field("1.3", description="Export format version")
     export_date: datetime = Field(..., description="When export was created (UTC)")
     app_version: str = Field(..., description="Journiv version that created export")
 
@@ -305,7 +484,17 @@ class JournivExportDTO(BaseModel):
 
     # Data
     journals: List[JournalDTO] = Field(..., description="All journals with their entries")
-    mood_definitions: List[MoodDefinitionDTO] = Field(default_factory=list, description="System mood definitions")
+    mood_definitions: List[MoodDefinitionDTO] = Field(default_factory=list, description="Mood definitions (system + custom)")
+    mood_preferences: List[MoodPreferenceDTO] = Field(default_factory=list, description="User mood preferences")
+    mood_groups: List[MoodGroupDTO] = Field(default_factory=list, description="Mood groups")
+    mood_group_links: List[MoodGroupLinkDTO] = Field(default_factory=list, description="Mood group links")
+    mood_group_preferences: List[MoodGroupPreferenceDTO] = Field(default_factory=list, description="User mood group preferences")
+    activities: List[ActivityDTO] = Field(default_factory=list, description="User activities")
+    activity_groups: List[ActivityGroupDTO] = Field(default_factory=list, description="Activity groups")
+    goal_categories: List[GoalCategoryDTO] = Field(default_factory=list, description="Goal categories")
+    goals: List[GoalDTO] = Field(default_factory=list, description="Goals")
+    goal_logs: List[GoalLogDTO] = Field(default_factory=list, description="Goal logs")
+    goal_manual_logs: List[GoalManualLogDTO] = Field(default_factory=list, description="Manual goal logs")
     moments: List[MomentDTO] = Field(default_factory=list, description="Standalone moments without entries")
 
     # Statistics (for reference only, not imported)
@@ -396,6 +585,16 @@ class ImportResultSummary(BaseModel):
     media_files_imported: int = Field(0, description="Number of media files imported")
     tags_created: int = Field(0, description="Number of new tags created")
     moods_created: int = Field(0, description="Number of new mood definitions created")
+    mood_groups_created: int = Field(0, description="Number of mood groups created")
+    mood_group_links_created: int = Field(0, description="Number of mood group links created")
+    mood_preferences_imported: int = Field(0, description="Number of mood preferences imported")
+    mood_group_preferences_imported: int = Field(0, description="Number of mood group preferences imported")
+    activity_groups_created: int = Field(0, description="Number of activity groups created")
+    activities_created: int = Field(0, description="Number of activities created")
+    goal_categories_created: int = Field(0, description="Number of goal categories created")
+    goals_created: int = Field(0, description="Number of goals created")
+    goal_logs_created: int = Field(0, description="Number of goal logs created")
+    goal_manual_logs_created: int = Field(0, description="Number of manual goal logs created")
 
     # Deduplication stats
     media_files_deduplicated: int = Field(0, description="Media files deduplicated by checksum")
@@ -428,11 +627,24 @@ class ImportResultSummary(BaseModel):
 DATABASE SCHEMA MAPPING NOTES:
 
 2. MOOD SYSTEM:
-   - Mood definitions: Stored in 'mood' table (name, icon, category)
+   - Mood definitions: Stored in 'mood' table (name, key, icon, color_value, category,
+     score, position, is_active, user_id)
    - Mood links stored in moment_mood_activity, primary mood stored on moment
-   - Placeholders: score, emoji, color (not in database)
+   - User preferences stored in user_mood_preference (sort_order, is_hidden)
+   - Mood groups stored in mood_group + mood_group_link + user_mood_group_preference
+   - Placeholders: emoji, color (string) not stored in database
 
-3. ENTRY LOCATION:
+3. ACTIVITIES:
+   - Activities stored in 'activity' (name, icon, color, position, group_id)
+   - Activity groups stored in 'activity_group' (name, icon, color_value, position)
+
+4. GOALS:
+   - Goal definitions stored in 'goal' (type, frequency, target_count, activity_id, category_id)
+   - Goal categories stored in 'goal_category'
+   - Goal logs stored in 'goal_log' (period-based)
+   - Manual overrides stored in 'goal_manual_log'
+
+5. ENTRY LOCATION:
    - Database (after migration d8f3a9e2b1c4):
      * location_json: JSON/JSONB field storing structured location data (persisted)
      * latitude: Float field for GPS latitude (persisted)
@@ -442,28 +654,28 @@ DATABASE SCHEMA MAPPING NOTES:
    - DTO fields latitude, longitude: Map directly to database Float columns (persisted)
    - Placeholder: temperature (not in database, use weather_json instead)
 
-4. ENTRY MEDIA:
+6. ENTRY MEDIA:
    - Stored in 'entry_media' table with full metadata
    - Fields: file_path, original_filename, file_size, mime_type, media_type
    - Optional: thumbnail_path, width, height, duration, alt_text, checksum
    - Upload tracking: upload_status, processing_error, file_metadata
 
-5. TAGS:
+7. TAGS:
    - Stored in 'tag' table (user-specific, case-insensitive)
    - Many-to-many with entries via 'entry_tag_link' table
    - Normalized to lowercase in database
 
-6. USER SETTINGS:
+8. USER SETTINGS:
    - Stored in 'user_settings' table (one-to-one with user)
    - Fields: theme, time_zone, daily_prompt_enabled, push_notifications,
      reminder_time, writing_goal_daily
    - Placeholders: date_format, time_format, first_day_of_week
 
-7. TIMESTAMPS:
+9. TIMESTAMPS:
    - All models inherit from BaseModel: id, created_at, updated_at, is_deleted
    - Entry has: entry_date (date), entry_datetime_utc (datetime), entry_timezone (str)
 
-8. ENUM TYPES:
+10. ENUM TYPES:
    - MediaType: image, video, audio, unknown
    - UploadStatus: pending, processing, completed, failed
    - MoodCategory: positive, negative, neutral
@@ -475,7 +687,7 @@ DATABASE SCHEMA MAPPING NOTES:
 
 PLACEHOLDER FIELDS (for future implementation):
 - MediaDTO: caption (use alt_text instead)
-- MoodDefinitionDTO: emoji, score, color (only name, icon, category exist)
+- MoodDefinitionDTO: emoji, color (string) not stored in database
 - EntryDTO: temperature (not persisted in DB, use weather_json instead; added for Day One import compatibility)
 - UserSettingsDTO: date_format, time_format, first_day_of_week
 
