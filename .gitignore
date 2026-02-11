@@ -160,6 +160,7 @@ imports/
 
 # Test / fixture data
 test_data/
+*.daylio
 
 # ===============================================================
 # DOCS / BUILD / PROJECT FILES

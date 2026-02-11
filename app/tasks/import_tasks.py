@@ -64,6 +64,10 @@ def process_import_job(self, job_id: str):
                 total_entries = None
                 data = None
                 media_dir = None
+            elif job.source_type == ImportSourceType.DAYLIO:
+                total_entries = None
+                data = None
+                media_dir = None
             else:
                 # Generic extraction for Journiv and other formats
                 data, media_dir = import_service.extract_import_data(file_path)
@@ -107,6 +111,13 @@ def process_import_job(self, job_id: str):
                 # Day One import doesn't use the generic extract_import_data
                 # because it has a different ZIP structure
                 summary = import_service.import_dayone_data(
+                    user_id=job.user_id,
+                    file_path=file_path,
+                    total_entries=total_entries,
+                    progress_callback=handle_progress,
+                )
+            elif job.source_type == ImportSourceType.DAYLIO:
+                summary = import_service.import_daylio_data(
                     user_id=job.user_id,
                     file_path=file_path,
                     total_entries=total_entries,

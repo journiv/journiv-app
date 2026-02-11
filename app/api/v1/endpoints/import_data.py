@@ -43,7 +43,7 @@ router = APIRouter(prefix="/import", tags=["import-export"])
 )
 async def upload_import(
     file: Annotated[UploadFile, File(description="Import file (ZIP archive)")],
-    source_type: Annotated[str, Form(description="Source type: journiv, markdown, dayone")],
+    source_type: Annotated[str, Form(description="Source type: journiv, markdown, dayone, daylio")],
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
@@ -53,6 +53,7 @@ async def upload_import(
     **Supported source types:**
     - `journiv`: Journiv export ZIP file
     - `dayone`: Day One JSON export ZIP file
+    - `daylio`: Daylio backup (.daylio ZIP)
     - `markdown`: Markdown files export (coming soon)
 
     **File requirements:**
@@ -69,14 +70,14 @@ async def upload_import(
     except ValueError:
         raise HTTPException(
             status_code=400,
-            detail=f"Invalid source type: {source_type}. Must be one of: journiv, markdown, dayone"
+            detail=f"Invalid source type: {source_type}. Must be one of: journiv, markdown, dayone, daylio"
         ) from None
 
     # Day One and Journiv imports are now supported
-    if source_type_enum not in [ImportSourceType.JOURNIV, ImportSourceType.DAYONE]:
+    if source_type_enum not in [ImportSourceType.JOURNIV, ImportSourceType.DAYONE, ImportSourceType.DAYLIO]:
         raise HTTPException(
             status_code=400,
-            detail=f"Import source '{source_type}' not yet supported. Currently supported: journiv, dayone"
+            detail=f"Import source '{source_type}' not yet supported. Currently supported: journiv, dayone, daylio"
         )
 
     # Process upload using UploadManager

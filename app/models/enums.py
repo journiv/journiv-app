@@ -148,6 +148,7 @@ class ImportSourceType(str, Enum):
     MARKDOWN = "markdown"
     DAYONE = "dayone"
     IMMICH = "immich"
+    DAYLIO = "daylio"
 
 
 class ExportType(str, Enum):
