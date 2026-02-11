@@ -9,6 +9,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from app.core.logging_config import log_warning
 from app.core.time_utils import utc_now
 from app.models.enums import GoalFrequency, GoalLogSource, GoalLogStatus, GoalType
 from app.schemas.dto import (
@@ -503,10 +504,27 @@ class DaylioToJournivMapper:
                 extension = f".{extension}"
 
             normalized_path = asset_path
-            if extension and asset_path.suffix.lower() != extension.lower():
-                normalized_path = asset_path.with_suffix(extension)
+            try:
+                if extension and asset_path.suffix.lower() != extension.lower():
+                    normalized_path = asset_path.with_suffix(extension)
+                    if not normalized_path.exists():
+                        shutil.copy2(asset_path, normalized_path)
                 if not normalized_path.exists():
-                    shutil.copy2(asset_path, normalized_path)
+                    log_warning(
+                        "Daylio asset normalization failed; file missing after normalization",
+                        asset_path=str(asset_path),
+                        normalized_path=str(normalized_path),
+                    )
+                    continue
+                file_size = normalized_path.stat().st_size
+            except Exception as exc:
+                log_warning(
+                    "Daylio asset normalization failed; skipping asset",
+                    asset_path=str(asset_path),
+                    normalized_path=str(normalized_path),
+                    error=str(exc),
+                )
+                continue
 
             media_type = "image"
             if asset.get("type") == 2:
@@ -519,7 +537,7 @@ class DaylioToJournivMapper:
                     filename=normalized_path.name,
                     file_path=str(normalized_path.relative_to(media_dir)),
                     media_type=media_type,
-                    file_size=normalized_path.stat().st_size,
+                    file_size=file_size,
                     mime_type=mime_type,
                     checksum=None,
                     width=None,
@@ -590,5 +608,7 @@ def _find_asset(assets_root: Path, checksum: str) -> Optional[Path]:
         return None
     for path in assets_root.rglob(f"{checksum}*"):
         if path.is_file():
-            return path
+            name = path.name
+            if name == checksum or name.startswith(f"{checksum}."):
+                return path
     return None
