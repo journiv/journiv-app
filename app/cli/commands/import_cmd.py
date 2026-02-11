@@ -45,7 +45,7 @@ def import_data(
     user_email: Annotated[str, typer.Option("--user-email", "-u", help="User email to import for")],
     source_type: Annotated[str, typer.Option(
         "--source-type", "-s",
-        help="Import source type (journiv, dayone)",
+        help="Import source type (journiv, dayone, daylio)",
         case_sensitive=False,
     )] = "journiv",
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Validate without importing")] = False,
@@ -67,6 +67,7 @@ def import_data(
     Supports:
       - journiv: Journiv export format (default)
       - dayone: Day One journal exports
+      - daylio: Daylio backup exports
 
     Examples:
       # Journiv import
@@ -87,7 +88,7 @@ def import_data(
         source_enum = ImportSourceType(source_type.lower())
     except ValueError:
         console.print(f"\n[red]Invalid source type: {source_type}[/red]")
-        console.print("Valid types: journiv, dayone")
+        console.print("Valid types: journiv, dayone, daylio")
         raise typer.Exit(code=2) from None
 
     try:
@@ -255,6 +256,15 @@ def import_data(
                                     )
                                 elif source_enum == ImportSourceType.DAYONE:
                                     summary = import_service.import_dayone_data(
+                                        user_id=user_id,
+                                        file_path=file_path,
+                                        total_entries=total_entries,
+                                        progress_callback=on_import_progress,
+                                        extraction_dir=temp_path,
+                                        media_dir=media_dir,
+                                    )
+                                elif source_enum == ImportSourceType.DAYLIO:
+                                    summary = import_service.import_daylio_data(
                                         user_id=user_id,
                                         file_path=file_path,
                                         total_entries=total_entries,

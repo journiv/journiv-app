@@ -32,7 +32,9 @@ class UploadManager:
             HTTPException: If file is invalid or too large
         """
         # Validate filename
-        if not file.filename or not file.filename.lower().endswith('.zip'):
+        if not file.filename or not (
+            file.filename.lower().endswith('.zip') or file.filename.lower().endswith('.daylio')
+        ):
             raise HTTPException(
                 status_code=400,
                 detail="File must be a ZIP archive"

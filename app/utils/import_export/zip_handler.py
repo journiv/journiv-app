@@ -169,6 +169,9 @@ class ZipHandler:
                     root_json_files = list(extract_to.glob("*.json"))
                     data_file = root_json_files[0] if root_json_files else None
                     media_dir = extract_to # Day One media are in photos/ videos/ at root
+                elif source_type == "daylio":
+                    data_file = extract_to / "backup.daylio"
+                    media_dir = extract_to / "assets"
                 else:
                     data_file = extract_to / "data.json"
                     media_dir = extract_to / "media"
@@ -245,6 +248,12 @@ class ZipHandler:
                     else:
                         result["valid"] = False
                         result["errors"].append("Missing JSON file at root (Day One format expects JournalName.json)")
+                elif source_type == "daylio":
+                    if "backup.daylio" in file_list:
+                        result["has_data_file"] = True
+                    else:
+                        result["valid"] = False
+                        result["errors"].append("Missing backup.daylio file at root (Daylio format)")
                 else:
                     # Journiv exports have data.json
                     if "data.json" in file_list:
@@ -257,6 +266,8 @@ class ZipHandler:
                 if source_type == "dayone":
                     # Day One has photos/ and videos/ directories
                     media_files = [f for f in file_list if f.startswith("photos/") or f.startswith("Photos/") or f.startswith("videos/") or f.startswith("Videos/")]
+                elif source_type == "daylio":
+                    media_files = [f for f in file_list if f.lower().startswith("assets/")]
                 else:
                     # Journiv has media/ directory
                     media_files = [f for f in file_list if f.startswith("media/")]
@@ -365,6 +376,8 @@ class ZipHandler:
                     # Determine if this is a media file
                     if source_type == "dayone":
                         is_media_file = any(info.filename.lower().startswith(p) for p in ["photos/", "videos/"])
+                    elif source_type == "daylio":
+                        is_media_file = info.filename.lower().startswith("assets/")
                     else:
                         is_media_file = info.filename.startswith("media/")
 
@@ -376,6 +389,8 @@ class ZipHandler:
 
                         if source_type == "dayone":
                             # For Day One, preserve photos/ or videos/ directories
+                            relative_path = Path(info.filename)
+                        elif source_type == "daylio":
                             relative_path = Path(info.filename)
                         else:
                             relative_path = Path(info.filename).relative_to("media")
@@ -400,11 +415,14 @@ class ZipHandler:
 
                     # Validate media files using centralized MediaHandler
                     if is_media_file and validate_media:
+                        allowed_extensions = settings.allowed_file_extensions
+                        if source_type == "daylio":
+                            allowed_extensions = list(allowed_extensions or []) + [""]
                         validation_result = MediaHandler.validate_media(
                             target_path,
                             max_size_mb=max_size_mb,
                             allowed_types=settings.allowed_media_types,
-                            allowed_extensions=settings.allowed_file_extensions
+                            allowed_extensions=allowed_extensions,
                         )
 
                         is_valid, mime_type, category, error_msg = validation_result
@@ -457,6 +475,9 @@ class ZipHandler:
                     root_json_files = list(extract_to.glob("*.json"))
                     data_file = root_json_files[0] if root_json_files else None
                     media_dir = extract_to
+                elif source_type == "daylio":
+                    data_file = extract_to / "backup.daylio"
+                    media_dir = extract_to / "assets"
                 else:
                     data_file = extract_to / "data.json"
                     media_dir = extract_to / "media"

@@ -17,6 +17,7 @@ from sqlmodel import col, select
 from app.core.config import settings
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.time_utils import local_date_for_user, normalize_timezone, utc_now
+from app.data_transfer.daylio import DaylioParser, DaylioToJournivMapper
 from app.data_transfer.dayone import DayOneParser, DayOneToJournivMapper
 from app.models import (
     Activity,
@@ -457,6 +458,76 @@ class ImportService:
             raise
         finally:
             # Cleanup is handled by caller
+            pass
+
+    def import_daylio_data(
+        self,
+        user_id: UUID,
+        file_path: Path,
+        *,
+        total_entries: Optional[int] = None,
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        extraction_dir: Optional[Path] = None,
+        media_dir: Optional[Path] = None,
+    ) -> ImportResultSummary:
+        """
+        Import Daylio export data.
+        """
+        log_info(f"Starting Daylio import for user {user_id}", user_id=str(user_id), file_path=str(file_path))
+
+        if not extraction_dir:
+            temp_dir = Path(settings.import_temp_dir)
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            extract_dir = temp_dir / file_path.stem
+        else:
+            if not extraction_dir.exists() or not extraction_dir.is_dir():
+                raise ValueError(f"Extraction directory not found: {extraction_dir}")
+            extract_dir = extraction_dir
+
+        import_timestamp = utc_now()
+
+        try:
+            backup, extract_root = DaylioParser.parse_zip(
+                file_path,
+                extract_dir,
+                is_already_extracted=extraction_dir is not None,
+            )
+            final_media_root = media_dir or extract_root
+
+            user = self.db.query(User).filter(col(User.id) == user_id).first()
+            if not user:
+                raise ValueError(f"User not found: {user_id}")
+
+            journal_title = "Imported from Daylio"
+            export_dto = DaylioToJournivMapper.build_export(
+                backup,
+                journal_title=journal_title,
+                import_timestamp=import_timestamp,
+                user_email=user.email,
+                user_name=user.name,
+                app_version=settings.app_version,
+                media_dir=final_media_root,
+            )
+
+            data = export_dto.model_dump(mode="json")
+
+            if total_entries is None:
+                total_entries = self.count_entries_in_data(data)
+
+            summary = self.import_journiv_data(
+                user_id=user_id,
+                data=data,
+                media_dir=final_media_root,
+                total_entries=total_entries,
+                progress_callback=progress_callback,
+            )
+
+            return summary
+        except Exception as e:
+            self.db.rollback()
+            log_error(e, user_id=str(user_id))
+            raise
+        finally:
             pass
 
     def import_journiv_data(
@@ -1949,12 +2020,15 @@ class ImportService:
             lookup_key = mood_dto.key or ""
             lookup_name = mood_dto.name.lower()
             existing_mood = None
+            allow_system_match = lookup_key.startswith("daylio:")
 
             if is_custom:
                 if lookup_key and lookup_key in user_by_key:
                     existing_mood = user_by_key[lookup_key]
                 elif lookup_name in user_by_name:
                     existing_mood = user_by_name[lookup_name]
+                elif allow_system_match and lookup_name in system_by_name:
+                    existing_mood = system_by_name[lookup_name]
             else:
                 if lookup_key and lookup_key in system_by_key:
                     existing_mood = system_by_key[lookup_key]
@@ -1964,6 +2038,14 @@ class ImportService:
             mood_name_for_insert = mood_dto.name
 
             if existing_mood:
+                if allow_system_match and existing_mood.user_id is None:
+                    summary.moods_reused += 1
+                    mood_id = existing_mood.id
+                    if mood_dto.external_id:
+                        mood_id_map[mood_dto.external_id] = mood_id
+                        record_mapping("moods", mood_dto.external_id, mood_id)
+                    continue
+
                 if is_custom and existing_mood.user_id == user_id:
                     existing_mood.icon = mood_dto.icon
                     existing_mood.key = mood_dto.key

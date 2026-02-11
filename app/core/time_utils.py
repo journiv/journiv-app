@@ -5,9 +5,31 @@ All timestamps are stored in UTC and converted to user's local timezone for disp
 Compatible with both SQLite and PostgreSQL.
 """
 
-from datetime import date, datetime, time, timezone
+import re
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Optional, Union
 from zoneinfo import ZoneInfo
+
+_FIXED_OFFSET_PATTERN = re.compile(r"^[+-](?:0\d|1\d|2[0-3]):[0-5]\d$")
+
+
+def _parse_fixed_offset(tz_name: str) -> Optional[timezone]:
+    if tz_name in {"UTC", "Z"}:
+        return timezone.utc
+    if not _FIXED_OFFSET_PATTERN.match(tz_name):
+        return None
+    sign = 1 if tz_name[0] == "+" else -1
+    hours = int(tz_name[1:3])
+    minutes = int(tz_name[4:6])
+    return timezone(sign * timedelta(hours=hours, minutes=minutes))
+
+
+def _get_tzinfo(tz_name: Optional[str]) -> timezone | ZoneInfo:
+    normalized = (tz_name or "UTC").strip() or "UTC"
+    fixed_offset = _parse_fixed_offset(normalized)
+    if fixed_offset is not None:
+        return fixed_offset
+    return ZoneInfo(normalized)
 
 
 def utc_now() -> datetime:
@@ -70,14 +92,11 @@ def to_local(dt: datetime, tz_name: Optional[str] = None) -> datetime:
         >>> local_dt.hour
         0
     """
-    if tz_name is None:
-        tz_name = "UTC"
-
     # Ensure input is UTC
     utc_dt = ensure_utc(dt)
 
     # Convert to target timezone
-    target_tz = ZoneInfo(tz_name)
+    target_tz = _get_tzinfo(tz_name)
     return utc_dt.astimezone(target_tz)
 
 
@@ -100,7 +119,7 @@ def to_utc(dt: datetime, tz_name: Optional[str] = None) -> datetime:
     """
     if dt.tzinfo is None and tz_name:
         # Naive datetime - attach timezone
-        local_tz = ZoneInfo(tz_name)
+        local_tz = _get_tzinfo(tz_name)
         dt = dt.replace(tzinfo=local_tz)
 
     return ensure_utc(dt)
@@ -256,6 +275,8 @@ def validate_timezone(tz_name: str) -> bool:
         >>> validate_timezone("Invalid/Timezone")
         False
     """
+    if _parse_fixed_offset(tz_name.strip()):
+        return True
     try:
         ZoneInfo(tz_name)
         return True
@@ -291,6 +312,8 @@ def normalize_timezone(tz_name: Optional[str]) -> str:
     from app.core.logging_config import log_warning
 
     normalized = (tz_name or "UTC").strip() or "UTC"
+    if _parse_fixed_offset(normalized):
+        return normalized
     try:
         ZoneInfo(normalized)
         return normalized

@@ -514,7 +514,7 @@ class ImportJobCreateRequest(BaseModel):
 
     Maps to: ImportJob model (app/models/import_job.py)
     """
-    source_type: ImportSourceType = Field(..., description="Source type: journiv, markdown, dayone")
+    source_type: ImportSourceType = Field(..., description="Source type: journiv, markdown, dayone, daylio")
     # file_path is set by upload endpoint, not by client
 
 
