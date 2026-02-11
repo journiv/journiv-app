@@ -1975,6 +1975,13 @@ class ImportService:
                 summary.moods_reused += 1
                 mood_id = existing_mood.id
             else:
+                if not is_custom:
+                    warning_msg = (
+                        f"System mood not found: '{mood_name_for_insert}', "
+                        "skipping to avoid creating global moods"
+                    )
+                    self._add_warning(summary, warning_msg, "Skipped (mood)")
+                    continue
                 mood = Mood(
                     name=mood_name_for_insert,
                     category=mood_dto.category,
@@ -1984,7 +1991,7 @@ class ImportService:
                     score=mood_dto.score or 3,
                     position=mood_dto.position,
                     is_active=mood_dto.is_active,
-                    user_id=user_id if is_custom else None,
+                    user_id=user_id,
                     created_at=mood_dto.created_at or utc_now(),
                     updated_at=mood_dto.updated_at or utc_now(),
                 )
