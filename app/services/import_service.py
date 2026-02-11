@@ -2353,6 +2353,22 @@ class ImportService:
         """Import goals and return external_id -> goal_id map."""
         goal_id_map: Dict[str, UUID] = {}
         for goal_dto in goals:
+            existing = (
+                self.db.execute(
+                    select(Goal).where(
+                        col(Goal.user_id) == user_id,
+                        func.lower(col(Goal.title)) == goal_dto.title.lower(),
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing:
+                if goal_dto.external_id:
+                    goal_id_map[goal_dto.external_id] = existing.id
+                    record_mapping("goals", goal_dto.external_id, existing.id)
+                continue
+
             activity_id = None
             if goal_dto.activity_external_id:
                 activity_id = activity_id_map.get(goal_dto.activity_external_id)
