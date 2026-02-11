@@ -2469,6 +2469,7 @@ class ImportService:
                 updated_at=log_dto.updated_at or utc_now(),
             )
             self.db.add(log)
+            self.db.flush()
             summary.goal_logs_created += 1
             if record_mapping and log_dto.external_id:
                 record_mapping("goal_logs", log_dto.external_id, log.id)
@@ -2518,6 +2519,7 @@ class ImportService:
                 updated_at=log_dto.updated_at or utc_now(),
             )
             self.db.add(log)
+            self.db.flush()
             summary.goal_manual_logs_created += 1
             if record_mapping and log_dto.external_id:
                 record_mapping("goal_manual_logs", log_dto.external_id, log.id)
