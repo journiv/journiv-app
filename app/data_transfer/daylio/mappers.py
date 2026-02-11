@@ -149,10 +149,11 @@ class DaylioToJournivMapper:
             name = (mood.custom_name or "").strip()
             if not name:
                 name = _PREDEFINED_MOOD_NAMES.get(mood.predefined_name_id, f"Daylio Mood {mood.id}")
-            normalized_name = name.strip()
+            normalized_name = name
             mapped_name = _DAYLIO_TO_SYSTEM_OVERRIDES.get(normalized_name.lower(), normalized_name)
             is_system_match = mapped_name.lower() in {"awful", "bad", "meh", "good", "awesome"}
-            score = max(1, min(5, mood.mood_group_id or 3))
+            mood_group_id = mood.mood_group_id if mood.mood_group_id is not None else 3
+            score = max(1, min(5, mood_group_id))
             category = "neutral"
             if mood.mood_group_id in (1, 2):
                 category = "negative"
