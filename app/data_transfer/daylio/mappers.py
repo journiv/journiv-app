@@ -134,25 +134,6 @@ class DaylioToJournivMapper:
         )
 
     @staticmethod
-    def _map_mood_groups(import_timestamp: datetime) -> List[MoodGroupDTO]:
-        groups = []
-        for idx in range(1, 6):
-            name = _PREDEFINED_MOOD_NAMES.get(idx, f"Group {idx}")
-            groups.append(
-                MoodGroupDTO(
-                    name=name,
-                    icon=None,
-                    color_value=None,
-                    position=idx,
-                    is_custom=True,
-                    created_at=import_timestamp,
-                    updated_at=import_timestamp,
-                    external_id=str(idx),
-                )
-            )
-        return groups
-
-    @staticmethod
     def _map_moods_with_unmatched_group(
         backup: DaylioBackup,
         import_timestamp: datetime,
@@ -305,7 +286,7 @@ class DaylioToJournivMapper:
     def _map_goal_logs(backup: DaylioBackup, import_timestamp: datetime) -> List[GoalLogDTO]:
         logs = []
         for entry in backup.goalEntries:
-            logged_date = date(entry.year, entry.month, entry.day)
+            logged_date = date(entry.year, entry.month + 1, entry.day)
             created_at = _ms_to_utc(entry.createdAt) or import_timestamp
             logs.append(
                 GoalLogDTO(
@@ -579,7 +560,7 @@ class DaylioToJournivMapper:
 
 
 def _ms_to_utc(ms: Optional[int]) -> Optional[datetime]:
-    if not ms:
+    if ms is None:
         return None
     return datetime.fromtimestamp(ms / 1000, tz=timezone.utc)
 
