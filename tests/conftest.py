@@ -96,3 +96,26 @@ def entry_factory(
         return entry
 
     return _create
+
+
+@pytest.fixture
+def moment_factory(
+    api_client: JournivApiClient, api_user: ApiUser, journal_factory: Callable[..., Dict]
+) -> Callable[..., Dict]:
+    """
+    Factory that creates moments.
+    """
+
+    def _create(**overrides: Dict) -> Dict:
+        moment = api_client.create_moment(
+            api_user.access_token,
+            logged_date=overrides.pop("logged_date", date.today().isoformat()),
+            primary_mood_id=overrides.pop("primary_mood_id", None),
+            note=overrides.pop("note", None),
+            mood_activity=overrides.pop("mood_activity", None),
+            logged_timezone=overrides.pop("logged_timezone", "UTC"),
+            **overrides,
+        )
+        return moment
+
+    return _create

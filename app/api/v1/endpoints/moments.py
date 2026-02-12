@@ -278,6 +278,9 @@ async def get_moments(
     start_date: Annotated[date | None, Query()] = None,
     end_date: Annotated[date | None, Query()] = None,
     include_media: Annotated[str | None, Query()] = None,
+    journal_id: Annotated[uuid.UUID | None, Query()] = None,
+    mood_ids: Annotated[List[uuid.UUID] | None, Query()] = None,
+    search: Annotated[str | None, Query()] = None,
 ):
     if (cursor_logged_at is None) ^ (cursor_id is None):
         raise HTTPException(
@@ -294,6 +297,9 @@ async def get_moments(
         cursor_id=cursor_id,
         start_date=start_date,
         end_date=end_date,
+        journal_id=journal_id,
+        mood_ids=mood_ids,
+        search=search,
     )
 
     media_counts: dict[uuid.UUID, int] = {}

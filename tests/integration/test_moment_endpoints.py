@@ -1,0 +1,187 @@
+"""
+Moment API integration coverage.
+"""
+
+from tests.lib import ApiUser, JournivApiClient
+
+
+def test_moment_listing_supports_mood_filtering(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """Moments can be filtered by specific mood IDs."""
+    # Create moods
+    happy_mood = api_client.create_mood(api_user.access_token, name="Happy", icon="😊")
+    sad_mood = api_client.create_mood(api_user.access_token, name="Sad", icon="😢")
+
+    # Create moments with different moods
+    happy_moment = moment_factory(
+        primary_mood_id=happy_mood["id"],
+        note="Feeling good",
+        mood_activity=[{"mood_id": happy_mood["id"]}],
+    )
+    sad_moment = moment_factory(
+        primary_mood_id=sad_mood["id"],
+        note="Feeling down",
+        mood_activity=[{"mood_id": sad_mood["id"]}],
+    )
+    neutral_moment = moment_factory(note="Neutral")  # No mood
+
+    # Filter by Happy mood
+    happy_results = api_client.list_moments(
+        api_user.access_token, mood_ids=[happy_mood["id"]]
+    )
+    happy_ids = {m["id"] for m in happy_results}
+
+    assert happy_moment["id"] in happy_ids
+    assert sad_moment["id"] not in happy_ids
+    assert neutral_moment["id"] not in happy_ids
+
+    # Filter by Sad mood
+    sad_results = api_client.list_moments(
+        api_user.access_token, mood_ids=[sad_mood["id"]]
+    )
+    sad_ids = {m["id"] for m in sad_results}
+
+    assert sad_moment["id"] in sad_ids
+    assert happy_moment["id"] not in sad_ids
+
+
+def test_moment_listing_supports_multiple_mood_filters(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """Moments can be filtered by a list of mood IDs (OR logic)."""
+    mood1 = api_client.create_mood(api_user.access_token, name="Mood1")
+    mood2 = api_client.create_mood(api_user.access_token, name="Mood2")
+    mood3 = api_client.create_mood(api_user.access_token, name="Mood3")
+
+    m1 = moment_factory(
+        primary_mood_id=mood1["id"],
+        mood_activity=[{"mood_id": mood1["id"]}],
+    )
+    m2 = moment_factory(
+        primary_mood_id=mood2["id"],
+        mood_activity=[{"mood_id": mood2["id"]}],
+    )
+    m3 = moment_factory(
+        primary_mood_id=mood3["id"],
+        mood_activity=[{"mood_id": mood3["id"]}],
+    )
+
+    # Filter by Mood1 OR Mood2
+    results = api_client.list_moments(
+        api_user.access_token, mood_ids=[mood1["id"], mood2["id"]]
+    )
+    result_ids = {m["id"] for m in results}
+
+    assert m1["id"] in result_ids
+    assert m2["id"] in result_ids
+    assert m3["id"] not in result_ids
+
+
+def test_moment_search_by_note(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """Search should find moments by matching text in the note."""
+    target_moment = moment_factory(note="This includes a UniqueKeyword for search")
+    other_moment = moment_factory(note="Just a normal note")
+
+    results = api_client.list_moments(api_user.access_token, search="UniqueKeyword")
+    result_ids = {m["id"] for m in results}
+
+    assert target_moment["id"] in result_ids
+    assert other_moment["id"] not in result_ids
+
+
+def test_moment_search_by_entry_content(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+    entry_factory,
+):
+    """Search should find moments linked to entries with matching content."""
+    entry = entry_factory(content="Entry content with HiddenTreasure inside")
+
+    # Find the moment associated with the entry
+    moments = api_client.list_moments(api_user.access_token)
+    entry_moment = next((m for m in moments if m.get("entry_id") == entry["id"]), None)
+
+    assert entry_moment is not None, "Entry creation should have created a moment"
+
+    results = api_client.list_moments(api_user.access_token, search="HiddenTreasure")
+    result_ids = {m["id"] for m in results}
+
+    assert entry_moment["id"] in result_ids
+
+
+def test_moment_search_by_entry_title(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    entry_factory,
+):
+    """Search should find moments linked to entries with matching title."""
+    entry = entry_factory(title="My Secret Title")
+
+    # Find the auto-created moment
+    moments = api_client.list_moments(api_user.access_token)
+    entry_moment = next((m for m in moments if m.get("entry_id") == entry["id"]), None)
+    assert entry_moment is not None
+
+    results = api_client.list_moments(api_user.access_token, search="Secret Title")
+    result_ids = {m["id"] for m in results}
+
+    assert entry_moment["id"] in result_ids
+
+
+def test_moment_search_combined_with_mood(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+    entry_factory,
+):
+    """Search and mood filters can be combined."""
+    mood = api_client.create_mood(api_user.access_token, name="Focus")
+
+    # Match: Correct Mood + Correct Text
+    match = moment_factory(
+        primary_mood_id=mood["id"], note="Working on ImportantProject"
+    )
+
+    # Mismatch: Correct Mood + Wrong Text
+    wrong_text = moment_factory(primary_mood_id=mood["id"], note="Just chilling")
+
+    # Mismatch: Wrong Mood + Correct Text
+    wrong_mood = moment_factory(note="Thinking about ImportantProject")
+
+    results = api_client.list_moments(
+        api_user.access_token, search="ImportantProject", mood_ids=[mood["id"]]
+    )
+    result_ids = {m["id"] for m in results}
+
+    assert match["id"] in result_ids
+    assert wrong_text["id"] not in result_ids
+    assert wrong_mood["id"] not in result_ids
+
+
+def test_moment_listing_supports_empty_mood_list(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """Passing an empty list for mood_ids should result in NO filtering (return all)."""
+    m1 = moment_factory(note="Moment 1")
+    m2 = moment_factory(note="Moment 2")
+
+    results = api_client.list_moments(
+        api_user.access_token,
+        mood_ids=[],  # Empty list
+    )
+    result_ids = {m["id"] for m in results}
+
+    assert m1["id"] in result_ids
+    assert m2["id"] in result_ids

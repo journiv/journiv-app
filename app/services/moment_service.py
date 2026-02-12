@@ -417,6 +417,9 @@ class MomentService:
         cursor_id: Optional[uuid.UUID] = None,
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
+        journal_id: Optional[uuid.UUID] = None,
+        mood_ids: Optional[List[uuid.UUID]] = None,
+        search: Optional[str] = None,
     ) -> Tuple[List[Moment], Optional[datetime], Optional[uuid.UUID]]:
         statement = select(Moment).where(Moment.user_id == user_id)
 
@@ -424,6 +427,43 @@ class MomentService:
             statement = statement.where(col(Moment.logged_date) >= start_date)
         if end_date:
             statement = statement.where(col(Moment.logged_date) <= end_date)
+
+        if journal_id:
+            # Join with Entry to filter by journal_id
+            statement = statement.join(Entry, col(Moment.entry_id) == Entry.id)
+            statement = statement.where(Entry.journal_id == journal_id)
+
+        if mood_ids:
+            # Filter by moments that have ANY of the specified mood_ids
+            # We use a subquery or join to filter efficiently
+            normalized_mood_ids = normalize_uuid_list(mood_ids)
+            statement = statement.where(
+                col(Moment.id).in_(
+                    select(MomentMoodActivity.moment_id).where(
+                        col(MomentMoodActivity.mood_id).in_(normalized_mood_ids)
+                    )
+                )
+            )
+
+        if search:
+            escaped_search = (
+                search.replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            search_pattern = f"%{escaped_search}%"
+            # Search in Moment note OR Entry title/content
+            # To search in entry, we might need to join if not already joined
+            if not journal_id:  # Avoid double join if already joined for journal_id
+                statement = statement.outerjoin(Entry, col(Moment.entry_id) == Entry.id)
+
+            statement = statement.where(
+                or_(
+                    col(Moment.note).ilike(search_pattern, escape="\\"),
+                    col(Entry.title).ilike(search_pattern, escape="\\"),
+                    col(Entry.content_plain_text).ilike(search_pattern, escape="\\"),
+                )
+            )
 
         if cursor_logged_at and cursor_id:
             statement = statement.where(
