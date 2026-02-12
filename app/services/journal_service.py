@@ -2,8 +2,9 @@
 Journal service for handling journal-related operations.
 """
 import uuid
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 
+from sqlalchemy import case, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, select
 
@@ -34,17 +35,34 @@ class JournalService:
         return journal
 
     def create_journal(self, user_id: uuid.UUID, journal_data: JournalCreate) -> Journal:
-        """Create a new journal for a user."""
-        journal = Journal(
-            title=journal_data.title,
-            description=journal_data.description,
-            color=journal_data.color,
-            icon=journal_data.icon,
-            user_id=user_id
-        )
+        """
+        Create a new journal for a user.
 
-        self.session.add(journal)
+        New journals are placed at position 0 in the regular (non-favorite) section,
+        and existing regular journals are shifted down by 1.
+        """
         try:
+            # Shift all existing regular journals down to make room at position 0
+            journal_attrs = cast(Any, Journal)
+            self.session.exec(
+                update(Journal)
+                .where(col(journal_attrs.user_id) == user_id)
+                .where(col(Journal.is_favorite).is_(False))
+                .where(col(journal_attrs.position).isnot(None))
+                .values(position=col(journal_attrs.position) + 1)
+            )
+
+            # Create new journal with position 0
+            journal = Journal(
+                title=journal_data.title,
+                description=journal_data.description,
+                color=journal_data.color,
+                icon=journal_data.icon,
+                user_id=user_id,
+                position=0,  # New journals appear at the top of regular section
+            )
+
+            self.session.add(journal)
             self.session.commit()
             self.session.refresh(journal)
         except SQLAlchemyError as exc:
@@ -52,7 +70,7 @@ class JournalService:
             log_error(exc)
             raise
 
-        log_info(f"Journal created for user {user_id}: {journal.id}")
+        log_info(f"Journal created for user {user_id}: {journal.id} at position 0")
         return journal
 
     def get_journal_by_id(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Journal]:
@@ -64,7 +82,12 @@ class JournalService:
         return self.session.exec(statement).first()
 
     def get_user_journals(self, user_id: uuid.UUID, include_archived: bool = False) -> List[Journal]:
-        """Get all journals for a user."""
+        """
+        Get all journals for a user with custom ordering.
+
+        Ordering logic: favorites first (by position ASC), then regular journals (by position ASC),
+        with created_at DESC as fallback for NULL positions.
+        """
         statement = select(Journal).where(
             Journal.user_id == user_id,
         )
@@ -72,7 +95,12 @@ class JournalService:
         if not include_archived:
             statement = statement.where(col(Journal.is_archived).is_(False))
 
-        statement = statement.order_by(col(Journal.created_at).desc())
+        # Custom ordering: is_favorite DESC (favorites first), position ASC NULLS LAST, created_at DESC
+        statement = statement.order_by(
+            col(Journal.is_favorite).desc(),
+            col(Journal.position).asc().nullslast(),
+            col(Journal.created_at).desc()
+        )
         return list(self.session.exec(statement))
 
     def update_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID, journal_data: JournalUpdate) -> Journal:
@@ -136,20 +164,57 @@ class JournalService:
         log_info(f"Journal and related entries/media hard-deleted for {user_id}: {journal_id}")
         return True
     def get_favorite_journals(self, user_id: uuid.UUID) -> List[Journal]:
-        """Get favorite journals for a user."""
+        """
+        Get favorite journals for a user with custom ordering.
+
+        Ordering logic: position ASC NULLS LAST, created_at DESC as fallback.
+        """
         statement = select(Journal).where(
             Journal.user_id == user_id,
             col(Journal.is_favorite).is_(True)
-        ).order_by(col(Journal.created_at).desc())
+        ).order_by(
+            col(Journal.position).asc().nullslast(),
+            col(Journal.created_at).desc()
+        )
         return list(self.session.exec(statement))
 
     def toggle_favorite(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> Journal:
-        """Toggle favorite status of a journal."""
+        """
+        Toggle favorite status of a journal and adjust position accordingly.
+
+        When toggling favorite ON: Place at bottom of favorites section (MAX position + 1)
+        When toggling favorite OFF: Place at top of regular journals section (position 0, shift others down)
+        """
         journal = self._get_owned_journal(journal_id, user_id)
 
-        journal.is_favorite = not journal.is_favorite
-        journal.updated_at = utc_now()
+        new_favorite_status = not journal.is_favorite
+
         try:
+            if new_favorite_status:
+                # Moving to favorites: place at bottom of favorites
+                max_fav_position = self.session.exec(
+                    select(func.max(Journal.position))
+                    .where(Journal.user_id == user_id)
+                    .where(col(Journal.is_favorite).is_(True))
+                ).first()
+                # Use explicit None check to preserve position 0
+                journal.position = (max_fav_position if max_fav_position is not None else -1) + 1
+            else:
+                # Moving to regular: place at top of regular journals
+                # First, shift all existing regular journals down
+                journal_attrs = cast(Any, Journal)
+                self.session.exec(
+                    update(Journal)
+                    .where(col(journal_attrs.user_id) == user_id)
+                    .where(col(Journal.is_favorite).is_(False))
+                    .where(col(journal_attrs.id) != journal_id)
+                    .where(col(journal_attrs.position).isnot(None))
+                    .values(position=col(journal_attrs.position) + 1)
+                )
+                journal.position = 0
+
+            journal.is_favorite = new_favorite_status
+            journal.updated_at = utc_now()
             self.session.add(journal)
             self.session.commit()
             self.session.refresh(journal)
@@ -158,7 +223,7 @@ class JournalService:
             log_error(exc)
             raise
 
-        log_info(f"Journal favorite toggled for {user_id}: {journal.id} -> {journal.is_favorite}")
+        log_info(f"Journal favorite toggled for {user_id}: {journal.id} -> {journal.is_favorite}, position -> {journal.position}")
         return journal
 
     def archive_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> Journal:
@@ -237,3 +302,57 @@ class JournalService:
 
         log_info(f"Journal entry count recalculated for {user_id}: {journal.id} -> {entry_count} entries, {total_words} words")
         return journal
+
+    def reorder_journals(self, user_id: uuid.UUID, updates: List[tuple[uuid.UUID, int]]) -> None:
+        """
+        Reorder journals for a user using batch update.
+
+        Args:
+            user_id: The user's ID
+            updates: List of (journal_id, position) tuples
+
+        Raises:
+            JournalNotFoundError: If any journal not found or not owned by user
+        """
+        if not updates:
+            return
+
+        # Extract journal IDs
+        journal_ids = [jid for jid, _ in updates]
+
+        # Validate all journals exist and belong to user
+        journal_attrs = cast(Any, Journal)
+        existing_journals = self.session.exec(
+            select(Journal)
+            .where(col(journal_attrs.id).in_(journal_ids))
+            .where(col(journal_attrs.user_id) == user_id)
+        ).all()
+
+        existing_ids = {j.id for j in existing_journals}
+        missing_ids = set(journal_ids) - existing_ids
+
+        if missing_ids:
+            log_warning(f"Journals not found or not owned by user {user_id}: {missing_ids}")
+            raise JournalNotFoundError(f"Journals not found: {missing_ids}")
+
+        try:
+            # Build CASE statement for efficient batch update
+            # This updates all positions in a single query
+            case_stmt = case(
+                *[(col(journal_attrs.id) == journal_id, position) for journal_id, position in updates],
+                else_=col(journal_attrs.position)
+            )
+
+            self.session.exec(
+                update(Journal)
+                .where(col(journal_attrs.user_id) == user_id)
+                .where(col(journal_attrs.id).in_(journal_ids))
+                .values(position=case_stmt, updated_at=utc_now())
+            )
+
+            self.session.commit()
+            log_info(f"Reordered {len(updates)} journals for user {user_id}")
+        except SQLAlchemyError as exc:
+            self.session.rollback()
+            log_error(exc)
+            raise

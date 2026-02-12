@@ -12,7 +12,12 @@ from app.core.database import get_session
 from app.core.exceptions import JournalNotFoundError
 from app.core.logging_config import log_error, log_user_action
 from app.models.user import User
-from app.schemas.journal import JournalCreate, JournalResponse, JournalUpdate
+from app.schemas.journal import (
+    JournalCreate,
+    JournalReorderRequest,
+    JournalResponse,
+    JournalUpdate,
+)
 from app.services.journal_service import JournalService
 
 router = APIRouter(prefix="/journals", tags=["journals"])
@@ -96,6 +101,46 @@ async def get_favorite_journals(
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while fetching favorite journals") from None
+
+
+@router.put(
+    "/reorder",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal not found or not owned by user"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def reorder_journals(
+    reorder_data: JournalReorderRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    """
+    Reorder journals for the current user.
+
+    Updates the position field for multiple journals in a single transaction.
+    Journals are ordered by: is_favorite DESC, position ASC NULLS LAST, created_at DESC.
+    """
+    journal_service = JournalService(session)
+    try:
+        updates = [(item.id, item.position) for item in reorder_data.updates]
+        journal_service.reorder_journals(current_user.id, updates)
+        log_user_action(
+            current_user.email,
+            f"reordered {len(updates)} journals",
+            request_id=None
+        )
+    except JournalNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from None
+    except Exception as e:
+        log_error(e, request_id=None, user_email=current_user.email)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while reordering journals"
+        ) from None
 
 
 @router.get(
