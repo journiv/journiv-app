@@ -21,6 +21,7 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, StreamingResponse
+from sqlalchemy import or_
 from sqlmodel import Session, col, select
 from starlette.background import BackgroundTask
 
@@ -43,7 +44,7 @@ from app.core.media_signing import (
 from app.core.signing import verify_media_signature
 from app.integrations.service import fetch_proxy_asset
 from app.models.user import User
-from app.schemas.entry import EntryMediaResponse
+from app.schemas.entry import EntryMediaResponse, MediaResponse, MomentMediaResponse
 from app.schemas.media import (
     ImmichImportJobResponse,
     ImmichImportRequest,
@@ -56,6 +57,11 @@ from app.schemas.media import (
 from app.services import entry_service as entry_service_module
 from app.services import media_service as media_service_module
 from app.services.import_job_service import ImportJobService
+from app.services.media_service import (
+    ImmichIntegrationInactiveError,
+    ImmichIntegrationNotConnectedError,
+)
+from app.services.moment_service import MomentNotFoundError
 
 
 async def _close_httpx_stream(response: httpx.Response) -> None:
@@ -198,7 +204,7 @@ def verify_signed_media_request(
 
 @router.post(
     "/upload",
-    response_model=EntryMediaResponse,
+    response_model=MediaResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"description": "Invalid file or validation failed"},
@@ -212,7 +218,8 @@ def verify_signed_media_request(
 async def upload_media(
     current_user: Annotated[User, Depends(get_current_user_detached)],
     file: Annotated[UploadFile, File()],
-    entry_id: Annotated[uuid.UUID, Form()],
+    entry_id: Annotated[Optional[uuid.UUID], Form()] = None,
+    moment_id: Annotated[Optional[uuid.UUID], Form()] = None,
     alt_text: Annotated[Optional[str], Form()] = None,
 ):
     """
@@ -223,10 +230,16 @@ async def upload_media(
     media_service = _get_media_service()
 
     try:
+        if entry_id is None and moment_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Either entry_id or moment_id must be provided",
+            )
         result = await media_service.upload_media(
             file=file,
             user_id=current_user.id,
             entry_id=entry_id,
+            moment_id=moment_id,
             alt_text=alt_text
         )
 
@@ -251,7 +264,10 @@ async def upload_media(
                     exc_info=True
                 )
 
-        response = EntryMediaResponse.model_validate(media_record)
+        if moment_id and not entry_id:
+            response = MomentMediaResponse.model_validate(media_record)
+        else:
+            response = EntryMediaResponse.model_validate(media_record)
         return attach_signed_urls(
             response,
             str(current_user.id),
@@ -273,10 +289,17 @@ async def upload_media(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         ) from None
-    except EntryNotFoundError:
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        ) from None
+    except (EntryNotFoundError, MomentNotFoundError):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Entry not found"
+            detail="Entry or moment not found"
         ) from None
     except Exception as e:
         error_logger.error(
@@ -786,28 +809,15 @@ async def import_from_immich_async(
     - LINK_ONLY: Creates placeholder media and processes metadata asynchronously
     - COPY: Creates placeholder media and processes downloads asynchronously
     """
-    from app.models.integration import ImportMode, Integration, IntegrationProvider
+    from app.models.integration import ImportMode
     from app.services.import_job_service import ImportJobService
 
     try:
         # 1. Verify Immich integration exists and is active
-        immich_integration = session.exec(
-            select(Integration)
-            .where(Integration.user_id == current_user.id)
-            .where(Integration.provider == IntegrationProvider.IMMICH)
-        ).first()
-
-        if not immich_integration:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Immich integration not connected. Please connect in Settings."
-            )
-
-        if not immich_integration.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Immich integration is inactive. Please reconnect in Settings."
-            )
+        media_service = _get_media_service()
+        immich_integration = media_service.require_active_immich_integration(
+            session, current_user.id
+        )
 
         # 2. Verify entry exists
         entry_service = _get_entry_service(session)
@@ -932,11 +942,13 @@ async def import_from_immich_async(
         )
 
         signed_media = [
-            attach_signed_urls(
-                EntryMediaResponse.model_validate(record),
-                str(current_user.id),
-                include_incomplete=True,
-                external_base_url=immich_integration.base_url,
+            EntryMediaResponse.model_validate(
+                attach_signed_urls(
+                    EntryMediaResponse.model_validate(record),
+                    str(current_user.id),
+                    include_incomplete=True,
+                    external_base_url=immich_integration.base_url,
+                )
             )
             for record in placeholder_media
         ]
@@ -967,6 +979,11 @@ async def import_from_immich_async(
             media=signed_media,
         )
 
+    except (ImmichIntegrationNotConnectedError, ImmichIntegrationInactiveError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     except HTTPException:
         raise
     except Exception as e:
@@ -1047,27 +1064,24 @@ async def repair_immich_thumbnails(
     Repair missing thumbnails for Immich media.
     """
     from app.models.entry import Entry, EntryMedia
-    from app.models.integration import Integration, IntegrationProvider
+    from app.models.moment import Moment
 
     try:
         # Verify Immich integration exists and is active
-        immich_integration = session.exec(
-            select(Integration)
-            .where(Integration.user_id == current_user.id)
-            .where(Integration.provider == IntegrationProvider.IMMICH)
-        ).first()
-
-        if not immich_integration or not immich_integration.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Immich integration not connected or inactive"
-            )
+        media_service = _get_media_service()
+        media_service.require_active_immich_integration(session, current_user.id)
 
         # Find EntryMedia records that need thumbnail repair
         media_to_repair = session.exec(
             select(EntryMedia)
-            .join(Entry, col(Entry.id) == col(EntryMedia.entry_id))
-            .where(Entry.user_id == current_user.id)
+            .outerjoin(Entry, col(Entry.id) == col(EntryMedia.entry_id))
+            .outerjoin(Moment, col(Moment.id) == col(EntryMedia.moment_id))
+            .where(
+                or_(
+                    col(Entry.user_id) == current_user.id,
+                    col(Moment.user_id) == current_user.id,
+                )
+            )
             .where(EntryMedia.external_provider == "immich")
             .where(col(EntryMedia.external_asset_id).is_not(None))
             .where(
@@ -1112,6 +1126,11 @@ async def repair_immich_thumbnails(
             "scheduled_count": len(media_to_repair)
         }
 
+    except (ImmichIntegrationNotConnectedError, ImmichIntegrationInactiveError) as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     except HTTPException:
         raise
     except Exception as e:

@@ -20,7 +20,6 @@ from app.core.exceptions import (
 from app.core.logging_config import log_error, log_user_action, log_warning
 from app.core.media_signing import attach_signed_urls, attach_signed_urls_to_delta
 from app.models.entry import EntryMedia
-from app.models.integration import Integration, IntegrationProvider
 from app.models.user import User
 from app.schemas.entry import (
     EntryCreate,
@@ -33,6 +32,7 @@ from app.schemas.entry import (
 )
 from app.schemas.tag import TagResponse
 from app.services.entry_service import EntryService
+from app.services.media_service import MediaService
 from app.services.tag_service import TagService
 
 router = APIRouter(prefix="/entries", tags=["entries"])
@@ -61,12 +61,7 @@ def _build_entry_responses(
             continue
         media_by_entry[media.entry_id].append(media)
 
-    immich_integration = session.exec(
-        select(Integration)
-        .where(Integration.user_id == user_id)
-        .where(Integration.provider == IntegrationProvider.IMMICH)
-    ).first()
-    immich_base_url = immich_integration.base_url if immich_integration else None
+    immich_base_url = MediaService(session).get_immich_base_url(user_id)
 
     if len(entries) != len(responses):
         raise ValueError(f"Entry response mismatch: {len(entries)} entries vs {len(responses)} responses")
@@ -588,15 +583,15 @@ async def add_media_to_entry(
     session: Annotated[Session, Depends(get_session)]
 ):
     """Add media (image/video/audio) to an entry."""
+    if media_data.moment_id is not None:
+        raise HTTPException(status_code=400, detail="moment_id is not allowed for entry media endpoint")
+    if media_data.entry_id is not None and media_data.entry_id != entry_id:
+        raise HTTPException(status_code=400, detail="entry_id does not match request path")
+    media_data.entry_id = entry_id
     entry_service = EntryService(session)
     try:
         media = entry_service.add_media_to_entry(entry_id, current_user.id, media_data)
-        immich_integration = session.exec(
-            select(Integration)
-            .where(Integration.user_id == current_user.id)
-            .where(Integration.provider == IntegrationProvider.IMMICH)
-        ).first()
-        immich_base_url = immich_integration.base_url if immich_integration else None
+        immich_base_url = MediaService(session).get_immich_base_url(current_user.id)
 
         response = EntryMediaResponse.model_validate(media)
         response = attach_signed_urls(
@@ -636,12 +631,7 @@ async def get_entry_media(
     """Get all media attached to an entry."""
     entry_service = EntryService(session)
     try:
-        immich_integration = session.exec(
-            select(Integration)
-            .where(Integration.user_id == current_user.id)
-            .where(Integration.provider == IntegrationProvider.IMMICH)
-        ).first()
-        immich_base_url = immich_integration.base_url if immich_integration else None
+        immich_base_url = MediaService(session).get_immich_base_url(current_user.id)
 
         media = entry_service.get_entry_media(entry_id, current_user.id)
 
@@ -649,10 +639,12 @@ async def get_entry_media(
         for media_item in media:
             try:
                 response = EntryMediaResponse.model_validate(media_item)
-                response = attach_signed_urls(
+                response = EntryMediaResponse.model_validate(
+                    attach_signed_urls(
                     response,
                     str(current_user.id),
                     external_base_url=immich_base_url,
+                    )
                 )
                 signed_media.append(response)
             except Exception as exc:

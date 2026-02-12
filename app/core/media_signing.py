@@ -15,7 +15,7 @@ from app.core.signing import generate_media_signature
 from app.models.entry import EntryMedia
 from app.models.enums import UploadStatus
 from app.models.integration import IntegrationProvider
-from app.schemas.entry import EntryMediaResponse, MediaOrigin
+from app.schemas.entry import EntryMediaResponse, MediaOrigin, MediaResponse
 from app.utils.quill_delta import transform_delta_media
 
 # Shared cache instance to avoid creating new Redis connections on every request
@@ -91,11 +91,11 @@ def signed_url_for_immich(
 
 
 def attach_signed_urls(
-    response: EntryMediaResponse,
+    response: MediaResponse,
     user_id: str,
     include_incomplete: bool = False,
     external_base_url: Optional[str] = None,
-) -> EntryMediaResponse:
+) -> MediaResponse:
     """
     Attach signed URLs to media response.
     """

@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime
 from typing import List, Optional, Tuple
 
-from sqlalchemy import String, cast, or_
+from sqlalchemy import String, cast, or_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, col, delete, select
 
@@ -14,7 +14,7 @@ from app.core.exceptions import EntryNotFoundError, ValidationError
 from app.core.logging_config import log_error, log_info
 from app.core.time_utils import ensure_utc, local_date_for_user, utc_now
 from app.models.activity import Activity
-from app.models.entry import Entry
+from app.models.entry import Entry, EntryMedia
 from app.models.moment import Moment, MomentMoodActivity
 from app.models.mood import Mood
 from app.schemas.entry import EntryCreate
@@ -299,6 +299,14 @@ class MomentService:
             moment.logged_at = created_entry.entry_datetime_utc
             moment.logged_date = created_entry.entry_date
             moment.logged_timezone = created_entry.entry_timezone
+            self.session.exec(
+                update(EntryMedia)
+                .where(
+                    col(EntryMedia.moment_id) == moment.id,
+                    col(EntryMedia.entry_id).is_(None),
+                )
+                .values(entry_id=created_entry.id, updated_at=utc_now())
+            )
 
         if moment_data.logged_at is not None:
             moment.logged_at = ensure_utc(moment_data.logged_at)

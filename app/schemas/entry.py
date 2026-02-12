@@ -182,6 +182,11 @@ class EntryMediaBase(BaseModel):
     upload_status: UploadStatus = UploadStatus.PENDING
     file_metadata: Optional[str] = None
 
+
+class MediaBase(EntryMediaBase):
+    """Shared media base schema."""
+
+
 class EntryMediaExternalFields(BaseModel):
     """External provider fields (internal use)."""
     external_provider: Optional[str] = None
@@ -193,13 +198,21 @@ class EntryMediaExternalFields(BaseModel):
 
 class EntryMediaCreate(EntryMediaBase, EntryMediaExternalFields):
     """Entry media creation schema."""
-    entry_id: uuid.UUID
+    entry_id: Optional[uuid.UUID] = None
+    moment_id: Optional[uuid.UUID] = None
     checksum: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_link_target(self) -> "EntryMediaCreate":
+        if self.entry_id is None and self.moment_id is None:
+            raise ValueError("entry_id or moment_id is required")
+        return self
 
 
 class EntryMediaCreateRequest(EntryMediaBase):
     """Entry media creation schema for public API."""
-    entry_id: uuid.UUID
+    entry_id: Optional[uuid.UUID] = None
+    moment_id: Optional[uuid.UUID] = None
     checksum: Optional[str] = None
 
 
@@ -219,12 +232,11 @@ class EntryMediaExternalResponseFields(BaseModel):
     external_metadata: Optional[Dict[str, Any]] = Field(default=None, exclude=True)
 
 
-class EntryMediaResponse(EntryMediaBase, EntryMediaExternalResponseFields, TimestampMixin):
-    """Entry media response schema."""
+class MediaResponseBase(MediaBase, EntryMediaExternalResponseFields, TimestampMixin):
+    """Shared media response schema."""
     file_path: Optional[str] = Field(default=None, exclude=True)
     thumbnail_path: Optional[str] = Field(default=None, exclude=True)
     id: uuid.UUID
-    entry_id: uuid.UUID
     created_at: datetime
     checksum: Optional[str] = None
     processing_error: Optional[str] = None
@@ -234,7 +246,7 @@ class EntryMediaResponse(EntryMediaBase, EntryMediaExternalResponseFields, Times
     signed_thumbnail_expires_at: Optional[int] = None
     origin: Optional[MediaOrigin] = None
 
-    @model_validator(mode='after')
+    @model_validator(mode="after")
     def validate_source_presence(self):
         """Ensure media has either local or external source."""
         if self.upload_status in {UploadStatus.PENDING, UploadStatus.FAILED}:
@@ -251,3 +263,18 @@ class EntryMediaResponse(EntryMediaBase, EntryMediaExternalResponseFields, Times
             raise ValueError("Media must have either a local file or an external source")
 
         return self
+
+
+class EntryMediaResponse(MediaResponseBase):
+    """Entry media response schema."""
+    entry_id: uuid.UUID
+    moment_id: Optional[uuid.UUID] = None
+
+
+class MomentMediaResponse(MediaResponseBase):
+    """Moment media response schema."""
+    moment_id: uuid.UUID
+    entry_id: Optional[uuid.UUID] = None
+
+
+MediaResponse = EntryMediaResponse | MomentMediaResponse

@@ -18,16 +18,18 @@ from app.models.moment import Moment, MomentMoodActivity
 from app.models.user import User
 from app.models.user_mood_preference import UserMoodPreference
 from app.schemas.activity import ActivityResponse
-from app.schemas.entry import EntryPreviewResponse
+from app.schemas.entry import EntryPreviewResponse, MomentMediaResponse
 from app.schemas.moment import (
     MomentCalendarItem,
     MomentCreate,
+    MomentMediaThumbnail,
     MomentMoodActivityResponse,
     MomentPageResponse,
     MomentResponse,
     MomentUpdate,
 )
 from app.schemas.mood import MoodResponse
+from app.services.media_service import MediaService
 from app.services.moment_service import MomentNotFoundError, MomentService
 
 router = APIRouter(prefix="/moments", tags=["moments"])
@@ -79,6 +81,9 @@ def _build_moment_response(
     session: Session,
     moment: Moment,
     current_user: User,
+    *,
+    media_count: int = 0,
+    media: List[MomentMediaThumbnail] | None = None,
 ) -> MomentResponse:
     entry_preview = None
     if moment.entry_id:
@@ -116,6 +121,8 @@ def _build_moment_response(
         location_data=moment.location_data,
         weather_data=moment.weather_data,
         mood_activity=mood_activity,
+        media_count=media_count,
+        media=media or [],
         created_at=moment.created_at,
         updated_at=moment.updated_at,
     )
@@ -125,6 +132,9 @@ def _build_moment_responses(
     session: Session,
     moments: List[Moment],
     current_user: User,
+    *,
+    media_counts: dict[uuid.UUID, int] | None = None,
+    media_map: dict[uuid.UUID, List[MomentMediaThumbnail]] | None = None,
 ) -> List[MomentResponse]:
     if not moments:
         return []
@@ -183,6 +193,8 @@ def _build_moment_responses(
                 location_data=moment.location_data,
                 weather_data=moment.weather_data,
                 mood_activity=links_map.get(moment.id, []),
+                media_count=(media_counts or {}).get(moment.id, 0),
+                media=(media_map or {}).get(moment.id, []),
                 created_at=moment.created_at,
                 updated_at=moment.updated_at,
             )
@@ -265,12 +277,15 @@ async def get_moments(
     cursor_id: Annotated[uuid.UUID | None, Query()] = None,
     start_date: Annotated[date | None, Query()] = None,
     end_date: Annotated[date | None, Query()] = None,
+    include_media: Annotated[str | None, Query()] = None,
 ):
     if (cursor_logged_at is None) ^ (cursor_id is None):
         raise HTTPException(
             status_code=400,
             detail="cursor_logged_at and cursor_id must be provided together",
         )
+    if include_media not in (None, "thumbnails"):
+        raise HTTPException(status_code=400, detail="include_media must be 'thumbnails' when provided")
     moment_service = MomentService(session)
     moments, next_cursor_logged_at, next_cursor_id = moment_service.get_moments(
         current_user.id,
@@ -280,7 +295,25 @@ async def get_moments(
         start_date=start_date,
         end_date=end_date,
     )
-    items = _build_moment_responses(session, moments, current_user)
+
+    media_counts: dict[uuid.UUID, int] = {}
+    media_map: dict[uuid.UUID, List[MomentMediaThumbnail]] = {}
+    if include_media == "thumbnails" and moments:
+        moment_ids = [moment.id for moment in moments]
+        media_service = MediaService(session)
+        media_counts, media_map = media_service.get_moment_media_thumbnails(
+            session,
+            current_user.id,
+            moment_ids,
+        )
+
+    items = _build_moment_responses(
+        session,
+        moments,
+        current_user,
+        media_counts=media_counts if include_media == "thumbnails" else None,
+        media_map=media_map if include_media == "thumbnails" else None,
+    )
     return MomentPageResponse(
         items=items,
         next_cursor_logged_at=next_cursor_logged_at,
@@ -328,3 +361,39 @@ async def get_moment_calendar(
                 moment_count=1,
             )
     return list(summary.values())
+
+
+@router.get(
+    "/{moment_id}/media",
+    response_model=List[MomentMediaResponse],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Moment not found"},
+        500: {"description": "Internal server error"},
+    }
+)
+async def get_moment_media(
+    moment_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)]
+):
+    """Get all media attached to a moment."""
+    try:
+        moment = session.exec(
+            select(Moment).where(Moment.id == moment_id, Moment.user_id == current_user.id)
+        ).first()
+        if not moment:
+            raise HTTPException(status_code=404, detail="Moment not found")
+
+        media_service = MediaService(session)
+        return media_service.get_signed_moment_media(
+            session,
+            current_user.id,
+            moment_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        log_error(exc)
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
