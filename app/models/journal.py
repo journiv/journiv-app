@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import field_validator
-from sqlalchemy import Column, ForeignKey
+from sqlalchemy import Column, ForeignKey, Integer
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import JSON, CheckConstraint, Field, Index, Relationship
@@ -47,6 +47,11 @@ class Journal(BaseModel, table=True):
     )
     is_favorite: bool = Field(default=False)
     is_archived: bool = Field(default=False)
+    position: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, nullable=True),
+        description="Custom ordering position (0-indexed, per user per favorite status)"
+    )
     entry_count: int = Field(default=0, ge=0)  # Denormalized for performance
     total_words: int = Field(default=0, ge=0)  # Denormalized for performance
     last_entry_at: Optional[datetime] = None
@@ -104,3 +109,13 @@ class Journal(BaseModel, table=True):
         except ValueError as exc:
             allowed = ", ".join(color.value for color in JournalColor)
             raise ValueError(f"Color must be one of predefined palette values: {allowed}") from exc
+
+
+# Create the ordering index after class definition to use column expression objects
+# Using __table__.c to access SQLAlchemy Column objects for proper expression support
+Index(
+    'idx_journal_user_ordering',
+    Journal.__table__.c.user_id,  # type: ignore[attr-defined]
+    Journal.__table__.c.is_favorite.desc(),  # type: ignore[attr-defined]
+    Journal.__table__.c.position.asc().nullslast(),  # type: ignore[attr-defined]
+)

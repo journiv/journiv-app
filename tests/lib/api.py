@@ -283,6 +283,15 @@ class JournivApiClient:
             expected=(200, 204),
         )
 
+    def reorder_journals(self, token: str, updates: list[Dict[str, Any]]) -> None:
+        self.request(
+            "PUT",
+            "/journals/reorder",
+            token=token,
+            json={"updates": updates},
+            expected=(204,),
+        )
+
     # ------------------------------------------------------------------ #
     # Entry helpers
     # ------------------------------------------------------------------ #
