@@ -39,10 +39,11 @@ def upgrade() -> None:
     """)
 
     # Create composite index for efficient ordering queries
-    # Note: PostgreSQL-specific index with DESC/ASC NULLS LAST operators
+    # Note: Using a simpler index syntax for SQLite compatibility
+    # NULLS LAST behavior is handled in query ORDER BY clauses instead
     op.execute("""
         CREATE INDEX idx_journal_user_ordering
-        ON journal(user_id, is_favorite DESC, position ASC NULLS LAST)
+        ON journal(user_id, is_favorite DESC, position ASC)
     """)
 
 

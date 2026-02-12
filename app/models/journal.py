@@ -113,9 +113,11 @@ class Journal(BaseModel, table=True):
 
 # Create the ordering index after class definition to use column expression objects
 # Using __table__.c to access SQLAlchemy Column objects for proper expression support
+# Note: For SQLite compatibility, we create a simpler index without NULLS LAST
+# The NULLS LAST behavior is handled in the query ORDER BY clause instead
 Index(
     'idx_journal_user_ordering',
     Journal.__table__.c.user_id,  # type: ignore[attr-defined]
     Journal.__table__.c.is_favorite.desc(),  # type: ignore[attr-defined]
-    Journal.__table__.c.position.asc().nullslast(),  # type: ignore[attr-defined]
+    Journal.__table__.c.position,  # type: ignore[attr-defined]
 )
