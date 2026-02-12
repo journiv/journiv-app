@@ -35,17 +35,34 @@ class JournalService:
         return journal
 
     def create_journal(self, user_id: uuid.UUID, journal_data: JournalCreate) -> Journal:
-        """Create a new journal for a user."""
-        journal = Journal(
-            title=journal_data.title,
-            description=journal_data.description,
-            color=journal_data.color,
-            icon=journal_data.icon,
-            user_id=user_id
-        )
+        """
+        Create a new journal for a user.
 
-        self.session.add(journal)
+        New journals are placed at position 0 in the regular (non-favorite) section,
+        and existing regular journals are shifted down by 1.
+        """
         try:
+            # Shift all existing regular journals down to make room at position 0
+            journal_attrs = cast(Any, Journal)
+            self.session.exec(
+                update(Journal)
+                .where(col(journal_attrs.user_id) == user_id)
+                .where(col(Journal.is_favorite).is_(False))
+                .where(col(journal_attrs.position).isnot(None))
+                .values(position=col(journal_attrs.position) + 1)
+            )
+
+            # Create new journal with position 0
+            journal = Journal(
+                title=journal_data.title,
+                description=journal_data.description,
+                color=journal_data.color,
+                icon=journal_data.icon,
+                user_id=user_id,
+                position=0,  # New journals appear at the top of regular section
+            )
+
+            self.session.add(journal)
             self.session.commit()
             self.session.refresh(journal)
         except SQLAlchemyError as exc:
@@ -53,7 +70,7 @@ class JournalService:
             log_error(exc)
             raise
 
-        log_info(f"Journal created for user {user_id}: {journal.id}")
+        log_info(f"Journal created for user {user_id}: {journal.id} at position 0")
         return journal
 
     def get_journal_by_id(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Journal]:

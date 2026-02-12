@@ -374,3 +374,39 @@ def test_reorder_journals_requires_auth(api_client: JournivApiClient):
         expected=(401,),
     )
     assert response.status_code == 401
+
+
+def test_new_journals_appear_at_top(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    """New journals should be created at position 0 and existing journals shifted down."""
+    # Create first journal
+    j1_id = _create_sample_journal(api_client, api_user.access_token, "Journal 1")
+
+    # Create second journal
+    j2_id = _create_sample_journal(api_client, api_user.access_token, "Journal 2")
+
+    # Create third journal
+    j3_id = _create_sample_journal(api_client, api_user.access_token, "Journal 3")
+
+    # Verify journals are in reverse creation order (newest first)
+    journals = api_client.list_journals(api_user.access_token)
+    journal_map = {j["id"]: j for j in journals}
+
+    # All should have positions set
+    assert journal_map[j1_id]["position"] is not None
+    assert journal_map[j2_id]["position"] is not None
+    assert journal_map[j3_id]["position"] is not None
+
+    # Newest journal (j3) should be at position 0
+    assert journal_map[j3_id]["position"] == 0
+    # Middle journal (j2) should be at position 1
+    assert journal_map[j2_id]["position"] == 1
+    # Oldest journal (j1) should be at position 2
+    assert journal_map[j1_id]["position"] == 2
+
+    # Verify ordering in list response (newest first)
+    assert journals[0]["id"] == j3_id
+    assert journals[1]["id"] == j2_id
+    assert journals[2]["id"] == j1_id
