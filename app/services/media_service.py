@@ -29,18 +29,22 @@ from app.core.exceptions import (
     MediaNotFoundError,
 )
 from app.core.logging_config import log_error, log_file_upload, log_info, log_warning
-from app.core.media_signing import signed_url_for_journiv
+from app.core.media_signing import attach_signed_urls, signed_url_for_journiv
 from app.models.entry import Entry, EntryMedia
 from app.models.enums import MediaType, UploadStatus
 from app.models.integration import Integration, IntegrationProvider
 from app.models.journal import Journal
+from app.models.moment import Moment
+from app.schemas.entry import MomentMediaResponse
 from app.schemas.media import (
     MediaBatchSignError,
     MediaBatchSignRequest,
     MediaBatchSignResponse,
     MediaBatchSignResult,
 )
+from app.schemas.moment import MomentMediaThumbnail
 from app.services.media_storage_service import MediaStorageService
+from app.services.moment_service import MomentNotFoundError
 from app.utils.import_export.media_handler import MediaHandler
 
 try:
@@ -52,6 +56,14 @@ except ImportError:
 # Structured logging
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class ImmichIntegrationNotConnectedError(Exception):
+    """Raised when Immich integration is not connected."""
+
+
+class ImmichIntegrationInactiveError(Exception):
+    """Raised when Immich integration is inactive."""
 
 
 class MediaService:
@@ -122,6 +134,25 @@ class MediaService:
             raise EntryNotFoundError("Entry not found")
         return entry
 
+    def _get_moment_for_user(
+        self,
+        session: Session,
+        moment_id: uuid.UUID,
+        user_id: uuid.UUID,
+    ) -> Moment:
+        statement = (
+            select(Moment)
+            .where(
+                Moment.id == moment_id,
+                Moment.user_id == user_id,
+            )
+        )
+        moment = session.exec(statement).first()
+        if not moment:
+            log_warning(f"Moment not found for user {user_id}: {moment_id}")
+            raise MomentNotFoundError("Moment not found")
+        return moment
+
     def _get_media_path(self, filename: str, media_type: MediaType | str) -> Path:
         """Get the full path for a media file."""
         media_type_lower = self._normalize_media_type(media_type)
@@ -169,6 +200,118 @@ class MediaService:
         else:
             # Unknown media types cannot generate thumbnails
             return None
+
+    def _get_immich_base_url(self, session: Session, user_id: uuid.UUID) -> str | None:
+        immich_integration = session.exec(
+            select(Integration)
+            .where(Integration.user_id == user_id)
+            .where(Integration.provider == IntegrationProvider.IMMICH)
+        ).first()
+        return immich_integration.base_url if immich_integration else None
+
+    def get_immich_base_url(self, user_id: uuid.UUID) -> str | None:
+        session = self._get_session(self.session)
+        return self._get_immich_base_url(session, user_id)
+
+    def get_immich_integration(self, session: Session, user_id: uuid.UUID) -> Integration | None:
+        return session.exec(
+            select(Integration)
+            .where(Integration.user_id == user_id)
+            .where(Integration.provider == IntegrationProvider.IMMICH)
+        ).first()
+
+    def require_active_immich_integration(self, session: Session, user_id: uuid.UUID) -> Integration:
+        integration = self.get_immich_integration(session, user_id)
+        if not integration:
+            raise ImmichIntegrationNotConnectedError(
+                "Immich integration not connected. Please connect in Settings."
+            )
+        if not integration.is_active:
+            raise ImmichIntegrationInactiveError(
+                "Immich integration is inactive. Please reconnect in Settings."
+            )
+        return integration
+
+    def get_signed_moment_media(
+        self,
+        session: Session,
+        user_id: uuid.UUID,
+        moment_id: uuid.UUID,
+        *,
+        include_incomplete: bool = False,
+    ) -> list[MomentMediaResponse]:
+        media_items = session.exec(
+            select(EntryMedia)
+            .join(Moment, col(EntryMedia.moment_id) == Moment.id)
+            .where(
+                col(EntryMedia.moment_id) == moment_id,
+                Moment.user_id == user_id,
+            )
+        ).all()
+        immich_base_url = self._get_immich_base_url(session, user_id)
+        signed_media: list[MomentMediaResponse] = []
+        for media_item in media_items:
+            try:
+                response = MomentMediaResponse.model_validate(media_item)
+                response = MomentMediaResponse.model_validate(
+                    attach_signed_urls(
+                        response,
+                        str(user_id),
+                        include_incomplete=include_incomplete,
+                        external_base_url=immich_base_url,
+                    )
+                )
+                signed_media.append(response)
+            except Exception as exc:
+                log_warning(
+                    exc,
+                    message="Failed to sign moment media item",
+                    user_id=str(user_id),
+                    moment_id=str(moment_id),
+                    media_id=str(getattr(media_item, "id", "")),
+                )
+        return signed_media
+
+    def get_moment_media_thumbnails(
+        self,
+        session: Session,
+        user_id: uuid.UUID,
+        moment_ids: list[uuid.UUID],
+    ) -> tuple[dict[uuid.UUID, int], dict[uuid.UUID, list[MomentMediaThumbnail]]]:
+        if not moment_ids:
+            return {}, {}
+        media_items = session.exec(
+            select(EntryMedia)
+            .join(Moment, col(EntryMedia.moment_id) == Moment.id)
+            .where(
+                col(EntryMedia.moment_id).in_(moment_ids),
+                Moment.user_id == user_id,
+            )
+            .order_by(col(EntryMedia.created_at).desc())
+        ).all()
+        immich_base_url = self._get_immich_base_url(session, user_id)
+        media_counts: dict[uuid.UUID, int] = {}
+        media_map: dict[uuid.UUID, list[MomentMediaThumbnail]] = {}
+        for media_item in media_items:
+            if media_item.moment_id is None:
+                continue
+            media_counts[media_item.moment_id] = media_counts.get(media_item.moment_id, 0) + 1
+            if media_item.moment_id not in media_map:
+                response = MomentMediaResponse.model_validate(media_item)
+                response = attach_signed_urls(
+                    response,
+                    str(user_id),
+                    include_incomplete=True,
+                    external_base_url=immich_base_url,
+                )
+                media_map[media_item.moment_id] = [
+                    MomentMediaThumbnail(
+                        id=response.id,
+                        media_type=response.media_type,
+                        signed_thumbnail_url=response.signed_thumbnail_url,
+                    )
+                ]
+        return media_counts, media_map
 
     def _detect_mime(self, file_content: bytes) -> str:
         """Detect MIME type from bytes, used for uploaded content."""
@@ -507,7 +650,8 @@ class MediaService:
         self,
         file: UploadFile,
         user_id: uuid.UUID,
-        entry_id: uuid.UUID,
+        entry_id: Optional[uuid.UUID] = None,
+        moment_id: Optional[uuid.UUID] = None,
         alt_text: Optional[str] = None,
         session: Optional[Session] = None
     ) -> Dict[str, Any]:
@@ -520,6 +664,7 @@ class MediaService:
             file: The uploaded file
             user_id: ID of the user uploading the file
             entry_id: ID of the entry to attach media to
+            moment_id: ID of the moment to attach media to
             alt_text: Optional alt text for the media
             session: Optional database session for creating media record
 
@@ -530,8 +675,10 @@ class MediaService:
             FileTooLargeError: If file exceeds size limit
             FileValidationError: If file validation fails
             InvalidFileTypeError: If file type is not supported
-            EntryNotFoundError: If entry doesn't exist
+            EntryNotFoundError: If entry or moment doesn't exist
         """
+        if entry_id is None and moment_id is None:
+            raise ValueError("entry_id or moment_id is required")
         # 1. Check file size before reading (if provided by upload implementation)
         await self._check_file_size(file)
 
@@ -558,6 +705,8 @@ class MediaService:
 
         temp_file = None
         temp_path = None
+        resolved_entry_id = entry_id
+        resolved_moment_id = moment_id
 
         # Outer try-finally ensures temp file cleanup on ANY exception
         try:
@@ -596,9 +745,32 @@ class MediaService:
             self._validate_streamed_upload(file_size, filename, header_bytes)
             media_type = self._detect_media_type(header_bytes)
 
-            # 4. Verify entry exists and belongs to user (short-lived session)
+            # 4. Verify entry/moment exists and belongs to user (short-lived session)
             with get_session_context() as validation_session:
-                self._get_entry_for_user(validation_session, entry_id, user_id)
+                if entry_id is not None:
+                    self._get_entry_for_user(validation_session, entry_id, user_id)
+                    linked_moment = validation_session.exec(
+                        select(Moment).where(
+                            Moment.entry_id == entry_id,
+                            Moment.user_id == user_id,
+                        )
+                    ).first()
+                    if linked_moment and resolved_moment_id is None:
+                        resolved_moment_id = linked_moment.id
+                    if resolved_moment_id is not None:
+                        moment = self._get_moment_for_user(
+                            validation_session, resolved_moment_id, user_id
+                        )
+                        if moment.entry_id and moment.entry_id != entry_id:
+                            raise ValueError("moment_id does not match entry_id")
+                        if moment.entry_id is None and linked_moment is None:
+                            raise ValueError("moment_id does not match entry_id")
+                    if linked_moment and resolved_moment_id and linked_moment.id != resolved_moment_id:
+                        raise ValueError("entry_id does not match moment_id")
+                elif moment_id is not None:
+                    moment = self._get_moment_for_user(validation_session, moment_id, user_id)
+                    if moment.entry_id is not None:
+                        resolved_entry_id = moment.entry_id
 
             # 5. Save file
             if use_temp_fallback:
@@ -631,45 +803,104 @@ class MediaService:
             # This prevents duplicate media within the same entry
             checksum = media_info.get("checksum")
             if checksum and isinstance(checksum, str) and checksum.strip():
-                existing_entry_media = db_session.exec(
-                    select(EntryMedia).where(
-                        EntryMedia.entry_id == entry_id,
-                        EntryMedia.checksum == checksum
-                    )
-                ).first()
+                existing_entry_media = None
+                if resolved_entry_id is not None:
+                    existing_entry_media = db_session.exec(
+                        select(EntryMedia).where(
+                            EntryMedia.entry_id == resolved_entry_id,
+                            EntryMedia.checksum == checksum
+                        )
+                    ).first()
+                if existing_entry_media is None and resolved_moment_id is not None:
+                    existing_entry_media = db_session.exec(
+                        select(EntryMedia).where(
+                            EntryMedia.moment_id == resolved_moment_id,
+                            EntryMedia.checksum == checksum
+                        )
+                    ).first()
 
                 if existing_entry_media:
                     log_info(
-                        "Media already associated with entry, returning existing record",
+                        "Media already associated with target, returning existing record",
                         user_id=str(user_id),
-                        entry_id=str(entry_id),
+                        entry_id=str(resolved_entry_id) if resolved_entry_id else None,
+                        moment_id=str(resolved_moment_id) if resolved_moment_id else None,
                         checksum=checksum[:16] if (checksum and len(checksum) >= 16) else checksum,
                         media_id=str(existing_entry_media.id)
                     )
-                    full_file_path_result = str(self.media_storage_service.get_full_path(existing_entry_media.file_path))
-                    db_session.expunge(existing_entry_media)
-                    media_record = existing_entry_media
+                    updated = False
+                    media_target = existing_entry_media
+                    if resolved_entry_id and media_target.entry_id is None:
+                        conflict = db_session.exec(
+                            select(EntryMedia).where(
+                                EntryMedia.entry_id == resolved_entry_id,
+                                EntryMedia.checksum == checksum,
+                            )
+                        ).first()
+                        if conflict and conflict.id != media_target.id:
+                            media_target = conflict
+                        else:
+                            media_target.entry_id = resolved_entry_id
+                            updated = True
+                    if resolved_moment_id and media_target.moment_id is None:
+                        conflict = db_session.exec(
+                            select(EntryMedia).where(
+                                EntryMedia.moment_id == resolved_moment_id,
+                                EntryMedia.checksum == checksum,
+                            )
+                        ).first()
+                        if conflict and conflict.id != media_target.id:
+                            media_target = conflict
+                        else:
+                            media_target.moment_id = resolved_moment_id
+                            updated = True
+                    if updated:
+                        db_session.add(media_target)
+                        db_session.commit()
+                        db_session.refresh(media_target)
+                    full_file_path_result = str(self.media_storage_service.get_full_path(media_target.file_path))
+                    db_session.expunge(media_target)
+                    media_record = media_target
 
             # Only process new media if no existing record was found
             if media_record is None:
-                # If file was deduplicated, try to find existing media with same checksum
+                # Try to find existing media with the same checksum for this user
                 existing_media = None
-                if media_info.get("was_deduplicated"):
+                if checksum:
                     stmt = (
                         select(EntryMedia)
-                        .join(Entry)
-                        .join(Journal)
+                        .outerjoin(Entry, col(EntryMedia.entry_id) == Entry.id)
+                        .outerjoin(Journal, col(Entry.journal_id) == Journal.id)
+                        .outerjoin(Moment, col(EntryMedia.moment_id) == Moment.id)
                         .where(
-                            EntryMedia.checksum == media_info["checksum"],
-                            Journal.user_id == user_id
+                            col(EntryMedia.checksum) == checksum,
+                            or_(
+                                Journal.user_id == user_id,
+                                Moment.user_id == user_id,
+                            ),
                         )
                     )
                     existing_media = db_session.exec(stmt).first()
 
                 if existing_media:
+                    if (
+                        not media_info.get("was_deduplicated")
+                        and media_info.get("file_path")
+                        and media_info.get("file_path") != existing_media.file_path
+                    ):
+                        try:
+                            self.media_storage_service.delete_media(
+                                relative_path=media_info["file_path"],
+                                checksum=media_info["checksum"],
+                                user_id=str(user_id),
+                                force=True,
+                            )
+                        except (RuntimeError, OSError) as delete_exc:
+                            log_warning(f"Failed to cleanup duplicate uploaded file: {delete_exc}")
                     # Reuse existing media metadata, create new record for this entry
                     media_record = EntryMedia(
-                        entry_id=entry_id,
+                        entry_id=resolved_entry_id,
+                        moment_id=resolved_moment_id,
                         media_type=existing_media.media_type,
                         file_path=existing_media.file_path,
                         original_filename=media_info["original_filename"],
@@ -696,7 +927,8 @@ class MediaService:
                 else:
                     # Create new media record
                     media_record = EntryMedia(
-                        entry_id=entry_id,
+                        entry_id=resolved_entry_id,
+                        moment_id=resolved_moment_id,
                         media_type=media_type,
                         file_path=media_info["file_path"],
                         original_filename=media_info["original_filename"],
@@ -729,21 +961,31 @@ class MediaService:
                     db_session.rollback()
                     # Check if this is the duplicate entry_media constraint violation
                     error_str = str(exc)
-                    if "uq_entry_media_entry_checksum" in error_str:
+                    if "uq_entry_media_entry_checksum" in error_str or "uq_entry_media_moment_checksum" in error_str:
                         # Race condition: media was created by concurrent request
                         checksum_value = media_info.get("checksum")
                         if checksum_value:
-                            existing = db_session.exec(
-                                select(EntryMedia).where(
-                                    EntryMedia.entry_id == entry_id,
-                                    EntryMedia.checksum == checksum_value
-                                )
-                            ).first()
+                            existing = None
+                            if resolved_entry_id is not None:
+                                existing = db_session.exec(
+                                    select(EntryMedia).where(
+                                        EntryMedia.entry_id == resolved_entry_id,
+                                        EntryMedia.checksum == checksum_value
+                                    )
+                                ).first()
+                            if existing is None and resolved_moment_id is not None:
+                                existing = db_session.exec(
+                                    select(EntryMedia).where(
+                                        EntryMedia.moment_id == resolved_moment_id,
+                                        EntryMedia.checksum == checksum_value
+                                    )
+                                ).first()
                             if existing:
                                 log_info(
                                     "Media already associated with entry (race condition), using existing record",
                                     user_id=str(user_id),
-                                    entry_id=str(entry_id),
+                                    entry_id=str(resolved_entry_id) if resolved_entry_id else None,
+                                    moment_id=str(resolved_moment_id) if resolved_moment_id else None,
                                     checksum=checksum_value[:16] if len(checksum_value) >= 16 else checksum_value,
                                     media_id=str(existing.id)
                                 )
@@ -756,7 +998,8 @@ class MediaService:
                             log_warning(
                                 "IntegrityError for entry_media constraint but existing record not found",
                                 user_id=str(user_id),
-                                entry_id=str(entry_id),
+                                entry_id=str(resolved_entry_id) if resolved_entry_id else None,
+                                moment_id=str(resolved_moment_id) if resolved_moment_id else None,
                                 checksum=checksum_value[:16] if checksum_value and len(checksum_value) >= 16 else None
                             )
 
@@ -816,9 +1059,17 @@ class MediaService:
             raise MediaNotFoundError("Invalid media ID format") from None
 
         session = self._get_session(self.session)
-        statement = select(EntryMedia).join(Entry).where(
-            EntryMedia.id == media_uuid,
-            Entry.user_id == uuid.UUID(user_id),
+        statement = (
+            select(EntryMedia)
+            .outerjoin(Entry, col(EntryMedia.entry_id) == Entry.id)
+            .outerjoin(Moment, col(EntryMedia.moment_id) == Moment.id)
+            .where(
+                EntryMedia.id == media_uuid,
+                or_(
+                    Entry.user_id == uuid.UUID(user_id),
+                    Moment.user_id == uuid.UUID(user_id),
+                ),
+            )
         )
 
         media = session.exec(statement).first()
@@ -1209,9 +1460,17 @@ class MediaService:
         Raises:
             MediaNotFoundError: If media not found or user doesn't have access
         """
-        statement = select(EntryMedia).join(Entry).where(
-            EntryMedia.id == media_id,
-            Entry.user_id == user_id,
+        statement = (
+            select(EntryMedia)
+            .outerjoin(Entry, col(EntryMedia.entry_id) == Entry.id)
+            .outerjoin(Moment, col(EntryMedia.moment_id) == Moment.id)
+            .where(col(EntryMedia.id) == media_id)
+            .where(
+                or_(
+                    Entry.user_id == user_id,
+                    Moment.user_id == user_id,
+                )
+            )
         )
         media = session.exec(statement).first()
         if not media:
@@ -1524,14 +1783,20 @@ class MediaService:
                     EntryMedia.thumbnail_path,
                     EntryMedia.media_type,
                 )
-                .join(Entry)
+                .outerjoin(Entry, col(EntryMedia.entry_id) == Entry.id)
+                .outerjoin(Moment, col(EntryMedia.moment_id) == Moment.id)
                 .where(
                     or_(
                         col(EntryMedia.id).in_(item_ids_to_query),
                         col(EntryMedia.external_asset_id).in_(query_ids_str)
                     )
                 )
-                .where(Entry.user_id == current_user_id)
+                .where(
+                    or_(
+                        Entry.user_id == current_user_id,
+                        Moment.user_id == current_user_id,
+                    )
+                )
             ).all()
             logger.info(f"Batch sign found {len(rows)} matching rows")
             logger.debug(f"Batch sign found matching rows: {rows}")

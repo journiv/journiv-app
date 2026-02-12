@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.enums import MediaType
 from app.schemas.activity import ActivityResponse
 from app.schemas.base import TimestampMixin
 from app.schemas.entry import EntryBase, EntryPreviewResponse, EntryUpdate
@@ -67,6 +68,12 @@ class MomentMoodActivityResponse(TimestampMixin):
     activity: Optional[ActivityResponse] = None
 
 
+class MomentMediaThumbnail(BaseModel):
+    id: uuid.UUID
+    media_type: MediaType
+    signed_thumbnail_url: Optional[str] = None
+
+
 class MomentResponse(TimestampMixin):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -80,6 +87,8 @@ class MomentResponse(TimestampMixin):
     location_data: Optional[Dict[str, Any]] = None
     weather_data: Optional[Dict[str, Any]] = None
     mood_activity: List[MomentMoodActivityResponse] = Field(default_factory=list)
+    media_count: int = 0
+    media: List[MomentMediaThumbnail] = Field(default_factory=list)
 
 
 class MomentCalendarItem(BaseModel):
