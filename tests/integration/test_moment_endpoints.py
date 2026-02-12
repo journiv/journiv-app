@@ -58,9 +58,18 @@ def test_moment_listing_supports_multiple_mood_filters(
     mood2 = api_client.create_mood(api_user.access_token, name="Mood2")
     mood3 = api_client.create_mood(api_user.access_token, name="Mood3")
 
-    m1 = moment_factory(primary_mood_id=mood1["id"])
-    m2 = moment_factory(primary_mood_id=mood2["id"])
-    m3 = moment_factory(primary_mood_id=mood3["id"])
+    m1 = moment_factory(
+        primary_mood_id=mood1["id"],
+        mood_activity=[{"mood_id": mood1["id"]}],
+    )
+    m2 = moment_factory(
+        primary_mood_id=mood2["id"],
+        mood_activity=[{"mood_id": mood2["id"]}],
+    )
+    m3 = moment_factory(
+        primary_mood_id=mood3["id"],
+        mood_activity=[{"mood_id": mood3["id"]}],
+    )
 
     # Filter by Mood1 OR Mood2
     results = api_client.list_moments(
