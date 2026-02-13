@@ -279,7 +279,7 @@ async def get_moments(
     end_date: Annotated[date | None, Query()] = None,
     include_media: Annotated[str | None, Query()] = None,
     journal_id: Annotated[uuid.UUID | None, Query()] = None,
-    mood_ids: Annotated[List[uuid.UUID] | None, Query()] = None,
+    mood_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
     search: Annotated[str | None, Query()] = None,
 ):
     if (cursor_logged_at is None) ^ (cursor_id is None):
@@ -298,7 +298,7 @@ async def get_moments(
         start_date=start_date,
         end_date=end_date,
         journal_id=journal_id,
-        mood_ids=mood_ids,
+        mood_ids=mood_ids if mood_ids else None,
         search=search,
     )
 
