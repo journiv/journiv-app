@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 def _create_error_stub(plus_err: str, placeholder_err: str, error_type: str = "also failed") -> type:
     """Create a no-op PlusFeatureFactory stub that raises ImportError."""
     class PlusFeatureFactory:
-        def __init__(self, signed_license: str):
+        def __init__(self, signed_license: str, bridge: Any):
             raise ImportError(
                 f"PlusFeatureFactory is unavailable. "
                 f"Plus features import failed: {plus_err}. "

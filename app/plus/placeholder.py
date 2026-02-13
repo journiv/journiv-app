@@ -19,12 +19,13 @@ class PlusFeatureFactory:
     This will always raise an error when instantiated in non Plus builds.
     In Plus builds, the real factory from plus_features.so (compiled) is used.
     """
-    def __init__(self, signed_license: str):
+    def __init__(self, signed_license: str, bridge: Any):
         """
         Placeholder constructor that always denies access.
 
         Args:
             signed_license: Signed license blob (unused in non Plus build)
+            bridge: Host bridge instance (unused in non Plus build)
 
         Raises:
             _PlaceholderError: Always raised in non Plus builds

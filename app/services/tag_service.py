@@ -2,7 +2,7 @@
 Tag service for handling tag-related operations.
 """
 import uuid
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
@@ -25,9 +25,6 @@ from app.schemas.tag import (
 )
 from app.schemas.tag_plus import (
     MonthlyUsageData,
-    TagAnalyticsRawData,
-    TagDetailAnalyticsRawData,
-    TagRawData,
 )
 
 DEFAULT_TAG_PAGE_LIMIT = 50
@@ -424,13 +421,14 @@ class TagService:
 
     def get_tag_analytics(self, user_id: uuid.UUID, plus_factory) -> TagAnalyticsResponse:
         """
-        Get advanced tag analytics with required time-series data (Journiv Plus feature).
+        Get advanced tag analytics (Journiv Plus feature).
 
-        This method performs all database queries and delegates computation to Plus.
+        Plus features pull data via the host bridge (user-scoped).
+        All database queries are handled by the bridge implementation.
 
         Args:
-            user_id: User UUID
-            plus_factory: PlusFeatureFactory instance (validated by dependency)
+            user_id: User UUID (used for bridge scoping in dependency)
+            plus_factory: PlusFeatureFactory instance with user-scoped bridge
 
         Returns:
             TagAnalyticsResponse with computed analytics from Plus
@@ -439,95 +437,12 @@ class TagService:
             PermissionError: If Plus license is invalid (should be caught by dependency)
         """
         # =====================================================================
-        # DATABASE QUERIES - Backend responsibility
-        # =====================================================================
-
-        # Total tags count
-        total_tags = self.session.exec(
-            select(func.count(Tag.id)).where(
-                Tag.user_id == user_id,
-            )
-        ).first() or 0
-
-        # Tags with usage > 0
-        used_tags = self.session.exec(
-            select(func.count(Tag.id)).where(
-                Tag.user_id == user_id,
-                Tag.usage_count > 0,
-            )
-        ).first() or 0
-
-        # All tags sorted by usage count (descending), then name (ascending)
-        # Optimization: Select only required fields to avoid ORM overhead for large number of tags
-        statement = select(
-            Tag.id, Tag.name, Tag.usage_count, Tag.created_at
-        ).where(
-            Tag.user_id == user_id,
-        ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc())
-
-        # Returns list of tuples/rows: (id, name, usage_count, created_at)
-        all_tags_rows = self.session.exec(statement).all()
-
-        # Most used tag (first in sorted list)
-        most_used_row = all_tags_rows[0] if all_tags_rows else None
-
-        # Recently created tags
-        # Optimization: Sort in memory from result to save a DB query
-        # This is safe because we already fetched all tags for the ranking distribution in Plus
-        recently_created_rows = sorted(
-            all_tags_rows,
-            key=lambda r: r.created_at,
-            reverse=True
-        )[:20]
-
-        # Average usage per tag
-        avg_usage = self.session.exec(
-            select(func.avg(Tag.usage_count)).where(
-                Tag.user_id == user_id,
-            )
-        ).first() or 0.0
-
-        # Monthly usage data (SQL-aggregated)
-        monthly_usage_raw = self._compute_usage_over_time(user_id)
-
-        # =====================================================================
-        # BUILD RAW DATA DTO
-        # =====================================================================
-
-        raw_data = TagAnalyticsRawData(
-            total_tags=total_tags,
-            used_tags=used_tags,
-            all_tags=[
-                TagRawData(
-                    id=row[0],
-                    name=row[1],
-                    usage_count=row[2]
-                )
-                for row in all_tags_rows
-            ],
-            most_used_tag=TagRawData(
-                id=most_used_row[0],
-                name=most_used_row[1],
-                usage_count=most_used_row[2]
-            ) if most_used_row else None,
-            recently_created_tags=[
-                TagRawData(
-                    id=row[0],
-                    name=row[1],
-                    usage_count=row[2]
-                )
-                for row in recently_created_rows
-            ],
-            monthly_usage_raw=monthly_usage_raw,
-            average_usage=float(avg_usage)
-        )
-
-        # =====================================================================
         # CALL PLUS SERVICE TO COMPUTE ANALYTICS
+        # Plus pulls data via bridge (all queries handled by bridge)
         # =====================================================================
 
         tag_service = plus_factory.get_tag_service()
-        plus_result = tag_service.compute_tag_analytics(raw_data)
+        plus_result = tag_service.compute_tag_analytics()
 
         # =====================================================================
         # CONVERT PLUS RESULT TO BACKEND SCHEMA
@@ -713,13 +628,13 @@ class TagService:
         """
         Get per-tag analytics with trend analysis and insights (Journiv Plus feature).
 
-        This method performs all database queries for a specific tag and delegates
-        computation to Plus.
+        Plus features pull data via the host bridge (user-scoped).
+        All database queries are handled by the bridge implementation.
 
         Args:
             tag_id: Tag UUID
-            user_id: User UUID
-            plus_factory: PlusFeatureFactory instance (validated by dependency)
+            user_id: User UUID (used for bridge scoping in dependency)
+            plus_factory: PlusFeatureFactory instance with user-scoped bridge
             days: Number of days to analyze (default: 365)
 
         Returns:
@@ -738,65 +653,16 @@ class TagService:
             raise TagNotFoundError("Tag not found")
 
         # =====================================================================
-        # DATABASE QUERIES - Backend responsibility
-        # =====================================================================
-
-        # Calculate date range for analysis
-        cutoff_date = utc_now().date() - timedelta(days=days)
-
-        # Total usage count for this tag (all time)
-        total_usage_count = tag.usage_count
-
-        # Monthly usage data (SQL-aggregated)
-        monthly_usage_raw = self._compute_usage_over_time(
-            user_id=user_id,
-            tag_id=tag_id,
-            start_date=cutoff_date
-        )
-
-        # Get first and last usage dates for this tag
-        first_used_query = select(func.min(Entry.entry_datetime_utc)).select_from(
-            EntryTagLink
-        ).join(
-            Entry, Entry.id == EntryTagLink.entry_id
-        ).where(
-            EntryTagLink.tag_id == tag_id,
-            Entry.user_id == user_id,
-            col(Entry.is_draft).is_(False),
-        )
-        first_used = self.session.exec(first_used_query).first()
-
-        last_used_query = select(func.max(Entry.entry_datetime_utc)).select_from(
-            EntryTagLink
-        ).join(
-            Entry, Entry.id == EntryTagLink.entry_id
-        ).where(
-            EntryTagLink.tag_id == tag_id,
-            Entry.user_id == user_id,
-            col(Entry.is_draft).is_(False),
-        )
-        last_used = self.session.exec(last_used_query).first()
-
-        # =====================================================================
-        # BUILD RAW DATA DTO
-        # =====================================================================
-
-        raw_data = TagDetailAnalyticsRawData(
-            tag_id=tag_id,
-            tag_name=tag.name,
-            total_usage_count=total_usage_count,
-            monthly_usage=monthly_usage_raw,
-            first_used=first_used,
-            last_used=last_used,
-            days_requested=days
-        )
-
-        # =====================================================================
         # CALL PLUS SERVICE TO COMPUTE ANALYTICS
+        # Plus pulls data via bridge (all queries handled by bridge)
         # =====================================================================
 
         tag_service = plus_factory.get_tag_service()
-        plus_result = tag_service.compute_tag_detail_analytics(raw_data)
+        plus_result = tag_service.compute_tag_detail_analytics(
+            tag_id=str(tag_id),
+            tag_name=tag.name,
+            days=days
+        )
 
         # =====================================================================
         # CONVERT PLUS RESULT TO BACKEND SCHEMA

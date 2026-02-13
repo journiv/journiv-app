@@ -271,10 +271,13 @@ async def get_current_admin_user(
 
 
 async def get_plus_factory(
+    current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
     """
-    Dependency to get PlusFeatureFactory instance.
+    Dependency to get PlusFeatureFactory instance with host bridge.
+
+    Creates a user-scoped bridge for privacy-preserving data access.
 
     Raises:
         HTTPException 403: If license is not found or validation fails
@@ -285,6 +288,7 @@ async def get_plus_factory(
         # Import Plus components
         from app.models.instance_detail import InstanceDetail
         from app.plus import PLUS_FEATURES_AVAILABLE, PlusFeatureFactory
+        from app.plus.bridge_impl import JournivBridge
 
         # Check if Plus features are available in this build
         if not PLUS_FEATURES_AVAILABLE:
@@ -322,11 +326,16 @@ async def get_plus_factory(
                 }
             )
 
-        # Create and return factory
+        # Create host bridge for this user session
+        # All bridge operations are automatically scoped to current_user.id
+        bridge = JournivBridge(db=session, user_id=current_user.id)
+
+        # Create and return factory with bridge
         # Factory generates platform_id internally for hardware change detection
         try:
             factory = PlusFeatureFactory(
-                signed_license=instance.signed_license
+                signed_license=instance.signed_license,
+                bridge=bridge
             )
             return factory
 
