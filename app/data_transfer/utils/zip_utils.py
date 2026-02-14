@@ -95,12 +95,18 @@ def safe_extract_zip(
                 continue
             if len(info.filename) > max_filename_length:
                 raise ValueError(f"Filename too long: {info.filename[:50]}...")
-            if info.filename.startswith("/") or ".." in info.filename.split("/"):
+
+            # Normalize filename by stripping leading slashes (common in Daylio exports)
+            # This is safe because we still validate the path doesn't escape the extract directory
+            normalized_filename = info.filename.lstrip("/")
+
+            # Check for path traversal after normalization
+            if ".." in normalized_filename.split("/"):
                 raise ValueError(f"ZIP contains unsafe path: {info.filename}")
-            if "\x00" in info.filename:
+            if "\x00" in normalized_filename:
                 raise ValueError(f"ZIP contains invalid filename: {info.filename}")
 
-            dest_path = (extract_to / info.filename).resolve()
+            dest_path = (extract_to / normalized_filename).resolve()
             try:
                 dest_path.relative_to(extract_root)
             except ValueError:
@@ -109,7 +115,7 @@ def safe_extract_zip(
             if info.external_attr >> 16 & 0o170000 == 0o120000:
                 raise ValueError(f"ZIP contains symlink: {info.filename}")
 
-            file_ext = os.path.splitext(info.filename.lower())[1]
+            file_ext = os.path.splitext(normalized_filename.lower())[1]
             if file_ext and file_ext not in allowed_exts:
                 log_warning(
                     f"Skipping file with unsupported extension: {info.filename}",
@@ -119,4 +125,6 @@ def safe_extract_zip(
                 continue
 
             dest_path.parent.mkdir(parents=True, exist_ok=True)
+            # Extract with normalized filename
+            info.filename = normalized_filename
             zipf.extract(info, extract_to)
