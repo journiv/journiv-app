@@ -100,6 +100,10 @@ def safe_extract_zip(
             # This is safe because we still validate the path doesn't escape the extract directory
             normalized_filename = info.filename.lstrip("/")
 
+            # Reject empty filenames after normalization
+            if not normalized_filename:
+                raise ValueError(f"ZIP contains invalid empty filename: {info.filename}")
+
             # Check for path traversal after normalization
             if ".." in normalized_filename.split("/"):
                 raise ValueError(f"ZIP contains unsafe path: {info.filename}")
