@@ -448,6 +448,19 @@ class DaylioToJournivMapper:
         logged_date = date(day_entry.year, day_entry.month + 1, day_entry.day)
 
         mood_activity = []
+
+        # Add mood to mood_activity if present
+        if day_entry.mood is not None:
+            mood_activity.append(
+                MomentMoodActivityDTO(
+                    mood_name=None,
+                    activity_name=None,
+                    mood_external_id=str(day_entry.mood),
+                    activity_external_id=None,
+                )
+            )
+
+        # Add activities
         for tag_id in day_entry.tags or []:
             mood_activity.append(
                 MomentMoodActivityDTO(
