@@ -13,7 +13,7 @@ from typing import Optional, Tuple
 
 from app.core.config import settings
 from app.core.logging_config import log_error, log_info, log_warning
-from app.data_transfer.utils.zip_utils import prepare_extract_dir, safe_extract_zip
+from app.utils.import_export.zip_handler import ZipHandler
 
 from .models import DaylioBackup
 
@@ -40,17 +40,14 @@ class DaylioParser:
                 raise ValueError(f"ZIP path is not a file: {zip_path}")
 
         try:
-            if not is_already_extracted:
-                prepare_extract_dir(extract_to)
+
 
             if not is_already_extracted:
-                max_bytes = settings.import_export_max_file_size_mb * 1024 * 1024
-                safe_extract_zip(
-                    zip_path,
-                    extract_to,
-                    allowed_extensions=ALLOWED_EXTENSIONS,
-                    max_filename_length=MAX_FILENAME_LENGTH,
-                    max_total_size_bytes=max_bytes,
+                ZipHandler.extract_zip(
+                    zip_path=zip_path,
+                    extract_to=extract_to,
+                    max_size_mb=settings.import_export_max_file_size_mb,
+                    source_type="daylio"
                 )
 
                 log_info(f"Extracted Daylio ZIP to {extract_to}", extract_path=str(extract_to))

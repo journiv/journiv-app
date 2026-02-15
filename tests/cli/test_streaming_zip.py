@@ -6,6 +6,7 @@ Tests the memory-efficient stream_extract() method.
 import pytest
 import zipfile
 import tempfile
+import unittest.mock
 from pathlib import Path
 
 from app.utils.import_export.zip_handler import ZipHandler
@@ -15,10 +16,13 @@ class TestStreamingZip:
     """Test streaming ZIP extraction."""
 
     @pytest.fixture
-    def temp_dir(self):
+    def temp_dir(self, monkeypatch):
         """Create temporary directory for tests."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
+            path = Path(tmpdir)
+            # Patch settings to allow extraction to this temp dir
+            monkeypatch.setattr("app.core.config.settings.import_temp_dir", str(path))
+            yield path
 
     @pytest.fixture
     def sample_zip(self, temp_dir):
@@ -117,14 +121,41 @@ class TestStreamingZip:
 
         extract_to = temp_dir / "extracted"
 
-        # Should raise ValueError or IOError for exceeding size
-        with pytest.raises((ValueError, IOError), match="ZIP too large"):
+        # Should raise ValueError for exceeding size
+        with pytest.raises(ValueError, match="ZIP too large"):
             ZipHandler.stream_extract(
                 zip_path=zip_path,
                 extract_to=extract_to,
                 max_size_mb=5,  # Limit to 5MB
                 validate_media=False,
             )
+
+    def test_stream_extract_max_files_ignores_dirs(self, temp_dir):
+        """Test that directories are not counted towards max_files limit."""
+        zip_path = temp_dir / "many_dirs.zip"
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.writestr("data.json", "{}")
+            # Add 4 more files (total 5 files)
+            for i in range(4):
+                zipf.writestr(f"file_{i}.txt", b"data")
+
+            # Add 10 directories
+            for i in range(10):
+                # ZipInfo with trailing slash is treated as directory
+                info = zipfile.ZipInfo(f"dir_{i}/")
+                zipf.writestr(info, b"")
+
+        extract_to = temp_dir / "extracted_dirs"
+
+        # Should succeed with max_files=5 (5 files + 10 dirs)
+        # If dirs were counted, this would be 15 > 5 and fail
+        ZipHandler.stream_extract(
+            zip_path=zip_path,
+            extract_to=extract_to,
+            max_size_mb=10,
+            validate_media=False,
+        )
 
     def test_stream_extract_path_traversal(self, temp_dir):
         """Test path traversal protection."""
@@ -137,8 +168,8 @@ class TestStreamingZip:
 
         extract_to = temp_dir / "extracted"
 
-        # Should raise ValueError or IOError for unsafe path
-        with pytest.raises((ValueError, IOError), match="unsafe path"):
+        # Should raise ValueError for unsafe path
+        with pytest.raises(ValueError, match="unsafe path"):
             ZipHandler.stream_extract(
                 zip_path=zip_path,
                 extract_to=extract_to,
@@ -182,3 +213,56 @@ class TestStreamingZip:
                 max_size_mb=10,
                 validate_media=False,
             )
+
+    def test_stream_extract_symlink(self, temp_dir):
+        """Test symlink detection."""
+        zip_path = temp_dir / "symlink.zip"
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.writestr("data.json", '{"journals": []}')
+            # Create a symlink entry
+            info = zipfile.ZipInfo("link_to_passwd")
+            info.create_system = 3  # Unix
+            info.external_attr = 0o120000 << 16  # Symlink
+            zipf.writestr(info, "/etc/passwd")
+
+        extract_to = temp_dir / "extracted"
+
+        with pytest.raises(ValueError, match="ZIP contains symlink"):
+            ZipHandler.stream_extract(
+                zip_path=zip_path,
+                extract_to=extract_to,
+                max_size_mb=10,
+                validate_media=False,
+            )
+
+    def test_stream_extract_null_byte_filename(self, temp_dir):
+        """Test null byte in filename detection (using mock since zipfile sanitizes on read)."""
+        zip_path = temp_dir / "null_byte.zip"
+
+        # Create a valid zip first
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.writestr("data.json", '{"journals": []}')
+
+        extract_to = temp_dir / "extracted"
+
+        # Mock zipfile.ZipFile to return an entry with null byte
+        with unittest.mock.patch('zipfile.ZipFile') as MockZipFile:
+            mock_zip = MockZipFile.return_value.__enter__.return_value
+            mock_zip.testzip.return_value = None
+
+            # Create info with null byte (assign directly to bypass sanitization)
+            bad_info = zipfile.ZipInfo("malicious_file.txt")
+            bad_info.filename = "malicious\x00file.txt"
+            bad_info.file_size = 10
+
+            # Mock infolist to return our bad info
+            mock_zip.infolist.return_value = [bad_info]
+
+            with pytest.raises(ValueError, match="ZIP contains invalid filename"):
+                ZipHandler.stream_extract(
+                    zip_path=zip_path,
+                    extract_to=extract_to,
+                    max_size_mb=10,
+                    validate_media=False,
+                )

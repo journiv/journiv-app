@@ -11,7 +11,7 @@ from typing import Dict, List, Optional, Tuple
 
 from app.core.config import settings
 from app.core.logging_config import log_error, log_info, log_warning
-from app.data_transfer.utils.zip_utils import prepare_extract_dir, safe_extract_zip
+from app.utils.import_export.zip_handler import ZipHandler
 
 from .models import DayOneExport, DayOneJournal
 
@@ -110,11 +110,11 @@ class DayOneParser:
 
         try:
             if not is_already_extracted:
-                prepare_extract_dir(extract_to)
+                ZipHandler.prepare_extract_dir(extract_to)
 
             if not is_already_extracted:
                 max_bytes = settings.import_export_max_file_size_mb * 1024 * 1024
-                safe_extract_zip(
+                ZipHandler.safe_extract(
                     zip_path,
                     extract_to,
                     allowed_extensions=ALLOWED_EXTENSIONS,
