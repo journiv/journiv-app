@@ -39,8 +39,9 @@ def test_media_handler_quicktime_support():
     assert MediaHandler.MIME_TYPE_MAP[".mov"] == "video/quicktime"
     assert ".mov" in MediaHandler.VIDEO_EXTENSIONS
 
+@patch("app.utils.import_export.zip_handler.ZipHandler.prepare_extract_dir")
 @patch("zipfile.ZipFile")
-def test_zip_handler_stream_extract_warning_categorization(mock_zipfile):
+def test_zip_handler_stream_extract_warning_categorization(mock_zipfile, mock_prepare_extract_dir):
     """Test that stream_extract categorizes validation warnings."""
     # Setup mock zip info
     mock_info = MagicMock()
@@ -81,8 +82,9 @@ def test_zip_handler_stream_extract_warning_categorization(mock_zipfile):
             # Verify the invalid file was unlinked
             assert mock_unlink.called
 
+@patch("app.utils.import_export.zip_handler.ZipHandler.prepare_extract_dir")
 @patch("zipfile.ZipFile")
-def test_zip_handler_stream_extract_direct_to_media_dest(mock_zipfile):
+def test_zip_handler_stream_extract_direct_to_media_dest(mock_zipfile, mock_prepare_extract_dir):
     """Test that media files are extracted directly to media_dest when provided."""
     # Setup mock zip info for a media file
     mock_info = MagicMock()

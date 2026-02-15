@@ -121,8 +121,8 @@ class TestStreamingZip:
 
         extract_to = temp_dir / "extracted"
 
-        # Should raise ValueError or IOError for exceeding size
-        with pytest.raises((ValueError, IOError), match="ZIP too large"):
+        # Should raise ValueError for exceeding size
+        with pytest.raises(ValueError, match="ZIP too large"):
             ZipHandler.stream_extract(
                 zip_path=zip_path,
                 extract_to=extract_to,
@@ -141,8 +141,8 @@ class TestStreamingZip:
 
         extract_to = temp_dir / "extracted"
 
-        # Should raise ValueError or IOError for unsafe path
-        with pytest.raises((ValueError, IOError), match="unsafe path"):
+        # Should raise ValueError for unsafe path
+        with pytest.raises(ValueError, match="unsafe path"):
             ZipHandler.stream_extract(
                 zip_path=zip_path,
                 extract_to=extract_to,
@@ -201,8 +201,8 @@ class TestStreamingZip:
 
         extract_to = temp_dir / "extracted"
 
-        with pytest.raises((ValueError, IOError), match="ZIP contains symlink"):
-             ZipHandler.stream_extract(
+        with pytest.raises(ValueError, match="ZIP contains symlink"):
+            ZipHandler.stream_extract(
                 zip_path=zip_path,
                 extract_to=extract_to,
                 max_size_mb=10,
@@ -232,7 +232,7 @@ class TestStreamingZip:
             # Mock infolist to return our bad info
             mock_zip.infolist.return_value = [bad_info]
 
-            with pytest.raises((ValueError, IOError), match="ZIP contains invalid filename"):
+            with pytest.raises(ValueError, match="ZIP contains invalid filename"):
                 ZipHandler.stream_extract(
                     zip_path=zip_path,
                     extract_to=extract_to,

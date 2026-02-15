@@ -623,6 +623,9 @@ class ZipHandler:
                     "warning_categories": warning_categories,
                 }
 
+        except ValueError:
+            # Propagate validation errors directly (e.g. size limit, unsafe path)
+            raise
         except zipfile.BadZipFile as e:
             raise ValueError(f"Invalid ZIP file: {e}") from e
         except Exception as e:
