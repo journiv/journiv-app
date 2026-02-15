@@ -13,7 +13,6 @@ from typing import Optional, Tuple
 
 from app.core.config import settings
 from app.core.logging_config import log_error, log_info, log_warning
-
 from app.utils.import_export.zip_handler import ZipHandler
 
 from .models import DaylioBackup
@@ -44,7 +43,6 @@ class DaylioParser:
 
 
             if not is_already_extracted:
-                max_bytes = settings.import_export_max_file_size_mb * 1024 * 1024
                 ZipHandler.extract_zip(
                     zip_path=zip_path,
                     extract_to=extract_to,

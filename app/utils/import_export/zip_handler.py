@@ -298,7 +298,7 @@ class ZipHandler:
                 "file_count": file_count
             }
 
-        except ValueError as e:
+        except ValueError:
             # Re-raise validation errors directly
             raise
         except Exception as e:
@@ -387,7 +387,7 @@ class ZipHandler:
                 for filename in file_list:
                     # Normalize filename by checking against stripped version
                     normalized = filename.lstrip("/")
-                    if ".." in normalized:
+                    if ".." in normalized.split("/"):
                         result["valid"] = False
                         result["errors"].append(f"Unsafe path in ZIP: {filename}")
 
