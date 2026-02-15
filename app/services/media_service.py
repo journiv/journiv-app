@@ -992,6 +992,7 @@ class MediaService:
                         file_size=existing_media.file_size,
                         mime_type=existing_media.mime_type,
                         thumbnail_path=existing_media.thumbnail_path,
+                        display_path=existing_media.display_path,
                         alt_text=alt_text,
                         upload_status=existing_media.upload_status,
                         file_metadata=existing_media.file_metadata,
