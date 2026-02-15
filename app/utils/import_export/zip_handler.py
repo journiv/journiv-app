@@ -6,16 +6,19 @@ Handles creation and extraction of ZIP archives for data exports/imports.
 import gc
 import json
 import logging
+import os
 import shutil
 import zipfile
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from app.core.config import settings
 from app.core.logging_config import log_error, log_warning
 from app.utils.import_export.media_handler import MediaHandler
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MAX_FILES = 50000
 
 
 class ZipHandler:
@@ -27,6 +30,131 @@ class ZipHandler:
     - Extracting ZIP archives safely
     - Validating ZIP contents
     """
+
+    @staticmethod
+    def _ensure_within_base_dir(extract_to: Path, base_temp_dir: Path) -> None:
+        try:
+            if not extract_to.is_relative_to(base_temp_dir):
+                log_error(
+                    "Extraction path outside allowed base directory",
+                    extract_path=str(extract_to),
+                    base_dir=str(base_temp_dir),
+                )
+                raise ValueError(
+                    f"Extraction path must be within {base_temp_dir}, got {extract_to}"
+                )
+        except AttributeError:
+            try:
+                extract_to.relative_to(base_temp_dir)
+            except ValueError:
+                log_error(
+                    "Extraction path outside allowed base directory",
+                    extract_path=str(extract_to),
+                    base_dir=str(base_temp_dir),
+                )
+                raise ValueError(
+                    f"Extraction path must be within {base_temp_dir}, got {extract_to}"
+                ) from None
+
+    @staticmethod
+    def prepare_extract_dir(extract_to: Path) -> None:
+        """Validate and prepare the extraction directory."""
+        base_temp_dir = Path(settings.import_temp_dir).resolve()
+        extract_to_resolved = extract_to.resolve()
+
+        root_path = Path("/")
+        home_path = Path.home()
+        if (extract_to_resolved == root_path or
+            extract_to_resolved == home_path or
+            (os.name == "nt" and len(extract_to_resolved.parts) == 1 and extract_to_resolved.drive)):
+            log_error(
+                "Unsafe extraction path detected",
+                extract_path=str(extract_to_resolved),
+            )
+            raise ValueError(f"Unsafe extraction path: {extract_to_resolved}")
+
+        ZipHandler._ensure_within_base_dir(extract_to_resolved, base_temp_dir)
+
+        if extract_to.exists():
+            shutil.rmtree(extract_to)
+        extract_to.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def safe_extract(
+        zip_path: Path,
+        extract_to: Path,
+        *,
+        allowed_extensions: Optional[Iterable[str]] = None,
+        max_filename_length: int = 255,
+        max_total_size_bytes: int = 500 * 1024 * 1024,  # Default 500MB
+        max_files: int = DEFAULT_MAX_FILES,
+    ) -> None:
+        """
+        Safely extract a ZIP file after validating entries.
+
+        Using this method is preferred over extract_zip when precise control
+        over allowed extensions and limits is needed.
+        """
+        with zipfile.ZipFile(zip_path, "r") as zipf:
+            corrupt_file = zipf.testzip()
+            if corrupt_file is not None:
+                raise ValueError(f"ZIP file is corrupted: {corrupt_file}")
+
+            total_size = sum(info.file_size for info in zipf.infolist())
+            if total_size > max_total_size_bytes:
+                raise ValueError(
+                    f"ZIP too large: {total_size / (1024*1024):.1f}MB "
+                    f"(max: {max_total_size_bytes / (1024*1024):.0f}MB)"
+                )
+
+            extract_root = extract_to.resolve()
+            file_count = 0
+            allowed_exts = {ext.lower() for ext in allowed_extensions} if allowed_extensions else None
+
+            for info in zipf.infolist():
+                file_count += 1
+                if file_count > max_files:
+                    raise ValueError(f"ZIP contains too many files (max: {max_files})")
+                if info.is_dir():
+                    continue
+                if len(info.filename) > max_filename_length:
+                    raise ValueError(f"Filename too long: {info.filename[:50]}...")
+
+                # Normalize filename by stripping leading slashes (common in some ZIPs)
+                normalized_filename = info.filename.lstrip("/")
+
+                # Reject empty filenames
+                if not normalized_filename:
+                    raise ValueError(f"ZIP contains invalid empty filename: {info.filename}")
+
+                # Check for path traversal
+                if ".." in normalized_filename.split("/"):
+                    raise ValueError(f"ZIP contains unsafe path: {info.filename}")
+                if "\x00" in normalized_filename:
+                    raise ValueError(f"ZIP contains invalid filename: {info.filename}")
+
+                dest_path = (extract_to / normalized_filename).resolve()
+                try:
+                    dest_path.relative_to(extract_root)
+                except ValueError:
+                    raise ValueError(f"ZIP contains unsafe path: {info.filename}") from None
+
+                if info.external_attr >> 16 & 0o170000 == 0o120000:
+                    raise ValueError(f"ZIP contains symlink: {info.filename}")
+
+                file_ext = os.path.splitext(normalized_filename.lower())[1]
+                if allowed_exts is not None and file_ext and file_ext not in allowed_exts:
+                    log_warning(
+                        f"Skipping file with unsupported extension: {info.filename}",
+                        filename=info.filename,
+                        extension=file_ext,
+                    )
+                    continue
+
+                dest_path.parent.mkdir(parents=True, exist_ok=True)
+                # Extract with normalized filename
+                info.filename = normalized_filename
+                zipf.extract(info, extract_to)
 
     @staticmethod
     def create_export_zip(
@@ -125,72 +253,54 @@ class ZipHandler:
             IOError: If extraction fails
         """
         try:
+            # Use safe_extract for core extraction logic
+            # This handles structure validation, size checks, and path normalization
+            max_bytes = max_size_mb * 1024 * 1024
+            ZipHandler.prepare_extract_dir(extract_to)
+            ZipHandler.safe_extract(
+                zip_path,
+                extract_to,
+                max_total_size_bytes=max_bytes,
+                # extraction_zip allows all extensions by default for generic imports
+                allowed_extensions=None
+            )
+
+            # Post-extraction: locate data files and gather stats
+            # We need to open the zip again to get stats, or trust file system.
+            # Using ZipFile to get accurate file count and original size.
             with zipfile.ZipFile(zip_path, 'r') as zipf:
-                # Validate ZIP
-                if zipf.testzip() is not None:
-                    raise ValueError("ZIP file is corrupted")
-
-                # Check total uncompressed size
                 total_size = sum(info.file_size for info in zipf.infolist())
-                max_bytes = max_size_mb * 1024 * 1024
+                file_count = len(zipf.infolist())
 
-                if total_size > max_bytes:
-                    raise ValueError(
-                        f"ZIP too large: {total_size / (1024*1024):.1f}MB "
-                        f"(max: {max_size_mb}MB)"
-                    )
+            # Find data file and media directory based on source type
+            if source_type == "dayone":
+                # Day One has various JSON files at root
+                root_json_files = list(extract_to.glob("*.json"))
+                data_file = root_json_files[0] if root_json_files else None
+                media_dir = extract_to
+            elif source_type == "daylio":
+                data_file = extract_to / "backup.daylio"
+                media_dir = extract_to / "assets"
+            else:
+                data_file = extract_to / "data.json"
+                media_dir = extract_to / "media"
 
-                # Ensure extract_to directory exists
-                extract_to.mkdir(parents=True, exist_ok=True)
-                extract_to_resolved = extract_to.resolve()
+            if not data_file:
+                raise ValueError(f"ZIP missing JSON data file (source: {source_type or 'journiv'})")
 
-                # Check for path traversal attacks
-                for info in zipf.infolist():
-                    # Build extraction path and normalize to detect traversal attempts
-                    extract_path = (extract_to / info.filename).resolve()
+            if not data_file.exists():
+                raise ValueError(f"Extracted data file not found: {data_file}")
 
-                    # Ensure it's within extract_to (prevents path traversal)
-                    # Use proper path containment check, not string prefix matching
-                    try:
-                        extract_path.relative_to(extract_to_resolved)
-                    except ValueError:
-                        # Path is outside extract_to directory
-                        raise ValueError(
-                            f"ZIP contains unsafe path: {info.filename}"
-                        ) from None
+            return {
+                "data_file": data_file,
+                "media_dir": media_dir if media_dir and media_dir.exists() else None,
+                "total_size": total_size,
+                "file_count": file_count
+            }
 
-                # Extract all files
-                zipf.extractall(extract_to)
-
-                # Find data file and media directory
-                if source_type == "dayone":
-                    # Day One has various JSON files at root, handled by DayOneParser
-                    # We just need to find one to satisfy basic validation here
-                    root_json_files = list(extract_to.glob("*.json"))
-                    data_file = root_json_files[0] if root_json_files else None
-                    media_dir = extract_to # Day One media are in photos/ videos/ at root
-                elif source_type == "daylio":
-                    data_file = extract_to / "backup.daylio"
-                    media_dir = extract_to / "assets"
-                else:
-                    data_file = extract_to / "data.json"
-                    media_dir = extract_to / "media"
-
-                if not data_file:
-                    raise ValueError(f"ZIP missing JSON data file (source: {source_type or 'journiv'})")
-
-                if not data_file.exists():
-                    raise ValueError(f"Extracted data file not found: {data_file}")
-
-                return {
-                    "data_file": data_file,
-                    "media_dir": media_dir if media_dir.exists() else None,
-                    "total_size": total_size,
-                    "file_count": len(zipf.infolist())
-                }
-
-        except zipfile.BadZipFile as e:
-            raise ValueError(f"Invalid ZIP file: {e}") from e
+        except ValueError as e:
+            # Re-raise validation errors directly
+            raise
         except Exception as e:
             log_error(e, zip_path=str(zip_path), extract_to=str(extract_to))
             raise IOError(f"Extraction failed: {e}") from e
@@ -275,7 +385,9 @@ class ZipHandler:
 
                 # Check for path traversal
                 for filename in file_list:
-                    if ".." in filename or filename.startswith("/"):
+                    # Normalize filename by checking against stripped version
+                    normalized = filename.lstrip("/")
+                    if ".." in normalized:
                         result["valid"] = False
                         result["errors"].append(f"Unsafe path in ZIP: {filename}")
 
@@ -373,13 +485,16 @@ class ZipHandler:
                     if info.is_dir():
                         continue
 
-                    # Determine if this is a media file
+                    # Normalize filename
+                    normalized_filename = info.filename.lstrip("/")
+
+                    # Determine if this is a media file (using normalized name)
                     if source_type == "dayone":
-                        is_media_file = any(info.filename.lower().startswith(p) for p in ["photos/", "videos/"])
+                        is_media_file = any(normalized_filename.lower().startswith(p) for p in ["photos/", "videos/"])
                     elif source_type == "daylio":
-                        is_media_file = info.filename.lower().startswith("assets/")
+                        is_media_file = normalized_filename.lower().startswith("assets/")
                     else:
-                        is_media_file = info.filename.startswith("media/")
+                        is_media_file = normalized_filename.startswith("media/")
 
                     # Choose destination based on zero-copy strategy
                     if is_media_file and media_dest:
@@ -389,17 +504,17 @@ class ZipHandler:
 
                         if source_type == "dayone":
                             # For Day One, preserve photos/ or videos/ directories
-                            relative_path = Path(info.filename)
+                            relative_path = Path(normalized_filename)
                         elif source_type == "daylio":
-                            relative_path = Path(info.filename)
+                            relative_path = Path(normalized_filename)
                         else:
-                            relative_path = Path(info.filename).relative_to("media")
+                            relative_path = Path(normalized_filename).relative_to("media")
 
                         target_path = (media_dest / relative_path).resolve()
                     else:
                         # Extract data.json and other files to temp
                         target_dir = extract_to
-                        target_path = (extract_to / info.filename).resolve()
+                        target_path = (extract_to / normalized_filename).resolve()
 
                     # Path traversal check
                     try:
