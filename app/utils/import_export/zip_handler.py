@@ -112,11 +112,11 @@ class ZipHandler:
             allowed_exts = {ext.lower() for ext in allowed_extensions} if allowed_extensions else None
 
             for info in zipf.infolist():
+                if info.is_dir():
+                    continue
                 file_count += 1
                 if file_count > max_files:
                     raise ValueError(f"ZIP contains too many files (max: {max_files})")
-                if info.is_dir():
-                    continue
                 if len(info.filename) > max_filename_length:
                     raise ValueError(f"Filename too long: {info.filename[:50]}...")
 
