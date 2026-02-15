@@ -212,6 +212,7 @@ class ImportJobService:
         file_size = (file_info or {}).get("file_size") or metadata.get("file_size")
         checksum = (file_info or {}).get("checksum")
         thumbnail_path = (file_info or {}).get("thumbnail_path")
+        display_path = (file_info or {}).get("display_path")
 
         if existing:
             # Update existing record
@@ -241,6 +242,8 @@ class ImportJobService:
                 existing.checksum = checksum
             if thumbnail_path:
                 existing.thumbnail_path = thumbnail_path
+            if display_path:
+                existing.display_path = display_path
 
             existing.upload_status = upload_status
 
@@ -259,6 +262,7 @@ class ImportJobService:
             original_filename=metadata.get("original_filename") or f"Immich asset {asset_id[:8]}",
             mime_type=metadata.get("mime_type") or "application/octet-stream",
             thumbnail_path=thumbnail_path,
+            display_path=display_path,
             checksum=checksum,
             duration=metadata.get("duration"),
             width=metadata.get("width"),
@@ -432,7 +436,15 @@ class ImportJobService:
                 break
         return None
 
-
+    @staticmethod
+    async def _save_bytes_to_path(content: bytes, target_path: Path) -> None:
+        """Write bytes to a target path atomically via a temp file."""
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = target_path.with_suffix(".tmp")
+        async with aiofiles.open(tmp_path, "wb") as f:
+            await f.write(content)
+            await f.flush()
+        await aiofiles.os.rename(tmp_path, target_path)
 
     def _create_link_only_media(
         self,
@@ -992,15 +1004,7 @@ class ImportJobService:
                     )
 
                     if thumbnail_path_obj:
-                        thumbnail_path_obj.parent.mkdir(parents=True, exist_ok=True)
-
-                        tmp_thumbnail_path = thumbnail_path_obj.with_suffix(".tmp")
-                        async with aiofiles.open(tmp_thumbnail_path, 'wb') as f:
-                            await f.write(thumbnail_content)
-                            await f.flush()
-
-                        await aiofiles.os.rename(tmp_thumbnail_path, thumbnail_path_obj)
-
+                        await self._save_bytes_to_path(thumbnail_content, thumbnail_path_obj)
                         thumbnail_path = str(thumbnail_path_obj.relative_to(self.media_service.media_root))
                         saved_info["thumbnail_path"] = thumbnail_path
                         log_info(f"Saved thumbnail for asset {asset_id}: {thumbnail_path}")
@@ -1009,6 +1013,31 @@ class ImportJobService:
                 except Exception as e:
                     log_warning(f"Failed to save thumbnail for asset {asset_id}: {e}")
                     # Continue without thumbnail - not critical
+
+            # Download web-compatible preview from Immich for HEIC/HEIF files.
+            # get_asset_url("original") returns thumbnail?size=preview (JPEG/WebP),
+            # avoiding the need for local pillow-heif transcoding.
+            try:
+                mime_type = metadata.get("mime_type", "")
+                file_ext = Path(filename).suffix.lower()
+
+                if file_ext in MediaService.HEIC_EXTENSIONS or mime_type in MediaService.HEIC_MIME_TYPES:
+                    preview_url = immich.get_asset_url(base_url, asset_id, "original")
+                    response = await self._fetch_with_retry(
+                        preview_url, headers={"x-api-key": api_key}, timeout=30.0,
+                    )
+
+                    if response and response.status_code == 200:
+                        stored_path = self.media_service.media_root / saved_info["file_path"]
+                        display_path_obj = MediaService._build_display_path(stored_path)
+                        await self._save_bytes_to_path(response.content, display_path_obj)
+
+                        saved_info["display_path"] = str(display_path_obj.relative_to(self.media_service.media_root))
+                        log_info(f"Saved display version for HEIC asset {asset_id}: {saved_info['display_path']}")
+                    else:
+                        log_warning(f"Failed to download preview for HEIC asset {asset_id}")
+            except Exception as e:
+                log_warning(f"Failed to save display version for HEIC asset {asset_id}: {e}")
 
             # Upsert record
             media = self._upsert_entry_media(

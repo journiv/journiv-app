@@ -16,6 +16,7 @@ from app.models.entry import EntryMedia
 from app.models.enums import UploadStatus
 from app.models.integration import IntegrationProvider
 from app.schemas.entry import EntryMediaResponse, MediaOrigin, MediaResponse
+from app.utils.import_export.media_handler import MediaHandler
 from app.utils.quill_delta import transform_delta_media
 
 # Shared cache instance to avoid creating new Redis connections on every request
@@ -127,8 +128,17 @@ def attach_signed_urls(
     )
 
     # 3. Determine if we should generate URLs based on the state
-    # For originals: generate if it's a stable link-only asset OR we have a local file
-    should_generate_original = is_immich_link_only or bool(response.file_path)
+    # For originals: generate if it's a stable link-only asset OR we have a local file.
+    # HEIC/HEIF files need server-side transcoding to WebP before they can be
+    # displayed by browsers/Flutter, so require display_path instead of file_path.
+    needs_display = (
+        response.mime_type
+        and response.mime_type.lower() in MediaHandler.HEIC_MIME_TYPES
+    )
+    if needs_display:
+        should_generate_original = is_immich_link_only or bool(response.display_path)
+    else:
+        should_generate_original = is_immich_link_only or bool(response.file_path)
 
     # For thumbnails: generate if it's a stable link-only asset OR we have a local thumbnail
     should_generate_thumbnail = is_immich_link_only or bool(response.thumbnail_path)
