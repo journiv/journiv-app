@@ -143,8 +143,6 @@ class TestBuildDisplayPath:
 
 # ─── _generate_heic_display_version ──────────────────────────────────
 
-_heif_available = shutil.which("heif-info") is not None or HEIC_FIXTURE.exists()
-
 try:
     from pillow_heif import register_heif_opener
     _pillow_heif_installed = True
@@ -153,8 +151,8 @@ except ImportError:
 
 
 @pytest.mark.skipif(
-    not _pillow_heif_installed,
-    reason="pillow-heif not installed",
+    not _pillow_heif_installed or not HEIC_FIXTURE.exists(),
+    reason="pillow-heif not installed or HEIC fixture missing",
 )
 class TestGenerateHeicDisplayVersion:
     def test_generates_webp_from_heic(self, tmp_path, test_db):

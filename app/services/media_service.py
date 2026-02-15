@@ -1740,10 +1740,15 @@ class MediaService:
         # Transparently serve display version for HEIC/HEIF files
         content_type = None
         if media.display_path:
-            display_full_path = self.media_root / media.display_path
+            root = self.media_root.resolve()
+            display_full_path = (root / media.display_path).resolve()
+            try:
+                display_full_path.relative_to(root)
+            except ValueError:
+                raise MediaNotFoundError("Invalid display file path") from None
             if display_full_path.exists():
                 full_path = display_full_path
-                content_type = "image/webp"  # Hardcoded for display versions
+                content_type = "image/webp"
 
         # Use async stat to avoid blocking event loop for file system access
         try:

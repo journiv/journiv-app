@@ -930,7 +930,7 @@ requires-dist = [
     { name = "itsdangerous", specifier = "==2.2.0" },
     { name = "passlib", extras = ["argon2"], specifier = "==1.7.4" },
     { name = "pillow", specifier = "==12.1.0" },
-    { name = "pillow-heif", specifier = ">=1.2.0" },
+    { name = "pillow-heif", specifier = "==1.2.0" },
     { name = "psutil", specifier = "==7.2.1" },
     { name = "psycopg2-binary", specifier = "==2.9.11" },
     { name = "pydantic", specifier = "==2.12.5" },
