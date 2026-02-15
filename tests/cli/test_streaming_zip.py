@@ -130,6 +130,33 @@ class TestStreamingZip:
                 validate_media=False,
             )
 
+    def test_stream_extract_max_files_ignores_dirs(self, temp_dir):
+        """Test that directories are not counted towards max_files limit."""
+        zip_path = temp_dir / "many_dirs.zip"
+
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.writestr("data.json", "{}")
+            # Add 4 more files (total 5 files)
+            for i in range(4):
+                zipf.writestr(f"file_{i}.txt", b"data")
+
+            # Add 10 directories
+            for i in range(10):
+                # ZipInfo with trailing slash is treated as directory
+                info = zipfile.ZipInfo(f"dir_{i}/")
+                zipf.writestr(info, b"")
+
+        extract_to = temp_dir / "extracted_dirs"
+
+        # Should succeed with max_files=5 (5 files + 10 dirs)
+        # If dirs were counted, this would be 15 > 5 and fail
+        ZipHandler.stream_extract(
+            zip_path=zip_path,
+            extract_to=extract_to,
+            max_size_mb=10,
+            validate_media=False,
+        )
+
     def test_stream_extract_path_traversal(self, temp_dir):
         """Test path traversal protection."""
         zip_path = temp_dir / "malicious.zip"
