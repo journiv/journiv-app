@@ -32,7 +32,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install build dependencies (includes ffmpeg)
+# Install build dependencies (includes ffmpeg and HEIF support)
 RUN apt-get update && apt-get install -y --no-install-recommends \
   build-essential \
   libffi-dev \
@@ -41,6 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libmagic-dev \
   curl \
   ffmpeg \
+  libheif-dev \
+  libde265-dev \
   && rm -rf /var/lib/apt/lists/* \
   && echo "🔍 Checking FFmpeg license (builder stage)..." \
   && ffmpeg -version | grep -E "enable-gpl|enable-nonfree" && (echo "❌ GPL/nonfree FFmpeg detected!" && exit 1) || echo "✅ LGPL FFmpeg build verified."
@@ -75,6 +77,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   libffi8 \
   libpq5 \
   ca-certificates \
+  libheif1 \
+  libde265-0 \
   && rm -rf /var/lib/apt/lists/* \
   && echo "🔍 Checking FFmpeg license (runtime stage)..." \
   && ffmpeg -version | grep -E "enable-gpl|enable-nonfree" && (echo "❌ GPL/nonfree FFmpeg detected!" && exit 1) || echo "✅ LGPL FFmpeg build verified."

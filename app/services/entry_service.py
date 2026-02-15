@@ -1179,6 +1179,7 @@ class EntryService:
             file_size=media_data.file_size,
             mime_type=media_data.mime_type,
             thumbnail_path=media_data.thumbnail_path,
+            display_path=media_data.display_path,
             duration=media_data.duration,
             width=media_data.width,
             height=media_data.height,

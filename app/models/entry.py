@@ -271,6 +271,7 @@ class EntryMedia(BaseModel, table=True):
     file_path: Optional[str] = Field(None, max_length=500)
     file_size: Optional[int] = Field(None, gt=0)
     thumbnail_path: Optional[str] = Field(None, max_length=500)
+    display_path: Optional[str] = Field(None, max_length=500)  # Web-compatible version (e.g., WebP for HEIC)
 
     # Common fields
     original_filename: Optional[str] = Field(None, max_length=255)

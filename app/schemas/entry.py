@@ -175,6 +175,7 @@ class EntryMediaBase(BaseModel):
     file_size: Optional[int] = None
     mime_type: str
     thumbnail_path: Optional[str] = None
+    display_path: Optional[str] = None
     duration: Optional[float] = None
     width: Optional[int] = None
     height: Optional[int] = None
@@ -235,6 +236,7 @@ class EntryMediaExternalResponseFields(BaseModel):
 class MediaResponseBase(MediaBase, EntryMediaExternalResponseFields, TimestampMixin):
     """Shared media response schema."""
     file_path: Optional[str] = Field(default=None, exclude=True)
+    display_path: Optional[str] = Field(default=None, exclude=True)
     thumbnail_path: Optional[str] = Field(default=None, exclude=True)
     id: uuid.UUID
     created_at: datetime

@@ -478,7 +478,8 @@ class Settings(BaseSettings):
         """Provide defaults for allowed_media_types if not set."""
         if v is None or not v:
             return [
-                "image/jpeg", "image/png", "image/gif", "image/webp", "image/heic",
+                "image/jpeg", "image/png", "image/gif", "image/webp",
+                "image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence",
                 "video/mp4", "video/avi", "video/mov", "video/quicktime", "video/webm", "video/x-m4v",
                 "audio/mpeg", "audio/wav", "audio/ogg", "audio/m4a", "audio/aac"
             ]
@@ -526,7 +527,7 @@ class Settings(BaseSettings):
         """Provide defaults for allowed_file_extensions if not set."""
         if v is None or not v:
             return [
-                ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic",
+                ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif",
                 ".mp4", ".avi", ".mov", ".webm", ".m4v",
                 ".mp3", ".wav", ".ogg", ".m4a", ".aac"
             ]

@@ -53,6 +53,14 @@ try:
 except ImportError:
     Image = None
 
+# Register HEIF support for HEIC images
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+    _HEIF_SUPPORT = True
+except ImportError:
+    _HEIF_SUPPORT = False
+
 # Structured logging
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -81,6 +89,11 @@ class MediaService:
     IMAGE_EXTENSIONS = MediaHandler.IMAGE_EXTENSIONS
     VIDEO_EXTENSIONS = MediaHandler.VIDEO_EXTENSIONS
     AUDIO_EXTENSIONS = MediaHandler.AUDIO_EXTENSIONS
+
+    # HEIC/HEIF support — delegate to MediaHandler as single source of truth
+    HEIC_EXTENSIONS = MediaHandler.HEIC_EXTENSIONS
+    HEIC_MIME_TYPES = MediaHandler.HEIC_MIME_TYPES
+    DISPLAY_VERSION_QUALITY = 82  # WebP quality for display versions
 
     def __init__(self, session: Optional[Session] = None):
         self.session = session
@@ -646,6 +659,78 @@ class MediaService:
             log_error(e, request_id="", user_email="")
             raise FileValidationError("Failed to determine media type") from None
 
+    @staticmethod
+    def _needs_display_version(file_path: Path, mime_type: str) -> bool:
+        """
+        Check if a file needs a web-compatible display version.
+
+        Args:
+            file_path: Path to the file
+            mime_type: MIME type of the file
+
+        Returns:
+            True if file is HEIC/HEIF and needs WebP display version
+        """
+        ext = file_path.suffix.lower()
+        return ext in MediaService.HEIC_EXTENSIONS or mime_type in MediaService.HEIC_MIME_TYPES
+
+    @staticmethod
+    def _build_display_path(original_path: Path) -> Path:
+        """
+        Build path for display version file.
+
+        Pattern: {checksum}_display.webp
+        Example: /data/media/abc123/images/def456.heic -> /data/media/abc123/images/def456_display.webp
+
+        Args:
+            original_path: Path to original file
+
+        Returns:
+            Path to display version file
+        """
+        stem = original_path.stem  # filename without extension
+        parent = original_path.parent
+        return parent / f"{stem}_display.webp"
+
+    def _generate_heic_display_version(self, heic_path: Path) -> Optional[Path]:
+        """
+        Generate WebP display version from HEIC/HEIF file.
+
+        Args:
+            heic_path: Path to HEIC/HEIF file
+
+        Returns:
+            Path to generated WebP file, or None if generation failed
+        """
+        if not _HEIF_SUPPORT or not Image:
+            log_warning(f"HEIF/PIL support not available, cannot generate display version for {heic_path}")
+            return None
+
+        display_path = self._build_display_path(heic_path)
+        tmp_path = display_path.with_suffix(".tmp.webp")
+
+        try:
+            with PILImage.open(heic_path) as img:
+                if img.mode not in ('RGB', 'RGBA'):
+                    img = img.convert('RGB')
+
+                img.save(
+                    tmp_path,
+                    format='WEBP',
+                    quality=self.DISPLAY_VERSION_QUALITY,
+                    method=6,
+                )
+
+            tmp_path.rename(display_path)
+            log_info(f"Generated WebP display version: {display_path}")
+            return display_path
+
+        except Exception as e:
+            log_warning(f"Failed to generate display version for {heic_path}: {e}")
+            tmp_path.unlink(missing_ok=True)
+            display_path.unlink(missing_ok=True)
+            return None
+
     async def upload_media(
         self,
         file: UploadFile,
@@ -907,6 +992,7 @@ class MediaService:
                         file_size=existing_media.file_size,
                         mime_type=existing_media.mime_type,
                         thumbnail_path=existing_media.thumbnail_path,
+                        display_path=existing_media.display_path,
                         alt_text=alt_text,
                         upload_status=existing_media.upload_status,
                         file_metadata=existing_media.file_metadata,
@@ -1168,10 +1254,37 @@ class MediaService:
                 # Invalid media type - skip thumbnail generation
                 pass
 
+            # Generate display version for HEIC/HEIF files (skip if already exists,
+            # e.g. Immich import downloads the preview from the remote server)
+            display_path = None
+            try:
+                has_existing_display = False
+                if media.display_path:
+                    full_display_path = (self.media_root / media.display_path).resolve()
+                    try:
+                        full_display_path.relative_to(self.media_root.resolve())
+                        if full_display_path.exists():
+                            has_existing_display = True
+                    except ValueError:
+                        pass
+
+                if not has_existing_display:
+                    mime_type = metadata.get('mime_type', '')
+                    if self._needs_display_version(actual_file_path, mime_type):
+                        display_path_obj = self._generate_heic_display_version(actual_file_path)
+                        if display_path_obj:
+                            display_path = str(display_path_obj.relative_to(self.media_root))
+                            log_info(f"Generated display version for HEIC file: {display_path}",
+                                    media_id=media_id, user_id=user_id)
+            except Exception as e:
+                log_warning(f"Display version generation failed for {media_id}: {e}",
+                          media_id=media_id, user_id=user_id)
+                # Continue without display version - not critical
+
             # Update database with processed data in a transaction
             try:
                 session.begin_nested()  # Create savepoint for atomic update
-                self._update_media_metadata(media_id, metadata, thumbnail_path)
+                self._update_media_metadata(media_id, metadata, thumbnail_path, display_path)
                 session.commit()  # Commit the nested transaction
                 log_file_upload(
                     media.original_filename or media.file_path or "unknown",
@@ -1379,7 +1492,13 @@ class MediaService:
             log_error(f"Failed to generate video thumbnail: {e}")
             raise
 
-    def _update_media_metadata(self, media_id: str, metadata: Dict[str, Any], thumbnail_path: Optional[str]):
+    def _update_media_metadata(
+        self,
+        media_id: str,
+        metadata: Dict[str, Any],
+        thumbnail_path: Optional[str],
+        display_path: Optional[str] = None
+    ):
         """Update media record with processed metadata."""
         try:
             media_uuid = uuid.UUID(media_id)
@@ -1408,6 +1527,10 @@ class MediaService:
             # Update thumbnail path if generated
             if thumbnail_path:
                 media.thumbnail_path = self._relative_thumbnail_path(Path(thumbnail_path))
+
+            # Update display path if generated (HEIC/HEIF files)
+            if display_path:
+                media.display_path = display_path
 
             session.add(media)
             self._commit()
@@ -1535,6 +1658,22 @@ class MediaService:
 
         return full_path
 
+    def _safe_delete_auxiliary_file(self, rel_path: str, label: str) -> None:
+        """Delete an auxiliary file (thumbnail, display version) with path-traversal protection."""
+        try:
+            root = self.media_root.resolve()
+            full_path = (root / rel_path).resolve()
+            try:
+                full_path.relative_to(root)
+            except ValueError:
+                log_warning(f"Path traversal blocked for {label} file: {rel_path}")
+                return
+            if full_path.exists():
+                full_path.unlink(missing_ok=True)
+                log_info(f"Deleted {label} file: {rel_path}")
+        except Exception as e:
+            log_error(f"Failed to delete {label} file: {e}")
+
     async def delete_media_by_id(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> None:
         """Delete media by ID including database record and filesystem file.
 
@@ -1548,24 +1687,21 @@ class MediaService:
         """
         from app.services import entry_service as entry_service_module
 
-        # Get media record first to get file path, checksum, and thumbnail path
+        # Get media record first to get file path, checksum, thumbnail path, and display path
         media = self.get_media_by_id(media_id, user_id, session)
         file_path = media.file_path
         checksum = media.checksum
         thumbnail_path = media.thumbnail_path
+        display_path = media.display_path
 
         # Delete database record using entry service
         entry_service = entry_service_module.EntryService(session)
         entry_service.delete_entry_media(media_id, user_id)
 
-        # Delete thumbnail file if it exists (thumbnails are not deduplicated)
-        if thumbnail_path:
-            try:
-                full_thumbnail_path = (self.media_root / thumbnail_path).resolve()
-                if full_thumbnail_path.exists() and str(full_thumbnail_path).startswith(str(self.media_root.resolve())):
-                    full_thumbnail_path.unlink(missing_ok=True)
-            except Exception as e:
-                log_error(f"Failed to delete thumbnail file: {e}")
+        # Delete auxiliary files (thumbnails and display versions are not deduplicated)
+        for label, rel_path in [("thumbnail", thumbnail_path), ("display version", display_path)]:
+            if rel_path:
+                self._safe_delete_auxiliary_file(rel_path, label)
 
         # Delete file from filesystem using reference counting
         # Create storage service with fresh session AFTER commit to get accurate reference counts
@@ -1608,6 +1744,19 @@ class MediaService:
         media = self.get_media_by_id(media_id, user_id, session)
         full_path = self.get_media_file_path(media)
 
+        # Transparently serve display version for HEIC/HEIF files
+        content_type = None
+        if media.display_path:
+            root = self.media_root.resolve()
+            display_full_path = (root / media.display_path).resolve()
+            try:
+                display_full_path.relative_to(root)
+            except ValueError:
+                raise MediaNotFoundError("Invalid display file path") from None
+            if display_full_path.exists():
+                full_path = display_full_path
+                content_type = "image/webp"
+
         # Use async stat to avoid blocking event loop for file system access
         try:
             stat_result = await asyncio.to_thread(os.stat, full_path)
@@ -1615,8 +1764,10 @@ class MediaService:
         except FileNotFoundError:
             raise MediaNotFoundError("Media file not found on disk") from None
 
-        content_type, _ = mimetypes.guess_type(str(full_path))
-        content_type = content_type or media.mime_type or "application/octet-stream"
+        # Determine content type if not already set (for display version)
+        if not content_type:
+            content_type, _ = mimetypes.guess_type(str(full_path))
+            content_type = content_type or media.mime_type or "application/octet-stream"
 
         result = {
             "file_path": full_path,
