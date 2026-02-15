@@ -469,9 +469,8 @@ class ZipHandler:
                         f"(max: {max_size_mb}MB)"
                     )
 
-                # Ensure extract_to exists
-                extract_to.mkdir(parents=True, exist_ok=True)
-                extract_to.resolve()
+                # Ensure extract_to exists and is safe
+                ZipHandler.prepare_extract_dir(extract_to)
 
                 # Get file list
                 entries = zipf.infolist()
@@ -489,6 +488,13 @@ class ZipHandler:
 
                     # Normalize filename
                     normalized_filename = info.filename.lstrip("/")
+
+                    # Security checks (consistent with safe_extract)
+                    if "\x00" in normalized_filename:
+                        raise ValueError(f"ZIP contains invalid filename: {info.filename}")
+
+                    if info.external_attr >> 16 & 0o170000 == 0o120000:
+                        raise ValueError(f"ZIP contains symlink: {info.filename}")
 
                     # Determine if this is a media file (using normalized name)
                     if source_type == "dayone":
