@@ -211973,7 +211973,7 @@ p=B.j.ap(e,60)
 f.push(A.lk(4,A.ah(o,A.C(B.i.eC(B.j.j(q),2,"0")+":"+B.i.eC(B.j.j(p),2,"0"),o,o,o,o,B.ahq,o,o,o),B.v,o,o,new A.aF(g,o,o,d,o,o,o,B.a0),o,o,o,o,B.Bo,o,o,o),o,o,o,4,o,o))}return A.ez(o,A.ah(o,A.ot(h,new A.ek(B.bK,o,B.i1,B.ae,f,o),B.bW,o),B.v,o,o,new A.aF(o,o,i,j,o,o,o,B.a0),o,o,o,o,o,o,o,o),B.ac,!1,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,o,this.d,o,o,o,o,o,o,o,!1,B.bo)}}
 A.aAT.prototype={
 E(a){var s,r,q=null,p=this.c,o=J.a3(p)
-if(o.gad(p)||o.gq(p)===1)return B.ba
+if(o.gad(p))return B.ba
 s=A.h(a)
 r=o.gq(p)>4?4:o.gq(p)
 p=A.aB(new A.a4(q,120,new A.jh(new A.bwm(this,r,o.gq(p)>4,o.gq(p)-4),q),q),1)
