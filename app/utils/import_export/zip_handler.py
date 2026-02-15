@@ -345,6 +345,8 @@ class ZipHandler:
 
                 # Check contents
                 file_list = zipf.namelist()
+                # Normalize filenames to handle leading slashes (consistent with safe_extract)
+                normalized_file_list = [f.lstrip("/") for f in file_list]
                 result["file_count"] = len(file_list)
                 result["total_size"] = sum(info.file_size for info in zipf.infolist())
 
@@ -352,21 +354,21 @@ class ZipHandler:
                 if source_type == "dayone":
                     # Day One exports have .json files at root (e.g., Del1.json, MyJournal.json)
                     # Check for any .json file at root level (not in subdirectories)
-                    root_json_files = [f for f in file_list if f.endswith(".json") and "/" not in f]
+                    root_json_files = [f for f in normalized_file_list if f.endswith(".json") and "/" not in f]
                     if root_json_files:
                         result["has_data_file"] = True
                     else:
                         result["valid"] = False
                         result["errors"].append("Missing JSON file at root (Day One format expects JournalName.json)")
                 elif source_type == "daylio":
-                    if "backup.daylio" in file_list:
+                    if "backup.daylio" in normalized_file_list:
                         result["has_data_file"] = True
                     else:
                         result["valid"] = False
                         result["errors"].append("Missing backup.daylio file at root (Daylio format)")
                 else:
                     # Journiv exports have data.json
-                    if "data.json" in file_list:
+                    if "data.json" in normalized_file_list:
                         result["has_data_file"] = True
                     else:
                         result["valid"] = False
@@ -375,12 +377,12 @@ class ZipHandler:
                 # Check for media directory
                 if source_type == "dayone":
                     # Day One has photos/ and videos/ directories
-                    media_files = [f for f in file_list if f.startswith("photos/") or f.startswith("Photos/") or f.startswith("videos/") or f.startswith("Videos/")]
+                    media_files = [f for f in normalized_file_list if f.startswith("photos/") or f.startswith("Photos/") or f.startswith("videos/") or f.startswith("Videos/")]
                 elif source_type == "daylio":
-                    media_files = [f for f in file_list if f.lower().startswith("assets/")]
+                    media_files = [f for f in normalized_file_list if f.lower().startswith("assets/")]
                 else:
                     # Journiv has media/ directory
-                    media_files = [f for f in file_list if f.startswith("media/")]
+                    media_files = [f for f in normalized_file_list if f.startswith("media/")]
                 result["has_media"] = len(media_files) > 0
 
                 # Check for path traversal
