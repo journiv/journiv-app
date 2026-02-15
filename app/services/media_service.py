@@ -1660,8 +1660,14 @@ class MediaService:
     def _safe_delete_auxiliary_file(self, rel_path: str, label: str) -> None:
         """Delete an auxiliary file (thumbnail, display version) with path-traversal protection."""
         try:
-            full_path = (self.media_root / rel_path).resolve()
-            if full_path.exists() and str(full_path).startswith(str(self.media_root.resolve())):
+            root = self.media_root.resolve()
+            full_path = (root / rel_path).resolve()
+            try:
+                full_path.relative_to(root)
+            except ValueError:
+                log_warning(f"Path traversal blocked for {label} file: {rel_path}")
+                return
+            if full_path.exists():
                 full_path.unlink(missing_ok=True)
                 log_info(f"Deleted {label} file: {rel_path}")
         except Exception as e:
