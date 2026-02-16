@@ -1040,9 +1040,7 @@ class EntryService:
 
                 # Delete thumbnail if it exists (thumbnails are not deduplicated)
                 if media_info['thumbnail_path']:
-                    thumbnail_full_path = (media_service.media_root / media_info['thumbnail_path']).resolve()
-                    if thumbnail_full_path.exists() and str(thumbnail_full_path).startswith(str(media_service.media_root.resolve())):
-                        thumbnail_full_path.unlink(missing_ok=True)
+                    self._delete_thumbnail(media_info['thumbnail_path'], media_service.media_root)
             except Exception as exc:
                 log_warning(f"Failed to delete media file {media_info['file_path']} after entry deletion: {exc}")
 
