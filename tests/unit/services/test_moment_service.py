@@ -157,3 +157,130 @@ def test_get_moments_search_entry_title(test_db, test_user, test_moment_service)
     )
     assert len(items) == 1
     assert items[0].id == m1.id
+
+
+def test_get_moments_filter_by_date_range(test_db, test_user, test_moment_service):
+    # Old moment
+    m1 = Moment(
+        user_id=test_user.id,
+        logged_at=datetime(2023, 1, 1, 12, 0, 0),
+        logged_date=date(2023, 1, 1),
+        note="Old",
+    )
+    test_db.add(m1)
+
+    # Middle moment
+    m2 = Moment(
+        user_id=test_user.id,
+        logged_at=datetime(2023, 6, 15, 12, 0, 0),
+        logged_date=date(2023, 6, 15),
+        note="Middle",
+    )
+    test_db.add(m2)
+
+    # Future moment
+    m3 = Moment(
+        user_id=test_user.id,
+        logged_at=datetime(2023, 12, 31, 12, 0, 0),
+        logged_date=date(2023, 12, 31),
+        note="Future",
+    )
+    test_db.add(m3)
+    test_db.commit()
+
+    # Filter for middle range
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id,
+        start_date=date(2023, 6, 1),
+        end_date=date(2023, 6, 30),
+    )
+    assert len(items) == 1
+    assert items[0].id == m2.id
+
+    # Filter for start date inclusive
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id,
+        start_date=date(2023, 1, 1),
+    )
+    assert len(items) == 3
+
+    # Filter for end date inclusive
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id,
+        end_date=date(2023, 1, 1),
+    )
+    assert len(items) == 1
+    assert items[0].id == m1.id
+
+
+def test_get_moments_exclude_drafts_by_default(test_db, test_user, test_moment_service):
+    # Published entry
+    entry1 = Entry(
+        user_id=test_user.id,
+        journal_id=uuid.uuid4(),
+        entry_date=date.today(),
+        title="Published",
+        is_draft=False,
+    )
+    test_db.add(entry1)
+    test_db.commit()
+
+    m1 = Moment(user_id=test_user.id, logged_at=datetime.utcnow(), entry_id=entry1.id)
+    test_db.add(m1)
+
+    # Draft entry
+    entry2 = Entry(
+        user_id=test_user.id,
+        journal_id=uuid.uuid4(),
+        entry_date=date.today(),
+        title="Draft",
+        is_draft=True,
+    )
+    test_db.add(entry2)
+    test_db.commit()
+
+    m2 = Moment(user_id=test_user.id, logged_at=datetime.utcnow(), entry_id=entry2.id)
+    test_db.add(m2)
+    test_db.commit()
+
+    # Default should exclude drafts
+    items, _, _ = test_moment_service.get_moments(user_id=test_user.id)
+    assert len(items) == 1
+    assert items[0].id == m1.id
+
+
+def test_get_moments_include_drafts(test_db, test_user, test_moment_service):
+    # Draft entry
+    entry = Entry(
+        user_id=test_user.id,
+        journal_id=uuid.uuid4(),
+        entry_date=date.today(),
+        title="Draft",
+        is_draft=True,
+    )
+    test_db.add(entry)
+    test_db.commit()
+
+    m1 = Moment(user_id=test_user.id, logged_at=datetime.utcnow(), entry_id=entry.id)
+    test_db.add(m1)
+    test_db.commit()
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id, include_drafts=True
+    )
+    assert len(items) == 1
+    assert items[0].id == m1.id
+
+
+def test_get_moments_standalone_always_included(test_db, test_user, test_moment_service):
+    # Standalone moment (no entry)
+    m1 = Moment(user_id=test_user.id, logged_at=datetime.utcnow(), note="Standalone")
+    test_db.add(m1)
+    test_db.commit()
+
+    # Should be included even with include_drafts=False (default)
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id, include_drafts=False
+    )
+    assert len(items) == 1
+    assert items[0].id == m1.id

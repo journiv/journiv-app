@@ -142,19 +142,23 @@ class Entry(BaseModel, table=True):
     # Relations
     journal: "Journal" = Relationship(back_populates="entries")
     prompt: Optional["Prompt"] = Relationship(back_populates="entries")
+    tags: List["Tag"] = Relationship(back_populates="entries", link_model=EntryTagLink)
+    user: "User" = Relationship(back_populates="entries")
+
+    # One-to-one relationship with Moment (optional, but typically present for non-drafts)
+    moment: Optional["Moment"] = Relationship(
+        sa_relationship_kwargs={"uselist": False},
+        back_populates="entry"
+    )
+
+    @property
+    def moment_id(self) -> Optional[uuid.UUID]:
+        """Helper to get moment ID if relationship is loaded."""
+        return self.moment.id if self.moment else None
     media: List["EntryMedia"] = Relationship(
         back_populates="entry",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    moment: Optional["Moment"] = Relationship(
-        back_populates="entry",
-        sa_relationship_kwargs={"uselist": False}
-    )
-    tags: List["Tag"] = Relationship(
-        back_populates="entries",
-        link_model=EntryTagLink
-    )
-    user: "User" = Relationship(back_populates="entries")
 
     # Table constraints and indexes
     __table_args__ = (

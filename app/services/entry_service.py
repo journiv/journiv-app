@@ -549,7 +549,7 @@ class EntryService:
             f"Entry created for user {user_id} in journal {entry.journal_id}: {entry.id} (draft={is_draft})"
         )
 
-        if not is_draft and run_side_effects and commit:
+        if run_side_effects and commit:
             self._run_entry_side_effects(entry, user_id, skip_moment_sync=skip_moment_sync)
 
         return entry
@@ -559,7 +559,7 @@ class EntryService:
         entry: Entry,
         user_id: uuid.UUID,
         *,
-        skip_moment_sync: bool,
+        skip_moment_sync: bool = False,
     ) -> None:
         try:
             from app.services.journal_service import JournalService
@@ -571,16 +571,17 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
-        # Update writing streak analytics
-        try:
-            from app.services.analytics_service import AnalyticsService
-            analytics_service = AnalyticsService(self.session)
-            analytics_service.update_writing_streak(user_id, entry.entry_date)
-        except Exception as exc:
-            log_error(exc)
+        # Update writing streak analytics (only for published entries)
+        if not entry.is_draft:
+            try:
+                from app.services.analytics_service import AnalyticsService
+                analytics_service = AnalyticsService(self.session)
+                analytics_service.update_writing_streak(user_id, entry.entry_date)
+            except Exception as exc:
+                log_error(exc)
 
         if not skip_moment_sync:
-            # Ensure moment exists for this entry
+            # Ensure moment exists for this entry (even for drafts)
             try:
                 from app.services.moment_service import MomentService
                 moment_service = MomentService(self.session)
@@ -964,6 +965,17 @@ class EntryService:
         # Store journal_id for recount before deleting entry
         journal_id = entry.journal_id
 
+        # Delete associated moment if it exists (BEFORE deleting entry so we can find it)
+        try:
+            from app.models.moment import Moment
+            moment = self.session.exec(
+                select(Moment).where(Moment.entry_id == entry_id)
+            ).first()
+            if moment:
+                self.session.delete(moment)
+        except Exception as exc:
+            log_warning(f"Failed to delete associated moment for entry {entry_id}: {exc}")
+
         # Hard delete the entry
         self.session.delete(entry)
 
@@ -996,6 +1008,8 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
+
+
         # Recalculate writing streak statistics after entry is deleted
         # This ensures analytics reflect the correct entry counts
         try:
@@ -1026,9 +1040,7 @@ class EntryService:
 
                 # Delete thumbnail if it exists (thumbnails are not deduplicated)
                 if media_info['thumbnail_path']:
-                    thumbnail_full_path = (media_service.media_root / media_info['thumbnail_path']).resolve()
-                    if thumbnail_full_path.exists() and str(thumbnail_full_path).startswith(str(media_service.media_root.resolve())):
-                        thumbnail_full_path.unlink(missing_ok=True)
+                    self._delete_thumbnail(media_info['thumbnail_path'], media_service.media_root)
             except Exception as exc:
                 log_warning(f"Failed to delete media file {media_info['file_path']} after entry deletion: {exc}")
 

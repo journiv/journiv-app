@@ -3,7 +3,7 @@ Moment service for unified timeline operations.
 """
 import uuid
 from datetime import date, datetime
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy import String, cast, or_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -398,6 +398,94 @@ class MomentService:
             raise
         return moment
 
+    def _apply_journal_join(
+        self, statement: Any, journal_id: Optional[uuid.UUID]
+    ) -> Any:
+        """Join Entry table based on journal_id or for general filtering."""
+        if journal_id:
+            # Filter by journal via entry relationship
+            return statement.join(Entry).where(Entry.journal_id == journal_id)
+        # Even if not filtering by journal, we need to join Entry to filter drafts
+        # for moments that *have* entries.
+        # Using left outer join to include moments without entries (Quick Logs)
+        return statement.outerjoin(Entry)
+
+    def _apply_draft_filter(
+        self,
+        statement: Any,
+        include_drafts: bool,
+        entry_id: Optional[uuid.UUID],
+    ) -> Any:
+        """Apply filter to exclude drafts unless requested or fetching a specific entry."""
+        if not include_drafts and not entry_id:
+            # Exclude moments associated with draft entries
+            # Logic: (Moment has no entry) OR (Moment has entry AND entry is not draft)
+            return statement.where(
+                (col(Moment.entry_id).is_(None)) | (col(Entry.is_draft).is_(False))
+            )
+        return statement
+
+    def _apply_mood_filter(
+        self, statement: Any, mood_ids: Optional[List[uuid.UUID]]
+    ) -> Any:
+        """Apply filter for moments associated with specific moods."""
+        if not mood_ids:
+            return statement
+        # Filter by moments that have ANY of the specified mood_ids
+        normalized_mood_ids = normalize_uuid_list(mood_ids)
+        return statement.where(
+            col(Moment.id).in_(
+                select(MomentMoodActivity.moment_id).where(
+                    col(MomentMoodActivity.mood_id).in_(normalized_mood_ids)
+                )
+            )
+        )
+
+    def _apply_search_filter(self, statement: Any, search: Optional[str]) -> Any:
+        """Apply search filter on moment notes and entry content."""
+        if not search:
+            return statement
+        escaped_search = (
+            search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        search_pattern = f"%{escaped_search}%"
+        # Search in Moment note OR Entry title/content
+        # Entry is already joined, so we can access it directly
+        return statement.where(
+            or_(
+                col(Moment.note).ilike(search_pattern, escape="\\"),
+                col(Entry.title).ilike(search_pattern, escape="\\"),
+                col(Entry.content_plain_text).ilike(search_pattern, escape="\\"),
+            )
+        )
+
+    def _apply_cursor_filter(
+        self,
+        statement: Any,
+        cursor_logged_at: Optional[datetime],
+        cursor_id: Optional[uuid.UUID],
+    ) -> Any:
+        """Apply cursor-based pagination filter."""
+        if cursor_logged_at and cursor_id:
+            return statement.where(
+                (Moment.logged_at < cursor_logged_at)
+                | ((Moment.logged_at == cursor_logged_at) & (Moment.id < cursor_id))
+            )
+        return statement
+
+    def _apply_date_filter(
+        self,
+        statement: Any,
+        start_date: Optional[date],
+        end_date: Optional[date],
+    ) -> Any:
+        """Apply date range filter on logged_date."""
+        if start_date:
+            statement = statement.where(col(Moment.logged_date) >= start_date)
+        if end_date:
+            statement = statement.where(col(Moment.logged_date) <= end_date)
+        return statement
+
     def sync_entry_activity_links(
         self,
         user_id: uuid.UUID,
@@ -420,56 +508,22 @@ class MomentService:
         journal_id: Optional[uuid.UUID] = None,
         mood_ids: Optional[List[uuid.UUID]] = None,
         search: Optional[str] = None,
+        entry_id: Optional[uuid.UUID] = None,
+        include_drafts: bool = False,
     ) -> Tuple[List[Moment], Optional[datetime], Optional[uuid.UUID]]:
+        """Get moments for a user with filtering."""
         statement = select(Moment).where(Moment.user_id == user_id)
 
-        if start_date:
-            statement = statement.where(col(Moment.logged_date) >= start_date)
-        if end_date:
-            statement = statement.where(col(Moment.logged_date) <= end_date)
+        statement = self._apply_journal_join(statement, journal_id)
 
-        if journal_id:
-            # Join with Entry to filter by journal_id
-            statement = statement.join(Entry, col(Moment.entry_id) == Entry.id)
-            statement = statement.where(Entry.journal_id == journal_id)
+        if entry_id:
+            statement = statement.where(Moment.entry_id == entry_id)
 
-        if mood_ids:
-            # Filter by moments that have ANY of the specified mood_ids
-            # We use a subquery or join to filter efficiently
-            normalized_mood_ids = normalize_uuid_list(mood_ids)
-            statement = statement.where(
-                col(Moment.id).in_(
-                    select(MomentMoodActivity.moment_id).where(
-                        col(MomentMoodActivity.mood_id).in_(normalized_mood_ids)
-                    )
-                )
-            )
-
-        if search:
-            escaped_search = (
-                search.replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_")
-            )
-            search_pattern = f"%{escaped_search}%"
-            # Search in Moment note OR Entry title/content
-            # To search in entry, we might need to join if not already joined
-            if not journal_id:  # Avoid double join if already joined for journal_id
-                statement = statement.outerjoin(Entry, col(Moment.entry_id) == Entry.id)
-
-            statement = statement.where(
-                or_(
-                    col(Moment.note).ilike(search_pattern, escape="\\"),
-                    col(Entry.title).ilike(search_pattern, escape="\\"),
-                    col(Entry.content_plain_text).ilike(search_pattern, escape="\\"),
-                )
-            )
-
-        if cursor_logged_at and cursor_id:
-            statement = statement.where(
-                (Moment.logged_at < cursor_logged_at)
-                | ((Moment.logged_at == cursor_logged_at) & (Moment.id < cursor_id))
-            )
+        statement = self._apply_draft_filter(statement, include_drafts, entry_id)
+        statement = self._apply_mood_filter(statement, mood_ids)
+        statement = self._apply_search_filter(statement, search)
+        statement = self._apply_cursor_filter(statement, cursor_logged_at, cursor_id)
+        statement = self._apply_date_filter(statement, start_date, end_date)
 
         statement = statement.order_by(
             col(Moment.logged_at).desc(),

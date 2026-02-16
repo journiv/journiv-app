@@ -149,6 +149,7 @@ class EntryResponse(EntryBase, TimestampMixin):
     created_at: datetime
     updated_at: datetime
     media_count: int = 0
+    moment_id: Optional[uuid.UUID] = None
 
 
 class EntryPreviewResponse(TimestampMixin):
