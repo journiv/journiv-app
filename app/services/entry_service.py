@@ -571,13 +571,14 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
-        # Update writing streak analytics
-        try:
-            from app.services.analytics_service import AnalyticsService
-            analytics_service = AnalyticsService(self.session)
-            analytics_service.update_writing_streak(user_id, entry.entry_date)
-        except Exception as exc:
-            log_error(exc)
+        # Update writing streak analytics (only for published entries)
+        if not entry.is_draft:
+            try:
+                from app.services.analytics_service import AnalyticsService
+                analytics_service = AnalyticsService(self.session)
+                analytics_service.update_writing_streak(user_id, entry.entry_date)
+            except Exception as exc:
+                log_error(exc)
 
         if not skip_moment_sync:
             # Ensure moment exists for this entry (even for drafts)
@@ -964,6 +965,17 @@ class EntryService:
         # Store journal_id for recount before deleting entry
         journal_id = entry.journal_id
 
+        # Delete associated moment if it exists (BEFORE deleting entry so we can find it)
+        try:
+            from app.models.moment import Moment
+            moment = self.session.exec(
+                select(Moment).where(Moment.entry_id == entry_id)
+            ).first()
+            if moment:
+                self.session.delete(moment)
+        except Exception as exc:
+            log_warning(f"Failed to delete associated moment for entry {entry_id}: {exc}")
+
         # Hard delete the entry
         self.session.delete(entry)
 
@@ -996,19 +1008,7 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
-        # Delete associated moment if it exists
-        try:
-            from app.services.moment_service import MomentService
-            moment_service = MomentService(self.session)
-            moment = moment_service.ensure_moment_for_entry(user_id, entry)
-            if moment:
-                self.session.delete(moment)
-                self._commit()
-        except Exception as exc:
-            # Don't fail the entry deletion if moment deletion fails
-            # (though normally cascade should handle this if foreign keys were set that way,
-            # but Moment.entry_id is nullable and entry deletion is manual here)
-            log_warning(f"Failed to delete associated moment for entry {entry_id}: {exc}")
+
 
         # Recalculate writing streak statistics after entry is deleted
         # This ensures analytics reflect the correct entry counts
