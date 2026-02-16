@@ -549,7 +549,7 @@ class EntryService:
             f"Entry created for user {user_id} in journal {entry.journal_id}: {entry.id} (draft={is_draft})"
         )
 
-        if not is_draft and run_side_effects and commit:
+        if run_side_effects and commit:
             self._run_entry_side_effects(entry, user_id, skip_moment_sync=skip_moment_sync)
 
         return entry
@@ -559,7 +559,7 @@ class EntryService:
         entry: Entry,
         user_id: uuid.UUID,
         *,
-        skip_moment_sync: bool,
+        skip_moment_sync: bool = False,
     ) -> None:
         try:
             from app.services.journal_service import JournalService
@@ -580,7 +580,7 @@ class EntryService:
             log_error(exc)
 
         if not skip_moment_sync:
-            # Ensure moment exists for this entry
+            # Ensure moment exists for this entry (even for drafts)
             try:
                 from app.services.moment_service import MomentService
                 moment_service = MomentService(self.session)
@@ -995,6 +995,20 @@ class EntryService:
             log_error(exc)
         except Exception as exc:
             log_error(exc)
+
+        # Delete associated moment if it exists
+        try:
+            from app.services.moment_service import MomentService
+            moment_service = MomentService(self.session)
+            moment = moment_service.ensure_moment_for_entry(user_id, entry)
+            if moment:
+                self.session.delete(moment)
+                self._commit()
+        except Exception as exc:
+            # Don't fail the entry deletion if moment deletion fails
+            # (though normally cascade should handle this if foreign keys were set that way,
+            # but Moment.entry_id is nullable and entry deletion is manual here)
+            log_warning(f"Failed to delete associated moment for entry {entry_id}: {exc}")
 
         # Recalculate writing streak statistics after entry is deleted
         # This ensures analytics reflect the correct entry counts
