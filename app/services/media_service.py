@@ -309,21 +309,26 @@ class MediaService:
             if media_item.moment_id is None:
                 continue
             media_counts[media_item.moment_id] = media_counts.get(media_item.moment_id, 0) + 1
+
+            # Generate signed URLs for this media item
+            response = MomentMediaResponse.model_validate(media_item)
+            response = attach_signed_urls(
+                response,
+                str(user_id),
+                include_incomplete=True,
+                external_base_url=immich_base_url,
+            )
+
+            # Add thumbnail to the list for this moment
+            thumbnail = MomentMediaThumbnail(
+                id=response.id,
+                media_type=response.media_type,
+                signed_thumbnail_url=response.signed_thumbnail_url,
+            )
+
             if media_item.moment_id not in media_map:
-                response = MomentMediaResponse.model_validate(media_item)
-                response = attach_signed_urls(
-                    response,
-                    str(user_id),
-                    include_incomplete=True,
-                    external_base_url=immich_base_url,
-                )
-                media_map[media_item.moment_id] = [
-                    MomentMediaThumbnail(
-                        id=response.id,
-                        media_type=response.media_type,
-                        signed_thumbnail_url=response.signed_thumbnail_url,
-                    )
-                ]
+                media_map[media_item.moment_id] = []
+            media_map[media_item.moment_id].append(thumbnail)
         return media_counts, media_map
 
     def _detect_mime(self, file_content: bytes) -> str:
