@@ -102,7 +102,7 @@ USER appuser
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-  CMD sh -c 'case "${SERVICE_ROLE:-app}" in \
+  CMD sh -c 'case "${SERVICE_ROLE:-${SERVICE_ROLE_HEALTHCHECK:-app}}" in \
   celery-worker) /opt/venv/bin/python -m celery -A app.core.celery_app inspect ping -d "celery@$(hostname)" --timeout=5 | grep -q "pong" ;; \
   celery-beat) test -f /tmp/celerybeat.pid && kill -0 "$(cat /tmp/celerybeat.pid)" ;; \
   admin-cli) exit 0 ;; \
