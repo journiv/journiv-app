@@ -6,15 +6,14 @@ Tests the CRC32 + UUIDv5 algorithm for deterministic, collision-resistant instal
 
 import uuid
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from app.core.install_id import (
+    JOURNIV_NAMESPACE,
     calculate_crc,
-    generate_install_id_seed,
     generate_install_id,
-
+    generate_install_id_seed,
     validate_install_id,
-    JOURNIV_NAMESPACE
 )
 
 

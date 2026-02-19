@@ -35,6 +35,7 @@ celery_app.conf.update(
     accept_content=settings.celery_accept_content,
     timezone=settings.celery_timezone,
     enable_utc=settings.celery_enable_utc,
+    task_always_eager=settings.celery_task_always_eager,
     beat_schedule={
         "check-journiv-version-interval": {
             "task": "app.tasks.version_check.check_journiv_version",
@@ -51,6 +52,10 @@ celery_app.conf.update(
         "close-goal-periods-interval": {
             "task": "app.tasks.goal_tasks.close_goal_periods",
             "schedule": timedelta(hours=1),
+        },
+        "cleanup-stale-import-temp-files-interval": {
+            "task": "app.tasks.import.cleanup_stale_import_temp_files",
+            "schedule": timedelta(hours=24),
         },
     },
     task_track_started=True,

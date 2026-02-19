@@ -3,8 +3,9 @@ Unit tests for ScopedCache base class.
 
 Tests cache key generation, validation, and basic cache operations.
 """
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from app.core.scoped_cache import ScopedCache
 

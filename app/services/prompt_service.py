@@ -12,7 +12,6 @@ from sqlmodel import Session, col, func, select
 from app.core.exceptions import PromptNotFoundError
 from app.core.logging_config import log_error
 from app.core.time_utils import utc_now
-from app.models.entry import Entry
 from app.models.enums import PromptCategory
 from app.models.prompt import Prompt
 from app.schemas.prompt import PromptCreate, PromptUpdate
@@ -218,10 +217,11 @@ class PromptService:
         """Soft delete a prompt. Raises if prompt is in use."""
         prompt = self._get_owned_prompt(prompt_id, user_id)
 
+        from app.models.moment import Moment
+
         in_use = self.session.exec(
-            select(func.count(Entry.id)).where(
-                Entry.prompt_id == prompt_id,
-                col(Entry.is_draft).is_(False),
+            select(func.count(Moment.id)).where(
+                col(Moment.prompt_id) == prompt_id,
             )
         ).one() or 0
 
@@ -339,17 +339,18 @@ class PromptService:
         if not daily_prompt:
             return None
 
-        # Check if user has already answered today's prompt
-        existing_entry_statement = select(Entry).where(
-            Entry.user_id == user_id,
-            Entry.prompt_id == daily_prompt.id,
-            Entry.entry_date == today,
-            col(Entry.is_draft).is_(False),
+        # Check if user has already answered today's prompt (moment-first ownership).
+        from app.models.moment import Moment
+
+        existing_moment_statement = select(Moment).where(
+            Moment.user_id == user_id,
+            col(Moment.prompt_id) == daily_prompt.id,
+            col(Moment.logged_date_tz) == today,
         )
 
-        existing_entry = self.session.exec(existing_entry_statement).first()
-        if existing_entry:
-            # User has already answered today's prompt
+        existing_moment = self.session.exec(existing_moment_statement).first()
+        if existing_moment:
+            # User has already answered today's prompt (with or without Entry).
             return None
 
         return daily_prompt

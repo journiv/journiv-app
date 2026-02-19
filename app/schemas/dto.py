@@ -5,8 +5,8 @@ These DTOs represent the serialization format for Journiv data exports
 and the expected format for imports from various sources.
 
 IMPORTANT: This file maps to the ACTUAL database schema, not an idealized version.
-Fields marked as placeholders are not yet implemented in the database but reserved
-for future use to maintain backward compatibility with the export format.
+Fields marked as placeholders are optional import/export conveniences and are not
+persisted directly in the database.
 """
 from datetime import date, datetime
 from typing import Any, Dict, List, Optional
@@ -27,13 +27,13 @@ from app.models.enums import (
 # Core DTOs - Mapped to Actual Database Schema
 # ============================================================================
 
-class MediaDTO(BaseModel):
+class MomentMediaDTO(BaseModel):
     """
     Media file metadata for import/export.
 
-    Maps to: EntryMedia model (app/models/entry.py)
+    Maps to: MomentMedia in app/models/moment.py
     """
-    # Actual EntryMedia fields
+    # Actual MomentMedia fields
     filename: str = Field(..., description="Original filename")
     file_path: Optional[str] = Field(None, description="File path (relative to media root)")
     media_type: str = Field(..., description="Media type: image, video, audio, unknown")
@@ -99,15 +99,25 @@ class MomentDTO(BaseModel):
 
     Maps to: Moment model (app/models/moment.py) and MomentMoodActivity links.
     """
-    logged_at: datetime = Field(..., description="UTC timestamp when moment occurred")
-    logged_date: date = Field(..., description="User's local date for this moment")
+    logged_at_utc: datetime = Field(..., description="UTC timestamp when moment occurred")
+    logged_date_tz: date = Field(..., description="User's local date for this moment")
     logged_timezone: str = Field(default="UTC", description="IANA timezone for moment context")
     note: Optional[str] = Field(None, max_length=500, description="Optional note for the moment")
-    location_data: Optional[Dict[str, Any]] = Field(None, description="Structured location data")
-    weather_data: Optional[Dict[str, Any]] = Field(None, description="Structured weather data")
+    location_json: Optional[Dict[str, Any]] = Field(None, description="Structured location data")
+    latitude: Optional[float] = Field(None, description="GPS latitude")
+    longitude: Optional[float] = Field(None, description="GPS longitude")
+    weather_json: Optional[Dict[str, Any]] = Field(None, description="Structured weather data")
+    weather_summary: Optional[str] = Field(None, description="Human-readable weather summary")
+    is_pinned: bool = Field(default=False, description="Whether moment is pinned")
+    prompt_text: Optional[str] = Field(None, description="Original prompt text if moment used a prompt")
+    tags: List[str] = Field(default_factory=list, description="List of tag names")
     primary_mood_name: Optional[str] = Field(None, description="Primary mood name")
     mood_activity: List[MomentMoodActivityDTO] = Field(default_factory=list, description="Mood/activity links")
-    media: List["MediaDTO"] = Field(default_factory=list, description="Media attached to moment")
+    media: List["MomentMediaDTO"] = Field(default_factory=list, description="Media attached to moment")
+    entry: Optional["EntryDTO"] = Field(
+        None,
+        description="Optional narrative entry attached to this moment",
+    )
 
     created_at: datetime = Field(..., description="Moment creation time in UTC")
     updated_at: datetime = Field(..., description="Moment last update time in UTC")
@@ -125,92 +135,18 @@ class MomentDTO(BaseModel):
             return "UTC"
         return v
 
-
-class EntryDTO(BaseModel):
-    """
-    Journal entry for import/export.
-
-    Maps to: Entry model (app/models/entry.py)
-    """
-    # Actual Entry fields
-    title: Optional[str] = Field(None, max_length=300, description="Entry title")
-    content_delta: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Entry content as Quill Delta JSON (source of truth)",
-    )
-    content_plain_text: Optional[str] = Field(
-        None,
-        description="Plain-text extraction from content_delta",
-    )
-    entry_date: date = Field(..., description="User's local date for this entry")
-    entry_datetime_utc: datetime = Field(..., description="UTC timestamp when entry occurred")
-    entry_timezone: str = Field(default="UTC", description="IANA timezone for entry context")
-    word_count: int = Field(default=0, description="Word count")
-    is_pinned: bool = Field(default=False, description="Whether entry is pinned")
-    is_draft: bool = Field(default=False, description="Whether entry is a draft")
-
-    # Structured location fields (persisted in database after migration d8f3a9e2b1c4)
-    location_json: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Structured location data (persisted as JSON/JSONB in database): {name, street, locality, admin_area, country, latitude, longitude, timezone}. This DTO field maps directly to the database location_json JSON/JSONB column when saved."
-    )
-    latitude: Optional[float] = Field(None, description="GPS latitude (persisted as Float in database after migration)")
-    longitude: Optional[float] = Field(None, description="GPS longitude (persisted as Float in database after migration)")
-
-    # Structured weather fields (new in DB)
-    weather_json: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Structured weather data: {temp_c, condition, code, service}"
-    )
-    weather_summary: Optional[str] = Field(None, description="Human-readable weather summary")
-    import_metadata: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Import metadata for preserving source details"
-    )
-
-    # PLACEHOLDER: For backward compatibility with other apps
-    temperature: Optional[float] = Field(None, description="PLACEHOLDER: Temperature in Celsius (use weather_json instead)")
-
-    # Related data
-    tags: List[str] = Field(default_factory=list, description="List of tag names")
-    moment: Optional[MomentDTO] = Field(None, description="Associated moment (new format)")
-    media: List[MediaDTO] = Field(default_factory=list, description="Attached media files")
-
-    # Prompt information (if entry was created from prompt)
-    prompt_text: Optional[str] = Field(None, description="Original prompt text if entry used a prompt")
-
-    # Timestamps (inherited from BaseModel)
-    created_at: datetime = Field(..., description="Entry creation time in UTC")
-    updated_at: datetime = Field(..., description="Entry last update time in UTC")
-
-    # Import tracking
-    external_id: Optional[str] = Field(None, description="Original ID from source system")
-
-    @model_validator(mode='before')
+    @model_validator(mode="before")
     @classmethod
-    def map_legacy_content(cls, data: Any) -> Any:
-        """Backward compatibility: map legacy 'content' field to 'content_plain_text'."""
-        if isinstance(data, dict):
-            # If legacy 'content' field is present and 'content_plain_text' is missing, map it
-            if 'content' in data and data.get('content_plain_text') is None:
-                data['content_plain_text'] = data.get('content')
-        return data
-
-    @model_validator(mode='after')
-    def validate_content_present(self) -> 'EntryDTO':
-        """Ensure non-draft entries have some form of content."""
-        if not self.is_draft:
-            if self.content_delta is None and (self.content_plain_text is None or self.content_plain_text.strip() == ""):
-                raise ValueError("Non-draft entry must have either content_delta or content_plain_text")
-        return self
-
-    @field_validator('entry_timezone', mode='before')
-    @classmethod
-    def normalize_timezone(cls, v):
-        """Normalize timezone to ensure it's never None or empty."""
-        if not v or v == "":
-            return "UTC"
-        return v
+    def normalize_legacy_logged_fields(cls, data):
+        """Accept legacy import payload keys while preserving moment-first names."""
+        if not isinstance(data, dict):
+            return data
+        normalized = dict(data)
+        if "logged_at_utc" not in normalized and "logged_at" in normalized:
+            normalized["logged_at_utc"] = normalized["logged_at"]
+        if "logged_date_tz" not in normalized and "logged_date" in normalized:
+            normalized["logged_date_tz"] = normalized["logged_date"]
+        return normalized
 
     @field_validator('tags', mode='before')
     @classmethod
@@ -231,6 +167,74 @@ class EntryDTO(BaseModel):
         ]
 
 
+class EntryDTO(BaseModel):
+    """
+    Journal entry for import/export.
+
+    Maps to: Entry model (app/models/entry.py)
+    Content-only — all metadata (location, weather, tags, media, mood) lives on MomentDTO.
+    """
+    # Actual Entry fields
+    title: Optional[str] = Field(None, max_length=300, description="Entry title")
+    content_delta: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Entry content as Quill Delta JSON (source of truth)",
+    )
+    content_plain_text: Optional[str] = Field(
+        None,
+        description="Plain-text extraction from content_delta",
+    )
+    word_count: int = Field(default=0, description="Word count")
+    is_draft: bool = Field(default=False, description="Whether entry is a draft")
+    import_metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Import metadata for preserving source details"
+    )
+
+    # Parent journal reference (for moment-first export/import linking)
+    journal_external_id: Optional[str] = Field(
+        None,
+        description="Journal external ID this entry belongs to",
+    )
+
+    # Timestamps (inherited from BaseModel)
+    created_at: datetime = Field(..., description="Entry creation time in UTC")
+    updated_at: datetime = Field(..., description="Entry last update time in UTC")
+
+    # Import tracking
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+    @model_validator(mode='after')
+    def validate_content_present(self) -> 'EntryDTO':
+        """Ensure non-draft entries have some form of content."""
+        if not self.is_draft:
+            ops = self.content_delta.get("ops") if isinstance(self.content_delta, dict) else None
+            has_delta_content = False
+            if isinstance(ops, list):
+                for op in ops:
+                    if not isinstance(op, dict) or "insert" not in op:
+                        continue
+                    insert_value = op.get("insert")
+                    if isinstance(insert_value, str):
+                        if insert_value.strip() != "":
+                            has_delta_content = True
+                            break
+                    elif insert_value is not None:
+                        # Non-string insert payloads (embeds) count as content.
+                        has_delta_content = True
+                        break
+            has_plain_text = (
+                self.content_plain_text is not None
+                and self.content_plain_text.strip() != ""
+            )
+            has_title = self.title is not None and self.title.strip() != ""
+            if not any([has_delta_content, has_plain_text, has_title]):
+                raise ValueError(
+                    "Non-draft entry must have content (title, delta, or plain text)"
+                )
+        return self
+
+
 class JournalDTO(BaseModel):
     """
     Journal (notebook) for import/export.
@@ -245,16 +249,12 @@ class JournalDTO(BaseModel):
     is_favorite: bool = Field(default=False, description="Whether journal is marked as favorite")
     is_archived: bool = Field(default=False, description="Whether journal is archived")
 
-    # Denormalized fields
-    entry_count: int = Field(default=0, description="Number of entries (denormalized)")
+    # Metadata fields
     last_entry_at: Optional[datetime] = Field(None, description="Timestamp of last entry")
     import_metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="Import metadata for preserving source details"
     )
-
-    # Entries in this journal
-    entries: List[EntryDTO] = Field(default_factory=list, description="Journal entries")
 
     # Timestamps (inherited from BaseModel)
     created_at: datetime = Field(..., description="Journal creation time in UTC")
@@ -473,7 +473,7 @@ class JournivExportDTO(BaseModel):
     This is the top-level structure for full exports.
     """
     # Metadata
-    export_version: str = Field("1.3", description="Export format version")
+    export_version: str = Field("1.4", description="Export format version")
     export_date: datetime = Field(..., description="When export was created (UTC)")
     app_version: str = Field(..., description="Journiv version that created export")
 
@@ -483,7 +483,7 @@ class JournivExportDTO(BaseModel):
     user_settings: Optional[UserSettingsDTO] = Field(None, description="User preferences")
 
     # Data
-    journals: List[JournalDTO] = Field(..., description="All journals with their entries")
+    journals: List[JournalDTO] = Field(..., description="All journals (metadata/library)")
     mood_definitions: List[MoodDefinitionDTO] = Field(default_factory=list, description="Mood definitions (system + custom)")
     mood_preferences: List[MoodPreferenceDTO] = Field(default_factory=list, description="User mood preferences")
     mood_groups: List[MoodGroupDTO] = Field(default_factory=list, description="Mood groups")
@@ -495,7 +495,10 @@ class JournivExportDTO(BaseModel):
     goals: List[GoalDTO] = Field(default_factory=list, description="Goals")
     goal_logs: List[GoalLogDTO] = Field(default_factory=list, description="Goal logs")
     goal_manual_logs: List[GoalManualLogDTO] = Field(default_factory=list, description="Manual goal logs")
-    moments: List[MomentDTO] = Field(default_factory=list, description="Standalone moments without entries")
+    moments: List[MomentDTO] = Field(
+        default_factory=list,
+        description="Complete timeline; each moment may include an optional nested entry",
+    )
 
     # Statistics (for reference only, not imported)
     stats: Optional[Dict[str, Any]] = Field(
@@ -620,6 +623,13 @@ class ImportResultSummary(BaseModel):
     )
 
 
+# Resolve forward references for moment/entry nesting.
+MomentDTO.model_rebuild()
+EntryDTO.model_rebuild()
+JournalDTO.model_rebuild()
+JournivExportDTO.model_rebuild()
+
+
 # ============================================================================
 # Schema Compatibility Notes
 # ============================================================================
@@ -644,25 +654,20 @@ DATABASE SCHEMA MAPPING NOTES:
    - Goal logs stored in 'goal_log' (period-based)
    - Manual overrides stored in 'goal_manual_log'
 
-5. ENTRY LOCATION:
-   - Database (after migration d8f3a9e2b1c4):
-     * location_json: JSON/JSONB field storing structured location data (persisted)
-     * latitude: Float field for GPS latitude (persisted)
-     * longitude: Float field for GPS longitude (persisted)
-   - Legacy (removed): Single 'location' varchar field (max 200 chars) was removed in migration d8f3a9e2b1c4
-   - DTO field location_json: Maps directly to database location_json JSON/JSONB column (persisted)
-   - DTO fields latitude, longitude: Map directly to database Float columns (persisted)
-   - Placeholder: temperature (not in database, use weather_json instead)
+5. MOMENT LOCATION:
+   - Database: location_json, latitude, longitude live on 'moment' table
+   - DTO field location_json on MomentDTO maps directly to moment.location_json
+   - DTO fields latitude, longitude map directly to moment Float columns
 
-6. ENTRY MEDIA:
-   - Stored in 'entry_media' table with full metadata
+6. MOMENT MEDIA:
+   - Stored in 'moment_media' table with full metadata, linked via moment_id
    - Fields: file_path, original_filename, file_size, mime_type, media_type
    - Optional: thumbnail_path, width, height, duration, alt_text, checksum
    - Upload tracking: upload_status, processing_error, file_metadata
 
 7. TAGS:
    - Stored in 'tag' table (user-specific, case-insensitive)
-   - Many-to-many with entries via 'entry_tag_link' table
+   - Many-to-many with moments via 'moment_tag_link' table
    - Normalized to lowercase in database
 
 8. USER SETTINGS:
@@ -673,7 +678,8 @@ DATABASE SCHEMA MAPPING NOTES:
 
 9. TIMESTAMPS:
    - All models inherit from BaseModel: id, created_at, updated_at, is_deleted
-   - Entry has: entry_date (date), entry_datetime_utc (datetime), entry_timezone (str)
+   - Moment has: logged_date_tz (date), logged_at_utc (datetime), logged_timezone (str)
+   - Entry has: content fields only (title, content_delta, word_count, is_draft)
 
 10. ENUM TYPES:
    - MediaType: image, video, audio, unknown
@@ -686,9 +692,8 @@ DATABASE SCHEMA MAPPING NOTES:
    - ExportType: full, journal
 
 PLACEHOLDER FIELDS (for future implementation):
-- MediaDTO: caption (use alt_text instead)
+- MomentMediaDTO: caption (use alt_text instead)
 - MoodDefinitionDTO: emoji, color (string) not stored in database
-- EntryDTO: temperature (not persisted in DB, use weather_json instead; added for Day One import compatibility)
 - UserSettingsDTO: date_format, time_format, first_day_of_week
 
 TODO: These placeholders maintain compatibility with import formats from other apps

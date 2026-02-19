@@ -8,7 +8,6 @@ from typing import Any, Iterable, Sequence
 
 from tests.lib import JournivApiClient
 
-
 UNKNOWN_UUID = "00000000-0000-0000-0000-000000000000"
 
 
@@ -116,15 +115,15 @@ def sample_jpeg_bytes() -> bytes:
 def upload_sample_media(
     api_client: JournivApiClient,
     token: str,
-    entry_id: str,
+    moment_id: str,
     filename: str = "integration-test.jpg",
     content_type: str = "image/jpeg",
     alt_text: str = "integration test image",
 ) -> dict:
-    """Helper to upload sample media to an entry."""
+    """Helper to upload sample media to a moment."""
     return api_client.upload_media(
         token,
-        entry_id=entry_id,
+        moment_id=moment_id,
         filename=filename,
         content=sample_jpeg_bytes(),
         content_type=content_type,

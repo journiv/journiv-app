@@ -12,7 +12,8 @@ from app.schemas.dto import (
     EntryDTO,
     JournalDTO,
     JournivExportDTO,
-    MediaDTO,
+    MomentDTO,
+    MomentMediaDTO,
 )
 
 
@@ -104,22 +105,32 @@ def validate_journiv_export(data: Dict[str, Any]) -> ValidationResult:
         # Additional validations
         if not export_dto.journals:
             result.add_warning("Export contains no journals")
+        if not export_dto.moments:
+            result.add_warning("Export contains no moments")
 
-        total_entries = sum(len(j.entries) for j in export_dto.journals)
+        total_entries = sum(1 for m in export_dto.moments if m.entry is not None)
         if total_entries == 0:
-            result.add_warning("Export contains no entries")
+            result.add_warning("Export contains no narrative entries")
 
         # Check for duplicate journal titles
         journal_titles = [j.title.lower() for j in export_dto.journals]
         if len(journal_titles) != len(set(journal_titles)):
             result.add_warning("Export contains duplicate journals")
 
-        # Validate each journal
+        # Validate each journal (metadata-level)
         for idx, journal in enumerate(export_dto.journals):
             journal_result = validate_journal(journal, f"Journal {idx + 1}")
             result.errors.extend(journal_result.errors)
             result.warnings.extend(journal_result.warnings)
             if journal_result.has_errors():
+                result.valid = False
+
+        # Validate each moment (timeline-level canonical data)
+        for idx, moment in enumerate(export_dto.moments):
+            moment_result = validate_moment(moment, f"Moment {idx + 1}")
+            result.errors.extend(moment_result.errors)
+            result.warnings.extend(moment_result.warnings)
+            if moment_result.has_errors():
                 result.valid = False
 
     except ValidationError as e:
@@ -151,19 +162,6 @@ def validate_journal(journal: JournalDTO, context: str = "Journal") -> Validatio
     if not journal.title or not journal.title.strip():
         result.add_error(f"{context}: Title is required")
 
-    # Check for duplicate entry dates (potential duplicates)
-    entry_dates = [e.entry_date for e in journal.entries]
-    if len(entry_dates) != len(set(entry_dates)):
-        result.add_warning(f"{context}: Contains entries with duplicate dates")
-
-    # Validate each entry
-    for idx, entry in enumerate(journal.entries):
-        entry_result = validate_entry(entry, f"{context}, Entry {idx + 1}")
-        result.errors.extend(entry_result.errors)
-        result.warnings.extend(entry_result.warnings)
-        if entry_result.has_errors():
-            result.valid = False
-
     return result
 
 
@@ -185,30 +183,39 @@ def validate_entry(entry: EntryDTO, context: str = "Entry") -> ValidationResult:
         if not entry.content_delta or not entry.content_delta.get("ops"):
             result.add_warning(f"{context}: Content is empty")
 
-    if not entry.entry_date:
-        result.add_error(f"{context}: Entry date is required")
+    return result
 
-    # Validate GPS coordinates if present
-    if entry.latitude is not None:
-        if not (-90 <= entry.latitude <= 90):
-            result.add_error(f"{context}: Invalid latitude (must be -90 to 90)")
 
-    if entry.longitude is not None:
-        if not (-180 <= entry.longitude <= 180):
-            result.add_error(f"{context}: Invalid longitude (must be -180 to 180)")
+def validate_moment(moment: MomentDTO, context: str = "Moment") -> ValidationResult:
+    result = ValidationResult()
 
-    # Validate media
-    for idx, media in enumerate(entry.media):
+    if not moment.logged_date_tz:
+        result.add_error(f"{context}: logged_date_tz is required")
+
+    if moment.latitude is not None and not (-90 <= moment.latitude <= 90):
+        result.add_error(f"{context}: Invalid latitude (must be -90 to 90)")
+
+    if moment.longitude is not None and not (-180 <= moment.longitude <= 180):
+        result.add_error(f"{context}: Invalid longitude (must be -180 to 180)")
+
+    for idx, media in enumerate(moment.media or []):
         media_result = validate_media(media, f"{context}, Media {idx + 1}")
         result.errors.extend(media_result.errors)
         result.warnings.extend(media_result.warnings)
         if media_result.has_errors():
             result.valid = False
 
+    if moment.entry is not None:
+        entry_result = validate_entry(moment.entry, f"{context}, Entry")
+        result.errors.extend(entry_result.errors)
+        result.warnings.extend(entry_result.warnings)
+        if entry_result.has_errors():
+            result.valid = False
+
     return result
 
 
-def validate_media(media: MediaDTO, context: str = "Media") -> ValidationResult:
+def validate_media(media: MomentMediaDTO, context: str = "Media") -> ValidationResult:
     """
     Validate a media DTO.
 

@@ -1,11 +1,11 @@
-import pytest
-from unittest.mock import MagicMock, patch, AsyncMock, mock_open
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, mock_open, patch
 
+import pytest
 from fastapi import HTTPException, UploadFile
+
 from app.utils.import_export.upload_manager import UploadManager
-from app.models.enums import ImportSourceType
-from app.utils.import_export.media_handler import MediaHandler
+
 
 # Mock settings
 @pytest.fixture

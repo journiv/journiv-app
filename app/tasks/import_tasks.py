@@ -186,3 +186,13 @@ def process_import_job(self, job_id: str):
                 "status": "failed",
                 "error": str(e),
             }
+
+
+@celery_app.task(name="app.tasks.import.cleanup_stale_import_temp_files")
+def cleanup_stale_import_temp_files() -> dict:
+    """Periodic cleanup for stale import temp files/directories."""
+    with Session(engine) as db:
+        service = ImportService(db)
+        removed = service.cleanup_stale_temp_files(older_than_hours=2)
+        log_info("Completed stale import temp cleanup", removed_count=removed)
+        return {"removed_count": removed}

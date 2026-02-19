@@ -20,8 +20,9 @@ from sqlmodel import Session, col, func, select
 
 from app.core.config import settings
 from app.core.logging_config import LogCategory
-from app.models.entry import Entry
-from app.models.tag import EntryTagLink, Tag
+from app.models.moment import Moment
+from app.models.moment_tag_link import MomentTagLink
+from app.models.tag import Tag
 from app.plus.bridge_exceptions import BridgeDataError
 from app.plus.contract import (
     MonthlyUsageRecord,
@@ -122,33 +123,32 @@ class JournivBridge:
         try:
             # Database-specific month formatting (SQL-level operation)
             if settings.database_type == 'postgres':
-                month_expr = func.to_char(Entry.entry_date, 'YYYY-MM')
+                month_expr = func.to_char(Moment.logged_date_tz, 'YYYY-MM')
             else:
-                month_expr = func.strftime('%Y-%m', Entry.entry_date)
+                month_expr = func.strftime('%Y-%m', Moment.logged_date_tz)
 
             # Build query with user_id scoping (privacy)
             statement = select(
                 month_expr.label('month_key'),
                 func.count().label('count')
             ).select_from(
-                EntryTagLink
+                MomentTagLink
             ).join(
-                Entry, Entry.id == EntryTagLink.entry_id
+                Moment, Moment.id == MomentTagLink.moment_id
             ).join(
-                Tag, Tag.id == EntryTagLink.tag_id
+                Tag, Tag.id == MomentTagLink.tag_id
             ).where(
                 Tag.user_id == self.user_id,
-                Entry.user_id == self.user_id,
-                col(Entry.is_draft).is_(False)
+                Moment.user_id == self.user_id,
             )
 
             # Apply optional filters
             if tag_id:
-                statement = statement.where(EntryTagLink.tag_id == UUID(tag_id))
+                statement = statement.where(MomentTagLink.tag_id == UUID(tag_id))
 
             if start_date:
                 parsed_date = date.fromisoformat(start_date)
-                statement = statement.where(Entry.entry_date >= parsed_date)
+                statement = statement.where(col(Moment.logged_date_tz) >= parsed_date)
 
             # SQL-level aggregation
             statement = statement.group_by(month_expr)
@@ -197,29 +197,27 @@ class JournivBridge:
             # SQL-level MIN/MAX aggregation (fast)
             # First used
             first_query = select(
-                func.min(Entry.entry_datetime_utc)
+                func.min(Moment.logged_at_utc)
             ).select_from(
-                EntryTagLink
+                MomentTagLink
             ).join(
-                Entry, Entry.id == EntryTagLink.entry_id
+                Moment, Moment.id == MomentTagLink.moment_id
             ).where(
-                EntryTagLink.tag_id == tag_uuid,
-                Entry.user_id == self.user_id,      # Privacy: user-scoped
-                col(Entry.is_draft).is_(False)
+                MomentTagLink.tag_id == tag_uuid,
+                Moment.user_id == self.user_id,      # Privacy: user-scoped
             )
             first_used = self.db.exec(first_query).first()
 
             # Last used
             last_query = select(
-                func.max(Entry.entry_datetime_utc)
+                func.max(Moment.logged_at_utc)
             ).select_from(
-                EntryTagLink
+                MomentTagLink
             ).join(
-                Entry, Entry.id == EntryTagLink.entry_id
+                Moment, Moment.id == MomentTagLink.moment_id
             ).where(
-                EntryTagLink.tag_id == tag_uuid,
-                Entry.user_id == self.user_id,      # Privacy: user-scoped
-                col(Entry.is_draft).is_(False)
+                MomentTagLink.tag_id == tag_uuid,
+                Moment.user_id == self.user_id,      # Privacy: user-scoped
             )
             last_used = self.db.exec(last_query).first()
 

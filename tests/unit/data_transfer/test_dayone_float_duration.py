@@ -1,9 +1,11 @@
-from app.data_transfer.dayone.models import DayOneVideo, DayOneEntry, DayOneExport
-from app.schemas.dto import MediaDTO
 from datetime import datetime, timezone
 
+from app.data_transfer.dayone.models import DayOneEntry, DayOneExport, DayOneVideo
+from app.schemas.dto import MomentMediaDTO
+
+
 def test_media_dto_duration_float_validation():
-    """Test that MediaDTO can handle float durations."""
+    """Test that MomentMediaDTO can handle float durations."""
     media_data = {
         "filename": "test.mp4",
         "media_type": "video",
@@ -14,7 +16,7 @@ def test_media_dto_duration_float_validation():
         "updated_at": datetime.now(timezone.utc)
     }
 
-    media = MediaDTO(**media_data)
+    media = MomentMediaDTO(**media_data)
     assert media.duration == 20.315
     assert isinstance(media.duration, float)
 

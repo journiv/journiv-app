@@ -22,11 +22,11 @@ from app.models import (
     Activity,
     ActivityGroup,
     Entry,
-    EntryMedia,
     Goal,
     GoalCategory,
     GoalLog,
     Journal,
+    MomentMedia,
     Mood,
     MoodGroup,
     MoodGroupLink,
@@ -48,8 +48,8 @@ from app.schemas.dto import (
     GoalManualLogDTO,
     JournalDTO,
     JournivExportDTO,
-    MediaDTO,
     MomentDTO,
+    MomentMediaDTO,
     MomentMoodActivityDTO,
     MoodDefinitionDTO,
     MoodGroupDTO,
@@ -76,6 +76,7 @@ class ExportService:
         self.zip_handler = ZipHandler()
         self.media_handler = MediaHandler()
         self._media_export_map: Dict[str, Path] = {}
+        self._missing_media_files: List[str] = []
 
     def create_export(
         self,
@@ -127,6 +128,7 @@ class ExportService:
         user_id: UUID,
         export_type: ExportType,
         journal_ids: Optional[List[str]] = None,
+        include_media: bool = True,
         total_entries: Optional[int] = None,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> JournivExportDTO:
@@ -137,6 +139,7 @@ class ExportService:
             user_id: User ID to export
             export_type: Type of export
             journal_ids: Optional list of journal IDs to export
+            include_media: Whether entry moments should include media metadata
 
         Returns:
             JournivExportDTO with all user data
@@ -170,14 +173,8 @@ class ExportService:
             if progress_callback and total_entries:
                 progress_callback(entries_processed, total_entries)
 
-        # Convert journals to DTOs
-        journal_dtos = []
-        for journal in journals:
-            journal_dto = self._convert_journal_to_dto(
-                journal,
-                entry_progress_callback=handle_entry_progress,
-            )
-            journal_dtos.append(journal_dto)
+        # Convert journals to metadata-only DTOs (moment-first export).
+        journal_dtos = [self._convert_journal_to_dto(journal) for journal in journals]
 
         # Get mood definitions (system + user custom)
         mood_dtos = self._get_mood_definitions(user_id)
@@ -201,31 +198,29 @@ class ExportService:
         # Get user settings
         user_settings = self._get_user_settings(user)
 
-        # Get standalone moments (no entry)
+        moments_query = select(Moment).where(col(Moment.user_id) == user_id)
+        if export_type == ExportType.JOURNAL and journal_ids:
+            journal_uuids = [UUID(jid) for jid in journal_ids]
+            moments_query = moments_query.join(
+                Entry, col(Entry.moment_id) == col(Moment.id)
+            ).where(col(Entry.journal_id).in_(journal_uuids))
+
         moments = list(
-            self.db.execute(
-                select(Moment)
-                .where(
-                    col(Moment.user_id) == user_id,
-                    col(Moment.entry_id).is_(None),
-                )
-                .order_by(col(Moment.logged_at))
-            )
-            .scalars()
-            .all()
+            self.db.execute(moments_query.order_by(col(Moment.logged_at_utc))).scalars().all()
         )
-        moment_prefetch = self._build_moment_prefetch(moments, include_media=True)
+        moment_prefetch = self._build_moment_prefetch(moments, include_media=include_media)
         moment_dtos = [
-            self._convert_moment_to_dto(moment, include_media=True, prefetch=moment_prefetch)
+            self._convert_moment_to_dto(moment, include_media=include_media, prefetch=moment_prefetch)
             for moment in moments
         ]
 
+        for moment_dto in moment_dtos:
+            if moment_dto.entry is not None:
+                handle_entry_progress()
+
         # Calculate statistics
-        total_entries = sum(len(j.entries) for j in journal_dtos)
-        total_media = sum(
-            len(e.media) for j in journal_dtos for e in j.entries
-        )
-        total_media += sum(len(m.media) for m in moment_dtos)
+        total_entries = sum(1 for m in moment_dtos if m.entry is not None)
+        total_media = sum(len(m.media) for m in moment_dtos)
 
         stats = {
             "journal_count": len(journal_dtos),
@@ -296,6 +291,7 @@ class ExportService:
         zip_filename = f"journiv_export_{user_id}_{timestamp}.zip"
         zip_path = export_dir / zip_filename
 
+        self._missing_media_files = []
         # Collect media files if requested
         media_files: Dict[str, Path] = {}
         if include_media:
@@ -315,7 +311,10 @@ class ExportService:
                 encoding="utf-8",
                 suffix=".json",
             ) as tmp_file:
-                json.dump(export_dict, tmp_file, ensure_ascii=False)
+                # Stream JSON in chunks to avoid building a giant string in memory.
+                encoder = json.JSONEncoder(ensure_ascii=False, separators=(",", ":"))
+                for chunk in encoder.iterencode(export_dict):
+                    tmp_file.write(chunk)
                 temp_data_path = Path(tmp_file.name)
 
             # Create ZIP
@@ -332,8 +331,10 @@ class ExportService:
         # Update stats
         stats = {
             "journal_count": len(export_data.journals),
-            "entry_count": sum(len(j.entries) for j in export_data.journals),
+            "entry_count": sum(1 for m in export_data.moments if m.entry is not None),
             "media_count": len(media_files),
+            "missing_media_count": len(self._missing_media_files),
+            "missing_media_files": list(self._missing_media_files),
             "file_size": file_size,
         }
 
@@ -389,11 +390,7 @@ class ExportService:
 
         return int(self.db.execute(query).scalar_one() or 0)
 
-    def _convert_journal_to_dto(
-        self,
-        journal: Journal,
-        entry_progress_callback: Optional[Callable[[], None]] = None,
-    ) -> JournalDTO:
+    def _convert_journal_to_dto(self, journal: Journal) -> JournalDTO:
         """
         Convert Journal model to JournalDTO.
 
@@ -402,31 +399,6 @@ class ExportService:
         - journal.color -> color (enum to string)
         - journal.is_archived, entry_count, last_entry_at included
         """
-        from sqlalchemy.orm import joinedload
-
-        entries_statement = (
-            select(Entry)
-            .where(col(Entry.journal_id) == journal.id)
-            .options(
-                joinedload(Entry.tags),  # type: ignore[arg-type]
-                joinedload(Entry.media),  # type: ignore[arg-type]
-                joinedload(Entry.prompt),  # type: ignore[arg-type]
-                joinedload(Entry.moment),  # type: ignore[arg-type]
-            )
-            .order_by(col(Entry.entry_datetime_utc))
-        )
-        entries_result = self.db.execute(entries_statement)
-        entries = list(entries_result.unique().scalars().all())
-
-        moments = [entry.moment for entry in entries if entry.moment]
-        moment_prefetch = self._build_moment_prefetch(moments, include_media=False)
-
-        entry_dtos = []
-        for entry in entries:
-            entry_dtos.append(self._convert_entry_to_dto(entry, moment_prefetch))
-            if entry_progress_callback:
-                entry_progress_callback()
-
         return JournalDTO(
             title=journal.title,  # Journal has 'title' not 'name'
             description=journal.description,
@@ -434,9 +406,7 @@ class ExportService:
             icon=journal.icon,
             is_favorite=journal.is_favorite,
             is_archived=journal.is_archived,  # Include archived status
-            entry_count=journal.entry_count,  # Denormalized count
             last_entry_at=journal.last_entry_at,  # Last entry timestamp
-            entries=entry_dtos,
             import_metadata=journal.import_metadata,
             created_at=journal.created_at,
             updated_at=journal.updated_at,
@@ -446,62 +416,27 @@ class ExportService:
     def _convert_entry_to_dto(
         self,
         entry: Entry,
-        moment_prefetch: Optional[dict] = None,
     ) -> EntryDTO:
         """
         Convert Entry model to EntryDTO.
 
-        Maps database fields to DTO structure:
-        - All three datetime fields: entry_date, entry_datetime_utc, entry_timezone
-        - Structured fields: location_json, latitude, longitude, weather_json, weather_summary
-        - entry.word_count, entry.is_pinned included
-        - Includes moment data if present
+        All contextual metadata (dates, location, weather, tags, media, mood,
+        prompt, pinned) lives on the parent Moment.
         """
-        tags = [tag.name for tag in entry.tags] if entry.tags else []
-
-        moment_dto = None
-        if entry.moment:
-            moment_dto = self._convert_moment_to_dto(
-                entry.moment,
-                include_media=False,
-                prefetch=moment_prefetch,
-            )
-
-        # Get media
-        media_dtos = []
-        if entry.media:
-            for media in entry.media:
-                media_dto = self._convert_media_to_dto(media)
-                media_dtos.append(media_dto)
-
-        # Get prompt text if entry was created from a prompt
-        prompt_text = None
-        if entry.prompt:
-            prompt_text = entry.prompt.text
+        plain_text = entry.content_plain_text or ""
+        # Integrity fallback: if stored word_count is null, recompute from plain text.
+        word_count = entry.word_count
+        if word_count is None:
+            word_count = len(plain_text.split()) if plain_text else 0
 
         return EntryDTO(
             title=entry.title,
             content_delta=entry.content_delta,
             content_plain_text=entry.content_plain_text,
-            entry_date=entry.entry_date,  # All three datetime fields required
-            entry_datetime_utc=entry.entry_datetime_utc,
-            entry_timezone=entry.entry_timezone,
-            word_count=entry.word_count,  # Include word count
-            is_pinned=entry.is_pinned,  # Include pinned status
+            word_count=word_count,
             is_draft=entry.is_draft,
-            tags=tags,
-            moment=moment_dto,
-            # Structured location/weather fields
-            location_json=entry.location_json,
-            latitude=entry.latitude,
-            longitude=entry.longitude,
-            weather_json=entry.weather_json,
-            weather_summary=entry.weather_summary,
+            journal_external_id=str(entry.journal_id),
             import_metadata=entry.import_metadata,
-            # PLACEHOLDER: For backward compatibility with other apps
-            temperature=None,  # Use weather_json.temp_c instead
-            media=media_dtos,
-            prompt_text=prompt_text,
             created_at=entry.created_at,
             updated_at=entry.updated_at,
             external_id=str(entry.id),
@@ -514,6 +449,7 @@ class ExportService:
                 "mood_map": {},
                 "activity_map": {},
                 "media_map": {},
+                "entry_map": {},
             }
         moment_ids = [moment.id for moment in moments]
         links = (
@@ -563,13 +499,13 @@ class ExportService:
                 .all()
             }
 
-        media_map: dict[UUID, list[EntryMedia]] = {
+        media_map: dict[UUID, list[MomentMedia]] = {
             moment_id: [] for moment_id in moment_ids
         }
         if include_media:
             media_rows = (
                 self.db.execute(
-                    select(EntryMedia).where(col(EntryMedia.moment_id).in_(moment_ids))
+                    select(MomentMedia).where(col(MomentMedia.moment_id).in_(moment_ids))
                 )
                 .scalars()
                 .all()
@@ -578,11 +514,25 @@ class ExportService:
                 if media.moment_id:
                     media_map[media.moment_id].append(media)
 
+        entries = (
+            self.db.execute(
+                select(Entry).where(col(Entry.moment_id).in_(moment_ids))
+            )
+            .scalars()
+            .all()
+        )
+        entry_map: dict[UUID, Entry] = {
+            entry.moment_id: entry
+            for entry in entries
+            if entry.moment_id is not None
+        }
+
         return {
             "links_by_moment": links_by_moment,
             "mood_map": mood_map,
             "activity_map": activity_map,
             "media_map": media_map,
+            "entry_map": entry_map,
         }
 
     def _convert_moment_to_dto(
@@ -596,7 +546,8 @@ class ExportService:
         mood_map: dict[UUID, Mood] = prefetch.get("mood_map", {})
         activity_map: dict[UUID, Activity] = prefetch.get("activity_map", {})
         links_by_moment: dict[UUID, list[MomentMoodActivity]] = prefetch.get("links_by_moment", {})
-        media_map: dict[UUID, list[EntryMedia]] = prefetch.get("media_map", {})
+        media_map: dict[UUID, list[MomentMedia]] = prefetch.get("media_map", {})
+        entry_map: dict[UUID, Entry] = prefetch.get("entry_map", {})
 
         mood_name = None
         if moment.primary_mood_id:
@@ -676,7 +627,7 @@ class ExportService:
             if moment_media is None:
                 moment_media = (
                     self.db.execute(
-                        select(EntryMedia).where(col(EntryMedia.moment_id) == moment.id)
+                        select(MomentMedia).where(col(MomentMedia.moment_id) == moment.id)
                     )
                     .scalars()
                     .all()
@@ -684,49 +635,67 @@ class ExportService:
             for media in moment_media:
                 media_dtos.append(self._convert_media_to_dto(media))
 
-        logged_date = moment.logged_date
-        if logged_date is None:
-            if moment.logged_at is not None:
-                logged_date = moment.logged_at.date()
+        logged_date_tz = moment.logged_date_tz
+        if logged_date_tz is None:
+            if moment.logged_at_utc is not None:
+                logged_date_tz = moment.logged_at_utc.date()
                 log_warning(
-                    "Moment logged_date missing; derived from logged_at",
+                    "Moment logged_date_tz missing; derived from logged_at_utc",
                     moment_id=str(moment.id),
                     user_id=str(moment.user_id),
                 )
             elif moment.created_at is not None:
-                logged_date = moment.created_at.date()
+                logged_date_tz = moment.created_at.date()
                 log_warning(
-                    "Moment logged_date/logged_at missing; derived from created_at",
+                    "Moment logged_date_tz/logged_at_utc missing; derived from created_at",
                     moment_id=str(moment.id),
                     user_id=str(moment.user_id),
                 )
             else:
-                logged_date = utc_now().date()
+                logged_date_tz = utc_now().date()
                 log_warning(
-                    "Moment logged_date/logged_at/created_at missing; using current date",
+                    "Moment logged_date_tz/logged_at_utc/created_at missing; using current date",
                     moment_id=str(moment.id),
                     user_id=str(moment.user_id),
                 )
 
+        # Collect tag names from MomentTagLink
+        tags = [tag.name for tag in moment.tags] if moment.tags else []
+
+        # Get prompt text if moment was created from a prompt
+        prompt_text = None
+        if moment.prompt:
+            prompt_text = moment.prompt.text
+
+        entry = entry_map.get(moment.id)
+        entry_dto = self._convert_entry_to_dto(entry) if entry is not None else None
+
         return MomentDTO(
-            logged_at=moment.logged_at,
-            logged_date=logged_date,
+            logged_at_utc=moment.logged_at_utc,
+            logged_date_tz=logged_date_tz,
             logged_timezone=moment.logged_timezone,
             note=moment.note,
-            location_data=moment.location_data,
-            weather_data=moment.weather_data,
+            location_json=moment.location_json,
+            latitude=moment.latitude,
+            longitude=moment.longitude,
+            weather_json=moment.weather_json,
+            weather_summary=moment.weather_summary,
+            is_pinned=moment.is_pinned,
+            prompt_text=prompt_text,
+            tags=tags,
             primary_mood_name=mood_name,
             primary_mood_external_id=str(moment.primary_mood_id) if moment.primary_mood_id else None,
             mood_activity=mood_activity,
             media=media_dtos,
+            entry=entry_dto,
             created_at=moment.created_at,
             updated_at=moment.updated_at,
             external_id=str(moment.id),
         )
 
-    def _convert_media_to_dto(self, media: EntryMedia) -> MediaDTO:
+    def _convert_media_to_dto(self, media: MomentMedia) -> MomentMediaDTO:
         """
-        Convert EntryMedia model to MediaDTO.
+        Convert MomentMedia model to MomentMediaDTO.
 
         Maps database fields to DTO structure:
         - media.original_filename -> filename
@@ -750,7 +719,7 @@ class ExportService:
             # Fallback for external media without original_filename
             filename = f"media_{media.id}"
 
-        return MediaDTO(
+        return MomentMediaDTO(
             filename=filename,
             file_path=sanitized_path,
             media_type=media.media_type.value if hasattr(media.media_type, 'value') else str(media.media_type),
@@ -1111,32 +1080,6 @@ class ExportService:
             Dictionary of {relative_path: absolute_path}
         """
         media_files: Dict[str, Path] = {}
-        for journal in export_data.journals:
-            for entry in journal.entries:
-                for media in entry.media:
-                    # Skip media without file_path
-                    if not media.file_path:
-                        log_warning(
-                            f"Media {media.filename} has no file_path, skipping",
-                            user_id=str(user_id),
-                            media_filename=media.filename
-                        )
-                        continue
-
-                    source_path = self._media_export_map.get(media.file_path)
-                    if not source_path:
-                        source_path = Path(settings.media_root) / media.file_path
-
-                    if source_path.exists():
-                        media_files[media.file_path] = source_path
-                    else:
-                        log_warning(
-                            f"Media file not found: {source_path} (file_path: {media.file_path})",
-                            user_id=str(user_id),
-                            file_path=media.file_path,
-                            source_path=str(source_path)
-                        )
-
         for moment in export_data.moments:
             for media in moment.media:
                 if not media.file_path:
@@ -1154,6 +1097,8 @@ class ExportService:
                 if source_path.exists():
                     media_files[media.file_path] = source_path
                 else:
+                    if media.file_path not in self._missing_media_files:
+                        self._missing_media_files.append(media.file_path)
                     log_warning(
                         f"Media file not found: {source_path} (file_path: {media.file_path})",
                         user_id=str(user_id),
@@ -1163,10 +1108,10 @@ class ExportService:
 
         return media_files
 
-    def _build_media_export_path(self, media: EntryMedia) -> str:
+    def _build_media_export_path(self, media: MomentMedia) -> str:
         """Build a sanitized relative path for media inside the export ZIP."""
         file_path = media.file_path or ""
         original_name = media.original_filename or (Path(file_path).name if file_path else "media")
         safe_name = self.media_handler.sanitize_filename(original_name)
-        parent_id = media.entry_id or media.moment_id or "media"
+        parent_id = media.moment_id or "media"
         return f"{parent_id}/{media.id}_{safe_name}"

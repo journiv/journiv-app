@@ -1,11 +1,12 @@
-from datetime import datetime, timezone
-from pathlib import Path
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import MagicMock
+
 from app.data_transfer.dayone.mappers import DayOneToJournivMapper
-from app.services.import_service import ImportService
-from app.schemas.dto import ImportResultSummary, MediaDTO
 from app.models.enums import MediaType, UploadStatus
+from app.schemas.dto import ImportResultSummary, MomentMediaDTO
+from app.services.import_service import ImportService
+
 
 def test_dayone_mapper_sanitizes_zero_dimensions(tmp_path):
     """Test that DayOneToJournivMapper converts 0 width/height to None."""
@@ -35,7 +36,7 @@ def test_import_service_sanitizes_zero_dimensions():
     service = ImportService(db=None)
 
     now = datetime.now(timezone.utc)
-    media_dto = MediaDTO(
+    media_dto = MomentMediaDTO(
         filename="test.jpg",
         file_path="user/images/test.jpg",
         media_type="image",
@@ -53,7 +54,7 @@ def test_import_service_sanitizes_zero_dimensions():
 
     # Use the correct method name: _create_media_record
     record = service._create_media_record(
-        entry_id=uuid.uuid4(),
+        moment_id=uuid.uuid4(),
         file_path="user/images/test.jpg",
         media_dto=media_dto,
         checksum="dummy_checksum",

@@ -873,19 +873,19 @@ async def remove_assets_from_integration_album(
         return
 
     # Filter out assets that are still in use by other entries for this user
-    # This prevents removing an asset from the album if it's linked to multiple entries
+    # This prevents removing an asset from the album if it's linked to other moments
+    # (including standalone moments without entries).
     try:
-        from app.models.entry import Entry, EntryMedia
+        from app.models.moment import Moment, MomentMedia
 
-        # Check if any of these assets are still referenced in the database
-        # (The current entry's reference has already been deleted by this point)
+        # Check if any of these assets are still referenced in the database.
         stmt = (
-            select(EntryMedia.external_asset_id)
-            .join(Entry)
+            select(MomentMedia.external_asset_id)
+            .join(Moment, col(Moment.id) == col(MomentMedia.moment_id))
             .where(
-                Entry.user_id == user_id,
-                EntryMedia.external_provider == provider.value,
-                col(EntryMedia.external_asset_id).in_(asset_ids)
+                Moment.user_id == user_id,
+                MomentMedia.external_provider == provider.value,
+                col(MomentMedia.external_asset_id).in_(asset_ids)
             )
         )
 
@@ -898,7 +898,7 @@ async def remove_assets_from_integration_album(
         asset_ids = [aid for aid in asset_ids if aid not in remaining_assets]
 
         if not asset_ids:
-            log_debug(f"All {original_count} assets are still in use by other entries, skipping removal from {provider} album")
+            log_debug(f"All {original_count} assets are still in use by other moments, skipping removal from {provider} album")
             return
 
         if len(asset_ids) < original_count:

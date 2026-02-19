@@ -12,7 +12,7 @@ from .base import BaseModel
 from .enums import PromptCategory
 
 if TYPE_CHECKING:
-    from .entry import Entry
+    from .moment import Moment
     from .user import User
 
 
@@ -38,7 +38,7 @@ class Prompt(BaseModel, table=True):
 
     # Relations
     user: Optional["User"] = Relationship(back_populates="user_prompts")
-    entries: List["Entry"] = Relationship(back_populates="prompt")
+    moments: List["Moment"] = Relationship(back_populates="prompt")
 
     # Table constraints and indexes
     __table_args__ = (

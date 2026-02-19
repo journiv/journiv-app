@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field, computed_field
 
 from app.models.enums import JobStatus
 from app.models.integration import AssetType
-from app.schemas.entry import EntryMediaResponse
+from app.schemas.entry import MomentMediaResponse
 
 
 class ImmichImportJobResponse(BaseModel):
     """Response schema for import job status mapping to unified ImportJob."""
     job_id: uuid.UUID = Field(..., alias="id")
-    entry_id: Optional[uuid.UUID] = None
+    moment_id: Optional[uuid.UUID] = None
     status: JobStatus
     total_items: int
     processed_items: int
@@ -45,7 +45,7 @@ class ImmichImportStartResponse(BaseModel):
     status: str = "accepted"
     message: str
     total_assets: int
-    media: list[EntryMediaResponse] = Field(default_factory=list)
+    media: list[MomentMediaResponse] = Field(default_factory=list)
 
 
 class ImmichImportAsset(BaseModel):
@@ -100,5 +100,5 @@ class MediaBatchSignResponse(BaseModel):
 class ImmichImportRequest(BaseModel):
     """Request to import assets from Immich."""
     asset_ids: list[str] = Field(..., min_length=1, max_length=100)
-    entry_id: uuid.UUID
+    moment_id: uuid.UUID
     assets: Optional[list[ImmichImportAsset]] = None

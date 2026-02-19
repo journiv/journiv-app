@@ -4,11 +4,9 @@ Mood API coverage.
 import uuid
 from datetime import date, timedelta
 
-import pytest
-
 from tests.integration.helpers import (
-    EndpointCase,
     UNKNOWN_UUID,
+    EndpointCase,
     assert_requires_authentication,
 )
 from tests.lib import ApiUser, JournivApiClient

@@ -2,6 +2,7 @@
 Integration tests for admin role management and user administration.
 """
 import uuid
+
 import pytest
 
 from tests.lib import ApiUser, JournivApiClient, make_api_user

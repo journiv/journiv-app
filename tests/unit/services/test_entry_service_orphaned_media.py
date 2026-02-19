@@ -4,20 +4,19 @@ Unit tests for orphaned media deletion when updating entries.
 Tests verify that media files are immediately deleted when they're removed
 from an entry's content delta during an update.
 """
-import pytest
 import uuid
-from datetime import date
-from unittest.mock import MagicMock, patch, call
-from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from sqlmodel import Session, create_engine
 
 from app.models.base import BaseModel
-from app.models.entry import Entry, EntryMedia
+from app.models.entry import Entry
+from app.models.moment import MomentMedia
+from app.models.enums import MediaType, UploadStatus
 from app.models.journal import Journal
+from app.models.moment import Moment
 from app.models.user import User
-from app.schemas.entry import EntryCreate, EntryUpdate, QuillDelta
-from app.core.time_utils import utc_now
+from app.schemas.entry import EntryUpdate, QuillDelta
 from app.services.entry_service import EntryService
 
 
@@ -53,6 +52,15 @@ def _create_journal(session: Session, user_id: uuid.UUID) -> Journal:
     return journal
 
 
+def _create_moment(session: Session, user_id: uuid.UUID) -> Moment:
+    """Create a test moment."""
+    moment = Moment(user_id=user_id)
+    session.add(moment)
+    session.commit()
+    session.refresh(moment)
+    return moment
+
+
 def _create_entry_with_media(
     session: Session,
     user_id: uuid.UUID,
@@ -74,15 +82,15 @@ def _create_entry_with_media(
             ops.append({"insert": "\n"})
         delta = {"ops": ops}
 
+    moment = _create_moment(session, user_id)
+
     entry = Entry(
         user_id=user_id,
         journal_id=journal_id,
+        moment_id=moment.id,
         title=title,
         content_delta=delta,
         content_plain_text="Test content",
-        entry_date=date.today(),
-        entry_timezone="UTC",
-        entry_datetime_utc=utc_now(),
         is_draft=False,
     )
     session.add(entry)
@@ -92,16 +100,16 @@ def _create_entry_with_media(
     # Create media records if specified
     if media_ids:
         for i, media_id in enumerate(media_ids):
-            media = EntryMedia(
+            media = MomentMedia(
                 id=media_id,
-                entry_id=entry.id,
-                media_type="image",
+                moment_id=entry.moment_id,
+                media_type=MediaType.IMAGE,
                 file_path=f"user/{user_id}/images/file-path-{i+1}.jpg",
                 original_filename=f"image-{i+1}.jpg",
                 file_size=1024,
                 mime_type="image/jpeg",
                 checksum=f"checksum-{i+1}",
-                upload_status="COMPLETED",
+                upload_status=UploadStatus.COMPLETED,
             )
             session.add(media)
         session.commit()
@@ -129,7 +137,7 @@ class TestOrphanedMediaDeletion:
         )
 
         # Verify initial state
-        assert len(session.query(EntryMedia).all()) == 2
+        assert len(session.query(MomentMedia).all()) == 2
 
         service = EntryService(session)
 
@@ -165,8 +173,8 @@ class TestOrphanedMediaDeletion:
             assert call_args[1]["force"] is False
 
         # Verify: media record was deleted from database
-        remaining_media = session.query(EntryMedia).filter(
-            EntryMedia.entry_id == entry.id
+        remaining_media = session.query(MomentMedia).filter(
+            MomentMedia.moment_id == entry.moment_id
         ).all()
         assert len(remaining_media) == 1
         assert remaining_media[0].id == media_id_2
@@ -188,7 +196,7 @@ class TestOrphanedMediaDeletion:
         )
 
         # Add thumbnail path to the first media (the one we'll delete)
-        media = session.query(EntryMedia).filter(EntryMedia.id == media_id_1).first()
+        media = session.query(MomentMedia).filter(MomentMedia.id == media_id_1).first()
         media.thumbnail_path = f"user/{user.id}/images/thumbnails/thumb-image.jpg"
         session.add(media)
         session.commit()
@@ -220,14 +228,14 @@ class TestOrphanedMediaDeletion:
             mock_instance.delete_media.assert_called_once()
 
         # Verify: the first media (with thumbnail) was deleted from database
-        remaining_media = session.query(EntryMedia).filter(
-            EntryMedia.entry_id == entry.id
+        remaining_media = session.query(MomentMedia).filter(
+            MomentMedia.moment_id == entry.moment_id
         ).all()
         assert len(remaining_media) == 1
         assert remaining_media[0].id == media_id_2
 
         # Verify: the deleted media had a thumbnail path
-        deleted_media = session.query(EntryMedia).filter(EntryMedia.id == media_id_1).first()
+        deleted_media = session.query(MomentMedia).filter(MomentMedia.id == media_id_1).first()
         assert deleted_media is None  # It was deleted
 
     def test_no_deletion_when_media_not_removed(self):
@@ -272,8 +280,8 @@ class TestOrphanedMediaDeletion:
             mock_instance.delete_media.assert_not_called()
 
         # Verify: media record still exists
-        remaining_media = session.query(EntryMedia).filter(
-            EntryMedia.entry_id == entry.id
+        remaining_media = session.query(MomentMedia).filter(
+            MomentMedia.moment_id == entry.moment_id
         ).all()
         assert len(remaining_media) == 1
         assert remaining_media[0].id == media_id
@@ -314,8 +322,8 @@ class TestOrphanedMediaDeletion:
             assert mock_instance.delete_media.call_count == 3
 
         # Verify: all media records were deleted
-        remaining_media = session.query(EntryMedia).filter(
-            EntryMedia.entry_id == entry.id
+        remaining_media = session.query(MomentMedia).filter(
+            MomentMedia.moment_id == entry.moment_id
         ).all()
         assert len(remaining_media) == 0
 
@@ -334,7 +342,7 @@ class TestOrphanedMediaDeletion:
         )
 
         # Remove checksum from media to simulate old records
-        media = session.query(EntryMedia).filter(EntryMedia.id == media_id).first()
+        media = session.query(MomentMedia).filter(MomentMedia.id == media_id).first()
         media.checksum = None
         session.add(media)
         session.commit()
@@ -363,8 +371,8 @@ class TestOrphanedMediaDeletion:
             assert call_args[1]["checksum"] is None
 
         # Verify: media record was deleted from database
-        remaining_media = session.query(EntryMedia).filter(
-            EntryMedia.entry_id == entry.id
+        remaining_media = session.query(MomentMedia).filter(
+            MomentMedia.moment_id == entry.moment_id
         ).all()
         assert len(remaining_media) == 0
 
@@ -417,8 +425,8 @@ class TestOrphanedMediaDeletion:
         db_entry = session.query(Entry).filter(Entry.id == entry.id).first()
         assert db_entry.title == new_title
 
-        db_media = session.query(EntryMedia).filter(
-            EntryMedia.entry_id == entry.id
+        db_media = session.query(MomentMedia).filter(
+            MomentMedia.moment_id == entry.moment_id
         ).all()
         assert len(db_media) == 0
 
@@ -429,36 +437,36 @@ class TestOrphanedMediaDeletion:
         journal = _create_journal(session, user.id)
 
         media_id = uuid.uuid4()
+        moment = _create_moment(session, user.id)
 
-        # Create a draft entry with media
-        draft_entry = Entry(
-            user_id=user.id,
-            journal_id=journal.id,
-            title="Draft Entry",
-            content_delta={"ops": [{"insert": {"image": "file-path-1.jpg"}}, {"insert": "\n"}]},
-            content_plain_text="",
-            entry_date=date.today(),
-            entry_timezone="UTC",
-            entry_datetime_utc=utc_now(),
-            is_draft=True,
-        )
-        session.add(draft_entry)
-        session.commit()
-        session.refresh(draft_entry)
-
-        media = EntryMedia(
+        # Create media record first to satisfy delta references
+        media = MomentMedia(
             id=media_id,
-            entry_id=draft_entry.id,
-            media_type="image",
+            moment_id=moment.id,
+            media_type=MediaType.IMAGE,
             file_path=f"user/{user.id}/images/file-path-1.jpg",
             original_filename="image-1.jpg",
             file_size=1024,
             mime_type="image/jpeg",
             checksum="checksum-1",
-            upload_status="COMPLETED",
+            upload_status=UploadStatus.COMPLETED,
         )
         session.add(media)
         session.commit()
+
+        # Create a draft entry with media using the ACTUAL media_id as source
+        draft_entry = Entry(
+            user_id=user.id,
+            journal_id=journal.id,
+            moment_id=moment.id,
+            title="Draft Entry",
+            content_delta={"ops": [{"insert": {"image": str(media_id)}}, {"insert": "\n"}]},
+            content_plain_text="",
+            is_draft=True,
+        )
+        session.add(draft_entry)
+        session.commit()
+        session.refresh(draft_entry)
 
         service = EntryService(session)
 
@@ -478,8 +486,8 @@ class TestOrphanedMediaDeletion:
             mock_instance.delete_media.assert_not_called()
 
         # Verify: media still exists
-        remaining_media = session.query(EntryMedia).filter(
-            EntryMedia.entry_id == draft_entry.id
+        remaining_media = session.query(MomentMedia).filter(
+            MomentMedia.moment_id == draft_entry.moment_id
         ).all()
         assert len(remaining_media) == 1
 
@@ -494,14 +502,13 @@ class TestOrphanedMediaDeletionEdgeCases:
         journal = _create_journal(session, user.id)
 
         # Create entry with empty delta
+        moment = _create_moment(session, user.id)
         entry = Entry(
             user_id=user.id,
             journal_id=journal.id,
+            moment_id=moment.id,
             title="Empty Entry",
             content_delta=None,
-            entry_date=date.today(),
-            entry_timezone="UTC",
-            entry_datetime_utc=utc_now(),
             is_draft=False,
         )
         session.add(entry)

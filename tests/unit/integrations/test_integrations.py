@@ -6,15 +6,19 @@ These tests verify the core integration functionality including:
 - Service layer (connect, disconnect, status)
 - API endpoints (POST /connect, GET /status, etc.)
 """
-import pytest
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
+from fastapi.routing import APIRoute
 
-from app.models.integration import Integration, IntegrationProvider, AssetType
-from app.integrations.schemas import IntegrationConnectRequest, IntegrationStatusResponse
-
+from app.integrations.schemas import (
+    IntegrationConnectRequest,
+    IntegrationStatusResponse,
+)
+from app.models.integration import AssetType, Integration, IntegrationProvider
 
 # ================================================================================
 # MODEL TESTS
@@ -105,8 +109,9 @@ class TestIntegrationService:
     @pytest.mark.asyncio
     async def test_connect_integration_success(self):
         """Test successfully connecting an integration."""
-        from app.integrations.service import connect_integration
         from unittest.mock import MagicMock
+
+        from app.integrations.service import connect_integration
 
         # Mock database session and user
         mock_session = MagicMock()
@@ -139,8 +144,9 @@ class TestIntegrationService:
     @pytest.mark.asyncio
     async def test_get_integration_status_not_connected(self):
         """Test getting status for a non-existent integration."""
-        from app.integrations.service import get_integration_status
         from unittest.mock import MagicMock
+
+        from app.integrations.service import get_integration_status
 
         mock_session = MagicMock()
         mock_user = MagicMock()
@@ -188,6 +194,7 @@ class TestIntegrationEndpoints:
                 break
 
         assert connect_route is not None
+        assert isinstance(connect_route, APIRoute)
         assert "POST" in connect_route.methods
 
     def test_status_endpoint_exists(self):
@@ -202,6 +209,7 @@ class TestIntegrationEndpoints:
                 break
 
         assert status_route is not None
+        assert isinstance(status_route, APIRoute)
         assert "GET" in status_route.methods
 
     @pytest.mark.asyncio
@@ -221,9 +229,7 @@ class TestIntegrationEndpoints:
         """Test that closing the stream does not require a client close."""
         from app.integrations import router as integrations_router
 
-        request = httpx.Request("GET", "https://example.com")
-        response = httpx.Response(200, request=request)
-        response.aclose = AsyncMock()
+        response = AsyncMock(spec=httpx.Response)
 
         await integrations_router._close_httpx_stream(response)
 
@@ -247,7 +253,7 @@ class TestProviderRegistry:
 
     def test_get_provider_module_success(self):
         """Test getting a provider module from the registry."""
-        from app.integrations.service import get_provider_module, IntegrationProvider
+        from app.integrations.service import IntegrationProvider, get_provider_module
 
         module = get_provider_module(IntegrationProvider.IMMICH)
         assert module is not None
@@ -277,11 +283,11 @@ class TestAlbumAssetManagement:
         Test that assets shared across multiple entries are not removed from album
         when only one entry is deleted.
         """
+        import uuid
+        from unittest.mock import MagicMock
+
         from app.integrations.service import remove_assets_from_integration_album
         from app.models.integration import IntegrationProvider
-        from app.models.entry import Entry, EntryMedia
-        from unittest.mock import MagicMock, AsyncMock
-        import uuid
 
         # Setup test data
         user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -331,10 +337,11 @@ class TestAlbumAssetManagement:
         """
         Test that no assets are removed when all are still referenced by other entries.
         """
+        import uuid
+        from unittest.mock import MagicMock
+
         from app.integrations.service import remove_assets_from_integration_album
         from app.models.integration import IntegrationProvider
-        from unittest.mock import MagicMock, AsyncMock
-        import uuid
 
         user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
         asset_ids = ["asset-1", "asset-2", "asset-3"]
@@ -365,10 +372,11 @@ class TestAlbumAssetManagement:
         """
         Test that all assets are removed when none are referenced by other entries.
         """
-        from app.integrations.service import remove_assets_from_integration_album
-        from app.models.integration import IntegrationProvider, ImportMode
-        from unittest.mock import MagicMock, AsyncMock, patch
         import uuid
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from app.integrations.service import remove_assets_from_integration_album
+        from app.models.integration import ImportMode, IntegrationProvider
 
         user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
         asset_ids = ["asset-1", "asset-2"]
@@ -467,11 +475,11 @@ class TestIntegrationOptimizations:
     @pytest.mark.asyncio
     async def test_proxy_credential_caching(self):
         """Test that proxy endpoints use cache and avoid DB on hit."""
+        import uuid
+        from unittest.mock import AsyncMock, MagicMock
+
         from app.integrations.service import fetch_proxy_asset
         from app.models.integration import IntegrationProvider
-        from app.models.user import User
-        from unittest.mock import MagicMock, AsyncMock
-        import uuid
 
         # Mocks
         user_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -485,7 +493,7 @@ class TestIntegrationOptimizations:
         # Mock Cache Getter - patch in service module where it's used
         with patch("app.integrations.service._get_integration_cache", return_value=mock_cache):
             # Mock DB Context to ensure it's NOT used when cache hits
-            with patch("app.core.database.get_session_context") as mock_db_ctx:
+            with patch("app.core.database.get_session_context"):
                 # Mock Proxy Client to avoid actual network call
                 mock_client = AsyncMock()
                 mock_response = MagicMock()
@@ -519,10 +527,10 @@ class TestIntegrationOptimizations:
     @pytest.mark.asyncio
     async def test_fetch_proxy_asset_resolves_video_from_api(self):
         """Test that fetch_proxy_asset resolves video type from API on cache miss."""
+        from unittest.mock import AsyncMock, MagicMock
+
         from app.integrations import service
-        from app.models.integration import IntegrationProvider, AssetType
-        from unittest.mock import MagicMock, AsyncMock
-        import uuid
+        from app.models.integration import IntegrationProvider
 
         # Mock dependencies
         with patch("app.integrations.service._get_integration_cache", return_value=None):
@@ -546,7 +554,7 @@ class TestIntegrationOptimizations:
                     mock_exec.return_value = mock_result
 
                     with patch("app.integrations.service.decrypt_token", return_value="key"):
-                        with patch("app.integrations.service._get_proxy_client", new_callable=AsyncMock) as mock_proxy_client:
+                        with patch("app.integrations.service._get_proxy_client", new_callable=AsyncMock):
                             # Mock immich helpers
                             with patch("app.integrations.immich.get_cached_asset_type", return_value=None) as mock_cache:
                                 with patch("app.integrations.immich.get_asset_info", new_callable=AsyncMock) as mock_info:
@@ -557,7 +565,7 @@ class TestIntegrationOptimizations:
                                         mock_get_url.return_value = "http://immich/video"
 
                                         await service.fetch_proxy_asset(
-                                            user_id="uid",
+                                            user_id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
                                             provider=IntegrationProvider.IMMICH,
                                             asset_id="asset1",
                                             variant="original"
@@ -567,4 +575,3 @@ class TestIntegrationOptimizations:
                                         mock_cache.assert_called_once()
                                         mock_info.assert_called_once()
                                         mock_get_url.assert_called_with("http://immich", "asset1", "original", AssetType.VIDEO)
-

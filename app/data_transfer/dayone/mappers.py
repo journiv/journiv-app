@@ -14,10 +14,18 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from app.core.logging_config import log_warning
 from app.core.time_utils import ensure_utc, local_date_for_user, normalize_timezone
-from app.schemas.dto import EntryDTO, JournalDTO, MediaDTO
+from app.schemas.dto import (
+    EntryDTO,
+    JournalDTO,
+    JournivExportDTO,
+    MomentDTO,
+    MomentMediaDTO,
+)
+from app.utils.import_export.constants import ExportConfig
 from app.utils.import_export.media_handler import MediaHandler
 from app.utils.quill_delta import extract_plain_text, wrap_dayone_text, wrap_plain_text
 
+from .dayone_parser import DayOneParser
 from .models import (
     DayOneEntry,
     DayOneJournal,
@@ -44,8 +52,68 @@ class DayOneToJournivMapper:
     """
 
     @staticmethod
+    def build_export(
+        dayone_journals: List[DayOneJournal],
+        *,
+        import_timestamp: datetime,
+        user_email: str,
+        user_name: Optional[str],
+        app_version: str,
+        media_dir: Optional[Path] = None,
+    ) -> JournivExportDTO:
+        journals: List[JournalDTO] = []
+        moments: List[MomentDTO] = []
+
+        for dayone_journal in dayone_journals:
+            journal_external_id = (
+                (dayone_journal.source_file or "").strip()
+                or f"dayone-journal-{len(journals)}-{(dayone_journal.name or '').strip().lower()}"
+            )
+            journal = DayOneToJournivMapper.map_journal(
+                dayone_journal,
+                external_id=journal_external_id,
+            )
+            journals.append(journal)
+            for dayone_entry in dayone_journal.entries:
+                moment = DayOneToJournivMapper.map_moment(
+                    dayone_entry,
+                    media_dir=media_dir,
+                )
+                entry = DayOneToJournivMapper.map_entry(
+                    dayone_entry,
+                    journal_external_id=journal.external_id,
+                )
+                moment.entry = entry
+                moments.append(moment)
+
+        return JournivExportDTO(
+            export_version=ExportConfig.EXPORT_VERSION,
+            export_date=import_timestamp,
+            app_version=app_version,
+            user_email=user_email,
+            user_name=user_name,
+            user_settings=None,
+            journals=journals,
+            mood_definitions=[],
+            mood_preferences=[],
+            mood_groups=[],
+            mood_group_links=[],
+            mood_group_preferences=[],
+            activities=[],
+            activity_groups=[],
+            goal_categories=[],
+            goals=[],
+            goal_logs=[],
+            goal_manual_logs=[],
+            moments=moments,
+            stats=None,
+        )
+
+    @staticmethod
     def map_journal(
-        dayone_journal: DayOneJournal, mapped_entries: Optional[List[EntryDTO]] = None
+        dayone_journal: DayOneJournal,
+        *,
+        external_id: Optional[str] = None,
     ) -> JournalDTO:
         """
         Map Day One journal to Journiv JournalDTO.
@@ -61,7 +129,6 @@ class DayOneToJournivMapper:
         title = dayone_journal.name or "Imported from Day One"
 
         # Calculate journal metadata from entries
-        entry_count = len(dayone_journal.entries)
         last_entry_at = None
         first_entry_at = None
         if dayone_journal.entries:
@@ -73,11 +140,6 @@ class DayOneToJournivMapper:
             # Find earliest entry
             first_entry_at = sorted_entries[-1].creation_date
 
-        # Map entries
-        entries = mapped_entries or [
-            DayOneToJournivMapper.map_entry(entry) for entry in dayone_journal.entries
-        ]
-
         return JournalDTO(
             title=title,
             description=f"Imported from Day One journal '{dayone_journal.name}'",
@@ -85,17 +147,19 @@ class DayOneToJournivMapper:
             icon=None,  # Day One doesn't have journal icons
             is_favorite=False,
             is_archived=False,
-            entry_count=entry_count,
             last_entry_at=last_entry_at,
-            entries=entries,
             created_at=first_entry_at or datetime.now(timezone.utc),
             updated_at=datetime.now(timezone.utc),
-            external_id=None,  # Day One journals don't have UUIDs in exports
+            external_id=external_id,
             import_metadata=None,
         )
 
     @staticmethod
-    def map_entry(dayone_entry: DayOneEntry) -> EntryDTO:
+    def map_entry(
+        dayone_entry: DayOneEntry,
+        *,
+        journal_external_id: Optional[str] = None,
+    ) -> EntryDTO:
         """
         Map Day One entry to Journiv EntryDTO.
 
@@ -192,40 +256,77 @@ class DayOneToJournivMapper:
         modified_date_utc = ensure_utc(
             dayone_entry.modified_date or dayone_entry.creation_date
         )
-
-        # Get timezone (default to UTC if not specified)
         entry_timezone = normalize_timezone(dayone_entry.time_zone)
 
-        # Recalculate entry_date from UTC timestamp and timezone
+        import_metadata = DayOneToJournivMapper._build_entry_import_metadata(
+            dayone_entry, entry_timezone
+        )
+
+        ops = content_delta.get("ops") if isinstance(content_delta, dict) else None
+        has_delta_content = False
+        if isinstance(ops, list):
+            for op in ops:
+                if not isinstance(op, dict) or "insert" not in op:
+                    continue
+                insert_value = op.get("insert")
+                if isinstance(insert_value, str):
+                    if insert_value.strip() != "":
+                        has_delta_content = True
+                        break
+                elif insert_value is not None:
+                    # Non-string inserts (embeds) count as meaningful content.
+                    has_delta_content = True
+                    break
+        has_title = bool(title and title.strip())
+        has_plain_text = bool(plain_text and plain_text.strip())
+        is_draft = not (has_title or has_plain_text or has_delta_content)
+
+        return EntryDTO(
+            title=title,  # Extracted from richText or first line
+            content_delta=content_delta,
+            content_plain_text=plain_text or None,
+            word_count=word_count,
+            is_draft=is_draft,
+            import_metadata=import_metadata,
+            journal_external_id=journal_external_id,
+            created_at=creation_date_utc,
+            updated_at=modified_date_utc,
+            external_id=dayone_entry.uuid,
+        )
+
+    @staticmethod
+    def map_moment(
+        dayone_entry: DayOneEntry,
+        media_dir: Optional[Path] = None,
+    ) -> MomentDTO:
+        creation_date_utc = ensure_utc(dayone_entry.creation_date)
+        modified_date_utc = ensure_utc(
+            dayone_entry.modified_date or dayone_entry.creation_date
+        )
+        entry_timezone = normalize_timezone(dayone_entry.time_zone)
         entry_date = local_date_for_user(creation_date_utc, entry_timezone)
 
-        # Map location data
         location_json = None
         latitude = None
         longitude = None
-
         if dayone_entry.location:
             location_json, latitude, longitude = DayOneToJournivMapper._map_location(
                 dayone_entry.location
             )
 
-        # Map weather data
         weather_json = None
         weather_summary = None
-
         if dayone_entry.weather:
             weather_json, weather_summary = DayOneToJournivMapper._map_weather(
                 dayone_entry.weather
             )
 
-        # Map tags (normalize to lowercase)
         tags = []
         for tag in dayone_entry.tags or []:
             cleaned = tag.strip().lower()
             if cleaned and cleaned not in tags:
                 tags.append(cleaned)
 
-        # Map starred/pinned status
         is_pinned = (
             dayone_entry.starred
             or dayone_entry.pinned
@@ -233,35 +334,56 @@ class DayOneToJournivMapper:
             or False
         )
 
-        # Map media (photos and videos)
-        media: List[MediaDTO] = []
-        # Note: Media will be populated by the import service
-        # We just track the external IDs here
+        media: List[MomentMediaDTO] = []
+        if media_dir:
+            for photo in dayone_entry.photos or []:
+                media_path = DayOneParser.find_media_file(
+                    media_dir,
+                    photo.identifier,
+                    md5_hash=photo.md5,
+                    media_type="photo",
+                )
+                media_dto = DayOneToJournivMapper.map_photo_to_media(
+                    photo,
+                    media_path,
+                    dayone_entry.uuid,
+                    media_base_dir=media_dir,
+                )
+                if media_dto:
+                    media.append(media_dto)
 
-        import_metadata = DayOneToJournivMapper._build_entry_import_metadata(
-            dayone_entry, entry_timezone
-        )
+            for video in dayone_entry.videos or []:
+                media_path = DayOneParser.find_media_file(
+                    media_dir,
+                    video.identifier,
+                    md5_hash=video.md5,
+                    media_type="video",
+                )
+                media_dto = DayOneToJournivMapper.map_video_to_media(
+                    video,
+                    media_path,
+                    dayone_entry.uuid,
+                    media_base_dir=media_dir,
+                )
+                if media_dto:
+                    media.append(media_dto)
 
-        return EntryDTO(
-            title=title,  # Extracted from richText or first line
-            content_delta=content_delta,
-            content_plain_text=plain_text or None,
-            entry_date=entry_date,
-            entry_datetime_utc=creation_date_utc,
-            entry_timezone=entry_timezone,
-            word_count=word_count,
-            is_pinned=is_pinned,
-            # Structured location/weather fields
+        return MomentDTO(
+            logged_at_utc=creation_date_utc,
+            logged_date_tz=entry_date,
+            logged_timezone=entry_timezone,
+            note=None,
             location_json=location_json,
             latitude=latitude,
             longitude=longitude,
             weather_json=weather_json,
             weather_summary=weather_summary,
-            import_metadata=import_metadata,
-            # Related data
-            tags=tags,
-            media=media,  # Will be populated during import
+            is_pinned=is_pinned,
             prompt_text=None,
+            tags=tags,
+            primary_mood_name=None,
+            mood_activity=[],
+            media=media,
             created_at=creation_date_utc,
             updated_at=modified_date_utc,
             external_id=dayone_entry.uuid,
@@ -496,7 +618,7 @@ class DayOneToJournivMapper:
         external_provider: Optional[str] = None,
         external_asset_id: Optional[str] = None,
         external_metadata: Optional[Dict[str, Any]] = None,
-    ) -> MediaDTO:
+    ) -> MomentMediaDTO:
         """
         Common media mapping logic for photos and videos.
 
@@ -514,7 +636,7 @@ class DayOneToJournivMapper:
             file_metadata: Additional metadata dict
 
         Returns:
-            MediaDTO
+            MomentMediaDTO
         """
         # entry_external_id is currently unused but kept for future debugging/features
         # (e.g., could be added to file_metadata or used for logging)
@@ -536,7 +658,7 @@ class DayOneToJournivMapper:
         width = width if width and width > 0 else None
         height = height if height and height > 0 else None
 
-        return MediaDTO(
+        return MomentMediaDTO(
             filename=media_path.name,
             file_path=str(relative_path),
             media_type=media_type,
@@ -565,9 +687,9 @@ class DayOneToJournivMapper:
         media_path: Optional[Path],
         entry_external_id: str,
         media_base_dir: Optional[Path] = None,
-    ) -> Optional[MediaDTO]:
+    ) -> Optional[MomentMediaDTO]:
         """
-        Map Day One photo to Journiv MediaDTO.
+        Map Day One photo to Journiv MomentMediaDTO.
 
         Args:
             photo: Day One photo object
@@ -576,7 +698,7 @@ class DayOneToJournivMapper:
             media_base_dir: Base directory for media (used to store relative file_path)
 
         Returns:
-            MediaDTO if media file exists, None otherwise
+            MomentMediaDTO if media file exists, None otherwise
         """
         if not media_path or not media_path.exists():
             log_warning(
@@ -638,9 +760,9 @@ class DayOneToJournivMapper:
         media_path: Optional[Path],
         entry_external_id: str,
         media_base_dir: Optional[Path] = None,
-    ) -> Optional[MediaDTO]:
+    ) -> Optional[MomentMediaDTO]:
         """
-        Map Day One video to Journiv MediaDTO.
+        Map Day One video to Journiv MomentMediaDTO.
 
         Args:
             video: Day One video object
@@ -649,7 +771,7 @@ class DayOneToJournivMapper:
             media_base_dir: Base directory for media (used to store relative file_path)
 
         Returns:
-            MediaDTO if media file exists, None otherwise
+            MomentMediaDTO if media file exists, None otherwise
         """
         if not media_path or not media_path.exists():
             log_warning(

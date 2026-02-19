@@ -21,7 +21,6 @@ from fastapi import (
     status,
 )
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy import or_
 from sqlmodel import Session, col, select
 from starlette.background import BackgroundTask
 
@@ -30,7 +29,6 @@ from app.core import database as database_module
 from app.core.celery_app import celery_app
 from app.core.config import settings
 from app.core.exceptions import (
-    EntryNotFoundError,
     FileTooLargeError,
     FileValidationError,
     InvalidFileTypeError,
@@ -44,7 +42,7 @@ from app.core.media_signing import (
 from app.core.signing import verify_media_signature
 from app.integrations.service import fetch_proxy_asset
 from app.models.user import User
-from app.schemas.entry import EntryMediaResponse, MediaResponse, MomentMediaResponse
+from app.schemas.entry import MomentMediaResponse
 from app.schemas.media import (
     ImmichImportJobResponse,
     ImmichImportRequest,
@@ -54,14 +52,13 @@ from app.schemas.media import (
     MediaBatchSignResponse,
     MediaSignedUrlResponse,
 )
-from app.services import entry_service as entry_service_module
 from app.services import media_service as media_service_module
 from app.services.import_job_service import ImportJobService
 from app.services.media_service import (
     ImmichIntegrationInactiveError,
     ImmichIntegrationNotConnectedError,
 )
-from app.services.moment_service import MomentNotFoundError
+from app.services.moment_lookup import MomentNotFoundError
 
 
 async def _close_httpx_stream(response: httpx.Response) -> None:
@@ -85,11 +82,6 @@ def _get_db_session():
         yield from session_or_generator
     else:
         yield session_or_generator
-
-
-def _get_entry_service(session: Session):
-    """Get entry service instance."""
-    return entry_service_module.EntryService(session)
 
 
 def _handle_batch_sign_errors(batch_response: MediaBatchSignResponse) -> None:
@@ -204,13 +196,13 @@ def verify_signed_media_request(
 
 @router.post(
     "/upload",
-    response_model=MediaResponse,
+    response_model=MomentMediaResponse,
     status_code=status.HTTP_201_CREATED,
     responses={
         400: {"description": "Invalid file or validation failed"},
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
-        404: {"description": "Entry not found"},
+        404: {"description": "Moment not found"},
         413: {"description": "File too large"},
         500: {"description": "Internal server error"},
     }
@@ -218,27 +210,20 @@ def verify_signed_media_request(
 async def upload_media(
     current_user: Annotated[User, Depends(get_current_user_detached)],
     file: Annotated[UploadFile, File()],
-    entry_id: Annotated[Optional[uuid.UUID], Form()] = None,
-    moment_id: Annotated[Optional[uuid.UUID], Form()] = None,
+    moment_id: Annotated[uuid.UUID, Form()],
     alt_text: Annotated[Optional[str], Form()] = None,
 ):
     """
-    Upload a media file.
+    Upload a media file to a moment.
 
     Supports images, videos, and audio. Files are validated and processed in background.
     """
     media_service = _get_media_service()
 
     try:
-        if entry_id is None and moment_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Either entry_id or moment_id must be provided",
-            )
         result = await media_service.upload_media(
             file=file,
             user_id=current_user.id,
-            entry_id=entry_id,
             moment_id=moment_id,
             alt_text=alt_text
         )
@@ -264,10 +249,7 @@ async def upload_media(
                     exc_info=True
                 )
 
-        if moment_id and not entry_id:
-            response = MomentMediaResponse.model_validate(media_record)
-        else:
-            response = EntryMediaResponse.model_validate(media_record)
+        response = MomentMediaResponse.model_validate(media_record)
         return attach_signed_urls(
             response,
             str(current_user.id),
@@ -296,10 +278,10 @@ async def upload_media(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         ) from None
-    except (EntryNotFoundError, MomentNotFoundError):
+    except MomentNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Entry or moment not found"
+            detail="Moment not found"
         ) from None
     except Exception as e:
         error_logger.error(
@@ -408,7 +390,7 @@ async def batch_sign_media(
     request: MediaBatchSignRequest,
     current_user: Annotated[User, Depends(get_current_user_detached)],
 ):
-    """Batch sign media URLs for entry media IDs."""
+    """Batch sign media URLs for moment-owned media IDs."""
     media_service = _get_media_service()
 
     try:
@@ -794,7 +776,7 @@ async def get_supported_formats(
         400: {"description": "Invalid request or Immich not connected"},
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
-        404: {"description": "Entry not found"},
+        404: {"description": "Moment not found"},
     }
 )
 async def import_from_immich_async(
@@ -819,13 +801,16 @@ async def import_from_immich_async(
             session, current_user.id
         )
 
-        # 2. Verify entry exists
-        entry_service = _get_entry_service(session)
-        entry = entry_service.get_entry_by_id(request.entry_id, current_user.id)
-        if not entry:
+        # 2. Verify moment exists
+        from app.models.moment import Moment
+
+        moment = session.exec(
+            select(Moment).where(Moment.id == request.moment_id, Moment.user_id == current_user.id)
+        ).first()
+        if not moment:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Entry not found"
+                detail="Moment not found"
             )
 
         # 3. Create job and process asynchronously via Celery
@@ -833,12 +818,12 @@ async def import_from_immich_async(
 
         file_logger.debug(
             f"[IMMICH_IMPORT] Creating job for {len(request.asset_ids)} assets (import_mode={immich_integration.import_mode})",
-            extra={"user_id": str(current_user.id), "entry_id": str(request.entry_id), "asset_ids": request.asset_ids, "import_mode": str(immich_integration.import_mode)}
+            extra={"user_id": str(current_user.id), "moment_id": str(request.moment_id), "asset_ids": request.asset_ids, "import_mode": str(immich_integration.import_mode)}
         )
 
         job = await import_service.create_and_process_job_async(
             user_id=current_user.id,
-            entry_id=request.entry_id,
+            moment_id=request.moment_id,
             asset_ids=request.asset_ids,
             assets=request.assets
         )
@@ -846,35 +831,27 @@ async def import_from_immich_async(
             f"[IMMICH_IMPORT] Job created: {job.id}",
             extra={
                 "user_id": str(current_user.id),
-                "entry_id": str(request.entry_id),
+                "moment_id": str(request.moment_id),
                 "asset_count": len(request.asset_ids),
             },
         )
 
-        # Ensure placeholders are committed before querying
-        session.commit()
-        file_logger.debug(
-            "[IMMICH_IMPORT] Placeholder commit completed",
-            extra={
-                "user_id": str(current_user.id),
-                "entry_id": str(request.entry_id)
-            },
-        )
+        # Re-fetch placeholders for response using a fresh read session.
+        # Placeholder/job transaction is committed inside create_and_process_job_async.
+        from app.models.moment import MomentMedia
 
-        # Re-fetch placeholders for response
-        from app.models.entry import EntryMedia
-
-        placeholder_media = session.exec(
-             select(EntryMedia)
-             .where(EntryMedia.entry_id == request.entry_id)
-             .where(EntryMedia.external_provider == "immich")
-             .where(col(EntryMedia.external_asset_id).in_(request.asset_ids))
-        ).all()
+        with database_module.get_session_context() as read_session:
+            placeholder_media = read_session.exec(
+                 select(MomentMedia)
+                 .where(MomentMedia.moment_id == request.moment_id)
+                 .where(MomentMedia.external_provider == "immich")
+                 .where(col(MomentMedia.external_asset_id).in_(request.asset_ids))
+            ).all()
         file_logger.debug(
             "[IMMICH_IMPORT] Placeholder fetch completed",
             extra={
                 "user_id": str(current_user.id),
-                "entry_id": str(request.entry_id),
+                "moment_id": str(request.moment_id),
                 "media_count": len(placeholder_media)
             },
         )
@@ -942,9 +919,9 @@ async def import_from_immich_async(
         )
 
         signed_media = [
-            EntryMediaResponse.model_validate(
+            MomentMediaResponse.model_validate(
                 attach_signed_urls(
-                    EntryMediaResponse.model_validate(record),
+                    MomentMediaResponse.model_validate(record),
                     str(current_user.id),
                     include_incomplete=True,
                     external_base_url=immich_integration.base_url,
@@ -956,7 +933,7 @@ async def import_from_immich_async(
             "[IMMICH_IMPORT] Signed media build completed",
             extra={
                 "user_id": str(current_user.id),
-                "entry_id": str(request.entry_id),
+                "moment_id": str(request.moment_id),
                 "media_count": len(signed_media),
             },
         )
@@ -965,7 +942,7 @@ async def import_from_immich_async(
             "[IMMICH_IMPORT] Request completed",
             extra={
                 "user_id": str(current_user.id),
-                "entry_id": str(request.entry_id),
+                "moment_id": str(request.moment_id),
                 "asset_count": len(request.asset_ids),
                 "signed_media_count": len(signed_media)
             },
@@ -1035,25 +1012,6 @@ async def get_import_job_status(
     summary="Repair missing thumbnails for Immich media",
     description="""
     Manually trigger a background job to repair missing thumbnails for Immich media.
-
-    **Purpose:**
-    - Downloads thumbnails for EntryMedia records that have external_asset_id
-      but missing thumbnail_path (e.g., from failed copy-mode imports)
-
-    **Behavior:**
-    - Processes all Immich media for the current user
-    - Only repairs media with external_provider='immich' and missing thumbnail_path
-    - Runs in background (returns immediately)
-    - Updates EntryMedia records with thumbnail_path on success
-
-    **Use Cases:**
-    - Repair thumbnails after copy-mode import failures
-    - Manual thumbnail refresh for existing Immich media
-    - Recovery after thumbnail storage issues
-
-    **Response:**
-    - Returns immediately with job status
-    - Check logs for repair progress
     """
 )
 async def repair_immich_thumbnails(
@@ -1063,30 +1021,23 @@ async def repair_immich_thumbnails(
     """
     Repair missing thumbnails for Immich media.
     """
-    from app.models.entry import Entry, EntryMedia
-    from app.models.moment import Moment
+    from app.models.moment import Moment, MomentMedia
 
     try:
         # Verify Immich integration exists and is active
         media_service = _get_media_service()
         media_service.require_active_immich_integration(session, current_user.id)
 
-        # Find EntryMedia records that need thumbnail repair
+        # Find MomentMedia records that need thumbnail repair
         media_to_repair = session.exec(
-            select(EntryMedia)
-            .outerjoin(Entry, col(Entry.id) == col(EntryMedia.entry_id))
-            .outerjoin(Moment, col(Moment.id) == col(EntryMedia.moment_id))
+            select(MomentMedia)
+            .join(Moment, col(Moment.id) == col(MomentMedia.moment_id))
+            .where(col(Moment.user_id) == current_user.id)
+            .where(MomentMedia.external_provider == "immich")
+            .where(col(MomentMedia.external_asset_id).is_not(None))
             .where(
-                or_(
-                    col(Entry.user_id) == current_user.id,
-                    col(Moment.user_id) == current_user.id,
-                )
-            )
-            .where(EntryMedia.external_provider == "immich")
-            .where(col(EntryMedia.external_asset_id).is_not(None))
-            .where(
-                (col(EntryMedia.thumbnail_path).is_(None)) |
-                (EntryMedia.thumbnail_path == "")
+                (col(MomentMedia.thumbnail_path).is_(None)) |
+                (MomentMedia.thumbnail_path == "")
             )
         ).all()
 
@@ -1097,7 +1048,6 @@ async def repair_immich_thumbnails(
                 "scheduled_count": 0
             }
 
-        # Schedule background task
         # Schedule background task using Celery to ensure fresh DB session
         try:
             celery_app.send_task(
@@ -1146,51 +1096,51 @@ async def repair_immich_thumbnails(
 
 
 @router.post(
-    "/process/{entry_id}",
+    "/process/moment/{moment_id}",
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
-        404: {"description": "Entry not found"},
+        404: {"description": "Moment not found"},
         500: {"description": "Processing failed"},
     }
 )
-async def process_entry_media(
-    entry_id: uuid.UUID,
+async def process_moment_media(
+    moment_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(_get_db_session)]
 ):
     """
-    Trigger media processing for an entry.
+    Trigger media processing for a moment.
 
     Generates thumbnails for images and videos that don't have them yet.
     """
     media_service = _get_media_service()
 
     try:
-        processed_count = await media_service.process_entry_media(
-            entry_id, current_user.id, session
+        processed_count = await media_service.process_moment_media(
+            moment_id, current_user.id, session
         )
 
         file_logger.info(
-            f"Processed {processed_count} media files for entry",
-            extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "processed_count": processed_count}
+            f"Processed {processed_count} media files for moment",
+            extra={"user_id": str(current_user.id), "moment_id": str(moment_id), "processed_count": processed_count}
         )
 
         return {
             "message": f"Processed {processed_count} media files",
-            "entry_id": str(entry_id)
+            "moment_id": str(moment_id)
         }
-    except EntryNotFoundError:
+    except MomentNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Entry not found"
+            detail="Moment not found"
         ) from None
     except HTTPException:
         raise
     except Exception as e:
         error_logger.error(
-            "Unexpected error processing entry media",
-            extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)},
+            "Unexpected error processing moment media",
+            extra={"user_id": str(current_user.id), "moment_id": str(moment_id), "error": str(e)},
             exc_info=True
         )
         raise HTTPException(

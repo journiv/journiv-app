@@ -1,6 +1,6 @@
 from app.utils.quill_delta import (
-    extract_plain_text,
     extract_media_sources,
+    extract_plain_text,
     replace_media_ids,
     wrap_plain_text,
 )

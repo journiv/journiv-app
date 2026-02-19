@@ -4,14 +4,14 @@ Alembic environment configuration tailored for SQLModel models.
 The key customization is a renderer that converts SQLModel-specific column
 types (e.g., AutoString) into portable SQLAlchemy primitives so generated
 migrations run cleanly on both SQLite and PostgreSQL.
-Currently this does not work as expected so the migration has been patched to use the correct types. See scripts/fix_migration_imports.py for the patch.
 """
 from logging.config import fileConfig
 from typing import Any
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.sql.sqltypes import Uuid
+
+from alembic import context
 
 try:  # Alembic ≥1.10
     from alembic.autogenerate.api import AutogenContext
@@ -19,11 +19,12 @@ except ImportError:  # pragma: no cover - fallback for older Alembic
     AutogenContext = Any  # type: ignore[assignment]
 
 from alembic.autogenerate import renderers
+from sqlmodel import SQLModel
+from sqlmodel.sql.sqltypes import AutoString
+
 from app.core.config import settings
 from app.models import *  # noqa: F401,F403  (needed for metadata discovery)
 from app.models.integration import *  # noqa: F401,F403  (integration models)
-from sqlmodel import SQLModel
-from sqlmodel.sql.sqltypes import AutoString
 
 # ---------------------------------------------------------------------------
 # Global configuration

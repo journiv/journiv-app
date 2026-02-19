@@ -4,7 +4,7 @@ Unit tests for app.core.config module, specifically testing DB_DRIVER validation
 import pytest
 from pydantic import ValidationError
 
-from app.core.config import Settings, DEFAULT_SQLITE_URL
+from app.core.config import DEFAULT_SQLITE_URL, Settings
 
 
 def make_settings(**kwargs):

@@ -2,14 +2,15 @@
 Celery tasks for media processing.
 """
 import contextlib
+import uuid
 
 from redis import Redis
 from sqlmodel import Session
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
-from app.core.database import engine
-from app.core.logging_config import log_error, log_info
+from app.core.database import engine, get_session_context
+from app.core.logging_config import log_error, log_info, log_warning
 from app.services.media_service import MediaService
 
 
@@ -57,3 +58,30 @@ def process_media_upload(self, media_id: str, file_path: str, user_id: str):
         except Exception as exc:
             log_error(exc, media_id=media_id, user_id=user_id)
             raise
+
+
+@celery_app.task(name="app.tasks.media.cleanup_moment_media_files", bind=True)
+def cleanup_moment_media_files(
+    self,
+    user_id: str,
+    media_files: list[dict] | None = None,
+    immich_assets: list[str] | None = None,
+):
+    """Delete orphaned files and remove assets from external album after moment deletion."""
+    media_files = media_files or []
+    immich_assets = [asset_id for asset_id in (immich_assets or []) if asset_id]
+    if not media_files and not immich_assets:
+        return
+
+    try:
+        user_uuid = uuid.UUID(user_id)
+    except Exception:
+        log_warning(f"Invalid user_id for cleanup task: {user_id}")
+        return
+
+    with get_session_context() as session:
+        media_service = MediaService(session)
+        try:
+            media_service.delete_media_files_post_commit(user_uuid, media_files, immich_assets)
+        except Exception as exc:
+            log_warning(f"Failed to run media cleanup task: {exc}")

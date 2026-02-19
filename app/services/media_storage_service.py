@@ -17,8 +17,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.logging_config import log_error, log_info, log_warning
-from app.models.entry import Entry, EntryMedia
-from app.models.journal import Journal
+from app.models.moment import Moment, MomentMedia
 from app.utils.import_export.media_handler import MediaHandler
 
 
@@ -125,6 +124,7 @@ class MediaStorageService:
                 # Check if file already exists (per-user deduplication)
                 if target_path.exists():
                     tmp_path.unlink(missing_ok=True)
+                    self._cleanup_empty_dirs(tmp_dir)
                     log_info(
                         f"Media file already exists (deduplicated): {relative_path}",
                         checksum=checksum,
@@ -137,9 +137,11 @@ class MediaStorageService:
 
                 try:
                     tmp_path.rename(target_path)
+                    self._cleanup_empty_dirs(tmp_dir)
                 except Exception as e:
                     if tmp_path.exists():
                         tmp_path.unlink()
+                    self._cleanup_empty_dirs(tmp_dir)
                     log_error(e, relative_path=str(relative_path), user_id=user_id)
                     raise IOError(f"Failed to store media: {e}") from e
 
@@ -179,7 +181,11 @@ class MediaStorageService:
                 shutil.copy2(source, tmp_path)
             else:
                 # Copy from stream
-                source.seek(0)
+                if hasattr(source, "seek"):
+                    try:
+                        source.seek(0)
+                    except Exception:
+                        pass
                 with open(tmp_path, 'wb') as dst:
                     shutil.copyfileobj(source, dst)
 
@@ -267,7 +273,7 @@ class MediaStorageService:
         """
         Delete media file with reference counting.
 
-        Checks if the file is referenced by other EntryMedia records before deletion.
+        Checks if the file is referenced by other MomentMedia records before deletion.
         Only deletes the physical file if no other references exist, or if force=True.
         When checksum is None, force deletion is required (reference counting not possible).
 
@@ -333,14 +339,14 @@ class MediaStorageService:
 
     def _count_references(self, checksum: str, user_id: Union[str, uuid.UUID]) -> int:
         """
-        Count how many EntryMedia records reference this file for the user.
+        Count how many MomentMedia records reference this file for the user.
 
         Args:
             checksum: SHA256 checksum
             user_id: User UUID string or UUID instance
 
         Returns:
-            Number of EntryMedia records with this checksum for this user
+            Number of MomentMedia records with this checksum for this user
 
         Raises:
             ValueError: If user_id is not a valid UUID string or UUID instance
@@ -359,12 +365,11 @@ class MediaStorageService:
                 ) from e
 
         stmt = (
-            select(func.count(EntryMedia.id))
-            .join(Entry)
-            .join(Journal)
+            select(func.count(MomentMedia.id))
+            .join(Moment, MomentMedia.moment_id == Moment.id)
             .where(
-                EntryMedia.checksum == checksum,
-                Journal.user_id == user_uuid
+                MomentMedia.checksum == checksum,
+                Moment.user_id == user_uuid
             )
         )
 

@@ -3,8 +3,8 @@ Journal API integration coverage.
 """
 
 from tests.integration.helpers import (
-    EndpointCase,
     UNKNOWN_UUID,
+    EndpointCase,
     assert_not_found,
     assert_requires_authentication,
     upload_sample_media,
@@ -129,25 +129,30 @@ def test_journal_not_found_errors(
     )
 
 
-def test_delete_journal_removes_media_files(
+def test_delete_journal_keeps_moment_media_as_standalone(
     api_client: JournivApiClient,
     api_user: ApiUser,
     entry_factory,
 ):
     """
-    Deleting a journal should cascade delete its entries and their associated media files.
+    Deleting a journal should delete entries, while keeping moment-owned media.
     """
     # 1. Create journal and entry
     entry = entry_factory(title="Entry with Media")
     journal_id = entry["journal"]["id"]
 
     # 2. Upload media
-    uploaded = upload_sample_media(api_client, api_user.access_token, entry["id"])
+    uploaded = upload_sample_media(api_client, api_user.access_token, entry["moment_id"])
     media_id = uploaded["id"]
 
-    # 3. Verify media exists
-    download = api_client.get_media(api_user.access_token, media_id)
-    assert download.status_code == 200
+    # 3. Verify media record exists (processing may still be pending in tests)
+    pre_delete_sign = api_client.request(
+        "GET",
+        f"/media/{media_id}/sign",
+        token=api_user.access_token,
+        expected=(200, 400),
+    )
+    assert pre_delete_sign.status_code in (200, 400)
 
     # 4. Delete Journal
     api_client.delete_journal(api_user.access_token, journal_id)
@@ -162,12 +167,16 @@ def test_delete_journal_removes_media_files(
     entries_response = api_client.list_entries(api_user.access_token, journal_id=journal_id)
     assert entries_response == [], "Entries should be cascade deleted with the journal"
 
-    # 7. Verify media is gone (both download and sign endpoint)
-    # Check sign endpoint for 404 (metadata gone)
+    # 7. Verify moment and its media are preserved (moment-first architecture)
+    moments = api_client.list_moments(api_user.access_token)
+    promoted_moment = next((m for m in moments if m["id"] == entry["moment_id"]), None)
+    assert promoted_moment is not None, "Moment should remain after journal deletion"
+
+    # Media can still be pending in integration tests when worker is unavailable.
     sign_response = api_client.request(
-        "GET", f"/media/{media_id}/sign", token=api_user.access_token, expected=(404,)
+        "GET", f"/media/{media_id}/sign", token=api_user.access_token, expected=(200, 400)
     )
-    assert sign_response.status_code == 404, "Media entry should be deleted from DB"
+    assert sign_response.status_code in (200, 400), "Moment-owned media should remain after journal deletion"
 
 
 def test_reorder_journals_success(

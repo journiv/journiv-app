@@ -7,11 +7,12 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import MediaType
 from app.schemas.activity import ActivityResponse
 from app.schemas.base import TimestampMixin
-from app.schemas.entry import EntryBase, EntryPreviewResponse, EntryUpdate
+from app.schemas.entry import EntryPreviewResponse, EntryUpdate, QuillDelta
+from app.schemas.media_thumbnail import MomentMediaThumbnail
 from app.schemas.mood import MoodResponse
+from app.schemas.tag import TagResponse
 
 
 class MomentMoodActivityInput(BaseModel):
@@ -25,20 +26,26 @@ class MomentMoodActivityInput(BaseModel):
         return self
 
 
-class MomentEntryCreate(EntryBase):
+class MomentEntryCreate(BaseModel):
+    """Entry content to create inline with a moment."""
+    title: Optional[str] = None
+    content_delta: Optional[QuillDelta] = None
     journal_id: uuid.UUID
-    prompt_id: Optional[uuid.UUID] = None
-    activity_ids: Optional[List[uuid.UUID]] = None
 
 
 class MomentCreate(BaseModel):
     entry: Optional[MomentEntryCreate] = None
-    logged_at: Optional[datetime] = None
-    logged_date: Optional[date] = None
+    logged_at_utc: Optional[datetime] = None
+    logged_date_tz: Optional[date] = None
     logged_timezone: Optional[str] = None
     note: Optional[str] = Field(None, max_length=500)
-    location_data: Optional[Dict[str, Any]] = None
-    weather_data: Optional[Dict[str, Any]] = None
+    location_json: Optional[Dict[str, Any]] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    weather_json: Optional[Dict[str, Any]] = None
+    weather_summary: Optional[str] = None
+    is_pinned: bool = False
+    prompt_id: Optional[uuid.UUID] = None
     primary_mood_id: Optional[uuid.UUID] = None
     mood_activity: List[MomentMoodActivityInput] = Field(default_factory=list)
 
@@ -46,12 +53,17 @@ class MomentCreate(BaseModel):
 class MomentUpdate(BaseModel):
     entry_update: Optional[EntryUpdate] = None
     entry_create: Optional[MomentEntryCreate] = None
-    logged_at: Optional[datetime] = None
-    logged_date: Optional[date] = None
+    logged_at_utc: Optional[datetime] = None
+    logged_date_tz: Optional[date] = None
     logged_timezone: Optional[str] = None
     note: Optional[str] = Field(None, max_length=500)
-    location_data: Optional[Dict[str, Any]] = None
-    weather_data: Optional[Dict[str, Any]] = None
+    location_json: Optional[Dict[str, Any]] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    weather_json: Optional[Dict[str, Any]] = None
+    weather_summary: Optional[str] = None
+    is_pinned: Optional[bool] = None
+    prompt_id: Optional[uuid.UUID] = None
     primary_mood_id: Optional[uuid.UUID] = None
     mood_activity: Optional[List[MomentMoodActivityInput]] = None
 
@@ -68,36 +80,35 @@ class MomentMoodActivityResponse(TimestampMixin):
     activity: Optional[ActivityResponse] = None
 
 
-class MomentMediaThumbnail(BaseModel):
-    id: uuid.UUID
-    media_type: MediaType
-    signed_thumbnail_url: Optional[str] = None
-
-
 class MomentResponse(TimestampMixin):
     id: uuid.UUID
     user_id: uuid.UUID
-    entry_id: Optional[uuid.UUID] = None
     entry: Optional[EntryPreviewResponse] = None
     primary_mood_id: Optional[uuid.UUID] = None
-    logged_at: datetime
-    logged_date: date
+    prompt_id: Optional[uuid.UUID] = None
+    logged_at_utc: datetime
+    logged_date_tz: date
     logged_timezone: str
     note: Optional[str] = None
-    location_data: Optional[Dict[str, Any]] = None
-    weather_data: Optional[Dict[str, Any]] = None
+    location_json: Optional[Dict[str, Any]] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    weather_json: Optional[Dict[str, Any]] = None
+    weather_summary: Optional[str] = None
+    is_pinned: bool = False
     mood_activity: List[MomentMoodActivityResponse] = Field(default_factory=list)
+    tags: List[TagResponse] = Field(default_factory=list)
     media_count: int = 0
     media: List[MomentMediaThumbnail] = Field(default_factory=list)
 
 
 class MomentCalendarItem(BaseModel):
-    logged_date: date
+    logged_date_tz: date
     primary_mood_id: Optional[uuid.UUID] = None
     moment_count: int = 0
 
 
 class MomentPageResponse(BaseModel):
     items: List[MomentResponse]
-    next_cursor_logged_at: Optional[datetime] = None
+    next_cursor_logged_at_utc: Optional[datetime] = None
     next_cursor_id: Optional[uuid.UUID] = None

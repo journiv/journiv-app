@@ -4,12 +4,13 @@ Unit tests for license information cache.
 Tests the LicenseCache wrapper that provides 8-hour caching for license
 information to reduce API calls to journiv-plus license server.
 """
-import pytest
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from app.core.license_cache import LicenseCache, get_license_cache
+import pytest
+
 from app.core.config import LICENSE_CACHE_TTL
+from app.core.license_cache import LicenseCache, get_license_cache
 
 
 class TestLicenseCacheKeys:

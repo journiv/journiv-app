@@ -77,5 +77,5 @@ def test_map_entry_maps_dayone_is_pinned():
         is_pinned=True,
     )
 
-    dto = DayOneToJournivMapper.map_entry(entry)
-    assert dto.is_pinned is True
+    moment_dto = DayOneToJournivMapper.map_moment(entry)
+    assert moment_dto.is_pinned is True

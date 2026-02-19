@@ -3,8 +3,6 @@ Integration tests for streak recalculation after entry deletion.
 """
 from datetime import date, timedelta
 
-import pytest
-
 from tests.lib import ApiUser, JournivApiClient
 
 
@@ -27,31 +25,31 @@ def test_case_a_deleting_latest_entry_reduces_streak(
     entry_date_21 = base_date - timedelta(days=1)
     entry_date_22 = base_date
 
-    entry_20 = api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 20",
         content=_content_with_words(10),
-        entry_date=entry_date_20.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_20.isoformat(),
+        logged_timezone="UTC",
     )
 
-    entry_21 = api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 21",
         content=_content_with_words(10),
-        entry_date=entry_date_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    entry_22 = api_client.create_entry(
+    entry_22 = api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 22",
         content=_content_with_words(10),
-        entry_date=entry_date_22.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_22.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_before = api_client.request(
@@ -83,31 +81,31 @@ def test_case_b_gaps_break_streak_correctly(
     entry_date_21 = base_date - timedelta(days=2)
     entry_date_23 = base_date
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 20",
         content=_content_with_words(10),
-        entry_date=entry_date_20.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_20.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 21",
         content=_content_with_words(10),
-        entry_date=entry_date_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 23",
         content=_content_with_words(10),
-        entry_date=entry_date_23.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_23.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics = api_client.request(
@@ -132,31 +130,31 @@ def test_case_c_deleting_first_day_of_streak_updates_start_date(
     entry_date_21 = base_date - timedelta(days=1)
     entry_date_22 = base_date
 
-    entry_20 = api_client.create_entry(
+    entry_20 = api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 20",
         content=_content_with_words(10),
-        entry_date=entry_date_20.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_20.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 21",
         content=_content_with_words(10),
-        entry_date=entry_date_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 22",
         content=_content_with_words(10),
-        entry_date=entry_date_22.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_22.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_before = api_client.request(
@@ -188,22 +186,22 @@ def test_case_d_deleting_all_entries_resets_to_zero(
     entry_date_20 = base_date - timedelta(days=2)
     entry_date_21 = base_date - timedelta(days=1)
 
-    entry_20 = api_client.create_entry(
+    entry_20 = api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 20",
         content=_content_with_words(10),
-        entry_date=entry_date_20.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_20.isoformat(),
+        logged_timezone="UTC",
     )
 
-    entry_21 = api_client.create_entry(
+    entry_21 = api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 21",
         content=_content_with_words(10),
-        entry_date=entry_date_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_21.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_before = api_client.request(
@@ -242,33 +240,33 @@ def test_case_e_longest_streak_persists_historically(
     entry_date_13 = base_date - timedelta(days=7)
     entry_date_20 = base_date
 
-    for entry_date in [entry_date_1, entry_date_2, entry_date_3]:
-        api_client.create_entry(
+    for logged_date in [entry_date_1, entry_date_2, entry_date_3]:
+        api_client.create_entry_with_moment(
             token,
             journal_id=journal["id"],
-            title=f"Entry {entry_date.day}",
+            title=f"Entry {logged_date.day}",
             content=_content_with_words(10),
-            entry_date=entry_date.isoformat(),
-            entry_timezone="UTC",
+            logged_date=logged_date.isoformat(),
+            logged_timezone="UTC",
         )
 
-    for entry_date in [entry_date_10, entry_date_11, entry_date_12, entry_date_13]:
-        api_client.create_entry(
+    for logged_date in [entry_date_10, entry_date_11, entry_date_12, entry_date_13]:
+        api_client.create_entry_with_moment(
             token,
             journal_id=journal["id"],
-            title=f"Entry {entry_date.day}",
+            title=f"Entry {logged_date.day}",
             content=_content_with_words(10),
-            entry_date=entry_date.isoformat(),
-            entry_timezone="UTC",
+            logged_date=logged_date.isoformat(),
+            logged_timezone="UTC",
         )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry 20",
         content=_content_with_words(10),
-        entry_date=entry_date_20.isoformat(),
-        entry_timezone="UTC",
+        logged_date=entry_date_20.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics = api_client.request(
@@ -292,58 +290,58 @@ def test_case_f_deleting_partial_entries_in_day_does_not_break_streak(
     nov_22 = base_date - timedelta(days=1)
     nov_23 = base_date
 
-    entry_21_1 = api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 21 Entry 1",
         content=_content_with_words(10),
-        entry_date=nov_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 21 Entry 2",
         content=_content_with_words(10),
-        entry_date=nov_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 21 Entry 3",
         content=_content_with_words(10),
-        entry_date=nov_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    entry_22_1 = api_client.create_entry(
+    entry_22_1 = api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 22 Entry 1",
         content=_content_with_words(10),
-        entry_date=nov_22.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_22.isoformat(),
+        logged_timezone="UTC",
     )
 
-    entry_22_2 = api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 22 Entry 2",
         content=_content_with_words(10),
-        entry_date=nov_22.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_22.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 23 Entry 1",
         content=_content_with_words(10),
-        entry_date=nov_23.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_23.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_before = api_client.request(
@@ -375,58 +373,58 @@ def test_case_g_deleting_all_entries_from_day_breaks_streak(
     nov_22 = base_date - timedelta(days=1)
     nov_23 = base_date
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 21 Entry 1",
         content=_content_with_words(10),
-        entry_date=nov_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 21 Entry 2",
         content=_content_with_words(10),
-        entry_date=nov_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 21 Entry 3",
         content=_content_with_words(10),
-        entry_date=nov_21.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_21.isoformat(),
+        logged_timezone="UTC",
     )
 
-    entry_22_1 = api_client.create_entry(
+    entry_22_1 = api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 22 Entry 1",
         content=_content_with_words(10),
-        entry_date=nov_22.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_22.isoformat(),
+        logged_timezone="UTC",
     )
 
-    entry_22_2 = api_client.create_entry(
+    entry_22_2 = api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 22 Entry 2",
         content=_content_with_words(10),
-        entry_date=nov_22.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_22.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Nov 23 Entry 1",
         content=_content_with_words(10),
-        entry_date=nov_23.isoformat(),
-        entry_timezone="UTC",
+        logged_date=nov_23.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_before = api_client.request(
@@ -463,14 +461,14 @@ def test_case_h_backdating_entry_in_middle_of_streak_maintains_streak(
     day_5 = base_date
 
     # Create entries in order
-    for idx, entry_date in enumerate([day_1, day_2, day_3, day_4, day_5]):
-        api_client.create_entry(
+    for idx, logged_date in enumerate([day_1, day_2, day_3, day_4, day_5]):
+        api_client.create_entry_with_moment(
             token,
             journal_id=journal["id"],
             title=f"Entry Day {idx + 1}",
             content=_content_with_words(10),
-            entry_date=entry_date.isoformat(),
-            entry_timezone="UTC",
+            logged_date=logged_date.isoformat(),
+            logged_timezone="UTC",
         )
 
     analytics_before = api_client.request(
@@ -479,13 +477,13 @@ def test_case_h_backdating_entry_in_middle_of_streak_maintains_streak(
     assert analytics_before["current_streak"] == 5
 
     # Now backdate an entry to day 3 (already has an entry)
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Backdated Entry Day 3",
         content=_content_with_words(15),
-        entry_date=day_3.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_3.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_after = api_client.request(
@@ -514,40 +512,40 @@ def test_case_i_backdating_entry_to_fill_gap_extends_streak(
     day_5 = base_date
 
     # Create entries with a gap on day 3
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry Day 1",
         content=_content_with_words(10),
-        entry_date=day_1.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_1.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry Day 2",
         content=_content_with_words(10),
-        entry_date=day_2.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_2.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry Day 4",
         content=_content_with_words(10),
-        entry_date=day_4.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_4.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry Day 5",
         content=_content_with_words(10),
-        entry_date=day_5.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_5.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_before = api_client.request(
@@ -559,13 +557,13 @@ def test_case_i_backdating_entry_to_fill_gap_extends_streak(
 
     # Fill the gap by backdating to day 3
     day_3 = base_date - timedelta(days=2)
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Backdated Entry Day 3",
         content=_content_with_words(15),
-        entry_date=day_3.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_3.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_after = api_client.request(
@@ -593,31 +591,31 @@ def test_case_j_backdating_entry_before_current_streak_does_not_affect_it(
     day_4 = base_date - timedelta(days=1)
     day_5 = base_date
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry Day 3",
         content=_content_with_words(10),
-        entry_date=day_3.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_3.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry Day 4",
         content=_content_with_words(10),
-        entry_date=day_4.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_4.isoformat(),
+        logged_timezone="UTC",
     )
 
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Entry Day 5",
         content=_content_with_words(10),
-        entry_date=day_5.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_5.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_before = api_client.request(
@@ -628,13 +626,13 @@ def test_case_j_backdating_entry_before_current_streak_does_not_affect_it(
 
     # Backdate an entry to day 1 (before the streak, with gap)
     day_1 = base_date - timedelta(days=10)
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Backdated Entry Day 1",
         content=_content_with_words(15),
-        entry_date=day_1.isoformat(),
-        entry_timezone="UTC",
+        logged_date=day_1.isoformat(),
+        logged_timezone="UTC",
     )
 
     analytics_after = api_client.request(
@@ -666,13 +664,13 @@ def test_case_k_backdating_far_before_long_streak_preserves_streak(
     # Create entries for the 10-day streak
     current_date = dec_5
     while current_date <= dec_14:
-        api_client.create_entry(
+        api_client.create_entry_with_moment(
             token,
             journal_id=journal["id"],
             title=f"Entry {current_date.isoformat()}",
             content=_content_with_words(20),
-            entry_date=current_date.isoformat(),
-            entry_timezone="Europe/Berlin",
+            logged_date=current_date.isoformat(),
+            logged_timezone="Europe/Berlin",
         )
         current_date += timedelta(days=1)
 
@@ -685,13 +683,13 @@ def test_case_k_backdating_far_before_long_streak_preserves_streak(
 
     # Backdate an entry several weeks before the streak (with gap)
     nov_16 = date(2025, 11, 16)
-    api_client.create_entry(
+    api_client.create_entry_with_moment(
         token,
         journal_id=journal["id"],
         title="Backdated Entry",
         content=_content_with_words(25),
-        entry_date=nov_16.isoformat(),
-        entry_timezone="Europe/Berlin",
+        logged_date=nov_16.isoformat(),
+        logged_timezone="Europe/Berlin",
     )
 
     analytics_after = api_client.request(
@@ -702,4 +700,3 @@ def test_case_k_backdating_far_before_long_streak_preserves_streak(
     assert analytics_after["streak_start_date"] == dec_5.isoformat()
     assert analytics_after["last_entry_date"] == dec_14.isoformat()
     assert analytics_after["longest_streak"] == 10
-

@@ -1,10 +1,10 @@
-import pytest
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone, timedelta
-import httpx
 
-from app.services.weather_service import WeatherService, WeatherData
-from app.core.config import settings
+import httpx
+import pytest
+
+from app.services.weather_service import WeatherService
 
 # Sample Data
 SAMPLE_MSG_CURRENT = {

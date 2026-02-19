@@ -1,17 +1,17 @@
-import pytest
-from unittest.mock import MagicMock, patch
-from uuid import uuid4
 from datetime import datetime, timezone
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+from uuid import uuid4
 
+from app.models.moment import MomentMedia
+from app.models.enums import MediaType, UploadStatus
+from app.schemas.dto import MomentMediaDTO
 from app.services.export_service import ExportService
 from app.services.import_service import ImportService
-from app.models.entry import EntryMedia
-from app.models.enums import MediaType, UploadStatus
-from app.schemas.dto import MediaDTO
+
 
 def test_export_includes_external_fields():
-    """Verify that export service populates external fields in MediaDTO."""
+    """Verify that export service populates external fields in MomentMediaDTO."""
     db = MagicMock()
     service = ExportService(db)
 
@@ -19,9 +19,9 @@ def test_export_includes_external_fields():
         mock_settings.media_root = "/tmp/media"
 
         # Create media with external fields
-        media = MagicMock(spec=EntryMedia)
+        media = MagicMock(spec=MomentMedia)
         media.id = uuid4()
-        media.entry_id = uuid4()
+        media.moment_id = uuid4()
         media.file_path = None
         media.original_filename = "photo.jpg"
         media.media_type = MediaType.IMAGE
@@ -61,7 +61,7 @@ def test_import_handles_external_media_link_only():
     service = ImportService(db)
 
     # Setup DTO with external fields and NO file_path
-    media_dto = MediaDTO(
+    media_dto = MomentMediaDTO(
         filename="photo.jpg",
         media_type="image",
         file_size=1000,
@@ -74,7 +74,7 @@ def test_import_handles_external_media_link_only():
         external_metadata={"foo": "bar"}
     )
 
-    entry_id = uuid4()
+    moment_id = uuid4()
     user_id = uuid4()
 
     # Simulate no existing media found (for deduplication check)
@@ -82,11 +82,11 @@ def test_import_handles_external_media_link_only():
 
     # Mock _create_media_record to return a media object
     with patch.object(service, '_create_media_record') as mock_create:
-        mock_media = MagicMock(spec=EntryMedia)
+        mock_media = MagicMock(spec=MomentMedia)
         mock_media.id = uuid4()
         mock_create.return_value = mock_media
         result = service._import_media(
-            entry_id=entry_id,
+            moment_id=moment_id,
             user_id=user_id,
             media_dto=media_dto,
             media_dir=Path("/tmp/media"), # Should be ignored for external
@@ -104,11 +104,11 @@ def test_import_handles_external_media_link_only():
         assert call_kwargs['media_dto'].external_provider == "immich"
 
 def test_create_media_record_populates_external_fields():
-    """Verify that _create_media_record populates EntryMedia with external fields."""
+    """Verify that _create_media_record populates MomentMedia with external fields."""
     db = MagicMock()
     service = ImportService(db)
 
-    media_dto = MediaDTO(
+    media_dto = MomentMediaDTO(
         filename="photo.jpg",
         media_type="image",
         file_size=1000,
@@ -123,7 +123,7 @@ def test_create_media_record_populates_external_fields():
     )
 
     media = service._create_media_record(
-        entry_id=uuid4(),
+        moment_id=uuid4(),
         file_path=None,
         media_dto=media_dto,
         checksum="hash123",
@@ -142,7 +142,7 @@ def test_import_handles_external_media_with_no_media_dir():
     service = ImportService(db)
 
     # Setup DTO with external fields and NO file_path
-    media_dto = MediaDTO(
+    media_dto = MomentMediaDTO(
         filename="photo.jpg",
         media_type="image",
         file_size=1000,
@@ -155,7 +155,7 @@ def test_import_handles_external_media_with_no_media_dir():
         external_metadata={"foo": "bar"}
     )
 
-    entry_id = uuid4()
+    moment_id = uuid4()
     user_id = uuid4()
 
     # Simulate no existing media found (for deduplication check)
@@ -163,13 +163,13 @@ def test_import_handles_external_media_with_no_media_dir():
 
     # Mock _create_media_record to return a media object
     with patch.object(service, '_create_media_record') as mock_create:
-        mock_media = MagicMock(spec=EntryMedia)
+        mock_media = MagicMock(spec=MomentMedia)
         mock_media.id = uuid4()
         mock_create.return_value = mock_media
 
         # Pass media_dir=None explicitly
         result = service._import_media(
-            entry_id=entry_id,
+            moment_id=moment_id,
             user_id=user_id,
             media_dto=media_dto,
             media_dir=None, # Typical for imports with only external media
@@ -192,7 +192,7 @@ def test_import_allows_duplicate_external_media():
     db = MagicMock()
     service = ImportService(db)
 
-    media_dto = MediaDTO(
+    media_dto = MomentMediaDTO(
         filename="photo.jpg",
         media_type="image",
         file_size=1000,
@@ -204,7 +204,7 @@ def test_import_allows_duplicate_external_media():
         external_url="https://immich.example.com/assets/asset-123"
     )
 
-    entry_id = uuid4()
+    moment_id = uuid4()
     user_id = uuid4()
 
     # Simulate existing media usually would be found if we queried, but we don't query.
@@ -212,12 +212,12 @@ def test_import_allows_duplicate_external_media():
 
     # Mock _create_media_record - SHOULD be called now
     with patch.object(service, '_create_media_record') as mock_create:
-        mock_media = MagicMock(spec=EntryMedia)
+        mock_media = MagicMock(spec=MomentMedia)
         mock_media.id = uuid4()
         mock_create.return_value = mock_media
 
         result = service._import_media(
-            entry_id=entry_id,
+            moment_id=moment_id,
             user_id=user_id,
             media_dto=media_dto,
             media_dir=None,

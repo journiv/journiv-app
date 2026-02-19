@@ -224,7 +224,7 @@ async def delete_journal(
     """
     journal_service = JournalService(session)
     try:
-        await journal_service.delete_journal(journal_id, current_user.id)
+        journal_service.delete_journal(journal_id, current_user.id)
         log_user_action(current_user.email, f"deleted journal {journal_id}", request_id=None)
     except JournalNotFoundError:
         raise HTTPException(status_code=404, detail="Journal not found") from None

@@ -82,7 +82,7 @@ class GoalService:
         period_end: date,
     ) -> Set[date]:
         rows = self.session.exec(
-            select(col(Moment.logged_date))
+            select(col(Moment.logged_date_tz))
             .join(
                 MomentMoodActivity,
                 col(MomentMoodActivity.moment_id) == col(Moment.id),
@@ -90,8 +90,8 @@ class GoalService:
             .where(
                 col(Moment.user_id) == user_id,
                 col(MomentMoodActivity.activity_id) == activity_id,
-                col(Moment.logged_date) >= period_start,
-                col(Moment.logged_date) <= period_end,
+                col(Moment.logged_date_tz) >= period_start,
+                col(Moment.logged_date_tz) <= period_end,
             )
             .distinct()
         ).all()
@@ -272,7 +272,7 @@ class GoalService:
         if not goal.activity_id:
             return
         min_date = self.session.exec(
-            select(func.min(Moment.logged_date))
+            select(func.min(Moment.logged_date_tz))
             .join(MomentMoodActivity, MomentMoodActivity.moment_id == Moment.id)
             .where(
                 col(Moment.user_id) == goal.user_id,
@@ -391,7 +391,7 @@ class GoalService:
         rows = self.session.exec(
             select(
                 col(MomentMoodActivity.activity_id),
-                col(Moment.logged_date),
+                col(Moment.logged_date_tz),
             )
             .join(
                 Moment,
@@ -400,8 +400,8 @@ class GoalService:
             .where(
                 col(Moment.user_id) == user_id,
                 col(MomentMoodActivity.activity_id).in_(normalize_uuid_list(activity_ids)),
-                col(Moment.logged_date) >= period_start,
-                col(Moment.logged_date) <= period_end,
+                col(Moment.logged_date_tz) >= period_start,
+                col(Moment.logged_date_tz) <= period_end,
             )
             .distinct()
         ).all()

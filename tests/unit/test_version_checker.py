@@ -1,6 +1,7 @@
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from app.services.version_checker import VersionChecker
+
 
 def test_get_instance_info_delegates_to_system():
     """Test that get_instance_info calls the core system utility."""

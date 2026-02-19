@@ -12,7 +12,6 @@ from app.models.activity import Activity
 from app.models.activity_group import ActivityGroup
 from app.models.moment import Moment, MomentMoodActivity
 from app.schemas.activity import ActivityCreate, ActivityUpdate
-from app.services.entry_service import EntryService
 from app.services.reorder_utils import apply_position_updates
 
 
@@ -78,7 +77,7 @@ class ActivityService:
 
         if search:
             normalized = search.strip().lower()
-            escaped = EntryService._escape_like_pattern(normalized)
+            escaped = self._escape_like_pattern(normalized)
             statement = statement.where(
                 func.lower(Activity.name).like(f"%{escaped}%", escape="\\")
             )
@@ -90,6 +89,10 @@ class ActivityService:
         ).limit(limit).offset(offset)
         activities = self.session.exec(statement).all()
         return list(activities)
+
+    @staticmethod
+    def _escape_like_pattern(value: str) -> str:
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def get_activity_by_id(self, activity_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Activity]:
         """Get an activity by ID, ensuring it belongs to the user."""

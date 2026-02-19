@@ -11,17 +11,18 @@ Covers:
 """
 import shutil
 import uuid
-from datetime import date, datetime, timezone
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from sqlmodel import Session, create_engine
 
 from app.models.base import BaseModel
-from app.models.entry import Entry, EntryMedia
+from app.models.entry import Entry
+from app.models.moment import MomentMedia
 from app.models.enums import JournalColor, MediaType, UploadStatus
 from app.models.journal import Journal
+from app.models.moment import Moment
 from app.models.user import User
 from app.services import media_service as media_service_module
 from app.services.media_service import MediaService
@@ -65,14 +66,22 @@ def test_entry(test_db: Session, test_user: User) -> Entry:
     test_db.commit()
     test_db.refresh(journal)
 
+    moment = Moment(
+        user_id=test_user.id,
+        logged_timezone="UTC",
+    )
+    test_db.add(moment)
+    test_db.commit()
+    test_db.refresh(moment)
+
     entry = Entry(
         journal_id=journal.id,
+        moment_id=moment.id,
         user_id=test_user.id,
         title="HEIC Entry",
         content_delta={"ops": [{"insert": "test\n"}]},
         content_plain_text="test",
         word_count=1,
-        entry_date=date.today(),
     )
     test_db.add(entry)
     test_db.commit()
@@ -228,8 +237,8 @@ class TestProcessUploadedFileHeicSkip:
         display_file.write_bytes(b"pre-existing webp")
 
         # Create media record with display_path already set
-        media = EntryMedia(
-            entry_id=test_entry.id,
+        media = MomentMedia(
+            moment_id=test_entry.moment_id,
             media_type=MediaType.IMAGE,
             mime_type="image/heic",
             upload_status=UploadStatus.PROCESSING,
@@ -271,8 +280,8 @@ class TestServingHeicDisplayVersion:
         display_file = user_dir / "photo_display.webp"
         display_file.write_bytes(b"webp display bytes")
 
-        media = EntryMedia(
-            entry_id=test_entry.id,
+        media = MomentMedia(
+            moment_id=test_entry.moment_id,
             media_type=MediaType.IMAGE,
             mime_type="image/heic",
             upload_status=UploadStatus.COMPLETED,
@@ -307,8 +316,8 @@ class TestServingHeicDisplayVersion:
         heic_file = user_dir / "photo.heic"
         heic_file.write_bytes(b"original heic bytes")
 
-        media = EntryMedia(
-            entry_id=test_entry.id,
+        media = MomentMedia(
+            moment_id=test_entry.moment_id,
             media_type=MediaType.IMAGE,
             mime_type="image/heic",
             upload_status=UploadStatus.COMPLETED,
@@ -350,8 +359,8 @@ class TestDeleteHeicDisplayVersion:
         display_file = user_dir / "del_display.webp"
         display_file.write_bytes(b"webp data")
 
-        media = EntryMedia(
-            entry_id=test_entry.id,
+        media = MomentMedia(
+            moment_id=test_entry.moment_id,
             media_type=MediaType.IMAGE,
             mime_type="image/heic",
             upload_status=UploadStatus.COMPLETED,

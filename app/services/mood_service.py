@@ -410,8 +410,8 @@ class MoodService:
                 .where(
                     col(Moment.user_id) == user_id,
                     col(Mood.is_active).is_(True),
-                    col(Moment.logged_date) >= start_date,
-                    col(Moment.logged_date) <= end_date,
+                    col(Moment.logged_date_tz) >= start_date,
+                    col(Moment.logged_date_tz) <= end_date,
                 )
                 .group_by(Mood.name, Mood.category)
                 .order_by(func.count(MomentMoodActivity.id).desc())
@@ -421,7 +421,7 @@ class MoodService:
         daily_moods = list(
             self.session.exec(
                 select(
-                    col(Moment.logged_date).label("date"),
+                    col(Moment.logged_date_tz).label("date"),
                     Mood.category,
                     func.count(MomentMoodActivity.id).label("count"),
                 )
@@ -429,11 +429,11 @@ class MoodService:
                 .join(Mood, Mood.id == MomentMoodActivity.mood_id)
                 .where(
                     col(Moment.user_id) == user_id,
-                    col(Moment.logged_date) >= start_date,
-                    col(Moment.logged_date) <= end_date,
+                    col(Moment.logged_date_tz) >= start_date,
+                    col(Moment.logged_date_tz) <= end_date,
                 )
-                .group_by(col(Moment.logged_date), Mood.category)
-                .order_by(col(Moment.logged_date))
+                .group_by(col(Moment.logged_date_tz), Mood.category)
+                .order_by(col(Moment.logged_date_tz))
             )
         )
 
@@ -486,13 +486,13 @@ class MoodService:
         """Get current mood logging streak for a user based on moments."""
         mood_dates = list(
             self.session.exec(
-                select(col(Moment.logged_date))
+                select(col(Moment.logged_date_tz))
                 .where(
                     Moment.user_id == user_id,
                     col(Moment.primary_mood_id).is_not(None),
                 )
-                .group_by(col(Moment.logged_date))
-                .order_by(col(Moment.logged_date).desc())
+                .group_by(col(Moment.logged_date_tz))
+                .order_by(col(Moment.logged_date_tz).desc())
             )
         )
 
@@ -504,7 +504,7 @@ class MoodService:
             }
 
         latest_date = mood_dates[0]
-        today = date.today()
+        today = utc_now().date()
         if latest_date < (today - timedelta(days=1)):
             return {
                 "current_streak": 0,

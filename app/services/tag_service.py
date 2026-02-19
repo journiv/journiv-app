@@ -12,8 +12,9 @@ from app.core.config import settings
 from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error, log_info
 from app.core.time_utils import utc_now
-from app.models.entry import Entry
-from app.models.tag import EntryTagLink, Tag
+from app.models.moment import Moment
+from app.models.moment_tag_link import MomentTagLink
+from app.models.tag import Tag
 from app.schemas.tag import (
     PeakMonth,
     TagAnalyticsResponse,
@@ -43,6 +44,11 @@ class TagService:
         if limit <= 0:
             return DEFAULT_TAG_PAGE_LIMIT
         return min(limit, MAX_TAG_PAGE_LIMIT)
+
+    @staticmethod
+    def _escape_like_term(term: str) -> str:
+        """Escape LIKE wildcards so user input is treated as literal text."""
+        return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def _commit(self) -> None:
         """Commit database changes with proper error handling."""
@@ -99,7 +105,8 @@ class TagService:
         )
 
         if search:
-            statement = statement.where(col(Tag.name).ilike(f"%{search}%"))
+            escaped_search = self._escape_like_term(search)
+            statement = statement.where(col(Tag.name).ilike(f"%{escaped_search}%", escape="\\"))
 
         statement = statement.order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).offset(offset).limit(limit)
         return list(self.session.exec(statement))
@@ -134,16 +141,10 @@ class TagService:
         return tag
 
     def delete_tag(self, tag_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-        """Hard delete a tag and its related records."""
+        """Hard delete a tag. MomentTagLink rows are removed by DB cascade."""
         tag = self.get_tag_by_id(tag_id, user_id)
         if not tag:
             raise TagNotFoundError("Tag not found")
-
-        # Hard delete related EntryTagLink records
-        tag_link_statement = select(EntryTagLink).where(EntryTagLink.tag_id == tag_id)
-        tag_link_records = self.session.exec(tag_link_statement).all()
-        for tag_link in tag_link_records:
-            self.session.delete(tag_link)
 
         # Hard delete the tag
         self.session.delete(tag)
@@ -158,49 +159,43 @@ class TagService:
         log_info(f"Tag hard-deleted for user {user_id}: {tag_id}")
         return True
 
-    def _get_entry_for_user(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
-        """Load an entry and ensure it belongs to the user."""
-        entry = self.session.exec(
-            select(Entry).where(
-                Entry.id == entry_id,
-                Entry.user_id == user_id,
+    def _get_moment_for_user(self, moment_id: uuid.UUID, user_id: uuid.UUID) -> Moment:
+        """Load a moment and ensure it belongs to the user."""
+        moment = self.session.exec(
+            select(Moment).where(
+                Moment.id == moment_id,
+                Moment.user_id == user_id,
             )
         ).first()
-        if not entry:
-            raise ValueError("Entry not found")
-        return entry
+        if not moment:
+            raise ValueError("Moment not found")
+        return moment
 
-    def add_tag_to_entry(self, entry_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID) -> EntryTagLink:
-        """Add a tag to an entry."""
-        # Verify entry belongs to user
-        self._get_entry_for_user(entry_id, user_id)
+    def add_tag_to_moment(self, moment_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID) -> MomentTagLink:
+        """Add a tag to a moment."""
+        self._get_moment_for_user(moment_id, user_id)
 
-        # Verify tag belongs to user
         tag = self.get_tag_by_id(tag_id, user_id)
         if not tag:
             raise TagNotFoundError("Tag not found")
 
-        # Check if association already exists (including soft-deleted)
         existing_link = self.session.exec(
-            select(EntryTagLink).where(
-                EntryTagLink.entry_id == entry_id,
-                EntryTagLink.tag_id == tag_id
+            select(MomentTagLink).where(
+                MomentTagLink.moment_id == moment_id,
+                MomentTagLink.tag_id == tag_id
             )
         ).first()
 
         if existing_link:
-            # Link already exists, just return it
             return existing_link
 
-        # Create new association
-        link = EntryTagLink(
-            entry_id=entry_id,
+        link = MomentTagLink(
+            moment_id=moment_id,
             tag_id=tag_id
         )
 
         self.session.add(link)
 
-        # Update tag usage count
         tag.usage_count += 1
         self.session.add(tag)
 
@@ -208,63 +203,54 @@ class TagService:
         self.session.refresh(link)
         return link
 
-    def remove_tag_from_entry(self, entry_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-        """Remove a tag from an entry (soft delete)."""
-        # Verify entry belongs to user
-        self._get_entry_for_user(entry_id, user_id)
+    def remove_tag_from_moment(self, moment_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """Remove a tag from a moment."""
+        self._get_moment_for_user(moment_id, user_id)
 
-        # Verify tag belongs to user
         tag = self.get_tag_by_id(tag_id, user_id)
         if not tag:
             raise TagNotFoundError("Tag not found")
 
-        # Find the association (only non-deleted)
         link = self.session.exec(
-            select(EntryTagLink).where(
-                EntryTagLink.entry_id == entry_id,
-                EntryTagLink.tag_id == tag_id,
+            select(MomentTagLink).where(
+                MomentTagLink.moment_id == moment_id,
+                MomentTagLink.tag_id == tag_id,
             )
         ).first()
 
         if link:
-            # Hard delete the link
             self.session.delete(link)
-
-            # Update tag usage count
             tag.usage_count = max(0, tag.usage_count - 1)
             self.session.add(tag)
-
             self._commit()
             return True
         return False
 
-    def get_entry_tags(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> List[Tag]:
-        """Get all tags for an entry"""
-        self._get_entry_for_user(entry_id, user_id)
-        statement = select(Tag).join(EntryTagLink).where(
-            EntryTagLink.entry_id == entry_id,
+    def get_moment_tags(self, moment_id: uuid.UUID, user_id: uuid.UUID) -> List[Tag]:
+        """Get all tags for a moment."""
+        self._get_moment_for_user(moment_id, user_id)
+        statement = select(Tag).join(MomentTagLink).where(
+            MomentTagLink.moment_id == moment_id,
             Tag.user_id == user_id,
         ).order_by(col(Tag.name).asc())
         return list(self.session.exec(statement))
 
-    def get_entries_by_tag(
+    def get_moments_by_tag(
         self,
         tag_id: uuid.UUID,
         user_id: uuid.UUID,
         limit: int = DEFAULT_TAG_PAGE_LIMIT,
         offset: int = 0
-    ) -> List[Entry]:
-        """Get entries that have a specific tag."""
-        # Verify tag belongs to user
+    ) -> List[Moment]:
+        """Get moments that have a specific tag."""
         tag = self.get_tag_by_id(tag_id, user_id)
         if not tag:
             raise TagNotFoundError("Tag not found")
 
-        statement = select(Entry).join(EntryTagLink).where(
-            EntryTagLink.tag_id == tag_id,
-            Entry.user_id == user_id,
-            col(Entry.is_draft).is_(False),
-        ).order_by(col(Entry.entry_datetime_utc).desc()).offset(offset).limit(limit)
+        statement = select(Moment).join(MomentTagLink).where(
+            MomentTagLink.tag_id == tag_id,
+            Moment.user_id == user_id,
+        ).order_by(col(Moment.logged_at_utc).desc()).offset(offset).limit(limit)
         return list(self.session.exec(statement))
 
     def get_tag_statistics(self, user_id: uuid.UUID, include_usage_over_time: bool = False) -> TagStatisticsResponse:
@@ -379,34 +365,29 @@ class TagService:
         """
         # Use centralized database type detection from settings
         if settings.database_type == 'postgres':
-            # PostgreSQL: Use to_char for date formatting
-            month_expr = func.to_char(Entry.entry_date, 'YYYY-MM')
+            month_expr = func.to_char(Moment.logged_date_tz, 'YYYY-MM')
         else:
-            # SQLite: Use strftime for date formatting
-            month_expr = func.strftime('%Y-%m', Entry.entry_date)
+            month_expr = func.strftime('%Y-%m', Moment.logged_date_tz)
 
-        # Build query
         statement = select(
             month_expr.label('month_key'),
             func.count().label('count')
         ).select_from(
-            EntryTagLink
+            MomentTagLink
         ).join(
-            Entry, Entry.id == EntryTagLink.entry_id
+            Moment, Moment.id == MomentTagLink.moment_id
         ).join(
-            Tag, Tag.id == EntryTagLink.tag_id
+            Tag, Tag.id == MomentTagLink.tag_id
         ).where(
             Tag.user_id == user_id,
-            Entry.user_id == user_id,
-            col(Entry.is_draft).is_(False),
+            Moment.user_id == user_id,
         )
 
-        # Apply filters
         if tag_id:
-            statement = statement.where(EntryTagLink.tag_id == tag_id)
+            statement = statement.where(MomentTagLink.tag_id == tag_id)
 
         if start_date:
-            statement = statement.where(Entry.entry_date >= start_date)
+            statement = statement.where(col(Moment.logged_date_tz) >= start_date)
 
         # Group by month
         statement = statement.group_by(month_expr)
@@ -493,7 +474,7 @@ class TagService:
         Case-normalization rules:
         - Normalize both source and target tag names before merge
         - Prevent merging into a tag that differs only by case
-        - Move all entry-tag links from source to target
+        - Move all moment-tag links from source to target
         - Delete source tag
         """
         # Get both tags and verify they belong to user
@@ -518,32 +499,34 @@ class TagService:
         if existing_tag and existing_tag.id != target_id:
             raise ValueError("Target tag name conflicts with existing tag (case-insensitive)")
 
-        # Move all entry-tag links from source to target
+        # Move all moment-tag links from source to target using explicit
+        # delete-old + insert-new pattern (avoid in-place composite PK mutation).
         source_links = self.session.exec(
-            select(EntryTagLink).where(EntryTagLink.tag_id == source_id)
+            select(MomentTagLink).where(MomentTagLink.tag_id == source_id)
         ).all()
 
         for link in source_links:
-            # Check if target already has this entry tagged
+            # Check if target already has this moment tagged
             existing_target_link = self.session.exec(
-                select(EntryTagLink).where(
-                    EntryTagLink.entry_id == link.entry_id,
-                    EntryTagLink.tag_id == target_id
+                select(MomentTagLink).where(
+                    MomentTagLink.moment_id == link.moment_id,
+                    MomentTagLink.tag_id == target_id
                 )
             ).first()
 
             if existing_target_link:
-                # Entry already has target tag, just delete source link
+                # Moment already has target tag, just delete source link
                 self.session.delete(link)
-                # Decrement source tag usage
-                source_tag.usage_count = max(0, source_tag.usage_count - 1)
             else:
-                # Update link to point to target tag
-                link.tag_id = target_id
-                self.session.add(link)
-                # Update usage counts
-                source_tag.usage_count = max(0, source_tag.usage_count - 1)
-                target_tag.usage_count += 1
+                # Delete old link and create new one
+                self.session.delete(link)
+                self.session.add(MomentTagLink(moment_id=link.moment_id, tag_id=target_id))
+
+        # Recompute denormalized usage_count from link-table source of truth.
+        target_usage_count = self.session.exec(
+            select(func.count()).where(MomentTagLink.tag_id == target_id)
+        ).one()
+        target_tag.usage_count = int(target_usage_count or 0)
 
         # Delete source tag
         self.session.delete(source_tag)
@@ -587,35 +570,57 @@ class TagService:
                 tags.append(tag)
         return tags
 
-    def bulk_add_tags_to_entry(self, entry_id: uuid.UUID, tag_names: List[str], user_id: uuid.UUID) -> List[Tag]:
-        """Add multiple tags to an entry by name.
+    def bulk_add_tags_to_moment(self, moment_id: uuid.UUID, tag_names: List[str], user_id: uuid.UUID) -> List[Tag]:
+        """Add multiple tags to a moment by name.
 
-        Creates tags if they don't exist, then associates them with the entry.
-        Returns all tags that are associated with the entry after the operation.
+        Creates tags if they don't exist, then associates them with the moment.
+        Returns all tags that are associated with the moment after the operation.
         """
-        # Verify entry exists and belongs to user
-        self._get_entry_for_user(entry_id, user_id)
+        self._get_moment_for_user(moment_id, user_id)
 
-        # Get or create tags
         tags = self.create_or_get_tags(user_id, tag_names)
+        if not tags:
+            return self.get_moment_tags(moment_id, user_id)
 
-        # Add each tag to the entry
+        tag_ids = [tag.id for tag in tags]
+        existing_tag_ids = set(
+            self.session.exec(
+                select(MomentTagLink.tag_id).where(
+                    MomentTagLink.moment_id == moment_id,
+                    col(MomentTagLink.tag_id).in_(tag_ids),
+                )
+            ).all()
+        )
+
+        created_any = False
         for tag in tags:
-            try:
-                self.add_tag_to_entry(entry_id, tag.id, user_id)
-            except Exception:
-                # Tag already associated or other error, skip
-                pass
+            if tag.id in existing_tag_ids:
+                continue
+            self.session.add(MomentTagLink(moment_id=moment_id, tag_id=tag.id))
+            tag.usage_count += 1
+            self.session.add(tag)
+            created_any = True
 
-        # Return all tags currently associated with the entry
-        return self.get_entry_tags(entry_id, user_id)
+        if created_any:
+            self._commit()
 
-    def search_tags(self, user_id: uuid.UUID, query: str, limit: int = DEFAULT_TAG_PAGE_LIMIT) -> List[Tag]:
+        return self.get_moment_tags(moment_id, user_id)
+
+    def search_tags(
+        self,
+        user_id: uuid.UUID,
+        query: str,
+        limit: int = DEFAULT_TAG_PAGE_LIMIT,
+        include_unused: bool = True,
+    ) -> List[Tag]:
         """Search tags by name."""
         statement = select(Tag).where(
             Tag.user_id == user_id,
-            col(Tag.name).ilike(f"%{query}%"),
-        ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).limit(limit)
+            col(Tag.name).ilike(f"%{self._escape_like_term(query)}%", escape="\\"),
+        )
+        if not include_unused:
+            statement = statement.where(Tag.usage_count > 0)
+        statement = statement.order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).limit(limit)
         return list(self.session.exec(statement))
 
     def get_tag_detail_analytics(

@@ -3,16 +3,13 @@ End-to-end integration tests for Day One import.
 
 Tests the complete Day One import flow from upload to verification of imported data.
 """
-import os
 import time
 from pathlib import Path
-from typing import Dict, Any
 
 import pytest
 
-from tests.lib import ApiUser, JournivApiClient
 from tests.integration.helpers import wait_for_import_completion
-from app.core.config import settings
+from tests.lib import ApiUser, JournivApiClient
 
 
 def _load_dayone_fixture() -> bytes:
@@ -79,22 +76,18 @@ class TestDayOneImportE2E:
 
         # 4. Verify journals were created
         journals = api_client.list_journals(api_user.access_token)
-        assert len(journals) == 1
-
-        imported_journal = journals[0]
+        imported_journals = [j for j in journals if j["title"] == "Test Journal"]
+        assert len(imported_journals) == 1
+        imported_journal = imported_journals[0]
         assert imported_journal["title"] == "Test Journal"
         assert "Imported from Day One" in imported_journal["description"]
-        assert imported_journal["entry_count"] == 5
 
         # 5. Verify entries were created
-        entries = api_client.list_entries(
-            api_user.access_token,
-            journal_id=imported_journal["id"],
-        )
+        entries = api_client.list_entries(api_user.access_token)
         assert len(entries) == 5
 
-        # Sort by creation date for consistent testing
-        entries.sort(key=lambda e: e["entry_datetime_utc"])
+        # Sort by stable response field for deterministic assertions
+        entries.sort(key=lambda e: e.get("created_at") or "")
 
         # 6. Verify title extraction from richText
         entry_titles = [e.get("title") or "" for e in entries]
@@ -120,24 +113,25 @@ class TestDayOneImportE2E:
         # Verify that placeholder text is present (the text around photos)
         assert any(phrase in content for phrase in ["Placeholder text for photos", "More placeholder text"])
 
-        # 8. Verify location data was imported
-        assert photo_entry.get("location_json") is not None
-        location_json = photo_entry["location_json"]
+        # 8. Verify location data was imported (moment-first: location lives on moment)
+        photo_moment = api_client.request(
+            "GET",
+            f"/moments/{photo_entry['moment_id']}",
+            token=api_user.access_token,
+            expected=(200,),
+        ).json()
+        assert photo_moment.get("location_json") is not None
+        location_json = photo_moment["location_json"]
         assert location_json.get("locality") == "Generic Locality"
         assert location_json.get("country") == "Sample Country"
         assert location_json.get("latitude") is not None
         assert location_json.get("longitude") is not None
 
-        # Legacy location string is optional
-        if photo_entry.get("location") is not None:
-            assert "Sample Country" in photo_entry["location"]
-
         # 9. Verify tags were imported
         # The photo entry has tags in the fixture - fetch from separate API
-        photo_entry_id = photo_entry["id"]
         entry_tags_response = api_client.request(
             "GET",
-            f"/entries/{photo_entry_id}/tags",
+            f"/moments/{photo_entry['moment_id']}/tags",
             token=api_user.access_token,
             expected=(200,)
         )
@@ -151,14 +145,14 @@ class TestDayOneImportE2E:
         # Fetch media from separate API
         entry_media_response = api_client.request(
             "GET",
-            f"/entries/{photo_entry_id}/media",
+            f"/moments/{photo_entry['moment_id']}/media",
             token=api_user.access_token,
             expected=(200,)
         )
-        entry_media = entry_media_response.json()
-        assert len(entry_media) == 2
+        moment_media = entry_media_response.json()
+        assert len(moment_media) == 2
 
-        for media in entry_media:
+        for media in moment_media:
             assert media["media_type"] == "image"
             assert "file_path" not in media  # Should be excluded
             assert media["checksum"] is not None
@@ -181,12 +175,18 @@ class TestDayOneImportE2E:
 
         # 11. Verify pinned/starred status
         # Entry with photos is pinned and starred in fixture
-        assert photo_entry["is_pinned"] is True
+        assert photo_moment["is_pinned"] is True
 
         # 12. Verify timezone handling
         # All entries have UTC timezone in the fixture
         for entry in entries:
-            assert entry["entry_timezone"] == "UTC"
+            entry_moment = api_client.request(
+                "GET",
+                f"/moments/{entry['moment_id']}",
+                token=api_user.access_token,
+                expected=(200,),
+            ).json()
+            assert entry_moment["logged_timezone"] == "UTC"
 
     def test_dayone_import_with_invalid_zip(
         self,
@@ -313,15 +313,12 @@ class TestDayOneImportE2E:
 
         # Should now have 2 journals
         journals = api_client.list_journals(api_user.access_token)
-        assert len(journals) == 2
+        imported_journals = [j for j in journals if j["title"] == "Test Journal"]
+        assert len(imported_journals) == 2
 
-        # Both should be named "Test Journal" (from Day One export)
-        journal_titles = [j["title"] for j in journals]
-        assert journal_titles.count("Test Journal") == 2
-
-        # Each should have 5 entries
-        for journal in journals:
-            assert journal["entry_count"] == 5
+        # Each import contributes 5 entries in total.
+        all_entries = api_client.list_entries(api_user.access_token)
+        assert len(all_entries) == 10
 
     def test_dayone_import_unauthorized(
         self,
@@ -369,8 +366,8 @@ class TestDayOneImportE2E:
         Test that Day One import handles duplicate media within the same entry correctly.
 
         When the same media file appears multiple times in a Day One entry,
-        the import should reuse the existing EntryMedia record instead of
-        creating duplicates, preventing unique constraint violations on (entry_id, checksum).
+        the import should reuse the existing MomentMedia record instead of
+        creating duplicates, preventing unique constraint violations on (moment_id, checksum).
 
         This test verifies the import completes successfully even with potential duplicates.
         """
@@ -404,7 +401,7 @@ class TestDayOneImportE2E:
         errors = completed_job.get("errors") or []
         duplicate_errors = [
             error for error in (errors if isinstance(errors, list) else [])
-            if "duplicate key" in str(error).lower() or "uq_entry_media_entry_checksum" in str(error)
+            if "duplicate key" in str(error).lower() or "uq_moment_media_moment_checksum" in str(error)
         ]
         assert len(duplicate_errors) == 0, (
             f"Import should not have duplicate key errors. Found: {duplicate_errors}"
@@ -425,18 +422,17 @@ class TestDayOneImportE2E:
                 journal_id=journal["id"],
             )
             for entry in entries:
-                # Fetch media for each entry to verify no duplicates
                 entry_media_response = api_client.request(
                     "GET",
-                    f"/entries/{entry['id']}/media",
+                    f"/moments/{entry['moment_id']}/media",
                     token=api_user.access_token,
                     expected=(200,)
                 )
-                entry_media = entry_media_response.json()
+                moment_media = entry_media_response.json()
 
-                # Verify no duplicate (entry_id, checksum) combinations
+                # Verify no duplicate (moment_id, checksum) combinations
                 checksums_by_entry = {}
-                for media in entry_media:
+                for media in moment_media:
                     checksum = media.get("checksum")
                     if checksum:
                         if checksum in checksums_by_entry:

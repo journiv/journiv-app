@@ -2,12 +2,13 @@
 Tag schemas.
 """
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field, validator
 
 from app.schemas.base import TimestampMixin
+from app.schemas.media_thumbnail import MomentMediaThumbnail
 
 
 class TagBase(BaseModel):
@@ -47,21 +48,32 @@ class TagResponse(TagBase, TimestampMixin):
     updated_at: datetime
 
 
-class EntryTagLinkBase(BaseModel):
-    """Base entry tag link schema."""
-    entry_id: uuid.UUID
+class MomentTagLinkBase(BaseModel):
+    """Base moment tag link schema."""
+    moment_id: uuid.UUID
     tag_id: uuid.UUID
 
 
-class EntryTagLinkCreate(EntryTagLinkBase):
-    """Entry tag link creation schema."""
+class MomentTagLinkCreate(MomentTagLinkBase):
+    """Moment tag link creation schema."""
     pass
 
 
-class EntryTagLinkResponse(EntryTagLinkBase, TimestampMixin):
-    """Entry tag link response schema."""
+class MomentTagLinkResponse(MomentTagLinkBase, TimestampMixin):
+    """Moment tag link response schema."""
     created_at: datetime
     updated_at: datetime
+
+
+class TaggedMomentSummary(BaseModel):
+    """Summary payload for moments returned by tag lookups."""
+    id: uuid.UUID
+    logged_at_utc: datetime
+    logged_date_tz: date
+    note: Optional[str] = None
+    primary_mood_id: Optional[uuid.UUID] = None
+    media_count: int = 0
+    media: List[MomentMediaThumbnail] = Field(default_factory=list)
 
 
 class TagSummary(BaseModel):
