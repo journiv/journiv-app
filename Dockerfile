@@ -1,27 +1,5 @@
 # =========================
-# Stage 1: Dart Migration Binary Builder
-# =========================
-FROM dart:stable AS dart-builder
-
-WORKDIR /build
-
-# Copy Dart migration tool source
-COPY bin/pubspec.yaml bin/pubspec.lock* ./
-RUN dart pub get
-
-COPY bin/ ./
-RUN rm -rf .dart_tool
-RUN dart pub get
-
-# Compile standalone binary (ensures architecture compatibility)
-RUN dart compile exe migrator.dart -o migrator
-
-# Verify binary was created
-RUN test -f migrator || (echo "❌ Dart binary compilation failed!" && exit 1)
-RUN echo "✅ Dart migration binary compiled successfully"
-
-# =========================
-# Stage 2: Python Builder
+# Stage 1: Python Builder
 # =========================
 FROM python:3.12-slim-bookworm AS builder
 
@@ -86,11 +64,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy venv to /opt/venv (survives volume mount .:/app in dev); symlinks point to /usr/local/bin/python3.12
 COPY --from=builder /app/.venv /opt/venv
 
-# Copy Dart migration binary from dart-builder
-COPY --from=dart-builder /build/migrator /app/bin/migrator
-COPY --from=dart-builder /build/migrator /usr/local/bin/migrator
-RUN chmod +x /app/bin/migrator /usr/local/bin/migrator && echo "✅ Dart migration binary installed"
-
 # Copy app code and assets
 COPY app/ app/
 
@@ -107,7 +80,6 @@ COPY alembic.ini .
 COPY scripts/moods.json scripts/moods.json
 COPY scripts/prompts.json scripts/prompts.json
 COPY scripts/docker-entrypoint.sh scripts/docker-entrypoint.sh
-COPY scripts/migrate_media_storage.py scripts/migrate_media_storage.py
 COPY journiv-admin journiv-admin
 
 # Copy prebuilt Flutter web app

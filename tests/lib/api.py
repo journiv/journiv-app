@@ -6,6 +6,7 @@ resources that the integration and upgrade suites exercise.
 """
 from __future__ import annotations
 
+import copy
 import io
 import os
 import time
@@ -17,7 +18,6 @@ from urllib.parse import urlsplit, urlunsplit
 import httpx
 
 from app.utils.quill_delta import wrap_plain_text
-
 
 DEFAULT_BASE_URL = "http://localhost:8000/api/v1"
 
@@ -76,9 +76,8 @@ class JournivApiClient:
         *,
         timeout: float = 30.0,
     ) -> None:
-        self.base_url = _normalize_base_url(
-            base_url or os.getenv("JOURNIV_API_BASE_URL")
-        )
+        env_url = os.getenv("JOURNIV_API_BASE_URL")
+        self.base_url = _normalize_base_url(base_url or env_url or DEFAULT_BASE_URL)
         self._client = httpx.Client(base_url=self.base_url, timeout=timeout)
         parsed = urlsplit(self.base_url)
         self._service_root = urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
@@ -92,9 +91,6 @@ class JournivApiClient:
     def wait_for_health(self, endpoint: str = "/health", *, timeout: int = 60) -> None:
         """
         Poll the health endpoint until the application is ready.
-
-        Upgrade tests invoke this before seeding/verifying data to avoid
-        spurious failures while the containers are still booting.
         """
         deadline = time.time() + timeout
         last_exc: Optional[Exception] = None
@@ -302,25 +298,123 @@ class JournivApiClient:
         journal_id: str,
         title: str,
         content: str,
-        entry_date: str,
+        moment_id: str,
         **extra: Any,
     ) -> Dict[str, Any]:
         payload = {
             "title": title,
             "content": content,
             "journal_id": journal_id,
-            "entry_date": entry_date,
+            "moment_id": moment_id,
         }
         payload.update(extra)
-        payload = _wrap_content_to_delta(payload)
-        response = self.request(
+
+        # Handle plain content conversion
+        if "content" in payload:
+            content = payload.pop("content")
+            if "content_delta" not in payload:
+                payload["content_delta"] = wrap_plain_text(content)
+
+        return self.request(
             "POST",
             "/entries/",
             token=token,
             json=payload,
             expected=(201,),
-        )
-        return response.json()
+        ).json()
+
+    def create_entry_with_moment(
+        self,
+        token: str,
+        *,
+        journal_id: str,
+        title: str,
+        content: str,
+        logged_date_tz: Optional[str] = None,
+        logged_date: Optional[str] = None,
+        logged_timezone: Optional[str] = None,
+        **extra: Any,
+    ) -> Dict[str, Any]:
+        # Avoid mutating the caller's dictionary
+        extra_copy = extra.copy()
+        extra_copy.pop("entry", None)
+
+        entry_payload: Dict[str, Any] = {
+            "title": title,
+            "journal_id": journal_id,
+            "content": content,
+        }
+
+        try:
+            moment = self.create_moment(
+                token=token,
+                logged_date_tz=logged_date_tz or logged_date,
+                logged_timezone=logged_timezone,
+                entry=entry_payload,
+                **extra_copy,
+            )
+            entry = moment.get("entry")
+            if not entry:
+                raise RuntimeError("Moment creation succeeded but embedded entry is missing")
+            return entry
+        except JournivApiError as exc:
+            # Backward compatibility for old versions used in upgrade tests where
+            # /moments POST may not exist yet.
+            if exc.method != "POST" or exc.path != "/moments" or exc.status not in (404, 405):
+                raise
+
+            legacy_payload: Dict[str, Any] = {
+                "title": title,
+                "journal_id": journal_id,
+                "content_delta": wrap_plain_text(content),
+            }
+            resolved_logged_date = logged_date_tz or logged_date
+            if resolved_logged_date is not None:
+                legacy_payload["logged_date"] = resolved_logged_date
+            if logged_timezone is not None:
+                legacy_payload["logged_timezone"] = logged_timezone
+            # Legacy /entries payload: only forward entry-safe fields.
+            allowed_legacy_keys = {
+                "title",
+                "content_delta",
+                "content_plain_text",
+                "journal_id",
+                "logged_date",
+                "logged_timezone",
+                "is_draft",
+                "import_metadata",
+            }
+            legacy_payload.update(
+                {key: value for key, value in extra_copy.items() if key in allowed_legacy_keys}
+            )
+
+            response = self.request(
+                "POST",
+                "/entries/",
+                token=token,
+                json=legacy_payload,
+                expected=(200, 201),
+            )
+            body = response.json()
+            legacy_entry: Dict[str, Any]
+            if isinstance(body, dict) and "entry" in body and isinstance(body["entry"], dict):
+                legacy_entry = body["entry"]
+            elif isinstance(body, dict):
+                legacy_entry = body
+            else:
+                raise RuntimeError("Legacy entry creation returned unexpected response format") from None
+
+            # Best-effort normalization: ensure callers can access moment_id.
+            # Older versions may return only entry fields.
+            if "moment_id" not in legacy_entry and legacy_entry.get("id"):
+                try:
+                    hydrated = self.get_entry(token, str(legacy_entry["id"]))
+                    if isinstance(hydrated, dict):
+                        legacy_entry = {**hydrated, **legacy_entry}
+                except Exception:
+                    # Keep legacy behavior even if hydration endpoint differs.
+                    pass
+            return legacy_entry
 
     def list_entries(self, token: str, **params: Any) -> list[Dict[str, Any]]:
         response = self.request(
@@ -355,22 +449,6 @@ class JournivApiClient:
             token=token,
             expected=(200, 204),
         )
-
-    def pin_entry(self, token: str, entry_id: str) -> Dict[str, Any]:
-        return self.request(
-            "POST",
-            f"/entries/{entry_id}/pin",
-            token=token,
-            expected=(200,),
-        ).json()
-
-    def unpin_entry(self, token: str, entry_id: str) -> Dict[str, Any]:
-        return self.request(
-            "POST",
-            f"/entries/{entry_id}/pin",
-            token=token,
-            expected=(200,),
-        ).json()
 
     # ------------------------------------------------------------------ #
     # Tag helpers
@@ -694,15 +772,21 @@ class JournivApiClient:
         self,
         token: str,
         *,
+        logged_date_tz: Optional[str] = None,
         logged_date: Optional[str] = None,
+        logged_at_utc: Optional[str] = None,
         primary_mood_id: Optional[str] = None,
         note: str | None = None,
         mood_activity: Optional[list[Dict[str, Any]]] = None,
         logged_timezone: Optional[str] = None,
+        **extra: Any,
     ) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}
-        if logged_date is not None:
-            payload["logged_date"] = logged_date
+        resolved_logged_date_tz = logged_date_tz or logged_date
+        if resolved_logged_date_tz is not None:
+            payload["logged_date_tz"] = resolved_logged_date_tz
+        if logged_at_utc is not None:
+            payload["logged_at_utc"] = logged_at_utc
         if logged_timezone is not None:
             payload["logged_timezone"] = logged_timezone
         if note is not None:
@@ -713,6 +797,19 @@ class JournivApiClient:
                 mood_activity = [{"mood_id": primary_mood_id}]
         if mood_activity is not None:
             payload["mood_activity"] = mood_activity
+
+        # Support creating entry inline with moment
+        if "entry" in extra:
+            # Use deepcopy to avoid mutating caller's entry dict
+            entry_payload = copy.deepcopy(extra.pop("entry"))
+            # Handle convenience content -> content_delta conversion for entry
+            if "content" in entry_payload and "content_delta" not in entry_payload:
+                entry_payload["content_delta"] = wrap_plain_text(entry_payload.pop("content"))
+            payload["entry"] = entry_payload
+
+        # Add any other extra fields (location, weather, etc)
+        payload.update(extra)
+
         return self.request(
             "POST",
             "/moments",
@@ -730,6 +827,23 @@ class JournivApiClient:
             expected=(200,),
         ).json()
         return response.get("items", [])
+
+    def update_moment(
+        self, token: str, moment_id: str, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        return self.request(
+            "PUT",
+            f"/moments/{moment_id}",
+            token=token,
+            json=payload,
+            expected=(200,),
+        ).json()
+
+    def pin_moment(self, token: str, moment_id: str) -> Dict[str, Any]:
+        return self.update_moment(token, moment_id, {"is_pinned": True})
+
+    def unpin_moment(self, token: str, moment_id: str) -> Dict[str, Any]:
+        return self.update_moment(token, moment_id, {"is_pinned": False})
 
     # ------------------------------------------------------------------ #
     # Goal helpers
@@ -888,7 +1002,7 @@ class JournivApiClient:
         self,
         token: str,
         *,
-        entry_id: str,
+        moment_id: str,
         filename: str,
         content: bytes,
         content_type: str,
@@ -897,15 +1011,50 @@ class JournivApiClient:
         files = {
             "file": (filename, io.BytesIO(content), content_type),
         }
-        data = {"entry_id": entry_id, "alt_text": alt_text}
-        return self.request(
-            "POST",
-            "/media/upload",
-            token=token,
-            files=files,
-            data=data,
-            expected=(201,),
-        ).json()
+        data = {"alt_text": alt_text, "moment_id": moment_id}
+        try:
+            return self.request(
+                "POST",
+                "/media/upload",
+                token=token,
+                files=files,
+                data=data,
+                expected=(201,),
+            ).json()
+        except JournivApiError as exc:
+            # Backward compatibility for APIs that use /media/upload but require entry_id.
+            if exc.method == "POST" and exc.path == "/media/upload" and exc.status == 422:
+                files_entry = {
+                    "file": (filename, io.BytesIO(content), content_type),
+                }
+                data_entry = {"alt_text": alt_text, "entry_id": moment_id}
+                return self.request(
+                    "POST",
+                    "/media/upload",
+                    token=token,
+                    files=files_entry,
+                    data=data_entry,
+                    expected=(200, 201),
+                ).json()
+
+            # Backward compatibility for older APIs that anchor media under entries.
+            if exc.method != "POST" or exc.path != "/media/upload" or exc.status not in (
+                404,
+                405,
+            ):
+                raise
+            legacy_files = {
+                "file": (filename, io.BytesIO(content), content_type),
+            }
+            legacy_data = {"alt_text": alt_text}
+            return self.request(
+                "POST",
+                f"/entries/{moment_id}/media",
+                token=token,
+                files=legacy_files,
+                data=legacy_data,
+                expected=(200, 201),
+            ).json()
 
     def wait_for_media_ready(self, token: str, media_id: str, *, timeout: int = 10) -> None:
         """

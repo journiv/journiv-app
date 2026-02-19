@@ -3,8 +3,7 @@ from .activity import Activity
 from .activity_group import ActivityGroup
 from .analytics import WritingStreak
 from .base import BaseModel
-from .entry import Entry, EntryMedia
-from .entry_tag_link import EntryTagLink
+from .entry import Entry
 from .export_job import ExportJob
 from .external_identity import ExternalIdentity
 from .goal import Goal, GoalLog
@@ -13,7 +12,8 @@ from .import_job import ImportJob
 from .instance_detail import InstanceDetail
 from .integration import Integration
 from .journal import Journal
-from .moment import Moment, MomentMoodActivity
+from .moment import Moment, MomentMedia, MomentMoodActivity
+from .moment_tag_link import MomentTagLink
 from .mood import Mood
 from .mood_group import MoodGroup, MoodGroupLink, UserMoodGroupPreference
 from .prompt import Prompt
@@ -27,11 +27,11 @@ __all__ = [
     "UserSettings",
     "Journal",
     "Entry",
-    "EntryMedia",
+    "MomentMedia",
     "Mood",
     "Prompt",
     "Tag",
-    "EntryTagLink",
+    "MomentTagLink",
     "WritingStreak",
     "ExternalIdentity",
     "ImportJob",

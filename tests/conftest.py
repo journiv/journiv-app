@@ -7,6 +7,16 @@ public HTTP API.
 from __future__ import annotations
 
 import os
+
+# Override system paths for testing to avoid /data which is often read-only or missing
+os.environ.setdefault("IMPORT_TEMP_DIR", "./test_data/imports")
+os.environ.setdefault("EXPORT_DIR", "./test_data/exports")
+os.environ.setdefault("MEDIA_ROOT", "./test_data/media")
+os.environ.setdefault("LOG_DIR", "./test_data/logs")
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "True")
+os.environ.setdefault("DATABASE_URL", "sqlite:///./test_data/test.db")
+os.environ.setdefault("DB_DRIVER", "sqlite")
+
 import uuid
 from datetime import date
 from typing import Callable, Dict
@@ -80,15 +90,15 @@ def entry_factory(
         if journal is None:
             journal = journal_factory()
 
-        entry = api_client.create_entry(
+        entry = api_client.create_entry_with_moment(
             api_user.access_token,
             journal_id=journal["id"],
             title=overrides.pop("title", f"Entry {uuid.uuid4().hex[:6]}"),
             content=overrides.pop(
                 "content", "Content written by the integration test suite."
             ),
-            entry_date=overrides.pop(
-                "entry_date", date.today().isoformat()
+            logged_date=overrides.pop(
+                "logged_date", date.today().isoformat()
             ),
             **overrides,
         )

@@ -75,6 +75,7 @@ def process_export_job(job_id: str):
                 user_id=job.user_id,
                 export_type=job.export_type,
                 journal_ids=job.journal_ids,
+                include_media=job.include_media,
                 total_entries=total_entries,
                 progress_callback=handle_progress,
             )

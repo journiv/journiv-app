@@ -3,11 +3,12 @@ Unit tests for streaming ZIP extraction.
 
 Tests the memory-efficient stream_extract() method.
 """
-import pytest
-import zipfile
 import tempfile
 import unittest.mock
+import zipfile
 from pathlib import Path
+
+import pytest
 
 from app.utils.import_export.zip_handler import ZipHandler
 

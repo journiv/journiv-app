@@ -5,10 +5,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.models.enums import MediaType, UploadStatus
+from app.schemas.media import MediaBatchSignItem, MediaBatchSignRequest
 from app.services import media_service as media_service_module
 from app.services.media_service import MediaService
 from app.services.media_storage_service import MediaStorageService
-from app.schemas.media import MediaBatchSignRequest, MediaBatchSignItem
 
 
 def _build_service(tmp_path: Path) -> MediaService:

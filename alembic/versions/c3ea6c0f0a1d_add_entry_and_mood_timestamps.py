@@ -12,9 +12,9 @@ from datetime import datetime, timezone
 from typing import Dict
 from zoneinfo import ZoneInfo
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "c3ea6c0f0a1d"

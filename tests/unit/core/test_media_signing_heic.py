@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 from app.core.media_signing import attach_signed_urls
 from app.models.enums import MediaType, UploadStatus
-from app.schemas.entry import EntryMediaResponse
+from app.schemas.entry import MomentMediaResponse
 
 
 def _heic_response(
@@ -13,10 +13,10 @@ def _heic_response(
     display_path: str | None = None,
     upload_status: UploadStatus = UploadStatus.COMPLETED,
     mime_type: str = "image/heic",
-) -> EntryMediaResponse:
-    return EntryMediaResponse(
+) -> MomentMediaResponse:
+    return MomentMediaResponse(
         id=uuid.uuid4(),
-        entry_id=uuid.uuid4(),
+        moment_id=uuid.uuid4(),
         media_type=MediaType.IMAGE,
         mime_type=mime_type,
         upload_status=upload_status,
@@ -69,9 +69,9 @@ def test_heic_sequence_mime_type_gates_on_display_path():
 
 def test_jpeg_still_uses_file_path():
     """Non-HEIC images should still use file_path for URL generation."""
-    response = EntryMediaResponse(
+    response = MomentMediaResponse(
         id=uuid.uuid4(),
-        entry_id=uuid.uuid4(),
+        moment_id=uuid.uuid4(),
         media_type=MediaType.IMAGE,
         mime_type="image/jpeg",
         upload_status=UploadStatus.COMPLETED,

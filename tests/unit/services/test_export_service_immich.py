@@ -1,11 +1,11 @@
-import pytest
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
-from datetime import datetime, timezone
 
-from app.services.export_service import ExportService
-from app.models.entry import EntryMedia
+from app.models.moment import MomentMedia
 from app.models.enums import MediaType, UploadStatus
+from app.services.export_service import ExportService
+
 
 def test_convert_media_to_dto_immich_asset_no_filepath():
     """
@@ -21,9 +21,9 @@ def test_convert_media_to_dto_immich_asset_no_filepath():
         mock_settings.media_root = "/tmp/media"
 
         # Create Mock Media object simulating an Immich asset
-        media_mock = MagicMock(spec=EntryMedia)
+        media_mock = MagicMock(spec=MomentMedia)
         media_mock.id = uuid4()
-        media_mock.entry_id = uuid4()
+        media_mock.moment_id = uuid4()
         # file_path is None for Immich assets in link mode
         media_mock.file_path = None
         media_mock.original_filename = "immich_photo.jpg"
@@ -74,9 +74,9 @@ def test_convert_media_to_dto_immich_asset_fallback_filename():
     with patch('app.services.export_service.settings') as mock_settings:
         mock_settings.media_root = "/tmp/media"
 
-        media_mock = MagicMock(spec=EntryMedia)
+        media_mock = MagicMock(spec=MomentMedia)
         media_mock.id = uuid4()
-        media_mock.entry_id = uuid4()
+        media_mock.moment_id = uuid4()
         media_mock.file_path = None
         media_mock.original_filename = None
         media_mock.media_type = MediaType.IMAGE

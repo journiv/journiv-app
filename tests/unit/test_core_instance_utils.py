@@ -1,9 +1,9 @@
 """
 Unit tests for core instance utilities.
 """
-import io
 import builtins
-import pytest
+import io
+
 from app.core.instance import detect_platform
 
 

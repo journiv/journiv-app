@@ -12,7 +12,6 @@ from typing import Any, Dict, Optional
 
 from tests.lib import JournivApiClient
 
-
 API_BASE_URL = os.getenv("JOURNIV_API_BASE_URL", "http://localhost:8000/api/v1")
 _api_client: Optional[JournivApiClient] = None
 
@@ -65,16 +64,20 @@ def create_entry(
     journal_id: str,
     title: str,
     content: str,
-    entry_date: Optional[str] = None,
+    logged_date: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create an entry. Defaults entry_date to today if not provided."""
-    return get_client().create_entry(
+    """Create an entry. Defaults logged_date to today if not provided."""
+    entry = get_client().create_entry_with_moment(
         token,
         journal_id=journal_id,
         title=title,
         content=content,
-        entry_date=entry_date or date.today().isoformat(),
+        logged_date=logged_date or date.today().isoformat(),
     )
+    # Upgrade seed compatibility: older APIs may not expose moment_id on entry payload.
+    if "moment_id" not in entry and entry.get("id"):
+        entry["moment_id"] = entry["id"]
+    return entry
 
 
 def get_entries(token: str) -> list[Dict[str, Any]]:
@@ -120,7 +123,7 @@ def get_moments(token: str) -> list[Dict[str, Any]]:
 
 def upload_media(
     token: str,
-    entry_id: str,
+    moment_id: str,
     filename: str,
     content: bytes,
     alt_text: str = "",
@@ -128,7 +131,7 @@ def upload_media(
     """Upload media file. Defaults to image/jpeg content type."""
     return get_client().upload_media(
         token,
-        entry_id=entry_id,
+        moment_id=moment_id,
         filename=filename,
         content=content,
         content_type="image/jpeg",

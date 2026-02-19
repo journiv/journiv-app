@@ -6,9 +6,10 @@ Create Date: 2026-01-20 01:13:24.877927
 
 This migration adds media_count and removes has_media (if present).
 """
-from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import text
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'b4f45de4db7f'

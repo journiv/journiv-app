@@ -11,16 +11,15 @@ from sqlmodel import CheckConstraint, Field, Index, Relationship, UniqueConstrai
 from .base import BaseModel
 
 if TYPE_CHECKING:
-    from .entry import Entry
+    from .moment import Moment
     from .user import User
 
-# Import EntryTagLink from separate file to avoid circular imports
-from .entry_tag_link import EntryTagLink
+from .moment_tag_link import MomentTagLink
 
 
 class Tag(BaseModel, table=True):
     """
-    Tag model for categorizing journal entries.
+    Tag model for categorizing moments.
     """
     __tablename__ = "tag"
 
@@ -35,9 +34,9 @@ class Tag(BaseModel, table=True):
 
     # Relations
     user: "User" = Relationship(back_populates="tags")
-    entries: List["Entry"] = Relationship(
+    moments: List["Moment"] = Relationship(
         back_populates="tags",
-        link_model=EntryTagLink
+        link_model=MomentTagLink
     )
 
     # Table constraints and indexes
@@ -47,6 +46,7 @@ class Tag(BaseModel, table=True):
         # Ensures a user cannot have two tags with the same name.
         UniqueConstraint('user_id', 'name', name='uq_tag_user_name'),
         CheckConstraint('length(name) > 0', name='check_tag_name_not_empty'),
+        CheckConstraint('name = lower(name)', name='check_tag_name_lowercase'),
         CheckConstraint('usage_count >= 0', name='check_usage_count_non_negative'),
     )
 

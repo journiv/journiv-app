@@ -1,19 +1,18 @@
 """
 Unit tests for MediaStorageService reference counting and deduplication.
 """
-import tempfile
 import uuid
-from datetime import date
-from pathlib import Path
 from io import BytesIO
 
 import pytest
-from sqlmodel import Session, create_engine, select
+from sqlmodel import Session, create_engine
 
-from app.models.entry import Entry, EntryMedia
-from app.models.journal import Journal
-from app.models.user import User
+from app.models.entry import Entry
+from app.models.moment import MomentMedia
 from app.models.enums import JournalColor, MediaType
+from app.models.journal import Journal
+from app.models.moment import Moment
+from app.models.user import User
 from app.services.media_storage_service import MediaStorageService
 
 
@@ -70,19 +69,27 @@ def test_journal(test_db: Session, test_user: User):
 @pytest.fixture
 def test_entries(test_db: Session, test_journal: Journal):
     """Create two test entries."""
+    moment_a = Moment(user_id=test_journal.user_id, logged_timezone="UTC")
+    moment_b = Moment(user_id=test_journal.user_id, logged_timezone="UTC")
+    test_db.add(moment_a)
+    test_db.add(moment_b)
+    test_db.commit()
+    test_db.refresh(moment_a)
+    test_db.refresh(moment_b)
+
     entry_a = Entry(
         journal_id=test_journal.id,
         user_id=test_journal.user_id,
+        moment_id=moment_a.id,
         title="Entry A",
         content="Test content A",
-        entry_date=date.today(),
     )
     entry_b = Entry(
         journal_id=test_journal.id,
         user_id=test_journal.user_id,
+        moment_id=moment_b.id,
         title="Entry B",
         content="Test content B",
-        entry_date=date.today(),
     )
     test_db.add(entry_a)
     test_db.add(entry_b)
@@ -166,8 +173,8 @@ def test_reference_counting_prevents_premature_deletion(
     assert full_path.exists()
 
     # Create two media records pointing to the same file
-    media_a = EntryMedia(
-        entry_id=entry_a.id,
+    media_a = MomentMedia(
+        moment_id=entry_a.moment_id,
         media_type=MediaType.IMAGE,
         file_path=relative_path,
         original_filename="test.jpg",
@@ -175,8 +182,8 @@ def test_reference_counting_prevents_premature_deletion(
         mime_type="image/jpeg",
         checksum=checksum,
     )
-    media_b = EntryMedia(
-        entry_id=entry_b.id,
+    media_b = MomentMedia(
+        moment_id=entry_b.moment_id,
         media_type=MediaType.IMAGE,
         file_path=relative_path,
         original_filename="test.jpg",
@@ -296,8 +303,8 @@ def test_force_delete_ignores_reference_count(
     full_path = temp_media_root / relative_path
 
     # Create two media records
-    media_a = EntryMedia(
-        entry_id=entry_a.id,
+    media_a = MomentMedia(
+        moment_id=entry_a.moment_id,
         media_type=MediaType.IMAGE,
         file_path=relative_path,
         original_filename="test.jpg",
@@ -305,8 +312,8 @@ def test_force_delete_ignores_reference_count(
         mime_type="image/jpeg",
         checksum=checksum,
     )
-    media_b = EntryMedia(
-        entry_id=entry_b.id,
+    media_b = MomentMedia(
+        moment_id=entry_b.moment_id,
         media_type=MediaType.IMAGE,
         file_path=relative_path,
         original_filename="test.jpg",
@@ -358,19 +365,27 @@ def test_reference_count_is_user_scoped(temp_media_root, test_db):
     test_db.commit()
 
     # Create entries for each user
+    moment1 = Moment(user_id=user1.id, logged_timezone="UTC")
+    moment2 = Moment(user_id=user2.id, logged_timezone="UTC")
+    test_db.add(moment1)
+    test_db.add(moment2)
+    test_db.commit()
+    test_db.refresh(moment1)
+    test_db.refresh(moment2)
+
     entry1 = Entry(
         journal_id=journal1.id,
         user_id=user1.id,
+        moment_id=moment1.id,
         title="Entry 1",
         content="Content 1",
-        entry_date=date.today(),
     )
     entry2 = Entry(
         journal_id=journal2.id,
         user_id=user2.id,
+        moment_id=moment2.id,
         title="Entry 2",
         content="Content 2",
-        entry_date=date.today(),
     )
     test_db.add(entry1)
     test_db.add(entry2)
@@ -402,8 +417,8 @@ def test_reference_count_is_user_scoped(temp_media_root, test_db):
     assert checksum1 == checksum2
 
     # Create media records
-    media1 = EntryMedia(
-        entry_id=entry1.id,
+    media1 = MomentMedia(
+        moment_id=entry1.moment_id,
         media_type=MediaType.IMAGE,
         file_path=path1,
         original_filename="test.jpg",
@@ -411,8 +426,8 @@ def test_reference_count_is_user_scoped(temp_media_root, test_db):
         mime_type="image/jpeg",
         checksum=checksum1,
     )
-    media2 = EntryMedia(
-        entry_id=entry2.id,
+    media2 = MomentMedia(
+        moment_id=entry2.moment_id,
         media_type=MediaType.IMAGE,
         file_path=path2,
         original_filename="test.jpg",

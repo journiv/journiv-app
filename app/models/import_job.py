@@ -33,11 +33,11 @@ class ImportJob(BaseModel, table=True):
         )
     )
 
-    # Optional foreign key to entry (used by Immich imports)
-    entry_id: Optional[uuid.UUID] = Field(
+    # Optional foreign key to moment (used by Immich imports)
+    moment_id: Optional[uuid.UUID] = Field(
         default=None,
         sa_column=Column(
-            ForeignKey("entry.id", ondelete="CASCADE"),
+            ForeignKey("moment.id", ondelete="CASCADE"),
             nullable=True,
             index=True
         )

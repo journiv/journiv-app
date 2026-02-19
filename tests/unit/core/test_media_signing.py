@@ -2,16 +2,16 @@ import uuid
 from datetime import datetime, timezone
 
 from app.core.media_signing import attach_signed_urls, normalize_delta_media_ids
-from app.models.entry import EntryMedia
+from app.models.moment import MomentMedia
 from app.models.enums import MediaType, UploadStatus
 from app.models.integration import IntegrationProvider
-from app.schemas.entry import EntryMediaResponse
+from app.schemas.entry import MomentMediaResponse
 
 
-def _media_entry(entry_id: uuid.UUID, media_id: uuid.UUID, *, external_asset_id: str | None = None):
-    return EntryMedia(
+def _media_entry(moment_id: uuid.UUID, media_id: uuid.UUID, *, external_asset_id: str | None = None):
+    return MomentMedia(
         id=media_id,
-        entry_id=entry_id,
+        moment_id=moment_id,
         media_type=MediaType.IMAGE,
         mime_type="image/jpeg",
         upload_status=UploadStatus.COMPLETED,
@@ -23,9 +23,9 @@ def _media_entry(entry_id: uuid.UUID, media_id: uuid.UUID, *, external_asset_id:
 
 
 def test_normalize_delta_media_ids_keeps_existing_ids():
-    entry_id = uuid.uuid4()
+    moment_id = uuid.uuid4()
     media_id = uuid.uuid4()
-    media = _media_entry(entry_id, media_id)
+    media = _media_entry(moment_id, media_id)
 
     delta = {"ops": [{"insert": {"image": str(media_id)}}]}
     normalized = normalize_delta_media_ids(delta, [media])
@@ -34,9 +34,9 @@ def test_normalize_delta_media_ids_keeps_existing_ids():
 
 
 def test_normalize_delta_media_ids_from_media_path():
-    entry_id = uuid.uuid4()
+    moment_id = uuid.uuid4()
     media_id = uuid.uuid4()
-    media = _media_entry(entry_id, media_id)
+    media = _media_entry(moment_id, media_id)
 
     source = f"https://example.com/api/v1/media/{media_id}/signed?uid=abc&exp=1&sig=xyz"
     delta = {"ops": [{"insert": {"image": source}}]}
@@ -46,10 +46,10 @@ def test_normalize_delta_media_ids_from_media_path():
 
 
 def test_normalize_delta_media_ids_from_immich_proxy_and_scheme():
-    entry_id = uuid.uuid4()
+    moment_id = uuid.uuid4()
     media_id = uuid.uuid4()
     asset_id = str(uuid.uuid4())
-    media = _media_entry(entry_id, media_id, external_asset_id=asset_id)
+    media = _media_entry(moment_id, media_id, external_asset_id=asset_id)
 
     delta = {
         "ops": [
@@ -66,9 +66,9 @@ def test_normalize_delta_media_ids_from_immich_proxy_and_scheme():
 
 
 def test_normalize_delta_media_ids_sanitizes_multi_embed():
-    entry_id = uuid.uuid4()
+    moment_id = uuid.uuid4()
     media_id = uuid.uuid4()
-    media = _media_entry(entry_id, media_id)
+    media = _media_entry(moment_id, media_id)
 
     delta = {"ops": [{"insert": {"image": str(media_id), "video": "ignored"}}]}
     normalized = normalize_delta_media_ids(delta, [media])
@@ -78,10 +78,10 @@ def test_normalize_delta_media_ids_sanitizes_multi_embed():
 
 def test_attach_signed_urls_link_only_immich_generates_urls():
     media_id = uuid.uuid4()
-    entry_id = uuid.uuid4()
-    response = EntryMediaResponse(
+    moment_id = uuid.uuid4()
+    response = MomentMediaResponse(
         id=media_id,
-        entry_id=entry_id,
+        moment_id=moment_id,
         media_type=MediaType.IMAGE,
         mime_type="image/jpeg",
         upload_status=UploadStatus.COMPLETED,
@@ -105,10 +105,10 @@ def test_attach_signed_urls_link_only_immich_generates_urls():
 
 def test_attach_signed_urls_pending_media_skips_urls():
     media_id = uuid.uuid4()
-    entry_id = uuid.uuid4()
-    response = EntryMediaResponse(
+    moment_id = uuid.uuid4()
+    response = MomentMediaResponse(
         id=media_id,
-        entry_id=entry_id,
+        moment_id=moment_id,
         media_type=MediaType.IMAGE,
         mime_type="image/jpeg",
         upload_status=UploadStatus.PENDING,
@@ -124,10 +124,10 @@ def test_attach_signed_urls_pending_media_skips_urls():
 
 def test_attach_signed_urls_local_media_no_thumbnail():
     media_id = uuid.uuid4()
-    entry_id = uuid.uuid4()
-    response = EntryMediaResponse(
+    moment_id = uuid.uuid4()
+    response = MomentMediaResponse(
         id=media_id,
-        entry_id=entry_id,
+        moment_id=moment_id,
         media_type=MediaType.IMAGE,
         mime_type="image/jpeg",
         upload_status=UploadStatus.COMPLETED,

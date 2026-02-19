@@ -1,9 +1,11 @@
-import pytest
-import typer
-from unittest.mock import MagicMock, patch
 from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import pytest
+
 from app.cli.commands.import_cmd import import_data
 from app.schemas.dto import ImportResultSummary
+
 
 @pytest.fixture
 def mock_dependencies():

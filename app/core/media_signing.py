@@ -12,10 +12,10 @@ from app.core.config import settings
 from app.core.logging_config import log_debug, log_warning
 from app.core.scoped_cache import ScopedCache
 from app.core.signing import generate_media_signature
-from app.models.entry import EntryMedia
 from app.models.enums import UploadStatus
 from app.models.integration import IntegrationProvider
-from app.schemas.entry import EntryMediaResponse, MediaOrigin, MediaResponse
+from app.models.moment import MomentMedia
+from app.schemas.entry import MediaOrigin, MomentMediaResponse
 from app.utils.import_export.media_handler import MediaHandler
 from app.utils.quill_delta import transform_delta_media
 
@@ -92,11 +92,11 @@ def signed_url_for_immich(
 
 
 def attach_signed_urls(
-    response: MediaResponse,
+    response: MomentMediaResponse,
     user_id: str,
     include_incomplete: bool = False,
     external_base_url: Optional[str] = None,
-) -> MediaResponse:
+) -> MomentMediaResponse:
     """
     Attach signed URLs to media response.
     """
@@ -197,7 +197,7 @@ def attach_signed_urls(
 
 def attach_signed_urls_to_delta(
     delta: Optional[dict],
-    media_items: list[EntryMedia],
+    media_items: list[MomentMedia],
     user_id: str,
     *,
     cache: Optional[ScopedCache] = None,
@@ -246,7 +246,7 @@ _IMMICH_PENDING_RE = re.compile(rf"^pending://immich/{_MEDIA_ID_PATTERN}$", re.I
 
 def normalize_delta_media_ids(
     delta: Optional[dict],
-    media_items: list[EntryMedia],
+    media_items: list[MomentMedia],
 ) -> Optional[dict]:
     """Normalize media URLs in a Quill delta to media UUIDs before persistence."""
     media_by_id = {str(media.id): media for media in media_items}
@@ -302,7 +302,7 @@ def normalize_delta_media_ids(
 
 def _extract_media_id_from_source(
     source: str,
-    media_by_id: dict[str, EntryMedia],
+    media_by_id: dict[str, MomentMedia],
     immich_by_asset_id: dict[str, str],
 ) -> Optional[str]:
     if source in media_by_id:
@@ -367,12 +367,12 @@ def _extract_media_id_from_source(
 
 
 def _resolve_signed_url(
-    media: EntryMedia,
+    media: MomentMedia,
     user_id: str,
     cache: ScopedCache,
     external_base_url: Optional[str],
 ) -> Optional[str]:
-    cache_key = f"{user_id}__{media.entry_id}__{media.id}__original"
+    cache_key = f"{user_id}__{media.moment_id}__{media.id}__original"
     cached = cache.get(cache_key, "signed_url")
     if cached:
         expires_at = cached.get("expires_at")
@@ -384,7 +384,7 @@ def _resolve_signed_url(
 
     try:
         response = attach_signed_urls(
-            EntryMediaResponse.model_validate(media),
+            MomentMediaResponse.model_validate(media),
             user_id,
             external_base_url=external_base_url,
         )

@@ -1,14 +1,14 @@
-from datetime import date
 import uuid
 
 from sqlmodel import Session, create_engine
 
+from app.core.time_utils import utc_now
 from app.models.base import BaseModel
 from app.models.entry import Entry
 from app.models.journal import Journal
+from app.models.moment import Moment
 from app.models.user import User
 from app.schemas.entry import EntryCreate
-from app.core.time_utils import utc_now
 from app.services.entry_service import EntryService
 
 
@@ -41,25 +41,38 @@ def _create_journal(session: Session, user_id: uuid.UUID) -> Journal:
     return journal
 
 
+def _create_moment(session: Session, user_id: uuid.UUID) -> Moment:
+    moment = Moment(
+        user_id=user_id,
+        logged_at_utc=utc_now(),
+        logged_timezone="UTC",
+    )
+    session.add(moment)
+    session.commit()
+    session.refresh(moment)
+    return moment
+
+
 def test_get_user_drafts_returns_only_drafts():
     session = _setup_session()
     user = _create_user(session)
     journal = _create_journal(session, user.id)
+    draft_moment = _create_moment(session, user.id)
+    published_moment = _create_moment(session, user.id)
     service = EntryService(session)
 
     draft_entry = service.create_entry(
         user.id,
-        EntryCreate(journal_id=journal.id, title="Draft"),
+        EntryCreate(journal_id=journal.id, moment_id=draft_moment.id, title="Draft"),
         is_draft=True,
     )
 
     published = Entry(
         user_id=user.id,
         journal_id=journal.id,
+        moment_id=published_moment.id,
         title="Published",
-        entry_date=date.today(),
-        entry_timezone="UTC",
-        entry_datetime_utc=utc_now(),
+        content_delta=None,
         is_draft=False,
     )
     session.add(published)
@@ -76,11 +89,12 @@ def test_finalize_entry_updates_draft_flag():
     session = _setup_session()
     user = _create_user(session)
     journal = _create_journal(session, user.id)
+    moment = _create_moment(session, user.id)
     service = EntryService(session)
 
     draft_entry = service.create_entry(
         user.id,
-        EntryCreate(journal_id=journal.id, title="Draft to finalize"),
+        EntryCreate(journal_id=journal.id, moment_id=moment.id, title="Draft to finalize"),
         is_draft=True,
     )
 

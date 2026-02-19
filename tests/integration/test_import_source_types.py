@@ -1,9 +1,9 @@
 
 import io
 import zipfile
-import pytest
-from tests.integration.helpers import EndpointCase
-from tests.lib import JournivApiClient, ApiUser
+
+from tests.lib import ApiUser, JournivApiClient
+
 
 def _tiny_dayone_zip() -> bytes:
     buffer = io.BytesIO()

@@ -20,8 +20,8 @@ from app.schemas.dto import (
     GoalLogDTO,
     JournalDTO,
     JournivExportDTO,
-    MediaDTO,
     MomentDTO,
+    MomentMediaDTO,
     MomentMoodActivityDTO,
     MoodDefinitionDTO,
     MoodGroupDTO,
@@ -88,15 +88,35 @@ class DaylioToJournivMapper:
             ctx,
             journal_title=journal_title,
             import_timestamp=import_timestamp,
-            media_dir=media_dir,
         )
 
-        moments = DaylioToJournivMapper._map_standalone_moments(
-            backup,
-            ctx,
-            import_timestamp=import_timestamp,
-            media_dir=media_dir,
-        )
+        timeline_moments: List[MomentDTO] = []
+        for day_entry in backup.dayEntries:
+            if DaylioToJournivMapper._should_create_entry(day_entry):
+                moment = DaylioToJournivMapper._map_moment(
+                    day_entry,
+                    ctx,
+                    import_timestamp=import_timestamp,
+                    media_dir=media_dir,
+                    attach_media=True,
+                )
+                moment.entry = DaylioToJournivMapper._map_entry(
+                    day_entry,
+                    import_timestamp=import_timestamp,
+                    journal_external_id=journal.external_id,
+                )
+                timeline_moments.append(moment)
+                continue
+            if DaylioToJournivMapper._should_create_moment(day_entry):
+                timeline_moments.append(
+                    DaylioToJournivMapper._map_moment(
+                        day_entry,
+                        ctx,
+                        import_timestamp=import_timestamp,
+                        media_dir=media_dir,
+                        attach_media=True,
+                    )
+                )
 
         return JournivExportDTO(
             export_version=ExportConfig.EXPORT_VERSION,
@@ -117,7 +137,7 @@ class DaylioToJournivMapper:
             goal_logs=goal_logs,
             goal_manual_logs=[],
             goal_categories=[],
-            moments=moments,
+            moments=timeline_moments,
             stats=None,
         )
 
@@ -315,26 +335,22 @@ class DaylioToJournivMapper:
         *,
         journal_title: str,
         import_timestamp: datetime,
-        media_dir: Optional[Path],
     ) -> JournalDTO:
-        entries = []
-        for day_entry in backup.dayEntries:
-            if not DaylioToJournivMapper._should_create_entry(day_entry):
-                continue
-            entry = DaylioToJournivMapper._map_entry(
-                day_entry,
-                ctx,
-                import_timestamp=import_timestamp,
-                media_dir=media_dir,
-            )
-            entries.append(entry)
+        normalized_title = (journal_title or "").strip().lower()
+        stable_title = "-".join(normalized_title.split()) if normalized_title else "default"
+        journal_external_id = f"daylio-journal-{stable_title}"
 
         last_entry_at = None
         first_entry_at = None
-        if entries:
-            sorted_entries = sorted(entries, key=lambda e: e.entry_datetime_utc)
-            first_entry_at = sorted_entries[0].entry_datetime_utc
-            last_entry_at = sorted_entries[-1].entry_datetime_utc
+        logged_times = [
+            _ms_to_utc(day_entry.datetime)
+            for day_entry in backup.dayEntries
+            if DaylioToJournivMapper._should_create_entry(day_entry)
+        ]
+        logged_times = [dt for dt in logged_times if dt is not None]
+        if logged_times:
+            first_entry_at = min(logged_times)
+            last_entry_at = max(logged_times)
 
         return JournalDTO(
             title=journal_title,
@@ -343,7 +359,6 @@ class DaylioToJournivMapper:
             icon=None,
             is_favorite=False,
             is_archived=False,
-            entry_count=len(entries),
             last_entry_at=last_entry_at,
             import_metadata={
                 "source": "daylio",
@@ -351,84 +366,36 @@ class DaylioToJournivMapper:
                 "imported_at": import_timestamp.isoformat().replace("+00:00", "Z"),
                 "raw_export_metadata": backup.metadata,
             },
-            entries=entries,
             created_at=first_entry_at or import_timestamp,
             updated_at=import_timestamp,
-            external_id=None,
+            external_id=journal_external_id,
         )
-
-    @staticmethod
-    def _map_standalone_moments(
-        backup: DaylioBackup,
-        ctx: DaylioMappingContext,
-        *,
-        import_timestamp: datetime,
-        media_dir: Optional[Path],
-    ) -> List[MomentDTO]:
-        moments = []
-        for day_entry in backup.dayEntries:
-            if DaylioToJournivMapper._should_create_entry(day_entry):
-                continue
-            if not DaylioToJournivMapper._should_create_moment(day_entry):
-                continue
-            moment = DaylioToJournivMapper._map_moment(
-                day_entry,
-                ctx,
-                import_timestamp=import_timestamp,
-                media_dir=media_dir,
-                attach_media=True,
-            )
-            moments.append(moment)
-        return moments
 
     @staticmethod
     def _map_entry(
         day_entry: DaylioDayEntry,
-        ctx: DaylioMappingContext,
         *,
         import_timestamp: datetime,
-        media_dir: Optional[Path],
+        journal_external_id: Optional[str],
     ) -> EntryDTO:
         logged_at = _ms_to_utc(day_entry.datetime) or import_timestamp
-        tz_offset = _offset_to_timezone(day_entry.timeZoneOffset)
-        entry_date = date(day_entry.year, day_entry.month + 1, day_entry.day)
 
         title = (day_entry.note_title or "").strip() or None
         note = (day_entry.note or "").strip()
         content_delta = html_to_delta(note) if note else wrap_plain_text(None)
 
-        entry_moment = DaylioToJournivMapper._map_moment(
-            day_entry,
-            ctx,
-            import_timestamp=import_timestamp,
-            media_dir=media_dir,
-            attach_media=False,
-        )
-
         return EntryDTO(
             title=title,
             content_delta=content_delta,
             content_plain_text=None,
-            entry_date=entry_date,
-            entry_datetime_utc=logged_at,
-            entry_timezone=tz_offset,
             word_count=0,
-            is_pinned=bool(day_entry.isFavorite),
             is_draft=False,
-            location_json=None,
-            latitude=None,
-            longitude=None,
-            weather_json=None,
-            weather_summary=None,
             import_metadata={
                 "source": "daylio",
                 "daylio_datetime": day_entry.datetime,
                 "daylio_timezone_offset_ms": day_entry.timeZoneOffset,
             },
-            tags=[],
-            moment=entry_moment,
-            media=DaylioToJournivMapper._map_media(day_entry, ctx, media_dir=media_dir),
-            prompt_text=None,
+            journal_external_id=journal_external_id,
             created_at=logged_at,
             updated_at=logged_at,
             external_id=f"daylio-entry-{day_entry.datetime}",
@@ -474,12 +441,12 @@ class DaylioToJournivMapper:
         media = DaylioToJournivMapper._map_media(day_entry, ctx, media_dir=media_dir) if attach_media else []
 
         return MomentDTO(
-            logged_at=logged_at,
-            logged_date=logged_date,
+            logged_at_utc=logged_at,
+            logged_date_tz=logged_date,
             logged_timezone=tz_offset,
             note=None,
-            location_data=None,
-            weather_data=None,
+            location_json=None,
+            weather_json=None,
             primary_mood_name=None,
             mood_activity=mood_activity,
             media=media,
@@ -495,7 +462,7 @@ class DaylioToJournivMapper:
         ctx: DaylioMappingContext,
         *,
         media_dir: Optional[Path],
-    ) -> List[MediaDTO]:
+    ) -> List[MomentMediaDTO]:
         if not media_dir:
             return []
         media = []
@@ -547,7 +514,7 @@ class DaylioToJournivMapper:
                 media_type = "video"
 
             media.append(
-                MediaDTO(
+                MomentMediaDTO(
                     filename=normalized_path.name,
                     file_path=str(normalized_path.relative_to(media_dir)),
                     media_type=media_type,

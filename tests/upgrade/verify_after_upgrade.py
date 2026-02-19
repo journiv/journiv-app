@@ -5,16 +5,15 @@ This script validates that all data seeded in the old version
 is still accessible and correct after the upgrade.
 """
 from tests.upgrade.helpers import (
-    login,
-    get_journals,
     get_entries,
-    get_tags,
+    get_journals,
     get_moments,
+    get_tags,
     get_user_settings,
+    http_get,
+    login,
     wait_for_ready,
-    http_get
 )
-
 
 # Test user credentials (same as seeding)
 TEST_EMAIL = "upgrade-test@journiv.com"
@@ -39,7 +38,7 @@ def test_health_endpoint():
         health_data = response.json()
         print(f"✓ Health check passed: {health_data}")
     except Exception:
-        print(f"✓ Health check passed (status 200)")
+        print("✓ Health check passed (status 200)")
 
 
 def test_login_with_old_credentials():
@@ -49,7 +48,7 @@ def test_login_with_old_credentials():
     token = login(TEST_EMAIL, TEST_PASSWORD)
     assert token, "Failed to login with old credentials"
 
-    print(f"Login successful with old credentials")
+    print("Login successful with old credentials")
     return token
 
 
@@ -69,7 +68,7 @@ def test_verify_journals_exist():
         assert "title" in journal, "Journal missing 'title' field"
         print(f"Journal: {journal['title']}")
 
-    print(f"All journals verified")
+    print("All journals verified")
 
 
 def test_verify_entries_exist():
@@ -90,7 +89,7 @@ def test_verify_entries_exist():
         title = entry.get("title", "Untitled")
         print(f"Entry: {title}")
 
-    print(f"All entries verified")
+    print("All entries verified")
 
 
 def test_verify_tags_exist():
@@ -109,7 +108,7 @@ def test_verify_tags_exist():
         assert "name" in tag, "Tag missing 'name' field"
         print(f"Tag: {tag['name']}")
 
-    print(f"All tags verified")
+    print("All tags verified")
 
 
 def test_verify_moments_exist():
@@ -146,7 +145,7 @@ def test_verify_user_settings_readable():
     settings = get_user_settings(token)
 
     assert "email" in settings or "id" in settings, "Settings missing required fields"
-    print(f"User settings accessible")
+    print("User settings accessible")
 
     # Check if email matches
     if "email" in settings:
@@ -171,7 +170,7 @@ def test_verify_data_integrity():
         mood_logs = []
 
     # Verify counts
-    print(f"\nData counts after upgrade:")
+    print("\nData counts after upgrade:")
     print(f"  Journals: {len(journals)}")
     print(f"  Entries: {len(entries)}")
     print(f"  Tags: {len(tags)}")
@@ -181,7 +180,7 @@ def test_verify_data_integrity():
     assert len(entries) >= 4, "Missing entries after upgrade"
     assert len(tags) >= 4, "Missing tags after upgrade"
 
-    print(f"\nData integrity verified")
+    print("\nData integrity verified")
 
 
 def test_verify_new_api_functionality():
@@ -194,7 +193,7 @@ def test_verify_new_api_functionality():
     response = http_get("/entries/", token, params={"limit": 10})
     assert response.status_code == 200, f"API call failed: {response.status_code}"
 
-    print(f"New API calls work correctly")
+    print("New API calls work correctly")
 
 
 def test_no_data_loss():
@@ -217,7 +216,7 @@ def test_no_data_loss():
     expected_entries = 4
     expected_tags = 4
 
-    print(f"\nExpected vs Actual:")
+    print("\nExpected vs Actual:")
     print(f"  Journals: {expected_journals} → {len(journals)}")
     print(f"  Entries: {expected_entries} → {len(entries)}")
     print(f"  Tags: {expected_tags} → {len(tags)}")
@@ -227,7 +226,7 @@ def test_no_data_loss():
     assert len(entries) >= expected_entries, f"Data loss detected: entries {len(entries)} < {expected_entries}"
     assert len(tags) >= expected_tags, f"Data loss detected: tags {len(tags)} < {expected_tags}"
 
-    print(f"\n================================================")
+    print("\n================================================")
     print("NO DATA LOSS - Upgrade successful!")
     print("================================================\n")
 

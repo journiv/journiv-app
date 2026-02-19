@@ -2,10 +2,11 @@
 Analytics service for managing analytics data.
 """
 import uuid
-from datetime import date, timedelta
-from typing import Any, Dict, Optional
+from datetime import date, datetime, timedelta
+from typing import Any, Dict, Optional, cast
 
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
 from sqlmodel import Session, col, func, select
 
 from app.core.logging_config import log_error, log_info
@@ -14,7 +15,8 @@ from app.models.analytics import WritingStreak
 from app.models.entry import Entry
 from app.models.journal import Journal
 from app.models.moment import Moment
-from app.models.tag import EntryTagLink, Tag
+from app.models.moment_tag_link import MomentTagLink
+from app.models.tag import Tag
 
 
 class AnalyticsService:
@@ -51,6 +53,11 @@ class AnalyticsService:
         Note: If the entry is backdated (earlier than last_entry_date),
         we recalculate the entire streak to ensure accuracy.
         """
+        if isinstance(entry_date, str):
+            entry_date = date.fromisoformat(entry_date[:10])
+        elif isinstance(entry_date, datetime):
+            entry_date = entry_date.date()
+
         streak = self.get_writing_streak(user_id)
         if not streak:
             streak = self.create_writing_streak(user_id)
@@ -177,18 +184,26 @@ class AnalyticsService:
         """
         # Expire all to ensure we get fresh data from the database
         self.session.expire_all()
-        entries = self.session.exec(
+
+        statement = (
             select(Entry)
+            .join(Moment, col(Entry.moment_id) == col(Moment.id), isouter=True)
             .where(
                 Entry.user_id == user_id,
                 col(Entry.is_draft).is_(False),
             )
-            .order_by(col(Entry.entry_date).desc())
-        ).all()
+            .order_by(col(Entry.created_at).desc())
+            .options(joinedload(cast(Any, Entry.moment)))
+        )
+        entries = self.session.exec(statement).all()
 
         unique_dates = sorted(
-            {e.entry_date for e in entries if e.entry_date is not None},
-            reverse=True
+            {
+                logged_date
+                for entry in entries
+                if (logged_date := self._entry_logged_date(entry)) is not None
+            },
+            reverse=True,
         )
 
         if not unique_dates:
@@ -200,23 +215,20 @@ class AnalyticsService:
             }
 
         last_entry_date = unique_dates[0]
-
         current_streak = 1
         streak_start_date = unique_dates[0]
-
         for i in range(1, len(unique_dates)):
-            days_diff = (unique_dates[i - 1] - unique_dates[i]).days
-            if days_diff == 1:
+            if (unique_dates[i - 1] - unique_dates[i]).days == 1:
                 current_streak += 1
                 streak_start_date = unique_dates[i]
             else:
                 break
 
+        # Calculate longest streak historically from all entries
         longest_streak = 1
         current_longest = 1
         for i in range(1, len(unique_dates)):
-            days_diff = (unique_dates[i - 1] - unique_dates[i]).days
-            if days_diff == 1:
+            if (unique_dates[i - 1] - unique_dates[i]).days == 1:
                 current_longest += 1
                 longest_streak = max(longest_streak, current_longest)
             else:
@@ -258,128 +270,145 @@ class AnalyticsService:
         end_date = utc_now().date()
         start_date = end_date - timedelta(days=days)
 
-        # Get entries by day
-        entries_by_day = self.session.exec(
-            select(
-                col(Entry.entry_date).label('entry_date'),
-                func.count(Entry.id).label('entry_count'),
-                func.sum(Entry.word_count).label('total_words')
-            )
+        entries = self.session.exec(
+            select(Entry)
+            .join(Moment, col(Entry.moment_id) == col(Moment.id), isouter=True)
             .where(
                 Entry.user_id == user_id,
-                Entry.entry_date >= start_date,
-                Entry.entry_date <= end_date,
                 col(Entry.is_draft).is_(False),
             )
-            .group_by(Entry.entry_date)
-            .order_by(col(Entry.entry_date))
+            .options(joinedload(cast(Any, Entry.moment)))
         ).all()
+        entries_by_day_map: Dict[date, Dict[str, int]] = {}
+        for entry in entries:
+            logged_date = self._entry_logged_date(entry)
+            if logged_date is None or logged_date < start_date or logged_date > end_date:
+                continue
+            bucket = entries_by_day_map.setdefault(
+                logged_date,
+                {"entry_count": 0, "total_words": 0},
+            )
+            bucket["entry_count"] += 1
+            bucket["total_words"] += int(entry.word_count or 0)
+
+        entries_by_day = [
+            {
+                "logged_date_tz": logged_date,
+                "entry_count": stats["entry_count"],
+                "total_words": stats["total_words"],
+            }
+            for logged_date, stats in sorted(entries_by_day_map.items())
+        ]
 
         # Get mood patterns (primary mood per moment)
         mood_patterns = self.session.exec(
             select(
-                col(Moment.logged_date).label('mood_date'),
+                col(Moment.logged_date_tz).label('mood_date'),
                 func.count(Moment.id).label('mood_count')
             )
             .where(
                 Moment.user_id == user_id,
                 col(Moment.primary_mood_id).is_not(None),
-                col(Moment.logged_date) >= start_date,
-                col(Moment.logged_date) <= end_date
+                col(Moment.logged_date_tz) >= start_date,
+                col(Moment.logged_date_tz) <= end_date
             )
-            .group_by(col(Moment.logged_date))
-            .order_by(col(Moment.logged_date))
+            .group_by(col(Moment.logged_date_tz))
+            .order_by(col(Moment.logged_date_tz))
         ).all()
 
-        # Get tag usage
+        # Get tag usage (tags are now on moments via MomentTagLink)
         tag_usage = self.session.exec(
             select(
                 Tag.name,
-                func.count(EntryTagLink.entry_id).label('usage_count')
+                func.count(MomentTagLink.moment_id).label('usage_count')
             )
-            .join(EntryTagLink, Tag.id == EntryTagLink.tag_id)
-            .join(Entry, EntryTagLink.entry_id == Entry.id)
+            .join(MomentTagLink, Tag.id == MomentTagLink.tag_id)
+            .join(Moment, MomentTagLink.moment_id == Moment.id)
             .where(
                 Tag.user_id == user_id,
-                Entry.user_id == user_id,
-                Entry.entry_date >= start_date,
-                Entry.entry_date <= end_date,
-                col(Entry.is_draft).is_(False),
+                Moment.user_id == user_id,
+                col(Moment.logged_date_tz) >= start_date,
+                col(Moment.logged_date_tz) <= end_date,
             )
             .group_by(Tag.name)
-            .order_by(func.count(EntryTagLink.entry_id).desc())
+            .order_by(func.count(MomentTagLink.moment_id).desc())
             .limit(10)
         ).all()
+
+        normalized_mood_patterns = []
+        for row in mood_patterns:
+            mood_date = self._row_value(row, 0, "mood_date")
+            mood_count = self._row_value(row, 1, "mood_count") or 0
+            normalized_mood_patterns.append(
+                {
+                    "date": str(self._coerce_date(mood_date)),
+                    "mood_count": int(mood_count),
+                }
+            )
+
+        normalized_tag_usage = []
+        for row in tag_usage:
+            tag_name = self._row_value(row, 0, "name")
+            usage_count = self._row_value(row, 1, "usage_count") or 0
+            normalized_tag_usage.append(
+                {
+                    "tag_name": tag_name,
+                    "usage_count": int(usage_count),
+                }
+            )
 
         return {
             'period_days': days,
             'entries_by_day': [
                 {
-                    'date': str(day.entry_date),
-                    'entry_count': day.entry_count,
-                    'total_words': day.total_words or 0
+                    'date': str(day["logged_date_tz"]),
+                    'entry_count': day["entry_count"],
+                    'total_words': day["total_words"] or 0
                 }
                 for day in entries_by_day
             ],
-            'mood_patterns': [
-                {
-                    'date': str(day.mood_date),
-                    'mood_count': day.mood_count
-                }
-                for day in mood_patterns
-            ],
-            'top_tags': [
-                {
-                    'tag_name': tag.name,
-                    'usage_count': tag.usage_count
-                }
-                for tag in tag_usage
-            ]
+            'mood_patterns': normalized_mood_patterns,
+            'top_tags': normalized_tag_usage,
         }
 
     def get_productivity_metrics(self, user_id: uuid.UUID) -> Dict[str, Any]:
         """Get productivity metrics for a user."""
         now = utc_now()
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-        current_month_entries = self.session.exec(
-            select(func.count(Entry.id))
-            .where(
-                Entry.user_id == user_id,
-                Entry.entry_datetime_utc >= month_start,
-                col(Entry.is_draft).is_(False),
-            )
-        ).one() or 0
-
-        current_month_words = self.session.exec(
-            select(func.coalesce(func.sum(Entry.word_count), 0))
-            .where(
-                Entry.user_id == user_id,
-                Entry.entry_datetime_utc >= month_start,
-                col(Entry.is_draft).is_(False),
-            )
-        ).one() or 0
+        today = now.date()
+        month_start = today.replace(day=1)
 
         # Get last month stats for comparison
-        last_month_end = month_start - timedelta(seconds=1)
-        last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-        last_month_entries = self.session.exec(
-            select(func.count(Entry.id))
+        last_month_end = month_start - timedelta(days=1)
+        last_month_start = last_month_end.replace(day=1)
+        entries = self.session.exec(
+            select(Entry)
+            .join(Moment, col(Entry.moment_id) == col(Moment.id), isouter=True)
             .where(
                 Entry.user_id == user_id,
-                Entry.entry_datetime_utc >= last_month_start,
-                Entry.entry_datetime_utc < month_start,
                 col(Entry.is_draft).is_(False),
             )
-        ).one() or 0
+            .options(joinedload(cast(Any, Entry.moment)))
+        ).all()
+
+        current_month_entries = 0
+        current_month_words = 0
+        last_month_entries = 0
+        for entry in entries:
+            logged_date = self._entry_logged_date(entry)
+            if logged_date is None:
+                continue
+            if logged_date >= month_start:
+                current_month_entries += 1
+                current_month_words += int(entry.word_count or 0)
+            elif last_month_start <= logged_date < month_start:
+                last_month_entries += 1
 
         # Calculate growth
         entry_growth = 0
         if last_month_entries and last_month_entries > 0:
             entry_growth = ((current_month_entries - last_month_entries) / last_month_entries) * 100
 
-        today_day = now.date().day
+        today_day = today.day
         return {
             'current_month_entries': current_month_entries,
             'current_month_words': current_month_words,
@@ -388,20 +417,60 @@ class AnalyticsService:
             'average_words_per_day': round(current_month_words / today_day, 2)
         }
 
+    def _entry_logged_date(self, entry: Entry) -> Optional[date]:
+        """Resolve the canonical analytics date for an entry."""
+        if entry.moment is not None and entry.moment.logged_date_tz is not None:
+            return self._coerce_date(entry.moment.logged_date_tz)
+        if entry.created_at is not None:
+            return entry.created_at.date()
+        return None
+
+    @staticmethod
+    def _coerce_date(value: Any) -> Optional[date]:
+        """Normalize DB values (date/datetime/iso-string) into date."""
+        if value is None:
+            return None
+        if isinstance(value, date) and not isinstance(value, datetime):
+            return value
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, str):
+            try:
+                return date.fromisoformat(value[:10])
+            except ValueError:
+                return None
+        return None
+
+    @staticmethod
+    def _row_value(row: Any, index: int, key: str) -> Any:
+        """Extract values from tuple/Row/mapping objects across DB backends."""
+        if isinstance(row, tuple):
+            return row[index]
+        mapping = getattr(row, "_mapping", None)
+        if mapping is not None and key in mapping:
+            return mapping[key]
+        if isinstance(row, dict):
+            return row.get(key)
+        return getattr(row, key, None)
+
     def get_journal_analytics(self, user_id: uuid.UUID) -> Dict[str, Any]:
         """Get analytics for all journals of a user."""
-        # Get journal stats
+        # Get journal stats (last_entry timestamp from Moment.logged_at_utc)
         journal_stats = self.session.exec(
             select(  # type: ignore[no-matching-overload]
                 Journal.id,
                 Journal.title,
                 func.count(Entry.id).label('entry_count'),
                 func.sum(Entry.word_count).label('total_words'),
-                func.max(Entry.entry_datetime_utc).label('last_entry')
+                func.max(Moment.logged_at_utc).label('last_entry')
             )
             .outerjoin(
                 Entry,
                 (col(Journal.id) == col(Entry.journal_id)) & (col(Entry.is_draft).is_(False))
+            )
+            .outerjoin(
+                Moment,
+                col(Entry.moment_id) == col(Moment.id)
             )
             .where(
                 Journal.user_id == user_id,
@@ -410,15 +479,21 @@ class AnalyticsService:
             .order_by(func.count(Entry.id).desc())
         ).all()
 
-        return {
-            'journals': [
+        journals: list[Dict[str, Any]] = []
+        for row in journal_stats:
+            journal_id = self._row_value(row, 0, "id")
+            title = self._row_value(row, 1, "title")
+            entry_count = self._row_value(row, 2, "entry_count") or 0
+            total_words = self._row_value(row, 3, "total_words") or 0
+            last_entry = self._row_value(row, 4, "last_entry")
+            journals.append(
                 {
-                    'journal_id': str(journal.id),
-                    'title': journal.title,
-                    'entry_count': journal.entry_count,
-                    'total_words': journal.total_words or 0,
-                    'last_entry': journal.last_entry
+                    "journal_id": str(journal_id),
+                    "title": title,
+                    "entry_count": int(entry_count),
+                    "total_words": int(total_words),
+                    "last_entry": last_entry,
                 }
-                for journal in journal_stats
-            ]
-        }
+            )
+
+        return {"journals": journals}

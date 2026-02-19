@@ -3,14 +3,15 @@ Unit tests for streaming JSON parser.
 
 Tests the ijson-based streaming parser for large data.json files.
 """
-import pytest
 import json
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from app.cli.streaming.json_streamer import (
-    stream_parse_journiv_data,
     parse_journiv_data_standard,
+    stream_parse_journiv_data,
 )
 
 

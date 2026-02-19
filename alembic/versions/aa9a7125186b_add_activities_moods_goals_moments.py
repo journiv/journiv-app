@@ -8,9 +8,11 @@ Create Date: 2026-02-09 17:14:24.413472
 
 from __future__ import annotations
 
+import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
@@ -33,12 +35,395 @@ TIER_GROUPS = [
 ]
 
 
-def _as_uuid(value: Optional[uuid.UUID]) -> Optional[uuid.UUID]:
+UUIDValue = uuid.UUID | str
+
+
+def _as_uuid(value: Optional[UUIDValue], *, is_sqlite: bool) -> Optional[UUIDValue]:
     if value is None:
         return None
-    if isinstance(value, uuid.UUID):
-        return value
-    return uuid.UUID(str(value))
+    parsed = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+    return parsed
+
+
+def _new_uuid(*, is_sqlite: bool) -> UUIDValue:
+    return uuid.uuid4()
+
+
+def _constraint_exists(conn, table_name: str, constraint_name: str) -> bool:
+    """Check if a constraint exists in either PostgreSQL or SQLite."""
+    if conn.dialect.name == "postgresql":
+        result = conn.execute(
+            sa.text(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_constraint c
+                    JOIN pg_class t ON c.conrelid = t.oid
+                    WHERE c.conname = :constraint_name
+                    AND t.relname = :table_name
+                )
+                """
+            ),
+            {"constraint_name": constraint_name, "table_name": table_name}
+        ).scalar()
+        return bool(result)
+    else:
+        # SQLite
+        inspector = sa.inspect(conn)
+        fks = inspector.get_foreign_keys(table_name)
+        if any(fk.get("name") == constraint_name for fk in fks):
+            return True
+        ucs = inspector.get_unique_constraints(table_name)
+        if any(uc.get("name") == constraint_name for uc in ucs):
+            return True
+        ccs = inspector.get_check_constraints(table_name)
+        if any(cc.get("name") == constraint_name for cc in ccs):
+            return True
+        return False
+
+
+def _index_exists(conn, index_name: str, table_name: Optional[str] = None) -> bool:
+    """Check if an index exists in either PostgreSQL or SQLite."""
+    if conn.dialect.name == "postgresql":
+        result = conn.execute(
+            sa.text(
+                """
+                SELECT EXISTS (
+                    SELECT 1 FROM pg_indexes
+                    WHERE indexname = :index_name
+                )
+                """
+            ),
+            {"index_name": index_name}
+        ).scalar()
+        return bool(result)
+    else:
+        # SQLite
+        if table_name:
+            inspector = sa.inspect(conn)
+            indexes = inspector.get_indexes(table_name)
+            return any(idx.get("name") == index_name for idx in indexes)
+        else:
+            result = conn.execute(
+                sa.text(
+                    "SELECT 1 FROM sqlite_master WHERE type='index' AND name=:index_name"
+                ),
+                {"index_name": index_name}
+            ).fetchone()
+            return result is not None
+
+
+def _column_exists(conn, table_name: str, column_name: str) -> bool:
+    inspector = sa.inspect(conn)
+    return any(col["name"] == column_name for col in inspector.get_columns(table_name))
+
+
+def _table_exists(conn, table_name: str) -> bool:
+    inspector = sa.inspect(conn)
+    return table_name in inspector.get_table_names()
+
+
+def _derive_local_date(logged_at_utc, logged_timezone: Optional[str]):
+    if logged_at_utc is None:
+        return None
+    if logged_at_utc.tzinfo is None:
+        utc_dt = logged_at_utc.replace(tzinfo=timezone.utc)
+    else:
+        utc_dt = logged_at_utc.astimezone(timezone.utc)
+    tz_name = (logged_timezone or "UTC").strip() or "UTC"
+    fixed_offset_match = re.fullmatch(r"([+-])(\d{2}):(\d{2})", tz_name)
+    if fixed_offset_match:
+        sign, hours, minutes = fixed_offset_match.groups()
+        offset = timedelta(hours=int(hours), minutes=int(minutes))
+        if sign == "-":
+            offset = -offset
+        tz = timezone(offset)
+        return utc_dt.astimezone(tz).date()
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:
+        tz = timezone.utc
+    return utc_dt.astimezone(tz).date()
+
+
+def _backfill_moment_logged_date_tz(conn) -> None:
+    if not _table_exists(conn, "moment"):
+        return
+    rows = conn.execute(
+        sa.text(
+            """
+            SELECT id, logged_at_utc, logged_timezone
+            FROM moment
+            WHERE logged_date_tz IS NULL
+            """
+        )
+    ).fetchall()
+    for row in rows:
+        derived_date = _derive_local_date(row.logged_at_utc, row.logged_timezone)
+        if derived_date is None:
+            continue
+        conn.execute(
+            sa.text("UPDATE moment SET logged_date_tz = :logged_date_tz WHERE id = :moment_id"),
+            {"logged_date_tz": derived_date, "moment_id": row.id},
+        )
+
+
+def _rename_entry_media_to_moment_media(conn, is_sqlite: bool) -> None:
+    if _table_exists(conn, "entry_media") and not _table_exists(conn, "moment_media"):
+        op.rename_table("entry_media", "moment_media")
+
+    if not _table_exists(conn, "moment_media"):
+        return
+
+    # Keep names aligned on PostgreSQL; SQLite can keep legacy object names safely.
+    if is_sqlite:
+        return
+
+    rename_pairs = [
+        ("idx_entry_media_moment_id", "idx_moment_media_moment_id"),
+        ("idx_entry_media_type", "idx_moment_media_type"),
+        ("idx_entry_media_status", "idx_moment_media_status"),
+        ("idx_entry_media_checksum", "idx_moment_media_checksum"),
+        ("idx_entry_media_external_provider", "idx_moment_media_external_provider"),
+        ("ix_entry_media_id", "ix_moment_media_id"),
+        ("ix_entry_media_external_provider", "ix_moment_media_external_provider"),
+        ("ix_entry_media_external_asset_id", "ix_moment_media_external_asset_id"),
+    ]
+    for old_name, new_name in rename_pairs:
+        if _index_exists(conn, old_name):
+            op.execute(sa.text(f"ALTER INDEX {old_name} RENAME TO {new_name}"))
+
+    if _constraint_exists(conn, "moment_media", "uq_entry_media_moment_checksum"):
+        op.execute(
+            sa.text(
+                "ALTER TABLE moment_media "
+                "RENAME CONSTRAINT uq_entry_media_moment_checksum "
+                "TO uq_moment_media_moment_checksum"
+            )
+        )
+
+
+def _rename_moment_media_to_entry_media(conn, is_sqlite: bool) -> None:
+    if _table_exists(conn, "moment_media") and not _table_exists(conn, "entry_media"):
+        op.rename_table("moment_media", "entry_media")
+
+    if not _table_exists(conn, "entry_media"):
+        return
+
+    # Keep names aligned on PostgreSQL; SQLite can keep legacy object names safely.
+    if is_sqlite:
+        return
+
+    rename_pairs = [
+        ("idx_moment_media_moment_id", "idx_entry_media_moment_id"),
+        ("idx_moment_media_type", "idx_entry_media_type"),
+        ("idx_moment_media_status", "idx_entry_media_status"),
+        ("idx_moment_media_checksum", "idx_entry_media_checksum"),
+        ("idx_moment_media_external_provider", "idx_entry_media_external_provider"),
+        ("ix_moment_media_id", "ix_entry_media_id"),
+        ("ix_moment_media_external_provider", "ix_entry_media_external_provider"),
+        ("ix_moment_media_external_asset_id", "ix_entry_media_external_asset_id"),
+    ]
+    for old_name, new_name in rename_pairs:
+        if _index_exists(conn, old_name):
+            op.execute(sa.text(f"ALTER INDEX {old_name} RENAME TO {new_name}"))
+
+    if _constraint_exists(conn, "entry_media", "uq_moment_media_moment_checksum"):
+        op.execute(
+            sa.text(
+                "ALTER TABLE entry_media "
+                "RENAME CONSTRAINT uq_moment_media_moment_checksum "
+                "TO uq_entry_media_moment_checksum"
+            )
+        )
+
+
+def _find_fk_name_for_target(
+    conn, table_name: str, constrained_column: str, referred_table: str
+) -> Optional[str]:
+    inspector = sa.inspect(conn)
+    for fk in inspector.get_foreign_keys(table_name):
+        constrained = fk.get("constrained_columns") or []
+        if constrained == [constrained_column] and fk.get("referred_table") == referred_table:
+            return fk.get("name")
+    return None
+
+
+def _migrate_import_jobs_to_moment_id(conn, is_sqlite: bool) -> None:
+    """Switch import_jobs ownership from legacy entry_id to moment_id."""
+    if not _column_exists(conn, "import_jobs", "moment_id"):
+        op.add_column("import_jobs", sa.Column("moment_id", sa.Uuid(), nullable=True))
+
+    if _column_exists(conn, "import_jobs", "entry_id"):
+        if is_sqlite:
+            op.execute(
+                sa.text(
+                    """
+                    UPDATE import_jobs
+                    SET moment_id = (
+                        SELECT entry.moment_id
+                        FROM entry
+                        WHERE entry.id = import_jobs.entry_id
+                    )
+                    WHERE moment_id IS NULL
+                      AND entry_id IS NOT NULL
+                    """
+                )
+            )
+        else:
+            op.execute(
+                sa.text(
+                    """
+                    UPDATE import_jobs AS ij
+                    SET moment_id = e.moment_id
+                    FROM entry AS e
+                    WHERE ij.entry_id = e.id
+                      AND ij.moment_id IS NULL
+                    """
+                )
+            )
+
+    if not _index_exists(conn, "ix_import_jobs_moment_id", table_name="import_jobs"):
+        op.create_index("ix_import_jobs_moment_id", "import_jobs", ["moment_id"], unique=False)
+
+    moment_fk_name = "fk_import_jobs_moment_id_moment"
+    existing_moment_fk_name = _find_fk_name_for_target(
+        conn, "import_jobs", "moment_id", "moment"
+    )
+    if (
+        not _constraint_exists(conn, "import_jobs", moment_fk_name)
+        and existing_moment_fk_name is None
+    ):
+        if is_sqlite:
+            with op.batch_alter_table("import_jobs") as batch_op:
+                batch_op.create_foreign_key(
+                    moment_fk_name,
+                    "moment",
+                    ["moment_id"],
+                    ["id"],
+                    ondelete="CASCADE",
+                )
+        else:
+            op.create_foreign_key(
+                moment_fk_name,
+                "import_jobs",
+                "moment",
+                ["moment_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
+
+    entry_fk_name = "fk_import_jobs_entry_id_entry"
+    existing_entry_fk_name = _find_fk_name_for_target(
+        conn, "import_jobs", "entry_id", "entry"
+    )
+    fk_to_drop = existing_entry_fk_name or (
+        entry_fk_name if _constraint_exists(conn, "import_jobs", entry_fk_name) else None
+    )
+    if fk_to_drop:
+        if is_sqlite:
+            with op.batch_alter_table("import_jobs") as batch_op:
+                batch_op.drop_constraint(fk_to_drop, type_="foreignkey")
+        else:
+            op.drop_constraint(fk_to_drop, "import_jobs", type_="foreignkey")
+
+    if _index_exists(conn, "ix_import_jobs_entry_id", table_name="import_jobs"):
+        op.drop_index("ix_import_jobs_entry_id", table_name="import_jobs")
+
+    if _column_exists(conn, "import_jobs", "entry_id"):
+        if is_sqlite:
+            with op.batch_alter_table("import_jobs") as batch_op:
+                batch_op.drop_column("entry_id")
+        else:
+            op.drop_column("import_jobs", "entry_id")
+
+
+def _restore_import_jobs_entry_id(conn, is_sqlite: bool) -> None:
+    """Restore legacy import_jobs.entry_id ownership for downgrade."""
+    if not _column_exists(conn, "import_jobs", "entry_id"):
+        op.add_column("import_jobs", sa.Column("entry_id", sa.Uuid(), nullable=True))
+
+    if _column_exists(conn, "import_jobs", "moment_id"):
+        if is_sqlite:
+            op.execute(
+                sa.text(
+                    """
+                    UPDATE import_jobs
+                    SET entry_id = (
+                        SELECT entry.id
+                        FROM entry
+                        WHERE entry.moment_id = import_jobs.moment_id
+                    )
+                    WHERE entry_id IS NULL
+                      AND moment_id IS NOT NULL
+                    """
+                )
+            )
+        else:
+            op.execute(
+                sa.text(
+                    """
+                    UPDATE import_jobs AS ij
+                    SET entry_id = e.id
+                    FROM entry AS e
+                    WHERE e.moment_id = ij.moment_id
+                      AND ij.entry_id IS NULL
+                    """
+                )
+            )
+
+    if not _index_exists(conn, "ix_import_jobs_entry_id", table_name="import_jobs"):
+        op.create_index("ix_import_jobs_entry_id", "import_jobs", ["entry_id"], unique=False)
+
+    entry_fk_name = "fk_import_jobs_entry_id_entry"
+    existing_entry_fk_name = _find_fk_name_for_target(
+        conn, "import_jobs", "entry_id", "entry"
+    )
+    if (
+        not _constraint_exists(conn, "import_jobs", entry_fk_name)
+        and existing_entry_fk_name is None
+    ):
+        if is_sqlite:
+            with op.batch_alter_table("import_jobs") as batch_op:
+                batch_op.create_foreign_key(
+                    entry_fk_name,
+                    "entry",
+                    ["entry_id"],
+                    ["id"],
+                    ondelete="CASCADE",
+                )
+        else:
+            op.create_foreign_key(
+                entry_fk_name,
+                "import_jobs",
+                "entry",
+                ["entry_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
+
+    moment_fk_name = "fk_import_jobs_moment_id_moment"
+    existing_moment_fk_name = _find_fk_name_for_target(
+        conn, "import_jobs", "moment_id", "moment"
+    )
+    fk_to_drop = existing_moment_fk_name or (
+        moment_fk_name if _constraint_exists(conn, "import_jobs", moment_fk_name) else None
+    )
+    if fk_to_drop:
+        if is_sqlite:
+            with op.batch_alter_table("import_jobs") as batch_op:
+                batch_op.drop_constraint(fk_to_drop, type_="foreignkey")
+        else:
+            op.drop_constraint(fk_to_drop, "import_jobs", type_="foreignkey")
+
+    if _index_exists(conn, "ix_import_jobs_moment_id", table_name="import_jobs"):
+        op.drop_index("ix_import_jobs_moment_id", table_name="import_jobs")
+
+    if _column_exists(conn, "import_jobs", "moment_id"):
+        if is_sqlite:
+            with op.batch_alter_table("import_jobs") as batch_op:
+                batch_op.drop_column("moment_id")
+        else:
+            op.drop_column("import_jobs", "moment_id")
 
 
 def _create_enum_types(dialect_name: str) -> None:
@@ -62,6 +447,175 @@ def _create_enum_types(dialect_name: str) -> None:
         END$$;
         """
     )
+
+
+def _install_moment_media_count_triggers(dialect_name: str) -> None:
+    """Install moment-first media_count triggers on entry_media."""
+    if dialect_name == "postgresql":
+        # Remove any legacy trigger/function that may reference entry_id.
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_trigger ON entry_media")
+        op.execute("DROP FUNCTION IF EXISTS update_entry_media_count()")
+
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION update_moment_media_count()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                IF (TG_OP = 'INSERT') THEN
+                    UPDATE moment
+                    SET media_count = media_count + 1
+                    WHERE id = NEW.moment_id;
+                    RETURN NEW;
+                ELSIF (TG_OP = 'DELETE') THEN
+                    UPDATE moment
+                    SET media_count = GREATEST(media_count - 1, 0)
+                    WHERE id = OLD.moment_id;
+                    RETURN OLD;
+                ELSIF (TG_OP = 'UPDATE') THEN
+                    IF NEW.moment_id IS DISTINCT FROM OLD.moment_id THEN
+                        UPDATE moment
+                        SET media_count = GREATEST(media_count - 1, 0)
+                        WHERE id = OLD.moment_id;
+
+                        UPDATE moment
+                        SET media_count = media_count + 1
+                        WHERE id = NEW.moment_id;
+                    END IF;
+                    RETURN NEW;
+                END IF;
+                RETURN NULL;
+            END;
+            $$ LANGUAGE plpgsql;
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER entry_media_count_trigger
+            AFTER INSERT OR DELETE OR UPDATE OF moment_id ON entry_media
+            FOR EACH ROW
+            EXECUTE FUNCTION update_moment_media_count();
+            """
+        )
+    elif dialect_name == "sqlite":
+        # Remove old sqlite triggers (legacy and moment-first names) before recreating.
+        op.execute("DROP TRIGGER IF EXISTS entry_media_insert_trigger")
+        op.execute("DROP TRIGGER IF EXISTS entry_media_delete_trigger")
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_insert_trigger")
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_delete_trigger")
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_update_trigger")
+
+        op.execute(
+            """
+            CREATE TRIGGER entry_media_count_insert_trigger
+            AFTER INSERT ON entry_media
+            FOR EACH ROW
+            BEGIN
+                UPDATE moment
+                SET media_count = media_count + 1
+                WHERE id = NEW.moment_id;
+            END;
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER entry_media_count_delete_trigger
+            AFTER DELETE ON entry_media
+            FOR EACH ROW
+            BEGIN
+                UPDATE moment
+                SET media_count = MAX(media_count - 1, 0)
+                WHERE id = OLD.moment_id;
+            END;
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER entry_media_count_update_trigger
+            AFTER UPDATE OF moment_id ON entry_media
+            FOR EACH ROW
+            -- Use a NULL-safe comparison for SQLite
+            WHEN (NEW.moment_id IS NOT OLD.moment_id) OR (NEW.moment_id IS NULL AND OLD.moment_id IS NOT NULL) OR (NEW.moment_id IS NOT NULL AND OLD.moment_id IS NULL)
+            BEGIN
+                UPDATE moment
+                SET media_count = MAX(media_count - 1, 0)
+                WHERE id = OLD.moment_id;
+
+                UPDATE moment
+                SET media_count = media_count + 1
+                WHERE id = NEW.moment_id;
+            END;
+            """
+        )
+
+
+def _remove_moment_media_count_triggers(dialect_name: str) -> None:
+    """Remove moment-first media_count triggers on entry_media."""
+    if dialect_name == "postgresql":
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_trigger ON entry_media")
+        op.execute("DROP FUNCTION IF EXISTS update_moment_media_count()")
+    elif dialect_name == "sqlite":
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_insert_trigger")
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_delete_trigger")
+        op.execute("DROP TRIGGER IF EXISTS entry_media_count_update_trigger")
+
+
+def _install_legacy_entry_media_count_triggers(dialect_name: str) -> None:
+    """Restore legacy entry-based media_count triggers for downgrade target schema."""
+    if dialect_name == "postgresql":
+        op.execute(
+            """
+            CREATE OR REPLACE FUNCTION update_entry_media_count()
+            RETURNS TRIGGER AS $$
+            BEGIN
+                IF (TG_OP = 'INSERT') THEN
+                    UPDATE entry
+                    SET media_count = media_count + 1
+                    WHERE id = NEW.entry_id;
+                    RETURN NEW;
+                ELSIF (TG_OP = 'DELETE') THEN
+                    UPDATE entry
+                    SET media_count = GREATEST(media_count - 1, 0)
+                    WHERE id = OLD.entry_id;
+                    RETURN OLD;
+                END IF;
+                RETURN NULL;
+            END;
+            $$ LANGUAGE plpgsql;
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER entry_media_count_trigger
+            AFTER INSERT OR DELETE ON entry_media
+            FOR EACH ROW
+            EXECUTE FUNCTION update_entry_media_count();
+            """
+        )
+    elif dialect_name == "sqlite":
+        op.execute(
+            """
+            CREATE TRIGGER entry_media_count_insert_trigger
+            AFTER INSERT ON entry_media
+            FOR EACH ROW
+            BEGIN
+                UPDATE entry
+                SET media_count = media_count + 1
+                WHERE id = NEW.entry_id;
+            END;
+            """
+        )
+        op.execute(
+            """
+            CREATE TRIGGER entry_media_count_delete_trigger
+            AFTER DELETE ON entry_media
+            FOR EACH ROW
+            BEGIN
+                UPDATE entry
+                SET media_count = MAX(media_count - 1, 0)
+                WHERE id = OLD.entry_id;
+            END;
+            """
+        )
 
 
 def _rebuild_mood_table_sqlite_without_unique_name() -> None:
@@ -407,30 +961,46 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("user_id", sa.Uuid(), nullable=False),
-        sa.Column("entry_id", sa.Uuid(), nullable=True),
         sa.Column("primary_mood_id", sa.Uuid(), nullable=True),
-        sa.Column("logged_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("logged_date", sa.Date(), nullable=False),
+        sa.Column("prompt_id", sa.Uuid(), nullable=True),
+        sa.Column("logged_at_utc", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("logged_date_tz", sa.Date(), nullable=True),
         sa.Column("logged_timezone", sa.String(length=100), nullable=False),
         sa.Column("note", sa.String(length=500), nullable=True),
-        sa.Column("location_data", json_type, nullable=True),
-        sa.Column("weather_data", json_type, nullable=True),
+        sa.Column("location_json", json_type, nullable=True),
+        sa.Column("latitude", sa.Float(), nullable=True),
+        sa.Column("longitude", sa.Float(), nullable=True),
+        sa.Column("weather_json", json_type, nullable=True),
+        sa.Column("weather_summary", sa.String(length=500), nullable=True),
+        sa.Column("is_pinned", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("media_count", sa.Integer(), nullable=False, server_default="0"),
         sa.ForeignKeyConstraint(["user_id"], ["user.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(["entry_id"], ["entry.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["primary_mood_id"], ["mood.id"], ondelete="SET NULL"),
+        sa.ForeignKeyConstraint(["prompt_id"], ["prompt.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("entry_id", name="uq_moment_entry_id"),
     )
     op.create_index(
-        "idx_moment_user_logged_at",
+        "idx_moment_user_logged_at_utc",
         "moment",
-        ["user_id", "logged_at", "id"],
+        ["user_id", "logged_at_utc", "id"],
         unique=False,
     )
     op.create_index(
-        "idx_moment_user_logged_date",
+        "idx_moment_user_logged_date_tz",
         "moment",
-        ["user_id", "logged_date"],
+        ["user_id", "logged_date_tz"],
+        unique=False,
+    )
+    op.create_index(
+        "idx_moment_latitude_longitude",
+        "moment",
+        ["latitude", "longitude"],
+        unique=False,
+    )
+    op.create_index(
+        "idx_moment_prompt_id",
+        "moment",
+        ["prompt_id"],
         unique=False,
     )
     op.create_index(op.f("ix_moment_id"), "moment", ["id"], unique=False)
@@ -496,54 +1066,40 @@ def upgrade() -> None:
         sqlite_where=sa.text("mood_id IS NOT NULL AND activity_id IS NOT NULL"),
     )
 
+    # Add moment_id to entry (nullable initially for data migration)
+    if is_sqlite:
+        with op.batch_alter_table("entry") as batch_op:
+            batch_op.add_column(sa.Column("moment_id", sa.Uuid(), nullable=True))
+    else:
+        op.add_column("entry", sa.Column("moment_id", sa.Uuid(), nullable=True))
+
+    # Add moment_id to entry_media (nullable initially for data migration)
     if is_sqlite:
         with op.batch_alter_table("entry_media") as batch_op:
             batch_op.add_column(sa.Column("moment_id", sa.Uuid(), nullable=True))
-            batch_op.alter_column("entry_id", existing_type=sa.Uuid(), nullable=True)
             batch_op.create_index(
                 "idx_entry_media_moment_id", ["moment_id"], unique=False
             )
-            batch_op.create_foreign_key(
-                "fk_entry_media_moment_id_moment",
-                "moment",
-                ["moment_id"],
-                ["id"],
-                ondelete="CASCADE",
-            )
-            batch_op.create_check_constraint(
-                "check_media_entry_or_moment",
-                "(entry_id IS NOT NULL) OR (moment_id IS NOT NULL)",
-            )
-            batch_op.create_unique_constraint(
-                "uq_entry_media_moment_checksum",
-                ["moment_id", "checksum"],
-            )
     else:
         op.add_column("entry_media", sa.Column("moment_id", sa.Uuid(), nullable=True))
-        op.alter_column(
-            "entry_media", "entry_id", existing_type=sa.Uuid(), nullable=True
-        )
         op.create_index(
             "idx_entry_media_moment_id", "entry_media", ["moment_id"], unique=False
         )
-        op.create_foreign_key(
-            "fk_entry_media_moment_id_moment",
-            "entry_media",
-            "moment",
-            ["moment_id"],
-            ["id"],
-            ondelete="CASCADE",
-        )
-        op.create_check_constraint(
-            "check_media_entry_or_moment",
-            "entry_media",
-            "(entry_id IS NOT NULL) OR (moment_id IS NOT NULL)",
-        )
-        op.create_unique_constraint(
-            "uq_entry_media_moment_checksum",
-            "entry_media",
-            ["moment_id", "checksum"],
-        )
+
+    # Create moment_tag_link table
+    op.create_table(
+        "moment_tag_link",
+        sa.Column("moment_id", sa.Uuid(), nullable=False),
+        sa.Column("tag_id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["moment_id"], ["moment.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["tag_id"], ["tag.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("moment_id", "tag_id"),
+    )
+    op.create_index(
+        "idx_moment_tag_link_tag_id", "moment_tag_link", ["tag_id"], unique=False
+    )
 
     # Data migration: backfill moments and link tables
     entry = sa.table(
@@ -554,7 +1110,14 @@ def upgrade() -> None:
         sa.column("entry_datetime_utc", sa.DateTime(timezone=True)),
         sa.column("entry_timezone", sa.String()),
         sa.column("location_json", json_type),
+        sa.column("latitude", sa.Float()),
+        sa.column("longitude", sa.Float()),
         sa.column("weather_json", json_type),
+        sa.column("weather_summary", sa.String()),
+        sa.column("is_pinned", sa.Boolean()),
+        sa.column("prompt_id", sa.Uuid()),
+        sa.column("media_count", sa.Integer()),
+        sa.column("moment_id", sa.Uuid()),
         sa.column("created_at", sa.DateTime(timezone=True)),
         sa.column("updated_at", sa.DateTime(timezone=True)),
     )
@@ -593,26 +1156,25 @@ def upgrade() -> None:
         sa.column("mood_log_id", sa.Uuid()),
         sa.column("activity_id", sa.Uuid()),
     )
-    entry_media = sa.table(
-        "entry_media",
-        sa.column("id", sa.Uuid()),
-        sa.column("entry_id", sa.Uuid()),
-        sa.column("moment_id", sa.Uuid()),
-    )
     moment = sa.table(
         "moment",
         sa.column("id", sa.Uuid()),
         sa.column("created_at", sa.DateTime(timezone=True)),
         sa.column("updated_at", sa.DateTime(timezone=True)),
         sa.column("user_id", sa.Uuid()),
-        sa.column("entry_id", sa.Uuid()),
         sa.column("primary_mood_id", sa.Uuid()),
-        sa.column("logged_at", sa.DateTime(timezone=True)),
-        sa.column("logged_date", sa.Date()),
+        sa.column("prompt_id", sa.Uuid()),
+        sa.column("logged_at_utc", sa.DateTime(timezone=True)),
+        sa.column("logged_date_tz", sa.Date()),
         sa.column("logged_timezone", sa.String()),
         sa.column("note", sa.String()),
-        sa.column("location_data", json_type),
-        sa.column("weather_data", json_type),
+        sa.column("location_json", json_type),
+        sa.column("latitude", sa.Float()),
+        sa.column("longitude", sa.Float()),
+        sa.column("weather_json", json_type),
+        sa.column("weather_summary", sa.String()),
+        sa.column("is_pinned", sa.Boolean()),
+        sa.column("media_count", sa.Integer()),
     )
     moment_mood_activity = sa.table(
         "moment_mood_activity",
@@ -623,13 +1185,14 @@ def upgrade() -> None:
         sa.column("mood_id", sa.Uuid()),
         sa.column("activity_id", sa.Uuid()),
     )
+    entry_to_moment: Dict[UUIDValue, UUIDValue] = {}
 
-    entry_to_moment: Dict[uuid.UUID, uuid.UUID] = {}
-
+    # Step A: Create moments from entries, set entry.moment_id
+    print("  - [Migrating] Step A: Creating moments from entries...")
     entries = conn.execute(sa.select(entry)).fetchall()
     for row in entries:
-        moment_id = uuid.uuid4()
-        entry_id = _as_uuid(row.id)
+        moment_id = _new_uuid(is_sqlite=is_sqlite)
+        entry_id = _as_uuid(row.id, is_sqlite=is_sqlite)
         entry_to_moment[entry_id] = moment_id
         conn.execute(
             moment.insert().values(
@@ -637,30 +1200,101 @@ def upgrade() -> None:
                 created_at=row.created_at,
                 updated_at=row.updated_at,
                 user_id=row.user_id,
-                entry_id=entry_id,
                 primary_mood_id=None,
-                logged_at=row.entry_datetime_utc,
-                logged_date=row.entry_date,
+                prompt_id=_as_uuid(row.prompt_id, is_sqlite=is_sqlite),
+                logged_at_utc=row.entry_datetime_utc,
+                logged_date_tz=row.entry_date,
                 logged_timezone=row.entry_timezone or "UTC",
                 note=None,
-                location_data=row.location_json,
-                weather_data=row.weather_json,
+                location_json=row.location_json,
+                latitude=row.latitude,
+                longitude=row.longitude,
+                weather_json=row.weather_json,
+                weather_summary=row.weather_summary,
+                is_pinned=row.is_pinned if row.is_pinned is not None else False,
+                media_count=row.media_count if row.media_count is not None else 0,
+            )
+        )
+        # Set entry.moment_id
+        conn.execute(
+            entry.update()
+            .where(entry.c.id == entry_id)
+            .values(moment_id=moment_id)
+        )
+
+    # Step B: Migrate entry_tag_link → moment_tag_link (set-based)
+    print("  - [Migrating] Step B: Migrating entry tags to moment tags...")
+    if is_sqlite:
+        conn.execute(
+            sa.text(
+                """
+                INSERT OR IGNORE INTO moment_tag_link (moment_id, tag_id, created_at, updated_at)
+                SELECT e.moment_id, etl.tag_id, etl.created_at, etl.updated_at
+                FROM entry_tag_link AS etl
+                JOIN entry AS e ON e.id = etl.entry_id
+                WHERE e.moment_id IS NOT NULL
+                """
+            )
+        )
+    else:
+        conn.execute(
+            sa.text(
+                """
+                INSERT INTO moment_tag_link (moment_id, tag_id, created_at, updated_at)
+                SELECT e.moment_id, etl.tag_id, etl.created_at, etl.updated_at
+                FROM entry_tag_link AS etl
+                JOIN entry AS e ON e.id = etl.entry_id
+                WHERE e.moment_id IS NOT NULL
+                ON CONFLICT (moment_id, tag_id) DO NOTHING
+                """
             )
         )
 
-    mood_log_links: Dict[uuid.UUID, List[uuid.UUID]] = {}
+    # Step C: Migrate entry_media.entry_id → entry_media.moment_id (set-based)
+    print("  - [Migrating] Step C: Migrating entry media to moment media...")
+    if is_sqlite:
+        conn.execute(
+            sa.text(
+                """
+                UPDATE entry_media
+                SET moment_id = (
+                    SELECT e.moment_id
+                    FROM entry AS e
+                    WHERE e.id = entry_media.entry_id
+                )
+                WHERE moment_id IS NULL
+                  AND entry_id IS NOT NULL
+                """
+            )
+        )
+    else:
+        conn.execute(
+            sa.text(
+                """
+                UPDATE entry_media AS em
+                SET moment_id = e.moment_id
+                FROM entry AS e
+                WHERE em.entry_id = e.id
+                  AND em.moment_id IS NULL
+                """
+            )
+        )
+
+    # Step D: Migrate mood_logs → moments
+    print("  - [Migrating] Step D: Migrating mood logs to moments...")
+    mood_log_links: Dict[UUIDValue, List[UUIDValue]] = {}
     for link in conn.execute(sa.select(mood_log_activity_link)).fetchall():
-        mood_log_id = _as_uuid(link.mood_log_id)
-        activity_id = _as_uuid(link.activity_id)
+        mood_log_id = _as_uuid(link.mood_log_id, is_sqlite=is_sqlite)
+        activity_id = _as_uuid(link.activity_id, is_sqlite=is_sqlite)
         mood_log_links.setdefault(mood_log_id, []).append(activity_id)
 
     mood_logs = conn.execute(sa.select(mood_log)).fetchall()
-    inserted_mood_only: set[Tuple[uuid.UUID, uuid.UUID]] = set()
-    inserted_mood_activity: set[Tuple[uuid.UUID, uuid.UUID, uuid.UUID]] = set()
+    inserted_mood_only: set[Tuple[UUIDValue, UUIDValue]] = set()
+    inserted_mood_activity: set[Tuple[UUIDValue, UUIDValue, UUIDValue]] = set()
     for row in mood_logs:
-        entry_id = _as_uuid(row.entry_id)
-        mood_id = _as_uuid(row.mood_id)
-        activities = mood_log_links.get(_as_uuid(row.id), [])
+        entry_id = _as_uuid(row.entry_id, is_sqlite=is_sqlite)
+        mood_id = _as_uuid(row.mood_id, is_sqlite=is_sqlite)
+        activities = mood_log_links.get(_as_uuid(row.id, is_sqlite=is_sqlite), [])
 
         if entry_id and entry_id in entry_to_moment:
             moment_id = entry_to_moment[entry_id]
@@ -673,21 +1307,26 @@ def upgrade() -> None:
                 .values(**update_values)
             )
         else:
-            moment_id = uuid.uuid4()
+            moment_id = _new_uuid(is_sqlite=is_sqlite)
             conn.execute(
                 moment.insert().values(
                     id=moment_id,
                     created_at=row.created_at,
                     updated_at=row.updated_at,
                     user_id=row.user_id,
-                    entry_id=None,
                     primary_mood_id=mood_id,
-                    logged_at=row.logged_datetime_utc,
-                    logged_date=row.logged_date,
+                    prompt_id=None,
+                    logged_at_utc=row.logged_datetime_utc,
+                    logged_date_tz=row.logged_date,
                     logged_timezone=row.logged_timezone or "UTC",
                     note=row.note,
-                    location_data=None,
-                    weather_data=None,
+                    location_json=None,
+                    latitude=None,
+                    longitude=None,
+                    weather_json=None,
+                    weather_summary=None,
+                    is_pinned=False,
+                    media_count=0,
                 )
             )
 
@@ -698,7 +1337,7 @@ def upgrade() -> None:
                     continue
                 conn.execute(
                     moment_mood_activity.insert().values(
-                        id=uuid.uuid4(),
+                        id=_new_uuid(is_sqlite=is_sqlite),
                         created_at=row.created_at,
                         updated_at=row.updated_at,
                         moment_id=moment_id,
@@ -712,7 +1351,7 @@ def upgrade() -> None:
             if mood_only_key not in inserted_mood_only:
                 conn.execute(
                     moment_mood_activity.insert().values(
-                        id=uuid.uuid4(),
+                        id=_new_uuid(is_sqlite=is_sqlite),
                         created_at=row.created_at,
                         updated_at=row.updated_at,
                         moment_id=moment_id,
@@ -724,14 +1363,14 @@ def upgrade() -> None:
 
     entry_activities = conn.execute(sa.select(entry_activity_link)).fetchall()
     for row in entry_activities:
-        entry_id = _as_uuid(row.entry_id)
-        activity_id = _as_uuid(row.activity_id)
+        entry_id = _as_uuid(row.entry_id, is_sqlite=is_sqlite)
+        activity_id = _as_uuid(row.activity_id, is_sqlite=is_sqlite)
         moment_id = entry_to_moment.get(entry_id)
         if moment_id is None:
             continue
         conn.execute(
             moment_mood_activity.insert().values(
-                id=uuid.uuid4(),
+                id=_new_uuid(is_sqlite=is_sqlite),
                 created_at=sa.func.now(),
                 updated_at=sa.func.now(),
                 moment_id=moment_id,
@@ -742,26 +1381,31 @@ def upgrade() -> None:
 
     activity_logs = conn.execute(sa.select(activity_log)).fetchall()
     for row in activity_logs:
-        moment_id = uuid.uuid4()
+        moment_id = _new_uuid(is_sqlite=is_sqlite)
         conn.execute(
             moment.insert().values(
                 id=moment_id,
                 created_at=row.created_at,
                 updated_at=row.updated_at,
                 user_id=row.user_id,
-                entry_id=None,
                 primary_mood_id=None,
-                logged_at=row.logged_datetime_utc,
-                logged_date=row.logged_date,
+                prompt_id=None,
+                logged_at_utc=row.logged_datetime_utc,
+                logged_date_tz=row.logged_date,
                 logged_timezone=row.logged_timezone or "UTC",
                 note=row.note,
-                location_data=None,
-                weather_data=None,
+                location_json=None,
+                latitude=None,
+                longitude=None,
+                weather_json=None,
+                weather_summary=None,
+                is_pinned=False,
+                media_count=0,
             )
         )
         conn.execute(
             moment_mood_activity.insert().values(
-                id=uuid.uuid4(),
+                id=_new_uuid(is_sqlite=is_sqlite),
                 created_at=row.created_at,
                 updated_at=row.updated_at,
                 moment_id=moment_id,
@@ -770,16 +1414,168 @@ def upgrade() -> None:
             )
         )
 
-    for row in conn.execute(sa.select(entry_media)).fetchall():
-        entry_id = _as_uuid(row.entry_id)
-        moment_id = entry_to_moment.get(entry_id)
-        if moment_id is None:
-            continue
-        conn.execute(
-            entry_media.update()
-            .where(entry_media.c.id == row.id)
-            .values(moment_id=moment_id)
+    # Step E: Backfill media_count on moment
+    print("  - [Migrating] Step E: Backfilling media counts on moments...")
+    conn.execute(
+        sa.text(
+            "UPDATE moment SET media_count = "
+            "(SELECT count(*) FROM entry_media WHERE entry_media.moment_id = moment.id)"
         )
+    )
+
+    # Step F: Make entry.moment_id NOT NULL + add constraints
+    print("  - [Migrating] Step F: Enforcing Moment ID on Entry...")
+    if is_sqlite:
+        with op.batch_alter_table("entry") as batch_op:
+            batch_op.alter_column("moment_id", existing_type=sa.Uuid(), nullable=False)
+            batch_op.create_index("idx_entry_moment_id", ["moment_id"], unique=False)
+            batch_op.create_unique_constraint("uq_entry_moment_id", ["moment_id"])
+            batch_op.create_foreign_key(
+                "fk_entry_moment_id_moment",
+                "moment",
+                ["moment_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
+    else:
+        op.alter_column("entry", "moment_id", existing_type=sa.Uuid(), nullable=False)
+        op.create_index("idx_entry_moment_id", "entry", ["moment_id"], unique=False)
+        op.create_unique_constraint("uq_entry_moment_id", "entry", ["moment_id"])
+        op.create_foreign_key(
+            "fk_entry_moment_id_moment",
+            "entry",
+            "moment",
+            ["moment_id"],
+            ["id"],
+            ondelete="CASCADE",
+        )
+
+    # Step G: Migrate import_jobs to moment ownership.
+    print("  - [Migrating] Step G: Migrating import jobs...")
+    _migrate_import_jobs_to_moment_id(connection, is_sqlite)
+
+    # Step H: Finalize entry_media — drop entry_id, make moment_id NOT NULL
+    print("  - [Migrating] Step H: Finalizing entry media schema...")
+    if is_sqlite:
+        conn = op.get_bind()
+        has_fk = _constraint_exists(conn, "entry_media", "fk_entry_media_entry_id_entry")
+        has_uq = _constraint_exists(conn, "entry_media", "uq_entry_media_entry_checksum")
+
+        with op.batch_alter_table("entry_media") as batch_op:
+            batch_op.alter_column("moment_id", existing_type=sa.Uuid(), nullable=False)
+            batch_op.create_foreign_key(
+                "fk_entry_media_moment_id_moment",
+                "moment",
+                ["moment_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
+            batch_op.create_unique_constraint(
+                "uq_entry_media_moment_checksum",
+                ["moment_id", "checksum"],
+            )
+            if has_fk:
+                batch_op.drop_constraint("fk_entry_media_entry_id_entry", type_="foreignkey")
+
+            # Drop ALL indexes related to entry_id
+            for idx_name in ["idx_entry_media_entry_id", "ix_entry_media_entry_id"]:
+                if _index_exists(conn, idx_name, table_name="entry_media"):
+                    batch_op.drop_index(idx_name)
+
+            if has_uq:
+                batch_op.drop_constraint("uq_entry_media_entry_checksum", type_="unique")
+            batch_op.drop_column("entry_id")
+    else:
+        op.alter_column("entry_media", "moment_id", existing_type=sa.Uuid(), nullable=False)
+        op.create_foreign_key(
+            "fk_entry_media_moment_id_moment",
+            "entry_media",
+            "moment",
+            ["moment_id"],
+            ["id"],
+            ondelete="CASCADE",
+        )
+        op.create_unique_constraint(
+            "uq_entry_media_moment_checksum",
+            "entry_media",
+            ["moment_id", "checksum"],
+        )
+        # Drop entry_id column and related constraints
+        conn = op.get_bind()
+
+        # Drop constraints only if they exist
+        if _constraint_exists(conn, "entry_media", "fk_entry_media_entry_id_entry"):
+            op.drop_constraint("fk_entry_media_entry_id_entry", "entry_media", type_="foreignkey")
+
+        if _index_exists(conn, "idx_entry_media_entry_id"):
+            op.drop_index("idx_entry_media_entry_id", table_name="entry_media")
+
+        if _constraint_exists(conn, "entry_media", "uq_entry_media_entry_checksum"):
+            op.drop_constraint("uq_entry_media_entry_checksum", "entry_media", type_="unique")
+
+        if _constraint_exists(conn, "entry_media", "check_media_entry_or_moment"):
+            op.drop_constraint("check_media_entry_or_moment", "entry_media", type_="check")
+
+        op.drop_column("entry_media", "entry_id")
+
+    # Step I: Drop entry columns that moved to moment
+    print("  - [Migrating] Step I: Dropping legacy entry columns...")
+    entry_columns_to_drop = [
+        "entry_date", "entry_datetime_utc", "entry_timezone",
+        "location_json", "latitude", "longitude",
+        "weather_json", "weather_summary",
+        "is_pinned", "prompt_id", "media_count",
+    ]
+    if is_sqlite:
+        conn = op.get_bind()
+        with op.batch_alter_table("entry") as batch_op:
+            # Drop ALL indexes that reference removed columns
+            # Based on schema discovery: entry_date, entry_datetime_utc, prompt_id, media_count, etc.
+            for idx_name in [
+                "idx_entries_journal_date",
+                "idx_entries_prompt_id",
+                "idx_entry_user_datetime",
+                "idx_entry_latitude_longitude",
+                "ix_entry_entry_date",
+                "ix_entry_entry_datetime_utc",
+                "ix_entry_media_count",
+                "ix_entry_prompt_id",
+            ]:
+                if _index_exists(conn, idx_name, table_name="entry"):
+                    batch_op.drop_index(idx_name)
+
+            # Drop FK for prompt_id if it exists
+            if _constraint_exists(conn, "entry", "fk_entry_prompt_id_prompt"):
+                batch_op.drop_constraint("fk_entry_prompt_id_prompt", type_="foreignkey")
+
+            for col_name in entry_columns_to_drop:
+                batch_op.drop_column(col_name)
+    else:
+        conn = op.get_bind()
+
+        # Drop indexes only if they exist
+        for idx_name in [
+            "idx_entries_journal_date", "idx_entries_prompt_id",
+            "idx_entry_user_datetime", "idx_entry_latitude_longitude",
+        ]:
+            if _index_exists(conn, idx_name):
+                op.drop_index(idx_name, table_name="entry")
+
+        # Drop FK for prompt_id only if it exists
+        if _constraint_exists(conn, "entry", "fk_entry_prompt_id_prompt"):
+            op.drop_constraint("fk_entry_prompt_id_prompt", "entry", type_="foreignkey")
+
+        for col_name in entry_columns_to_drop:
+            op.drop_column("entry", col_name)
+
+    # Step J: Install moment-first media_count triggers on entry_media.
+    print("  - [Migrating] Step J: Installing moment media count triggers...")
+    _install_moment_media_count_triggers(connection.dialect.name)
+
+    # Step K: Drop entry_tag_link table
+    print("  - [Migrating] Step K: Dropping legacy tables...")
+    op.drop_index("idx_entry_tag_link_tag_id", table_name="entry_tag_link")
+    op.drop_table("entry_tag_link")
 
     # --- g1h2i3j4k5l6_drop_legacy_mood_activity_logs.py ---
     op.drop_table("mood_log_activity_link")
@@ -1294,8 +2090,11 @@ def upgrade() -> None:
             UPDATE mood
             SET is_active = false
             WHERE user_id IS NULL
-              AND (key IS NULL OR key NOT IN ('awesome', 'good', 'meh', 'bad', 'awful'));
-
+              AND (key IS NULL OR key NOT IN ('awesome', 'good', 'meh', 'bad', 'awful'))
+            """
+        )
+        op.execute(
+            """
             INSERT INTO user_mood_preference (id, created_at, updated_at, user_id, mood_id, sort_order, is_hidden)
             SELECT gen_random_uuid(),
                    CURRENT_TIMESTAMP,
@@ -1309,7 +2108,7 @@ def upgrade() -> None:
             WHERE m.user_id IS NULL
               AND (m.key IS NULL OR m.key NOT IN ('awesome', 'good', 'meh', 'bad', 'awful'))
             ON CONFLICT (user_id, mood_id) DO UPDATE
-            SET is_hidden = EXCLUDED.is_hidden;
+            SET is_hidden = EXCLUDED.is_hidden
             """
         )
 
@@ -1385,10 +2184,13 @@ def upgrade() -> None:
     )
 
     if is_sqlite:
+        conn = op.get_bind()
+        has_ck = _constraint_exists(conn, "goal", "check_goal_target_days_per_week")
         with op.batch_alter_table("goal") as batch_op:
-            batch_op.drop_constraint(
-                "check_goal_target_days_per_week", type_="check"
-            )
+            if has_ck:
+                batch_op.drop_constraint(
+                    "check_goal_target_days_per_week", type_="check"
+                )
             batch_op.drop_column("target_days_per_week")
             batch_op.create_check_constraint(
                 "check_goal_target_count", "target_count >= 1"
@@ -1514,8 +2316,11 @@ def upgrade() -> None:
             unique=False,
         )
     else:
+        conn = op.get_bind()
+        has_uq = _constraint_exists(conn, "goal_log", "uq_goal_log_goal_date")
         with op.batch_alter_table("goal_log") as batch_op:
-            batch_op.drop_constraint("uq_goal_log_goal_date", type_="unique")
+            if has_uq:
+                batch_op.drop_constraint("uq_goal_log_goal_date", type_="unique")
             batch_op.create_unique_constraint(
                 "uq_goal_log_goal_period", ["goal_id", "period_start"]
             )
@@ -1677,9 +2482,9 @@ def upgrade() -> None:
 
     now = datetime.now(timezone.utc)
     group_rows = []
-    score_to_group_id: dict[int, uuid.UUID] = {}
+    score_to_group_id: dict[int, UUIDValue] = {}
     for score, name, position in TIER_GROUPS:
-        group_id = uuid.uuid4()
+        group_id = _new_uuid(is_sqlite=is_sqlite)
         score_to_group_id[score] = group_id
         group_rows.append(
             {
@@ -1705,11 +2510,11 @@ def upgrade() -> None:
             continue
         link_rows.append(
             {
-                "id": uuid.uuid4(),
+                "id": _new_uuid(is_sqlite=is_sqlite),
                 "created_at": now,
                 "updated_at": now,
                 "mood_group_id": group_id,
-                "mood_id": _as_uuid(mood_id),
+                "mood_id": _as_uuid(mood_id, is_sqlite=is_sqlite),
                 "position": int(position or 0),
             }
         )
@@ -1779,17 +2584,114 @@ def upgrade() -> None:
         ["user_id", "category_id", "position"],
     )
 
+    # --- harden moment-first constraints (folded from 1c7f9e2a4b6d) ---
+    _backfill_moment_logged_date_tz(connection)
+
+    # Safety net: ensure no NULL values remain before enforcing NOT NULL.
+    remaining_rows = connection.execute(
+        sa.text(
+            """
+            SELECT id, logged_at_utc, logged_timezone
+            FROM moment
+            WHERE logged_date_tz IS NULL
+            """
+        )
+    ).fetchall()
+    for row in remaining_rows:
+        fallback_date = _derive_local_date(row.logged_at_utc, row.logged_timezone)
+        if fallback_date is None:
+            fallback_date = datetime.now(timezone.utc).date()
+        connection.execute(
+            sa.text("UPDATE moment SET logged_date_tz = :logged_date_tz WHERE id = :moment_id"),
+            {"logged_date_tz": fallback_date, "moment_id": row.id},
+        )
+
+    null_count = connection.execute(
+        sa.text("SELECT COUNT(*) FROM moment WHERE logged_date_tz IS NULL")
+    ).scalar_one()
+    if null_count:
+        raise RuntimeError(
+            f"Cannot enforce NOT NULL on moment.logged_date_tz: {null_count} rows still NULL after backfill"
+        )
+
+    reinstall_moment_media_triggers = False
+    if is_sqlite:
+        # SQLite batch_alter recreates the table under _alembic_tmp_*.
+        # Drop media-count triggers that reference "moment" to avoid
+        # trigger parse failures while the table is temporarily renamed.
+        _remove_moment_media_count_triggers(connection.dialect.name)
+        reinstall_moment_media_triggers = True
+        with op.batch_alter_table("moment") as batch_op:
+            batch_op.alter_column("logged_date_tz", existing_type=sa.Date(), nullable=False)
+    else:
+        op.alter_column("moment", "logged_date_tz", existing_type=sa.Date(), nullable=False)
+
+    if reinstall_moment_media_triggers:
+        _install_moment_media_count_triggers(connection.dialect.name)
+
+    if not _index_exists(connection, "idx_moment_note", table_name="moment"):
+        op.create_index("idx_moment_note", "moment", ["note"], unique=False)
+
+    if not _constraint_exists(connection, "tag", "check_tag_name_lowercase"):
+        # Normalize historical rows before enforcing lowercase check constraint.
+        connection.execute(sa.text("UPDATE tag SET name = lower(name) WHERE name IS NOT NULL"))
+        if is_sqlite:
+            with op.batch_alter_table("tag") as batch_op:
+                batch_op.create_check_constraint(
+                    "check_tag_name_lowercase",
+                    "name = lower(name)",
+                )
+        else:
+            op.create_check_constraint(
+                "check_tag_name_lowercase",
+                "tag",
+                "name = lower(name)",
+            )
+
+    # --- rename entry_media -> moment_media (folded from 2e9b1a4c6d7f) ---
+    _rename_entry_media_to_moment_media(connection, is_sqlite)
+
+    # --- add display_path on moment media (folded from 06bc1e654274) ---
+    if _table_exists(connection, "moment_media") and not _column_exists(
+        connection, "moment_media", "display_path"
+    ):
+        op.add_column(
+            "moment_media",
+            sa.Column("display_path", sa.String(length=500), nullable=True),
+        )
+
 
 def downgrade() -> None:
     conn = op.get_bind()
     is_sqlite = conn.dialect.name == "sqlite"
 
+    # Reverse display_path addition before table rename reversal.
+    if _table_exists(conn, "moment_media") and _column_exists(
+        conn, "moment_media", "display_path"
+    ):
+        op.drop_column("moment_media", "display_path")
+
+    # Reverse folded table rename before any legacy downgrade logic touches media table names.
+    _rename_moment_media_to_entry_media(conn, is_sqlite)
+
+    if _constraint_exists(conn, "tag", "check_tag_name_lowercase"):
+        if is_sqlite:
+            with op.batch_alter_table("tag") as batch_op:
+                batch_op.drop_constraint("check_tag_name_lowercase", type_="check")
+        else:
+            op.drop_constraint("check_tag_name_lowercase", "tag", type_="check")
+
     # --- r8s9t0u1v2w3_add_goal_categories.py ---
     op.drop_index("idx_goal_user_category_position", table_name="goal")
     if is_sqlite:
+        conn = op.get_bind()
+        has_fk = _constraint_exists(conn, "goal", "fk_goal_category_id_goal_category")
+        has_idx = _index_exists(conn, "ix_goal_category_id", table_name="goal")
         with op.batch_alter_table("goal") as batch_op:
-            batch_op.drop_constraint("fk_goal_category_id_goal_category", type_="foreignkey")
-            batch_op.drop_index("ix_goal_category_id")
+            if has_fk:
+                batch_op.drop_constraint("fk_goal_category_id_goal_category", type_="foreignkey")
+            if has_idx:
+                batch_op.drop_index("ix_goal_category_id")
             batch_op.drop_column("category_id")
     else:
         op.drop_constraint("fk_goal_category_id_goal_category", "goal", type_="foreignkey")
@@ -1828,8 +2730,11 @@ def downgrade() -> None:
 
     op.drop_index("idx_goal_log_goal_period", table_name="goal_log")
     if is_sqlite:
+        conn = op.get_bind()
+        has_uq = _constraint_exists(conn, "goal_log", "uq_goal_log_goal_period")
         with op.batch_alter_table("goal_log") as batch_op:
-            batch_op.drop_constraint("uq_goal_log_goal_period", type_="unique")
+            if has_uq:
+                batch_op.drop_constraint("uq_goal_log_goal_period", type_="unique")
             batch_op.create_unique_constraint(
                 "uq_goal_log_goal_date", ["goal_id", "logged_date"]
             )
@@ -1853,8 +2758,11 @@ def downgrade() -> None:
 
     op.drop_index("idx_goal_user_position", table_name="goal")
     if is_sqlite:
+        conn = op.get_bind()
+        has_ck = _constraint_exists(conn, "goal", "check_goal_target_count")
         with op.batch_alter_table("goal") as batch_op:
-            batch_op.drop_constraint("check_goal_target_count", type_="check")
+            if has_ck:
+                batch_op.drop_constraint("check_goal_target_count", type_="check")
             batch_op.add_column(
                 sa.Column(
                     "target_days_per_week", sa.Integer(), nullable=False, server_default="1"
@@ -1909,9 +2817,14 @@ def downgrade() -> None:
     op.execute("DROP INDEX IF EXISTS idx_mood_user_position")
 
     if is_sqlite:
+        conn = op.get_bind()
+        has_ck = _constraint_exists(conn, "mood", "check_mood_score_range")
+        has_fk = _constraint_exists(conn, "mood", "fk_mood_user_id")
         with op.batch_alter_table("mood") as batch_op:
-            batch_op.drop_constraint("check_mood_score_range", type_="check")
-            batch_op.drop_constraint("fk_mood_user_id", type_="foreignkey")
+            if has_ck:
+                batch_op.drop_constraint("check_mood_score_range", type_="check")
+            if has_fk:
+                batch_op.drop_constraint("fk_mood_user_id", type_="foreignkey")
             batch_op.drop_column("color_value")
             batch_op.drop_column("is_active")
             batch_op.drop_column("position")
@@ -1969,8 +2882,11 @@ def downgrade() -> None:
     op.drop_table("goal")
 
     if is_sqlite:
+        conn = op.get_bind()
+        has_ck = _constraint_exists(conn, "user_settings", "check_start_of_week_day_valid")
         with op.batch_alter_table("user_settings") as batch_op:
-            batch_op.drop_constraint("check_start_of_week_day_valid", type_="check")
+            if has_ck:
+                batch_op.drop_constraint("check_start_of_week_day_valid", type_="check")
             batch_op.drop_column("start_of_week_day")
     else:
         op.drop_constraint("check_start_of_week_day_valid", "user_settings", type_="check")
@@ -2087,29 +3003,222 @@ def downgrade() -> None:
     )
 
     # --- f2a3b4c5d6e7_add_moment_architecture.py ---
+    json_type = postgresql.JSONB(astext_type=sa.Text()).with_variant(
+        sa.JSON(), "sqlite"
+    )
+
+    # Recreate entry_tag_link
+    op.create_table(
+        "entry_tag_link",
+        sa.Column("entry_id", sa.Uuid(), nullable=False),
+        sa.Column("tag_id", sa.Uuid(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.ForeignKeyConstraint(["entry_id"], ["entry.id"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["tag_id"], ["tag.id"], ondelete="CASCADE"),
+        sa.PrimaryKeyConstraint("entry_id", "tag_id"),
+    )
+    op.create_index(
+        "idx_entry_tag_link_tag_id", "entry_tag_link", ["tag_id"], unique=False
+    )
+
+    # Add back entry columns that moved to moment
+    entry_columns_to_restore = [
+        sa.Column("entry_date", sa.Date(), nullable=True),
+        sa.Column("entry_datetime_utc", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("entry_timezone", sa.String(length=100), nullable=True),
+        sa.Column("location_json", json_type, nullable=True),
+        sa.Column("latitude", sa.Float(), nullable=True),
+        sa.Column("longitude", sa.Float(), nullable=True),
+        sa.Column("weather_json", json_type, nullable=True),
+        sa.Column("weather_summary", sa.String(length=500), nullable=True),
+        sa.Column("is_pinned", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column("prompt_id", sa.Uuid(), nullable=True),
+        sa.Column("media_count", sa.Integer(), nullable=False, server_default="0"),
+    ]
     if is_sqlite:
-        with op.batch_alter_table("entry_media") as batch_op:
-            batch_op.drop_constraint("uq_entry_media_moment_checksum", type_="unique")
-            batch_op.drop_constraint("check_media_entry_or_moment", type_="check")
-            batch_op.drop_constraint(
-                "fk_entry_media_moment_id_moment", type_="foreignkey"
+        with op.batch_alter_table("entry") as batch_op:
+            for col in entry_columns_to_restore:
+                batch_op.add_column(col)
+    else:
+        for col in entry_columns_to_restore:
+            op.add_column("entry", col)
+
+    # Restore data from moment to entry
+    op.execute("""
+        UPDATE entry
+        SET
+            entry_date = (SELECT logged_date_tz FROM moment WHERE moment.id = entry.moment_id),
+            entry_datetime_utc = (SELECT logged_at_utc FROM moment WHERE moment.id = entry.moment_id),
+            entry_timezone = (SELECT logged_timezone FROM moment WHERE moment.id = entry.moment_id),
+            latitude = (SELECT latitude FROM moment WHERE moment.id = entry.moment_id),
+            longitude = (SELECT longitude FROM moment WHERE moment.id = entry.moment_id),
+            weather_summary = (SELECT weather_summary FROM moment WHERE moment.id = entry.moment_id),
+            is_pinned = (SELECT is_pinned FROM moment WHERE moment.id = entry.moment_id),
+            location_json = (SELECT location_json FROM moment WHERE moment.id = entry.moment_id),
+            weather_json = (SELECT weather_json FROM moment WHERE moment.id = entry.moment_id),
+            prompt_id = (SELECT prompt_id FROM moment WHERE moment.id = entry.moment_id),
+            media_count = (SELECT media_count FROM moment WHERE moment.id = entry.moment_id)
+        WHERE moment_id IS NOT NULL
+    """)
+
+    # Restore legacy indexes for entry
+    if is_sqlite:
+        with op.batch_alter_table("entry") as batch_op:
+            batch_op.create_index("idx_entries_journal_date", ["journal_id", "entry_date"])
+            batch_op.create_index("idx_entries_prompt_id", ["prompt_id"])
+            batch_op.create_index("idx_entry_user_datetime", ["user_id", "entry_datetime_utc"])
+            batch_op.create_index("idx_entry_latitude_longitude", ["latitude", "longitude"])
+    else:
+        op.create_index("idx_entries_journal_date", "entry", ["journal_id", "entry_date"])
+        op.create_index("idx_entries_prompt_id", "entry", ["prompt_id"])
+        op.create_index("idx_entry_user_datetime", "entry", ["user_id", "entry_datetime_utc"])
+        op.create_index("idx_entry_latitude_longitude", "entry", ["latitude", "longitude"])
+
+    # Backfill data from moment_tag_link to entry_tag_link (conflict-safe)
+    if is_sqlite:
+        op.execute(
+            sa.text(
+                """
+                INSERT OR IGNORE INTO entry_tag_link (entry_id, tag_id, created_at, updated_at)
+                SELECT e.id, mtl.tag_id, mtl.created_at, mtl.updated_at
+                FROM entry e
+                JOIN moment_tag_link mtl ON e.moment_id = mtl.moment_id
+                WHERE e.moment_id IS NOT NULL
+                """
             )
-            batch_op.drop_index("idx_entry_media_moment_id")
+        )
+    else:
+        op.execute(
+            sa.text(
+                """
+                INSERT INTO entry_tag_link (entry_id, tag_id, created_at, updated_at)
+                SELECT e.id, mtl.tag_id, mtl.created_at, mtl.updated_at
+                FROM entry e
+                JOIN moment_tag_link mtl ON e.moment_id = mtl.moment_id
+                WHERE e.moment_id IS NOT NULL
+                ON CONFLICT DO NOTHING
+                """
+            )
+        )
+
+    # Restore entry_media.entry_id, backfill from entry.moment_id, drop moment_id
+    if is_sqlite:
+        conn = op.get_bind()
+        has_uq = _constraint_exists(conn, "entry_media", "uq_entry_media_moment_checksum")
+        has_fk = _constraint_exists(conn, "entry_media", "fk_entry_media_moment_id_moment")
+        has_idx = _index_exists(conn, "idx_entry_media_moment_id", table_name="entry_media")
+        has_legacy_idx = _index_exists(conn, "idx_entry_media_entry_id", table_name="entry_media")
+        has_legacy_uq = _constraint_exists(conn, "entry_media", "uq_entry_media_entry_checksum")
+
+        with op.batch_alter_table("entry_media") as batch_op:
+            batch_op.add_column(sa.Column("entry_id", sa.Uuid(), nullable=True))
+
+        op.execute(
+            sa.text(
+                """
+                UPDATE entry_media
+                SET entry_id = (
+                    SELECT e.id
+                    FROM entry AS e
+                    WHERE e.moment_id = entry_media.moment_id
+                )
+                WHERE entry_id IS NULL
+                  AND moment_id IS NOT NULL
+                """
+            )
+        )
+
+        with op.batch_alter_table("entry_media") as batch_op:
+            if has_uq:
+                batch_op.drop_constraint("uq_entry_media_moment_checksum", type_="unique")
+            if has_fk:
+                batch_op.drop_constraint("fk_entry_media_moment_id_moment", type_="foreignkey")
+            if has_idx:
+                batch_op.drop_index("idx_entry_media_moment_id")
+            batch_op.create_foreign_key(
+                "fk_entry_media_entry_id_entry",
+                "entry",
+                ["entry_id"],
+                ["id"],
+                ondelete="CASCADE",
+            )
+            if not has_legacy_idx:
+                batch_op.create_index("idx_entry_media_entry_id", ["entry_id"], unique=False)
+            if not has_legacy_uq:
+                batch_op.create_unique_constraint(
+                    "uq_entry_media_entry_checksum",
+                    ["entry_id", "checksum"],
+                )
             batch_op.drop_column("moment_id")
             batch_op.alter_column("entry_id", existing_type=sa.Uuid(), nullable=False)
     else:
-        op.drop_constraint(
-            "uq_entry_media_moment_checksum", "entry_media", type_="unique"
+        op.add_column("entry_media", sa.Column("entry_id", sa.Uuid(), nullable=True))
+
+        op.execute(
+            sa.text(
+                """
+                UPDATE entry_media AS em
+                SET entry_id = e.id
+                FROM entry AS e
+                WHERE e.moment_id = em.moment_id
+                  AND em.entry_id IS NULL
+                """
+            )
         )
-        op.drop_constraint("check_media_entry_or_moment", "entry_media", type_="check")
-        op.drop_constraint(
-            "fk_entry_media_moment_id_moment", "entry_media", type_="foreignkey"
+        # Use IF EXISTS for PostgreSQL
+        op.execute("ALTER TABLE entry_media DROP CONSTRAINT IF EXISTS uq_entry_media_moment_checksum")
+        op.execute("ALTER TABLE entry_media DROP CONSTRAINT IF EXISTS fk_entry_media_moment_id_moment")
+        op.execute("DROP INDEX IF EXISTS idx_entry_media_moment_id")
+
+        op.create_foreign_key(
+            "fk_entry_media_entry_id_entry",
+            "entry_media",
+            "entry",
+            ["entry_id"],
+            ["id"],
+            ondelete="CASCADE",
         )
-        op.drop_index("idx_entry_media_moment_id", table_name="entry_media")
+        op.create_index("idx_entry_media_entry_id", "entry_media", ["entry_id"], unique=False)
+        op.create_unique_constraint(
+            "uq_entry_media_entry_checksum",
+            "entry_media",
+            ["entry_id", "checksum"],
+        )
         op.drop_column("entry_media", "moment_id")
-        op.alter_column(
-            "entry_media", "entry_id", existing_type=sa.Uuid(), nullable=False
-        )
+        op.alter_column("entry_media", "entry_id", existing_type=sa.Uuid(), nullable=False)
+
+    # Restore legacy import_jobs.entry_id ownership while entry.moment_id still exists.
+    _restore_import_jobs_entry_id(conn, is_sqlite)
+
+    # Drop entry.moment_id
+    if is_sqlite:
+        conn = op.get_bind()
+        has_uq = _constraint_exists(conn, "entry", "uq_entry_moment_id")
+        has_fk = _constraint_exists(conn, "entry", "fk_entry_moment_id_moment")
+        has_idx = _index_exists(conn, "idx_entry_moment_id", table_name="entry")
+        with op.batch_alter_table("entry") as batch_op:
+            if has_uq:
+                batch_op.drop_constraint("uq_entry_moment_id", type_="unique")
+            if has_fk:
+                batch_op.drop_constraint("fk_entry_moment_id_moment", type_="foreignkey")
+            if has_idx:
+                batch_op.drop_index("idx_entry_moment_id")
+            batch_op.drop_column("moment_id")
+    else:
+        # Use IF EXISTS for PostgreSQL
+        op.execute("ALTER TABLE entry DROP CONSTRAINT IF EXISTS uq_entry_moment_id")
+        op.execute("ALTER TABLE entry DROP CONSTRAINT IF EXISTS fk_entry_moment_id_moment")
+        op.execute("DROP INDEX IF EXISTS idx_entry_moment_id")
+        op.execute("ALTER TABLE entry DROP COLUMN IF EXISTS moment_id")
+
+    # Remove moment-first entry_media triggers and restore legacy entry-based triggers.
+    _remove_moment_media_count_triggers(conn.dialect.name)
+    _install_legacy_entry_media_count_triggers(conn.dialect.name)
+
+    # Drop moment_tag_link
+    op.drop_index("idx_moment_tag_link_tag_id", table_name="moment_tag_link")
+    op.drop_table("moment_tag_link")
 
     op.drop_index("uq_moment_mood_activity", table_name="moment_mood_activity")
     op.drop_index("uq_moment_mood_only", table_name="moment_mood_activity")
@@ -2123,17 +3232,24 @@ def downgrade() -> None:
     )
     op.drop_table("moment_mood_activity")
 
-    op.drop_index("idx_moment_user_logged_date", table_name="moment")
-    op.drop_index("idx_moment_user_logged_at", table_name="moment")
+    op.drop_index("idx_moment_prompt_id", table_name="moment")
+    op.drop_index("idx_moment_latitude_longitude", table_name="moment")
+    op.drop_index("idx_moment_user_logged_date_tz", table_name="moment")
+    op.drop_index("idx_moment_user_logged_at_utc", table_name="moment")
     op.drop_index(op.f("ix_moment_id"), table_name="moment")
     op.drop_table("moment")
 
     # --- abc2f3a4b5c6_add_activity_groups.py ---
     # ### commands auto generated by Alembic - adjusted manually ###
     if is_sqlite:
+        conn = op.get_bind()
+        has_fk = _constraint_exists(conn, "activity", "fk_activity_group_id")
+        has_idx = _index_exists(conn, "idx_activity_group_id", table_name="activity")
         with op.batch_alter_table("activity") as batch_op:
-            batch_op.drop_constraint("fk_activity_group_id", type_="foreignkey")
-            batch_op.drop_index("idx_activity_group_id")
+            if has_fk:
+                batch_op.drop_constraint("fk_activity_group_id", type_="foreignkey")
+            if has_idx:
+                batch_op.drop_index("idx_activity_group_id")
             batch_op.drop_column("group_id")
     else:
         op.drop_constraint("fk_activity_group_id", "activity", type_="foreignkey")

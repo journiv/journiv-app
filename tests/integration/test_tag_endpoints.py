@@ -3,8 +3,8 @@ Tag API integration tests.
 """
 
 from tests.integration.helpers import (
-    EndpointCase,
     UNKNOWN_UUID,
+    EndpointCase,
     assert_requires_authentication,
 )
 from tests.lib import ApiUser, JournivApiClient
@@ -13,7 +13,7 @@ from tests.lib import ApiUser, JournivApiClient
 def test_tag_crud_and_entry_associations(
     api_client: JournivApiClient, api_user: ApiUser, entry_factory
 ):
-    """Tags can be created, updated, attached to entries, and deleted."""
+    """Tags can be created, updated, attached to moments, and deleted."""
     entry = entry_factory(title="Tagged entry")
     base = api_client.create_tag(api_user.access_token, name="integration", color="#3B82F6")
 
@@ -27,50 +27,50 @@ def test_tag_crud_and_entry_associations(
     )
     assert updated["name"] == "integration-updated"
 
-    link = api_client.request(
+    tagged = api_client.request(
         "POST",
-        f"/tags/entry/{entry['id']}/tag/{base['id']}",
+        f"/moments/{entry['moment_id']}/tags",
         token=api_user.access_token,
-        expected=(201,),
+        json=["integration-updated"],
+        expected=(200,),
     ).json()
-    assert link["entry_id"] == entry["id"]
-    assert link["tag_id"] == base["id"]
+    assert any(tag["id"] == base["id"] for tag in tagged)
 
-    entry_tags = api_client.request(
-        "GET", f"/tags/entry/{entry['id']}", token=api_user.access_token
+    moment_tags = api_client.request(
+        "GET", f"/moments/{entry['moment_id']}/tags", token=api_user.access_token
     ).json()
-    assert any(tag["id"] == base["id"] for tag in entry_tags)
+    assert any(tag["id"] == base["id"] for tag in moment_tags)
 
     bulk_added = api_client.request(
         "POST",
-        f"/tags/entry/{entry['id']}/bulk",
+        f"/moments/{entry['moment_id']}/tags",
         token=api_user.access_token,
         json=["focus", "gratitude"],
         expected=(200,),
     ).json()
     assert {tag["name"] for tag in bulk_added} >= {"focus", "gratitude"}
 
-    entry_tags = api_client.request(
-        "GET", f"/tags/entry/{entry['id']}", token=api_user.access_token
+    moment_tags = api_client.request(
+        "GET", f"/moments/{entry['moment_id']}/tags", token=api_user.access_token
     ).json()
-    entry_tag_names = {tag["name"] for tag in entry_tags}
-    assert entry_tag_names.issuperset({"integration-updated", "focus", "gratitude"})
+    moment_tag_names = {tag["name"] for tag in moment_tags}
+    assert moment_tag_names.issuperset({"integration-updated", "focus", "gratitude"})
 
     entries_for_tag = api_client.request(
-        "GET", f"/tags/{base['id']}/entries", token=api_user.access_token
+        "GET", f"/tags/{base['id']}/moments", token=api_user.access_token
     ).json()
-    assert any(item["id"] == entry["id"] for item in entries_for_tag)
+    assert any(item["id"] == entry["moment_id"] for item in entries_for_tag)
 
     api_client.request(
         "DELETE",
-        f"/tags/entry/{entry['id']}/tag/{base['id']}",
+        f"/moments/{entry['moment_id']}/tags/{base['id']}",
         token=api_user.access_token,
         expected=(204,),
     )
-    entry_tags = api_client.request(
-        "GET", f"/tags/entry/{entry['id']}", token=api_user.access_token
+    moment_tags = api_client.request(
+        "GET", f"/moments/{entry['moment_id']}/tags", token=api_user.access_token
     ).json()
-    assert all(tag["id"] != base["id"] for tag in entry_tags)
+    assert all(tag["id"] != base["id"] for tag in moment_tags)
 
     api_client.delete_tag(api_user.access_token, base["id"])
     missing = api_client.request("GET", f"/tags/{base['id']}", token=api_user.access_token)
@@ -89,9 +89,10 @@ def test_tag_listing_search_and_statistics(
 
     api_client.request(
         "POST",
-        f"/tags/entry/{entry['id']}/tag/{alpha['id']}",
+        f"/moments/{entry['moment_id']}/tags",
         token=api_user.access_token,
-        expected=(201,),
+        json=["alpha"],
+        expected=(200,),
     )
 
     filtered = api_client.request(
@@ -150,20 +151,16 @@ def test_tag_endpoints_require_auth(api_client: JournivApiClient):
             EndpointCase("GET", "/tags/popular"),
             EndpointCase("GET", "/tags/search", params={"q": "focus"}),
             EndpointCase("GET", "/tags/analytics"),
-            EndpointCase("GET", f"/tags/entry/{UNKNOWN_UUID}"),
+            EndpointCase("GET", f"/moments/{UNKNOWN_UUID}/tags"),
             EndpointCase(
                 "POST",
-                f"/tags/entry/{UNKNOWN_UUID}/bulk",
+                f"/moments/{UNKNOWN_UUID}/tags",
                 json=["one"],
             ),
             EndpointCase(
-                "POST",
-                f"/tags/entry/{UNKNOWN_UUID}/tag/{UNKNOWN_UUID}",
-            ),
-            EndpointCase(
                 "DELETE",
-                f"/tags/entry/{UNKNOWN_UUID}/tag/{UNKNOWN_UUID}",
+                f"/moments/{UNKNOWN_UUID}/tags/{UNKNOWN_UUID}",
             ),
-            EndpointCase("GET", f"/tags/{UNKNOWN_UUID}/entries"),
+            EndpointCase("GET", f"/tags/{UNKNOWN_UUID}/moments"),
         ],
     )

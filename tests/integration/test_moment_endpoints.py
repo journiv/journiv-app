@@ -2,6 +2,7 @@
 Moment API integration coverage.
 """
 
+from tests.integration.helpers import sample_jpeg_bytes
 from tests.lib import ApiUser, JournivApiClient
 
 
@@ -109,7 +110,7 @@ def test_moment_search_by_entry_content(
 
     # Find the moment associated with the entry
     moments = api_client.list_moments(api_user.access_token)
-    entry_moment = next((m for m in moments if m.get("entry_id") == entry["id"]), None)
+    entry_moment = next((m for m in moments if (m.get("entry") or {}).get("id") == entry["id"]), None)
 
     assert entry_moment is not None, "Entry creation should have created a moment"
 
@@ -129,7 +130,7 @@ def test_moment_search_by_entry_title(
 
     # Find the auto-created moment
     moments = api_client.list_moments(api_user.access_token)
-    entry_moment = next((m for m in moments if m.get("entry_id") == entry["id"]), None)
+    entry_moment = next((m for m in moments if (m.get("entry") or {}).get("id") == entry["id"]), None)
     assert entry_moment is not None
 
     results = api_client.list_moments(api_user.access_token, search="Secret Title")
@@ -185,3 +186,44 @@ def test_moment_listing_supports_empty_mood_list(
 
     assert m1["id"] in result_ids
     assert m2["id"] in result_ids
+
+
+def test_moment_media_count_tracks_upload_and_delete(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    moment = moment_factory(note="With media")
+
+    uploaded = api_client.upload_media(
+        api_user.access_token,
+        moment_id=moment["id"],
+        filename="moment.jpg",
+        content=sample_jpeg_bytes(),
+        content_type="image/jpeg",
+        alt_text="count me",
+    )
+    media_id = uploaded["id"]
+
+    with_media = api_client.request(
+        "GET",
+        f"/moments/{moment['id']}",
+        token=api_user.access_token,
+        expected=(200,),
+    ).json()
+    assert with_media["media_count"] >= 1
+
+    api_client.request(
+        "DELETE",
+        f"/media/{media_id}",
+        token=api_user.access_token,
+        expected=(200,),
+    )
+
+    without_media = api_client.request(
+        "GET",
+        f"/moments/{moment['id']}",
+        token=api_user.access_token,
+        expected=(200,),
+    ).json()
+    assert without_media["media_count"] == 0

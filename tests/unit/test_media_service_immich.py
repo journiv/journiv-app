@@ -1,14 +1,15 @@
 
-import pytest
 import uuid
-from datetime import datetime
 from unittest.mock import MagicMock, patch
-from sqlmodel import Session, select
-from app.services.media_service import MediaService
-from app.models.entry import EntryMedia, Entry
+
+import pytest
+from sqlmodel import Session
+
+from app.models.enums import MediaType, UploadStatus
 from app.models.integration import Integration, IntegrationProvider
-from app.models.enums import UploadStatus, MediaType
-from app.schemas.media import MediaBatchSignRequest, MediaBatchSignItem
+from app.schemas.media import MediaBatchSignItem, MediaBatchSignRequest
+from app.services.media_service import MediaService
+
 
 @pytest.fixture
 def mock_session():

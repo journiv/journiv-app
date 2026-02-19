@@ -5,24 +5,24 @@ This script creates realistic data in the old version that will be
 validated after upgrading to the new version.
 """
 from datetime import date, timedelta
+
 from tests.lib import JournivApiError
 from tests.upgrade.helpers import (
-    register_user,
-    login,
-    create_journal,
     create_entry,
-    create_tag,
-    get_moods,
+    create_journal,
     create_moment,
-    upload_media,
-    get_user_settings,
-    wait_for_ready,
+    create_tag,
     get_entries,
     get_journals,
+    get_moments,
+    get_moods,
     get_tags,
-    get_moments
+    get_user_settings,
+    login,
+    register_user,
+    upload_media,
+    wait_for_ready,
 )
-
 
 # Test user credentials (stored for verification after upgrade)
 TEST_EMAIL = "upgrade-test@journiv.com"
@@ -57,18 +57,18 @@ def test_register_test_user():
     )
 
     assert "id" in result or "user" in result or "access_token" in result
-    print(f"User registered successfully")
+    print("User registered successfully")
 
 
 def test_seed_data():
     """Seed comprehensive test data into the old version."""
-    print(f"\n=== Seeding data into OLD version ===")
+    print("\n=== Seeding data into OLD version ===")
 
     # Login
     print(f"Logging in as {TEST_EMAIL}...")
     token = login(TEST_EMAIL, TEST_PASSWORD)
     assert token, "Failed to get access token"
-    print(f"Login successful")
+    print("Login successful")
 
     # Create 2 journals
     print("\nCreating journals...")
@@ -195,7 +195,7 @@ def test_seed_data():
     try:
         media = upload_media(
             token,
-            entry2_j1["id"],
+            entry2_j1["moment_id"],
             "upgrade-test-image.jpg",
             media_content,
             "Test image for upgrade validation"
@@ -209,7 +209,7 @@ def test_seed_data():
     print("\nVerifying user settings...")
     settings = get_user_settings(token)
     assert "email" in settings or "id" in settings
-    print(f"User settings accessible")
+    print("User settings accessible")
 
     # Final verification counts
     print("\n=== Verification Summary ===")

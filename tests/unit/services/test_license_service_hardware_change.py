@@ -6,13 +6,14 @@ Validates:
 - License info fetches from server
 - Reset uses DB install_id and always clears local state
 """
-import pytest
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.license_service import LicenseService
+import pytest
+
 from app.models.instance_detail import InstanceDetail
 from app.plus.exceptions import PlusNetworkError
-from app.schemas.license import LicenseRegisterResponse, LicenseInfoResponse
+from app.schemas.license import LicenseInfoResponse, LicenseRegisterResponse
+from app.services.license_service import LicenseService
 
 
 @pytest.fixture

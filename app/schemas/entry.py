@@ -2,7 +2,7 @@
 Entry schemas.
 """
 import uuid
-from datetime import date, datetime
+from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -83,93 +83,69 @@ class QuillDelta(BaseModel):
 
 
 class EntryBase(BaseModel):
-    """Base entry schema."""
+    """Base entry schema — content fields only. Metadata lives on Moment."""
     title: Optional[str] = None
     content_delta: Optional[QuillDelta] = None
-    entry_date: Optional[date] = None  # Allows backdating/future-dating entries
-    entry_datetime_utc: Optional[datetime] = None
-    entry_timezone: Optional[str] = None
-
-    # Structured location fields
-    location_json: Optional[Dict[str, Any]] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-
-    # Structured weather fields (Day One import)
-    weather_json: Optional[Dict[str, Any]] = None
-    weather_summary: Optional[str] = None
 
 
 class EntryCreate(EntryBase):
     """Entry creation schema."""
     journal_id: uuid.UUID
-    prompt_id: Optional[uuid.UUID] = None
+    moment_id: uuid.UUID
+    primary_mood_id: Optional[uuid.UUID] = None
 
 
 class EntryDraftCreate(EntryBase):
     """Draft entry creation schema."""
     journal_id: uuid.UUID
-    prompt_id: Optional[uuid.UUID] = None
+    moment_id: uuid.UUID
+    primary_mood_id: Optional[uuid.UUID] = None
 
 
 class EntryUpdate(BaseModel):
-    """Entry update schema."""
+    """Entry update schema — content fields only."""
     title: Optional[str] = None
     content_delta: Optional[QuillDelta] = None
-    entry_date: Optional[date] = None
-    entry_datetime_utc: Optional[datetime] = None
-    entry_timezone: Optional[str] = None
-
-    # Structured location fields
-    location_json: Optional[Dict[str, Any]] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-
-    # Structured weather fields
-    weather_json: Optional[Dict[str, Any]] = None
-    weather_summary: Optional[str] = None
-
-    is_pinned: Optional[bool] = None
     journal_id: Optional[uuid.UUID] = None
+    is_draft: Optional[bool] = None
 
 
 class EntryResponse(EntryBase, TimestampMixin):
     """Entry response schema."""
     id: uuid.UUID
     journal_id: uuid.UUID
-    prompt_id: Optional[uuid.UUID] = None
-    entry_date: date  # Override to make it required in response
-    entry_datetime_utc: datetime
-    entry_timezone: str
+    moment_id: uuid.UUID
     word_count: int
-    is_pinned: bool
     is_draft: bool = False
     user_id: uuid.UUID
     content_plain_text: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    media_count: int = 0
-    moment_id: Optional[uuid.UUID] = None
 
 
 class EntryPreviewResponse(TimestampMixin):
     """Entry preview schema for listings (truncated content)."""
     id: uuid.UUID
     title: Optional[str] = None
-    content_plain_text: Optional[str] = None  # Truncated by endpoint
+    content_plain_text: Optional[str] = None
     journal_id: uuid.UUID
+    moment_id: uuid.UUID
+    word_count: int = 0
+    is_draft: bool = False
     created_at: datetime
     updated_at: datetime
-    entry_date: date
-    entry_datetime_utc: datetime
-    entry_timezone: str
-    media_count: int = 0
+
+    @model_validator(mode="after")
+    def truncate_preview_content(self) -> "EntryPreviewResponse":
+        if self.content_plain_text and len(self.content_plain_text) > 280:
+            self.content_plain_text = self.content_plain_text[:280].rstrip() + "..."
+        return self
 
 
 
 
-class EntryMediaBase(BaseModel):
-    """Base entry media schema."""
+class MomentMediaBase(BaseModel):
+    """Base moment media schema."""
     media_type: MediaType
     file_path: Optional[str] = None
     original_filename: Optional[str] = None
@@ -185,11 +161,11 @@ class EntryMediaBase(BaseModel):
     file_metadata: Optional[str] = None
 
 
-class MediaBase(EntryMediaBase):
+class MediaBase(MomentMediaBase):
     """Shared media base schema."""
 
 
-class EntryMediaExternalFields(BaseModel):
+class MomentMediaExternalFields(BaseModel):
     """External provider fields (internal use)."""
     external_provider: Optional[str] = None
     external_asset_id: Optional[str] = None
@@ -198,23 +174,15 @@ class EntryMediaExternalFields(BaseModel):
     external_metadata: Optional[Dict[str, Any]] = None
 
 
-class EntryMediaCreate(EntryMediaBase, EntryMediaExternalFields):
-    """Entry media creation schema."""
-    entry_id: Optional[uuid.UUID] = None
-    moment_id: Optional[uuid.UUID] = None
+class MomentMediaCreate(MomentMediaBase, MomentMediaExternalFields):
+    """Moment media creation schema."""
+    moment_id: uuid.UUID
     checksum: Optional[str] = None
 
-    @model_validator(mode="after")
-    def validate_link_target(self) -> "EntryMediaCreate":
-        if self.entry_id is None and self.moment_id is None:
-            raise ValueError("entry_id or moment_id is required")
-        return self
 
-
-class EntryMediaCreateRequest(EntryMediaBase):
-    """Entry media creation schema for public API."""
-    entry_id: Optional[uuid.UUID] = None
-    moment_id: Optional[uuid.UUID] = None
+class MomentMediaCreateRequest(MomentMediaBase):
+    """Moment media creation schema for public API."""
+    moment_id: uuid.UUID
     checksum: Optional[str] = None
 
 
@@ -225,7 +193,7 @@ class MediaOrigin(BaseModel):
     external_url: Optional[str] = None
 
 
-class EntryMediaExternalResponseFields(BaseModel):
+class MomentMediaExternalResponseFields(BaseModel):
     """External provider fields (excluded from response serialization)."""
     external_provider: Optional[str] = Field(default=None, exclude=True)
     external_asset_id: Optional[str] = Field(default=None, exclude=True)
@@ -234,7 +202,7 @@ class EntryMediaExternalResponseFields(BaseModel):
     external_metadata: Optional[Dict[str, Any]] = Field(default=None, exclude=True)
 
 
-class MediaResponseBase(MediaBase, EntryMediaExternalResponseFields, TimestampMixin):
+class MediaResponseBase(MediaBase, MomentMediaExternalResponseFields, TimestampMixin):
     """Shared media response schema."""
     file_path: Optional[str] = Field(default=None, exclude=True)
     display_path: Optional[str] = Field(default=None, exclude=True)
@@ -268,16 +236,6 @@ class MediaResponseBase(MediaBase, EntryMediaExternalResponseFields, TimestampMi
         return self
 
 
-class EntryMediaResponse(MediaResponseBase):
-    """Entry media response schema."""
-    entry_id: uuid.UUID
-    moment_id: Optional[uuid.UUID] = None
-
-
 class MomentMediaResponse(MediaResponseBase):
-    """Moment media response schema."""
+    """Media response schema — all media is moment-owned."""
     moment_id: uuid.UUID
-    entry_id: Optional[uuid.UUID] = None
-
-
-MediaResponse = EntryMediaResponse | MomentMediaResponse

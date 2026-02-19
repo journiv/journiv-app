@@ -1,10 +1,9 @@
 """
 Unit tests for MediaService upload streaming behavior.
 """
-from io import BytesIO
-from datetime import date
-from pathlib import Path
 import uuid
+from io import BytesIO
+from pathlib import Path
 
 import pytest
 from fastapi import UploadFile
@@ -14,6 +13,7 @@ from app.models.base import BaseModel
 from app.models.entry import Entry
 from app.models.enums import JournalColor
 from app.models.journal import Journal
+from app.models.moment import Moment
 from app.models.user import User
 from app.services import media_service as media_service_module
 from app.services.media_service import MediaService
@@ -63,14 +63,22 @@ def test_entry(test_db: Session, test_user: User) -> Entry:
     test_db.commit()
     test_db.refresh(journal)
 
+    moment = Moment(
+        user_id=test_user.id,
+        logged_timezone="UTC",
+    )
+    test_db.add(moment)
+    test_db.commit()
+    test_db.refresh(moment)
+
     entry = Entry(
         journal_id=journal.id,
+        moment_id=moment.id,
         user_id=test_user.id,
         title="Entry",
         content_delta={"ops": [{"insert": "Test content\n"}]},
         content_plain_text="Test content",
         word_count=2,
-        entry_date=date.today(),
     )
     test_db.add(entry)
     test_db.commit()
@@ -154,9 +162,9 @@ async def test_upload_media_uses_streaming_path(tmp_path, test_db, test_user, te
     result = await service.upload_media(
         file=upload,
         user_id=test_user.id,
-        entry_id=test_entry.id,
+        moment_id=test_entry.moment_id,
         session=test_db,
     )
 
     media_record = result["media_record"]
-    assert media_record.entry_id == test_entry.id
+    assert media_record.moment_id == test_entry.moment_id

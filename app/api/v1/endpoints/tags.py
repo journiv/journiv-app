@@ -12,15 +12,16 @@ from app.core.database import get_session
 from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error
 from app.models.user import User
-from app.schemas.entry import EntryPreviewResponse
+from app.schemas.media_thumbnail import MomentMediaThumbnail
 from app.schemas.tag import (
-    EntryTagLinkResponse,
     TagAnalyticsResponse,
     TagCreate,
     TagDetailAnalyticsResponse,
+    TaggedMomentSummary,
     TagResponse,
     TagUpdate,
 )
+from app.services.media_service import MediaService
 from app.services.tag_service import TagService
 
 router = APIRouter(prefix="/tags", tags=["tags"])
@@ -120,11 +121,17 @@ async def search_tags(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
     q: str = Query(..., min_length=1),
-    limit: int = Query(20, ge=1, le=50)
+    limit: int = Query(20, ge=1, le=50),
+    include_unused: bool = Query(True),
 ):
     """Search tags by name."""
     tag_service = TagService(session)
-    tags = tag_service.search_tags(current_user.id, q, limit)
+    tags = tag_service.search_tags(
+        current_user.id,
+        q,
+        limit=limit,
+        include_unused=include_unused,
+    )
     return tags
 
 
@@ -392,7 +399,7 @@ async def merge_tags(
     """
     Merge source tag into target tag.
 
-    Moves all entry-tag links from source to target, then deletes source tag.
+    Moves all moment-tag links from source to target, then deletes source tag.
     Enforces case-normalization: prevents merging tags that differ only by case.
     """
     tag_service = TagService(session)
@@ -427,205 +434,64 @@ async def merge_tags(
         ) from None
 
 
-# Entry-Tag Association Operations
-@router.post(
-    "/entry/{entry_id}/tag/{tag_id}",
-    response_model=EntryTagLinkResponse,
-    status_code=status.HTTP_201_CREATED,
-    responses={
-        401: {"description": "Not authenticated"},
-        403: {"description": "Account inactive"},
-        404: {"description": "Tag or entry not found"},
-        409: {"description": "Tag already associated with entry"},
-        500: {"description": "Internal server error"},
-    }
-)
-async def add_tag_to_entry(
-    entry_id: uuid.UUID,
-    tag_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
-):
-    """Add a tag to an entry."""
-    tag_service = TagService(session)
-    try:
-        link = tag_service.add_tag_to_entry(entry_id, tag_id, current_user.id)
-        return link
-    except TagNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tag not found"
-        ) from None
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        ) from None
-    except Exception as e:
-        log_error(e, request_id="", user_email=current_user.email)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while adding tag to entry"
-        ) from None
-
-
-@router.delete(
-    "/entry/{entry_id}/tag/{tag_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-    responses={
-        401: {"description": "Not authenticated"},
-        403: {"description": "Account inactive"},
-        404: {"description": "Tag or entry not found"},
-        500: {"description": "Internal server error"},
-    }
-)
-async def remove_tag_from_entry(
-    entry_id: uuid.UUID,
-    tag_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
-):
-    """Remove a tag from an entry."""
-    tag_service = TagService(session)
-    try:
-        tag_service.remove_tag_from_entry(entry_id, tag_id, current_user.id)
-    except TagNotFoundError:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Tag not found"
-        ) from None
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        ) from None
-    except Exception as e:
-        log_error(e, request_id="", user_email=current_user.email)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while removing tag from entry"
-        ) from None
-
-
 @router.get(
-    "/entry/{entry_id}",
-    response_model=List[TagResponse],
-    responses={
-        401: {"description": "Not authenticated"},
-        403: {"description": "Account inactive"},
-        404: {"description": "Entry not found"},
-    }
-)
-async def get_entry_tags(
-    entry_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
-):
-    """Get all tags for an entry."""
-    tag_service = TagService(session)
-    try:
-        tags = tag_service.get_entry_tags(entry_id, current_user.id)
-        return tags
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        ) from None
-    except Exception as e:
-        log_error(e, request_id="", user_email=current_user.email)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while retrieving entry tags"
-        ) from None
-
-
-@router.post(
-    "/entry/{entry_id}/bulk",
-    response_model=List[TagResponse],
-    responses={
-        400: {"description": "Invalid tag names or empty list"},
-        401: {"description": "Not authenticated"},
-        403: {"description": "Account inactive"},
-        404: {"description": "Entry not found"},
-        500: {"description": "Internal server error"},
-    }
-)
-async def bulk_add_tags_to_entry(
-    entry_id: uuid.UUID,
-    tag_names: List[str],
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
-):
-    """
-    Add multiple tags to an entry by name.
-
-    Creates tags if they don't exist. Ignores duplicates.
-    """
-    if not tag_names or len(tag_names) == 0:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Tag names list cannot be empty"
-        )
-
-    tag_service = TagService(session)
-    try:
-        tags = tag_service.bulk_add_tags_to_entry(entry_id, tag_names, current_user.id)
-        return tags
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=str(e)
-        ) from None
-    except Exception as e:
-        log_error(e, request_id="", user_email=current_user.email)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while adding tags to entry"
-        ) from None
-
-
-@router.get(
-    "/{tag_id}/entries",
-    response_model=List[EntryPreviewResponse],
+    "/{tag_id}/moments",
+    response_model=List[TaggedMomentSummary],
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Tag not found"},
     }
 )
-async def get_entries_by_tag(
+async def get_moments_by_tag(
     tag_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
+    include_media: Optional[str] = Query(None),
 ):
     """
-    Get entries that have a specific tag.
+    Get moments that have a specific tag.
 
-    Returns entry previews with truncated content.
+    Returns moment summaries.
     """
     tag_service = TagService(session)
     try:
-        entries = tag_service.get_entries_by_tag(tag_id, current_user.id, limit, offset)
-        # Truncate content for preview
-        return [
-            EntryPreviewResponse(
-                id=entry.id,
-                title=entry.title or "Untitled",
-                content_plain_text=(
-                    (entry.content_plain_text or "")[:200] + "..."
-                    if len(entry.content_plain_text or "") > 200
-                    else (entry.content_plain_text or "")
-                ),
-                journal_id=entry.journal_id,
-                created_at=entry.created_at,
-                updated_at=entry.updated_at,
-                entry_date=entry.entry_date,
-                entry_datetime_utc=entry.entry_datetime_utc,
-                entry_timezone=entry.entry_timezone
+        if include_media not in (None, "thumbnails"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="include_media must be 'thumbnails' when provided",
             )
-            for entry in entries
+
+        moments = tag_service.get_moments_by_tag(tag_id, current_user.id, limit, offset)
+        media_counts: dict[uuid.UUID, int] = {}
+        media_map: dict[uuid.UUID, list] = {}
+        if include_media == "thumbnails" and moments:
+            media_service = MediaService(session)
+            media_counts, media_map = media_service.get_moment_media_thumbnails(
+                session,
+                current_user.id,
+                [moment.id for moment in moments],
+            )
+        return [
+            TaggedMomentSummary(
+                id=moment.id,
+                logged_at_utc=moment.logged_at_utc,
+                logged_date_tz=moment.logged_date_tz,
+                note=moment.note,
+                primary_mood_id=moment.primary_mood_id,
+                media_count=media_counts.get(moment.id, moment.media_count),
+                media=[
+                    MomentMediaThumbnail(
+                        id=thumb.id,
+                        media_type=thumb.media_type,
+                        signed_thumbnail_url=thumb.signed_thumbnail_url,
+                    )
+                    for thumb in media_map.get(moment.id, [])
+                ],
+            )
+            for moment in moments
         ]
     except TagNotFoundError:
         raise HTTPException(

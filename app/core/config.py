@@ -111,6 +111,7 @@ class Settings(BaseSettings):
     celery_accept_content: List[str] = Field(default_factory=lambda: ["json"])
     celery_timezone: str = "UTC"
     celery_enable_utc: bool = True
+    celery_task_always_eager: bool = False
 
     # Import/Export Configuration
     import_export_max_file_size_mb: int = 500  # Max size for import/export files

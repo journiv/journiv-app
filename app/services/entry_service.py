@@ -1,38 +1,35 @@
 """
 Entry service for managing journal entries.
 """
-import logging
 import uuid
-from datetime import date, datetime
-from pathlib import Path
-from typing import List, Optional
-from zoneinfo import ZoneInfo
+from typing import Any, List, Optional, cast
 
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import joinedload
+from sqlalchemy.orm.attributes import QueryableAttribute
 from sqlmodel import Session, col, select
 
 from app.core.exceptions import (
     EntryNotFoundError,
     JournalNotFoundError,
+    MediaNotFoundError,
     ValidationError,
 )
 from app.core.logging_config import log_debug, log_error, log_info, log_warning
-from app.core.time_utils import ensure_utc, local_date_for_user, to_utc, utc_now
-from app.models.entry import Entry, EntryMedia
-from app.models.entry_tag_link import EntryTagLink
-from app.models.integration import IntegrationProvider
+from app.core.time_utils import utc_now
+from app.models.entry import Entry
 from app.models.journal import Journal
+from app.models.moment import MomentMedia
 from app.schemas.entry import (
     EntryCreate,
     EntryDraftCreate,
-    EntryMediaCreate,
-    EntryMediaCreateRequest,
     EntryUpdate,
 )
+from app.services.media_service import MediaService
+from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
 from app.utils.quill_delta import extract_media_sources, extract_plain_text
 
 DEFAULT_ENTRY_PAGE_LIMIT = 50
-MAX_ENTRY_PAGE_LIMIT = 100
 
 
 class EntryService:
@@ -42,24 +39,14 @@ class EntryService:
         self.session = session
 
     @staticmethod
-    def _normalize_limit(limit: int) -> int:
-        """Normalize pagination limit to valid range."""
-        if limit <= 0:
-            return DEFAULT_ENTRY_PAGE_LIMIT
-        return min(limit, MAX_ENTRY_PAGE_LIMIT)
+    def _entry_moment_relation() -> QueryableAttribute[Any]:
+        return cast(QueryableAttribute[Any], Entry.moment)
 
-    @staticmethod
-    def _escape_like_pattern(query: str) -> str:
-        """Escape SQL LIKE wildcards (% and _) in user query."""
-        if not query:
-            return query
-        return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-
-    def _get_owned_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, *, include_deleted: bool = False) -> Entry:
+    def _get_owned_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
         statement = select(Entry).where(
             Entry.id == entry_id,
             Entry.user_id == user_id,
-        )
+        ).options(joinedload(self._entry_moment_relation()))
 
         entry = self.session.exec(statement).first()
         if not entry:
@@ -76,387 +63,6 @@ class EntryService:
             log_error(exc)
             raise
 
-    @staticmethod
-    def _derive_entry_date(entry_datetime_utc: datetime, timezone_name: str) -> date:
-        """Determine the local date for an entry based on stored timezone."""
-        return local_date_for_user(entry_datetime_utc, timezone_name or "UTC")
-
-    def _normalize_entry_timestamp(
-        self,
-        *,
-        entry_date: Optional[date],
-        entry_datetime_utc: Optional[datetime],
-        entry_timezone: Optional[str],
-        fallback_timezone: str
-    ) -> tuple[datetime, str, date]:
-        timezone_name = (entry_timezone or fallback_timezone or "UTC").strip() or "UTC"
-
-        if entry_datetime_utc is not None:
-            normalized_dt = ensure_utc(entry_datetime_utc)
-        elif entry_date is not None:
-            local_now = datetime.now(ZoneInfo(timezone_name))
-            local_dt = datetime.combine(entry_date, local_now.time())
-            normalized_dt = to_utc(local_dt, timezone_name)
-        else:
-            normalized_dt = utc_now()
-
-        derived_date = self._derive_entry_date(normalized_dt, timezone_name)
-        return normalized_dt, timezone_name, derived_date
-
-    def _refresh_entry_date(self, entry: Entry) -> None:
-        utc_dt = ensure_utc(entry.entry_datetime_utc)
-        entry.entry_date = self._derive_entry_date(utc_dt, entry.entry_timezone)
-
-    # ========== Media Deletion Helper Methods ==========
-
-    def _get_immich_asset_usage_count(
-        self,
-        asset_id: str,
-        user_id: uuid.UUID,
-        exclude_media_id: Optional[uuid.UUID] = None
-    ) -> int:
-        """Count how many entries use a specific Immich asset.
-
-        Args:
-            asset_id: External Immich asset ID
-            user_id: User ID to scope the search
-            exclude_media_id: Optional media ID to exclude from count
-
-        Returns:
-            Number of other entries using this asset
-        """
-        from sqlalchemy import func
-
-        statement = (
-            select(func.count(EntryMedia.id))
-            .join(Entry)
-            .where(
-                EntryMedia.external_asset_id == asset_id,
-                EntryMedia.external_provider == "immich",
-                Entry.user_id == user_id
-            )
-        )
-
-        if exclude_media_id:
-            statement = statement.where(EntryMedia.id != exclude_media_id)
-
-        return self.session.exec(statement).one()
-
-    def _should_remove_immich_asset(
-        self,
-        media: EntryMedia,
-        user_id: uuid.UUID
-    ) -> bool:
-        """Determine if an Immich asset should be removed from album.
-
-        Only removes if:
-        1. It's an Immich link-only asset (no local file)
-        2. No other entries use this asset
-
-        Args:
-            media: Media record to check
-            user_id: User ID for authorization scope
-
-        Returns:
-            True if asset should be removed from album
-        """
-        if not (media.external_provider == "immich"
-                and not media.file_path
-                and media.external_asset_id):
-            return False
-
-        usage_count = self._get_immich_asset_usage_count(
-            media.external_asset_id,
-            user_id,
-            exclude_media_id=media.id
-        )
-        return usage_count == 0
-
-    def _build_file_deletion_info(
-        self,
-        media: EntryMedia,
-        force: bool = False
-    ) -> Optional[dict]:
-        """Build file deletion metadata from media record.
-
-        Args:
-            media: Media record
-            force: Whether to force delete (bypass reference counting)
-
-        Returns:
-            Dict with file_path, checksum, thumbnail_path, force if media has file, None otherwise
-        """
-        if not (media.file_path and (media.checksum or force)):
-            return None
-
-        return {
-            'file_path': media.file_path,
-            'checksum': media.checksum,  # May be None when force=True
-            'thumbnail_path': media.thumbnail_path,
-            'force': force
-        }
-
-    def _delete_thumbnail(
-        self,
-        thumbnail_path: str,
-        media_root: Path
-    ) -> None:
-        """Delete a thumbnail file safely.
-
-        Args:
-            thumbnail_path: Relative path to thumbnail
-            media_root: Root media directory
-        """
-        try:
-            full_path = (media_root / thumbnail_path).resolve()
-            media_root_resolved = media_root.resolve()
-            # Security check: ensure path is within media_root
-            if full_path.exists() and full_path.is_relative_to(media_root_resolved):
-                full_path.unlink(missing_ok=True)
-        except Exception as e:
-            log_warning(f"Failed to delete thumbnail {thumbnail_path}: {e}")
-
-    def _delete_media_file(
-        self,
-        file_info: dict,
-        user_id: uuid.UUID,
-        media_root: Path,
-        session: Session
-    ) -> None:
-        """Delete a single media file with reference counting.
-
-        Args:
-            file_info: File deletion metadata dict with keys: file_path, checksum, thumbnail_path, force
-            user_id: User ID for logging
-            media_root: Root media directory
-            session: Database session to use
-        """
-        from app.services.media_storage_service import MediaStorageService
-
-        try:
-            # Delete thumbnail first if exists
-            if file_info['thumbnail_path']:
-                self._delete_thumbnail(file_info['thumbnail_path'], media_root)
-
-            # Delete media file with deduplication awareness
-            storage_service = MediaStorageService(media_root, session)
-            storage_service.delete_media(
-                relative_path=file_info['file_path'],
-                checksum=file_info['checksum'],
-                user_id=str(user_id),
-                force=file_info['force']
-            )
-        except Exception as e:
-            log_warning(f"Failed to delete media file {file_info['file_path']}: {e}")
-
-    def _trigger_immich_album_removal(
-        self,
-        user_id: uuid.UUID,
-        asset_ids: list[str]
-    ) -> None:
-        """Trigger Celery task to remove assets from Immich album.
-
-        Args:
-            user_id: User ID
-            asset_ids: List of Immich asset IDs to remove
-        """
-        if not asset_ids:
-            return
-
-        try:
-            from app.core.celery_app import celery_app
-            celery_app.send_task(
-                "app.integrations.tasks.remove_assets_from_album_task",
-                args=[str(user_id), "immich", asset_ids]
-            )
-        except Exception as exc:
-            log_warning(f"Failed to trigger asset removal task: {exc}")
-
-    # ========== Main Media Deletion Methods ==========
-
-    def _delete_media_files_post_commit(
-        self, user_id: uuid.UUID, media_files: list[dict], immich_assets: list[str]
-    ) -> None:
-        """Delete media files and trigger Immich asset removal after database commit.
-
-        Uses a fresh session to ensure accurate reference counts after commit.
-
-        Args:
-            user_id: User ID for logging and Immich removal
-            media_files: List of file deletion info dicts with keys: file_path, checksum, thumbnail_path, force
-            immich_assets: List of Immich asset IDs to remove from album
-        """
-        if not media_files and not immich_assets:
-            return
-
-        from app.core.config import get_settings
-        from app.core.database import get_session_context
-
-        try:
-            settings = get_settings()
-            media_root = Path(settings.media_root).resolve()
-
-            # Use fresh session for accurate reference counts after commit
-            with get_session_context() as session:
-                for file_info in media_files:
-                    self._delete_media_file(file_info, user_id, media_root, session)
-
-                self._trigger_immich_album_removal(user_id, immich_assets)
-
-        except Exception as e:
-            log_warning(f"Error during post-commit media cleanup: {e}")
-
-    def _delete_media_internal(
-        self, media_id: uuid.UUID, user_id: uuid.UUID, should_commit: bool = True, media: Optional[EntryMedia] = None
-    ) -> tuple[bool, Optional[dict], Optional[str]]:
-        """Internal media deletion without authorization checks.
-
-        Args:
-            media_id: Media ID to delete
-            user_id: User ID for logging/Immich album removal
-            should_commit: Whether to commit transaction (False when caller will commit, True for direct deletion)
-            media: Pre-fetched media object (optional, will query if not provided)
-
-        Returns:
-            Tuple of (success, file_deletion_info, asset_id_to_remove):
-            - success: True if DB deletion succeeded
-            - file_deletion_info: File deletion metadata (for post-commit deletion when should_commit=False)
-            - asset_id_to_remove: Immich asset ID to remove (for post-commit removal when should_commit=False)
-        """
-        # Get the media record if not provided
-        if not media:
-            media = self.session.exec(
-                select(EntryMedia).where(EntryMedia.id == media_id)
-            ).first()
-            if not media:
-                return False, None, None
-
-        # Collect metadata BEFORE deleting from database
-        should_remove_from_album = self._should_remove_immich_asset(media, user_id)
-        # Force delete if no checksum (legacy records without reference counting)
-        force_delete = media.checksum is None
-        file_deletion_info = self._build_file_deletion_info(media, force=force_delete)
-        asset_id_to_remove = media.external_asset_id if should_remove_from_album else None
-
-        try:
-            log_debug(
-                "Deleting media",
-                media_id=str(media.id),
-                user_id=str(user_id),
-                file_path=media.file_path
-            )
-
-            # Delete from database
-            self.session.delete(media)
-
-            # Commit if requested (for direct deletion endpoint)
-            if should_commit:
-                try:
-                    self._commit()
-                except SQLAlchemyError as exc:
-                    self.session.rollback()
-                    log_error(exc)
-                    raise
-
-                # Delete files AFTER commit with fresh session for accurate reference counts
-                files = [file_deletion_info] if file_deletion_info else []
-                assets = [asset_id_to_remove] if asset_id_to_remove else []
-                self._delete_media_files_post_commit(user_id, files, assets)
-
-                log_info("Media deleted", media_id=str(media.id), user_id=str(user_id))
-                return True, None, None
-            else:
-                # Return deletion info for caller to handle post-commit
-                log_debug(
-                    "Media DB record deleted (files pending post-commit)",
-                    media_id=str(media.id),
-                    user_id=str(user_id)
-                )
-                return True, file_deletion_info, asset_id_to_remove
-
-        except SQLAlchemyError:
-            # SQLAlchemy errors already handled by _commit() above
-            raise
-        except Exception as e:
-            # Rollback transaction for any other errors
-            self.session.rollback()
-            log_error(f"Error deleting media {media.id}: {e}")
-            raise
-
-    def _delete_orphaned_media(
-        self, entry_id: uuid.UUID, user_id: uuid.UUID, old_delta: Optional[dict], new_delta: dict
-    ) -> tuple[list[dict], list[str]]:
-        """Delete media files that were removed from the entry delta.
-
-        Handles mixed source formats: old_delta may contain file paths, new_delta contains normalized media IDs.
-        A media is truly orphaned only if neither its file_path nor its ID appear in new_sources.
-
-        Args:
-            entry_id: ID of the entry being updated
-            user_id: ID of the user
-            old_delta: Previous delta content (may be None)
-            new_delta: Updated delta content
-
-        Returns:
-            Tuple of (media_files_to_delete, immich_assets_to_remove)
-        """
-        if not old_delta or not new_delta:
-            return [], []
-
-        old_sources = set(extract_media_sources(old_delta))
-        new_sources = set(extract_media_sources(new_delta))
-        orphaned_sources = old_sources - new_sources
-
-        if not orphaned_sources:
-            return [], []
-
-        # Get all media records for this entry
-        media_items = self.session.exec(
-            select(EntryMedia).where(EntryMedia.entry_id == entry_id)
-        ).all()
-
-        # Build source -> media mapping (by file_path and media ID)
-        source_to_media = {}
-        for media in media_items:
-            if media.file_path:
-                source_to_media[media.file_path] = media
-            source_to_media[str(media.id)] = media
-
-        # Collect deletion info BEFORE deleting from database
-        media_files_to_delete = []
-        immich_assets_to_remove = []
-
-        for source in orphaned_sources:
-            media = source_to_media.get(source)
-            if not media:
-                continue
-
-            # Check if media is still referenced in new_sources
-            if media.file_path in new_sources or str(media.id) in new_sources:
-                continue  # Still referenced, don't delete
-
-            # Collect file deletion info
-            # Force delete if no checksum (legacy records without reference counting)
-            force_delete = media.checksum is None
-            file_info = self._build_file_deletion_info(media, force=force_delete)
-            if file_info:
-                media_files_to_delete.append(file_info)
-
-            # Check for Immich asset removal
-            if self._should_remove_immich_asset(media, user_id):
-                immich_assets_to_remove.append(media.external_asset_id)
-
-            # Delete from database
-            self.session.delete(media)
-            log_debug(
-                "Orphaned media deleted",
-                media_id=str(media.id),
-                user_id=str(user_id),
-                file_path=media.file_path
-            )
-
-        return media_files_to_delete, immich_assets_to_remove
-
     def create_entry(
         self,
         user_id: uuid.UUID,
@@ -467,11 +73,11 @@ class EntryService:
         commit: bool = True,
         run_side_effects: bool = True,
     ) -> Entry:
-        """Create a new entry in a journal.
+        """Create a new entry linked to a moment.
 
         Args:
             user_id: User ID creating the entry
-            entry_data: Entry creation data
+            entry_data: Entry creation data (content + journal_id + moment_id)
 
         Returns:
             Created entry instance
@@ -485,6 +91,12 @@ class EntryService:
         if not journal:
             log_warning(f"Journal not found for user {user_id}: {entry_data.journal_id}")
             raise JournalNotFoundError("Journal not found")
+
+        try:
+            get_owned_moment(self.session, user_id, entry_data.moment_id)
+        except MomentNotFoundError:
+            log_warning(f"Moment not found for user {user_id}: {entry_data.moment_id}")
+            raise ValidationError("Moment not found") from None
 
         if entry_data.content_delta is not None:
             delta_payload = entry_data.content_delta.model_dump()
@@ -502,44 +114,35 @@ class EntryService:
         )
         word_count = len(plain_text.split()) if plain_text else 0
 
-        from app.services.user_service import UserService
-        user_service = UserService(self.session)
-        user_tz = user_service.get_user_timezone(user_id)
-
-        entry_dt_utc, entry_tz, entry_date = self._normalize_entry_timestamp(
-            entry_date=entry_data.entry_date,
-            entry_datetime_utc=entry_data.entry_datetime_utc,
-            entry_timezone=entry_data.entry_timezone,
-            fallback_timezone=user_tz
-        )
-
         entry = Entry(
             title=entry_data.title,
             content_delta=entry_data.content_delta.model_dump() if entry_data.content_delta else None,
             content_plain_text=plain_text or None,
-            entry_date=entry_date,
-            entry_datetime_utc=entry_dt_utc,
-            entry_timezone=entry_tz,
             journal_id=entry_data.journal_id,
-            prompt_id=entry_data.prompt_id,
+            moment_id=entry_data.moment_id,
             word_count=word_count,
             user_id=user_id,
             is_draft=is_draft,
-            # Structured location/weather fields
-            location_json=entry_data.location_json,
-            latitude=entry_data.latitude,
-            longitude=entry_data.longitude,
-            weather_json=entry_data.weather_json,
-            weather_summary=entry_data.weather_summary,
         )
 
         try:
             self.session.add(entry)
+            self.session.flush()
+            if not skip_moment_sync:
+                from app.services.moment_service import MomentService
+                moment_service = MomentService(self.session)
+                moment_service.ensure_moment_for_entry(
+                    user_id,
+                    entry,
+                    primary_mood_id=getattr(entry_data, "primary_mood_id", None),
+                    commit=False,
+                )
             if commit:
                 self._commit()
                 self.session.refresh(entry)
-            else:
-                self.session.flush()
+        except ValidationError:
+            self.session.rollback()
+            raise
         except SQLAlchemyError as exc:
             self.session.rollback()
             log_error(exc)
@@ -549,8 +152,13 @@ class EntryService:
             f"Entry created for user {user_id} in journal {entry.journal_id}: {entry.id} (draft={is_draft})"
         )
 
-        if run_side_effects and commit:
-            self._run_entry_side_effects(entry, user_id, skip_moment_sync=skip_moment_sync)
+        if run_side_effects:
+            self._run_entry_side_effects(
+                entry,
+                user_id,
+                skip_moment_sync=True,
+                primary_mood_id=getattr(entry_data, "primary_mood_id", None),
+            )
 
         return entry
 
@@ -560,6 +168,7 @@ class EntryService:
         user_id: uuid.UUID,
         *,
         skip_moment_sync: bool = False,
+        primary_mood_id: Optional[uuid.UUID] = None,
     ) -> None:
         try:
             from app.services.journal_service import JournalService
@@ -572,54 +181,28 @@ class EntryService:
             log_error(exc)
 
         # Update writing streak analytics (only for published entries)
-        if not entry.is_draft:
+        if not entry.is_draft and entry.moment_id:
             try:
+                from app.models.moment import Moment
                 from app.services.analytics_service import AnalyticsService
-                analytics_service = AnalyticsService(self.session)
-                analytics_service.update_writing_streak(user_id, entry.entry_date)
+                moment = self.session.get(Moment, entry.moment_id)
+                if moment and moment.logged_date_tz:
+                    analytics_service = AnalyticsService(self.session)
+                    analytics_service.update_writing_streak(user_id, moment.logged_date_tz)
             except Exception as exc:
                 log_error(exc)
 
         if not skip_moment_sync:
-            # Ensure moment exists for this entry (even for drafts)
             try:
                 from app.services.moment_service import MomentService
                 moment_service = MomentService(self.session)
                 moment_service.ensure_moment_for_entry(
                     user_id,
                     entry,
-                    activity_ids=None,
+                    primary_mood_id=primary_mood_id,
                 )
             except Exception as exc:
                 log_error(exc)
-
-    def finalize_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
-        """Finalize a draft entry."""
-        entry = self._get_owned_entry(entry_id, user_id)
-
-        if not entry.is_draft:
-            return entry
-
-        entry.is_draft = False
-        entry.updated_at = utc_now()
-        self._refresh_entry_date(entry)
-        plain_text = extract_plain_text(entry.content_delta)
-        entry.content_plain_text = plain_text or None
-        entry.word_count = len(plain_text.split()) if plain_text else 0
-
-        try:
-            self.session.add(entry)
-            self._commit()
-            self.session.refresh(entry)
-        except SQLAlchemyError as exc:
-            self.session.rollback()
-            log_error(exc)
-            raise
-
-        self._run_entry_side_effects(entry, user_id, skip_moment_sync=False)
-
-        log_info(f"Entry finalized for user {user_id}: {entry.id}")
-        return entry
 
     def get_entry_by_id(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Entry]:
         """Get an entry by ID, ensuring it belongs to the user."""
@@ -635,57 +218,61 @@ class EntryService:
         user_id: uuid.UUID,
         limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
         offset: int = 0,
-        include_pinned: bool = True,
         include_drafts: bool = False,
-        hydrate_media: bool = True,
+        include_pinned: bool = True,
     ) -> List[Entry]:
-        """Get entries for a specific journal.
-
-        The media_count field is automatically synchronized by database triggers.
-        """
+        """Get entries for a specific journal."""
+        from app.models.moment import Moment
         from app.services.journal_service import JournalService
+
         JournalService(self.session)._get_owned_journal(journal_id, user_id)
 
-        statement = select(Entry).where(Entry.journal_id == journal_id)
+        # Join with Moment to access pinned status; every entry must have a moment.
+        statement = select(Entry).join(Moment, col(Entry.moment_id) == col(Moment.id))
+        statement = statement.where(Entry.journal_id == journal_id)
+        statement = statement.options(
+            joinedload(self._entry_moment_relation()).selectinload(Moment.tags),  # type: ignore[arg-type]
+            joinedload(self._entry_moment_relation()).selectinload(Moment.mood_activity_links),  # type: ignore[arg-type]
+            joinedload(self._entry_moment_relation()).selectinload(Moment.media),  # type: ignore[arg-type]
+        )
 
         if not include_drafts:
             statement = statement.where(col(Entry.is_draft).is_(False))
 
         if not include_pinned:
-            statement = statement.where(col(Entry.is_pinned).is_(False))
+            # Filter out pinned moments
+            statement = statement.where(col(Moment.is_pinned).is_(False))
+            # Standard sort by created_at
+            statement = statement.order_by(col(Entry.created_at).desc())
+        else:
+            # Sort pinned items first, then by date
+            statement = statement.order_by(
+                col(Moment.is_pinned).desc(),  # True (pinned) comes before False
+                col(Entry.created_at).desc(),
+            )
 
-        statement = statement.order_by(
-            col(Entry.is_pinned).desc(),
-            col(Entry.entry_datetime_utc).desc()
-        ).offset(offset).limit(limit)
+        statement = statement.offset(offset).limit(limit)
 
-        entries = list(self.session.exec(statement))
-        if hydrate_media:
-            return [self._hydrate_entry(entry, user_id) for entry in entries]
-        return entries
+        return list(self.session.exec(statement))
 
     def get_user_entries(
         self,
         user_id: uuid.UUID,
         limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
         offset: int = 0,
-        hydrate_media: bool = True,
         include_drafts: bool = False,
     ) -> List[Entry]:
-        """Get all entries for a user across all journals, sorted by entry_datetime_utc descending."""
+        """Get all entries for a user across all journals."""
         statement = select(Entry).where(
             Entry.user_id == user_id,
-        ).order_by(col(Entry.entry_datetime_utc).desc())
+        ).options(joinedload(self._entry_moment_relation())).order_by(col(Entry.created_at).desc())
 
         if not include_drafts:
             statement = statement.where(col(Entry.is_draft).is_(False))
 
         statement = statement.offset(offset).limit(limit)
 
-        entries = list(self.session.exec(statement))
-        if hydrate_media:
-            return [self._hydrate_entry(entry, user_id) for entry in entries]
-        return entries
+        return list(self.session.exec(statement))
 
     def get_user_drafts(
         self,
@@ -693,30 +280,27 @@ class EntryService:
         limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
         offset: int = 0,
         journal_id: Optional[uuid.UUID] = None,
-        hydrate_media: bool = True,
     ) -> List[Entry]:
         """Get all draft entries for a user, newest updated first."""
         statement = select(Entry).where(
             Entry.user_id == user_id,
             col(Entry.is_draft).is_(True),
-        )
+        ).options(joinedload(self._entry_moment_relation()))
 
         if journal_id:
             statement = statement.where(Entry.journal_id == journal_id)
 
         statement = statement.order_by(
             col(Entry.updated_at).desc(),
-            col(Entry.entry_datetime_utc).desc(),
         ).offset(offset).limit(limit)
 
-        entries = list(self.session.exec(statement))
-        if hydrate_media:
-            return [self._hydrate_entry(entry, user_id) for entry in entries]
-        return entries
+        return list(self.session.exec(statement))
 
     def update_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, entry_data: EntryUpdate) -> Entry:
-        """Update an entry."""
+        """Update an entry — content fields only. Metadata lives on Moment."""
         entry = self._get_owned_entry(entry_id, user_id)
+        was_draft = entry.is_draft
+        media_service = MediaService(self.session)
 
         # Initialize variables for post-commit cleanup
         orphaned_files = []
@@ -726,7 +310,6 @@ class EntryService:
         old_journal_id = None
         new_journal_id = None
         if entry_data.journal_id is not None and entry_data.journal_id != entry.journal_id:
-            # Validate new journal exists and belongs to user
             new_journal_statement = select(Journal).where(
                 Journal.id == entry_data.journal_id,
                 Journal.user_id == user_id
@@ -736,23 +319,21 @@ class EntryService:
                 log_warning(f"Target journal not found for user {user_id}: {entry_data.journal_id}")
                 raise JournalNotFoundError("Target journal not found")
 
-            # Prevent moving into archived journals
             if new_journal.is_archived:
                 log_warning(f"Cannot move entry {entry_id} to archived journal {new_journal.id}")
                 raise ValidationError("Cannot move entry to an archived journal")
 
-            # Store old and new journal IDs for stats recalculation
             old_journal_id = entry.journal_id
             new_journal_id = entry_data.journal_id
             entry.journal_id = new_journal_id
             log_info(f"Entry {entry_id} journal changed from {old_journal_id} to {new_journal_id}")
 
-        # Update fields
         if entry_data.title is not None:
             entry.title = entry_data.title
+        if entry_data.is_draft is not None:
+            entry.is_draft = entry_data.is_draft
         if entry_data.content_delta is not None:
             from app.core.media_signing import normalize_delta_media_ids
-            from app.models.entry import EntryMedia
 
             delta_payload = entry_data.content_delta.model_dump()
             sources = extract_media_sources(delta_payload)
@@ -763,9 +344,12 @@ class EntryService:
                 media_source_count=len(sources),
                 redacted_media_ids=[f"{s[:8]}..." for s in sources[:5]],
             )
-            media_items = self.session.exec(
-                select(EntryMedia).where(EntryMedia.entry_id == entry.id)
-            ).all()
+            # Get media via moment_id
+            media_items = []
+            if entry.moment_id:
+                media_items = self.session.exec(
+                    select(MomentMedia).where(MomentMedia.moment_id == entry.moment_id)
+                ).all()
             log_debug(
                 "Entry update: existing media items",
                 entry_id=str(entry.id),
@@ -776,14 +360,11 @@ class EntryService:
                     [
                         media
                         for media in media_items
-                        if media.external_provider == IntegrationProvider.IMMICH.value
+                        if media.external_provider == "immich"
                         and media.external_asset_id
                     ]
                 ),
             )
-            # Expunge media items so they are not flushed on commit.
-            # Prevents overwriting file_path set by a concurrent Celery worker
-            # (e.g. Immich copy-mode import running in parallel).
             for media in media_items:
                 self.session.expunge(media)
             normalized_delta = normalize_delta_media_ids(delta_payload, list(media_items)) or {}
@@ -796,49 +377,16 @@ class EntryService:
                 redacted_media_ids=[f"{s[:8]}..." for s in normalized_sources[:5]],
             )
 
-            # Delete media that was removed from the delta (collects metadata, deletes DB records)
-            orphaned_files, orphaned_immich_assets = self._delete_orphaned_media(
-                entry.id, user_id, entry.content_delta or {}, normalized_delta
-            )
+            if entry.moment_id:
+                # Delete media that was removed from the delta
+                orphaned_files, orphaned_immich_assets = media_service.delete_orphaned_media_for_delta(
+                    entry.moment_id, user_id, entry.content_delta or {}, normalized_delta
+                )
 
             entry.content_delta = normalized_delta
             plain_text = extract_plain_text(normalized_delta)
             entry.content_plain_text = plain_text or None
             entry.word_count = len(plain_text.split()) if plain_text else 0
-        if entry_data.entry_timezone is not None:
-            tz_value = (entry_data.entry_timezone or "UTC").strip() or "UTC"
-            entry.entry_timezone = tz_value
-        timestamp_changed = False
-
-        if entry_data.entry_datetime_utc is not None:
-            entry.entry_datetime_utc = ensure_utc(entry_data.entry_datetime_utc)
-            timestamp_changed = True
-
-        if entry_data.entry_date is not None:
-            timezone_name = entry.entry_timezone or "UTC"
-            base_dt = ensure_utc(entry.entry_datetime_utc)
-            local_current = base_dt.astimezone(ZoneInfo(timezone_name))
-            target_local = datetime.combine(entry_data.entry_date, local_current.time())
-            entry.entry_datetime_utc = to_utc(target_local, timezone_name)
-            timestamp_changed = True
-
-        if timestamp_changed or entry_data.entry_timezone is not None:
-            self._refresh_entry_date(entry)
-
-        # Update structured location/weather fields
-        if entry_data.location_json is not None:
-            entry.location_json = entry_data.location_json
-        if entry_data.latitude is not None:
-            entry.latitude = entry_data.latitude
-        if entry_data.longitude is not None:
-            entry.longitude = entry_data.longitude
-        if entry_data.weather_json is not None:
-            entry.weather_json = entry_data.weather_json
-        if entry_data.weather_summary is not None:
-            entry.weather_summary = entry_data.weather_summary
-
-        if entry_data.is_pinned is not None:
-            entry.is_pinned = entry_data.is_pinned
 
         entry.updated_at = utc_now()
         try:
@@ -851,16 +399,16 @@ class EntryService:
             raise
 
         # Delete orphaned media files AFTER successful commit
-        self._delete_media_files_post_commit(user_id, orphaned_files, orphaned_immich_assets)
+        media_service.delete_media_files_post_commit(
+            user_id, orphaned_files, orphaned_immich_assets
+        )
 
         # Recalculate stats for both journals if journal was changed
         if old_journal_id is not None and new_journal_id is not None:
             try:
                 from app.services.journal_service import JournalService
                 journal_service = JournalService(self.session)
-                # Recalculate old journal stats
                 journal_service.recalculate_journal_entry_count(old_journal_id, user_id)
-                # Recalculate new journal stats
                 journal_service.recalculate_journal_entry_count(new_journal_id, user_id)
             except JournalNotFoundError:
                 log_warning(f"Journal missing during entry update recount for user {user_id}")
@@ -869,114 +417,26 @@ class EntryService:
             except Exception as exc:
                 log_error(exc)
 
+        # Draft -> published transition is treated as finalize.
+        if was_draft and not entry.is_draft:
+            self._run_entry_side_effects(entry, user_id, skip_moment_sync=True)
+
         log_info(f"Entry updated for user {user_id}: {entry.id}")
-
-        if (
-            timestamp_changed
-            or entry_data.entry_timezone is not None
-            or entry_data.entry_date is not None
-            or entry_data.location_json is not None
-            or entry_data.weather_json is not None
-            or entry_data.latitude is not None
-            or entry_data.longitude is not None
-        ):
-            try:
-                from app.services.moment_service import MomentService
-                moment_service = MomentService(self.session)
-                moment = moment_service.ensure_moment_for_entry(user_id, entry)
-                moment.logged_at = entry.entry_datetime_utc
-                moment.logged_date = entry.entry_date
-                moment.logged_timezone = entry.entry_timezone
-                moment.location_data = entry.location_json
-                moment.weather_data = entry.weather_json
-                moment.updated_at = utc_now()
-                self.session.add(moment)
-                self._commit()
-            except Exception as exc:
-                log_error(exc)
-                # Don't fail entry update if activity linking fails
-
         return entry
 
-    async def delete_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-        """Hard delete an entry and its related records."""
+    def delete_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """
+        Hard delete an entry.
+
+        Note: The associated Moment and its context (media, tags, mood, etc.) are NOT deleted.
+        This effectively "reverts" a detailed entry back to a "Quick Log" (Moment without Entry).
+        """
         entry = self._get_owned_entry(entry_id, user_id)
-
-        # Hard delete related EntryMedia records
-        from app.services.media_service import MediaService
-        from app.services.media_storage_service import MediaStorageService
-
-        media_statement = select(EntryMedia).where(EntryMedia.entry_id == entry_id)
-        media_records = self.session.exec(media_statement).all()
-
-        media_service = MediaService()
-        # Note: We'll create storage service AFTER commit when reference counts are accurate
-        media_files_to_delete = []
-
-        # Collect linked assets and check if they're used in other entries BEFORE deletion
-        # This is critical because once we delete the media records, we can't query for remaining references
-        linked_asset_ids = [
-            media.external_asset_id
-            for media in media_records
-            if media.external_provider == "immich" and not media.file_path and media.external_asset_id
-        ]
-
-        linked_assets_to_remove = []
-        if linked_asset_ids:
-            # Single query: count occurrences of each asset across all user entries (excluding current entry)
-            from sqlalchemy import func
-            count_statement = (
-                select(EntryMedia.external_asset_id, func.count(EntryMedia.id).label('count'))
-                .where(
-                    col(EntryMedia.external_asset_id).in_(linked_asset_ids),
-                    EntryMedia.external_provider == "immich",
-                    EntryMedia.entry_id != entry_id
-                )
-                .join(Entry)
-                .where(Entry.user_id == user_id)
-                .group_by(EntryMedia.external_asset_id)
-            )
-
-            # Get assets that are used in other entries
-            asset_counts = self.session.exec(count_statement).all()
-            assets_in_use = {asset_id for asset_id, count in asset_counts if count > 0}
-
-            # Only remove assets that are NOT in use elsewhere
-            linked_assets_to_remove = [aid for aid in linked_asset_ids if aid not in assets_in_use]
-
-        for media in media_records:
-            # Collect media info for reference-counted deletion BEFORE deleting from DB
-            if media.file_path:
-                media_files_to_delete.append({
-                    'file_path': media.file_path,
-                    'checksum': media.checksum,  # May be None for older records
-                    'thumbnail_path': media.thumbnail_path,
-                    'force': media.checksum is None  # Force delete if no checksum
-                })
-
-            self.session.delete(media)
-
-        # Hard delete related EntryTagLink records
-        tag_link_statement = select(EntryTagLink).where(EntryTagLink.entry_id == entry_id)
-        tag_link_records = self.session.exec(tag_link_statement).all()
-        for tag_link in tag_link_records:
-            self.session.delete(tag_link)
 
         # Store journal_id for recount before deleting entry
         journal_id = entry.journal_id
 
-        # Delete associated moment if it exists (BEFORE deleting entry so we can find it)
-        try:
-            from app.models.moment import Moment
-            moment = self.session.exec(
-                select(Moment).where(Moment.entry_id == entry_id)
-            ).first()
-            if moment:
-                self.session.delete(moment)
-        except Exception as exc:
-            log_warning(f"Failed to delete associated moment for entry {entry_id}: {exc}")
-
-        # Hard delete the entry
+        # Hard delete the entry only — moment, media, and tags remain on the moment
         self.session.delete(entry)
 
         try:
@@ -985,18 +445,6 @@ class EntryService:
             self.session.rollback()
             log_error(exc)
             raise
-
-        # Trigger removal from Immich album for linked assets (only those not used elsewhere)
-        # This must happen AFTER commit to ensure the background task sees the committed state
-        if linked_assets_to_remove:
-            try:
-                from app.core.celery_app import celery_app
-                celery_app.send_task(
-                    "app.integrations.tasks.remove_assets_from_album_task",
-                    args=[str(user_id), "immich", linked_assets_to_remove]
-                )
-            except Exception as exc:
-                log_warning(f"Failed to trigger album asset removal task: {exc}")
 
         try:
             from app.services.journal_service import JournalService
@@ -1008,237 +456,15 @@ class EntryService:
         except Exception as exc:
             log_error(exc)
 
-
-
-        # Recalculate writing streak statistics after entry is deleted
-        # This ensures analytics reflect the correct entry counts
         try:
             from app.services.analytics_service import AnalyticsService
             analytics_service = AnalyticsService(self.session)
             analytics_service.recalculate_writing_streak_stats(user_id)
         except Exception as exc:
-            # Log error but don't fail the deletion
             log_warning(f"Failed to update writing streak stats after entry deletion: {exc}")
-
-        # Delete physical media files from disk using reference counting
-        # Create storage service with fresh session AFTER commit to get accurate reference counts
-        from app.core.database import get_session_context
-
-        for media_info in media_files_to_delete:
-            try:
-                # Create a new session for reference counting (after DB records are deleted)
-                with get_session_context() as fresh_session:
-                    media_storage_service = MediaStorageService(media_service.media_root, fresh_session)
-                    # Delete main file with reference counting
-                    # Force delete if no checksum (can't do reference counting without checksum)
-                    media_storage_service.delete_media(
-                        relative_path=media_info['file_path'],
-                        checksum=media_info['checksum'],
-                        user_id=str(user_id),
-                        force=media_info.get('force', False)
-                    )
-
-                # Delete thumbnail if it exists (thumbnails are not deduplicated)
-                if media_info['thumbnail_path']:
-                    self._delete_thumbnail(media_info['thumbnail_path'], media_service.media_root)
-            except Exception as exc:
-                log_warning(f"Failed to delete media file {media_info['file_path']} after entry deletion: {exc}")
 
         log_info(f"Entry hard-deleted for user {user_id}: {entry_id}")
         return True
-
-    def toggle_pin(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
-        """Toggle pin status of an entry."""
-        entry = self._get_owned_entry(entry_id, user_id)
-
-        entry.is_pinned = not entry.is_pinned
-        entry.updated_at = utc_now()
-        try:
-            self.session.add(entry)
-            self._commit()
-            self.session.refresh(entry)
-        except SQLAlchemyError as exc:
-            self.session.rollback()
-            log_error(exc)
-            raise
-
-        log_info(f"Entry pin toggled for user {user_id}: {entry.id} -> {entry.is_pinned}")
-        return entry
-
-    def search_entries(
-        self,
-        user_id: uuid.UUID,
-        query: str,
-        journal_id: Optional[uuid.UUID] = None,
-        limit: int = DEFAULT_ENTRY_PAGE_LIMIT,
-        offset: int = 0,
-        include_drafts: bool = False,
-        hydrate_media: bool = True,
-    ) -> List[Entry]:
-        """Search entries by content."""
-        statement = select(Entry).where(
-            Entry.user_id == user_id,
-            col(Entry.content_plain_text).ilike(f"%{self._escape_like_pattern(query)}%", escape="\\")
-        )
-
-        if not include_drafts:
-            statement = statement.where(col(Entry.is_draft).is_(False))
-
-        if journal_id:
-            statement = statement.where(Entry.journal_id == journal_id)
-
-        statement = statement.order_by(col(Entry.entry_datetime_utc).desc()).offset(offset).limit(limit)
-        entries = list(self.session.exec(statement))
-        if hydrate_media:
-            return [self._hydrate_entry(entry, user_id) for entry in entries]
-        return entries
-
-    def get_entries_by_date_range(
-        self,
-        user_id: uuid.UUID,
-        start_date: date,
-        end_date: date,
-        journal_id: Optional[uuid.UUID] = None,
-        include_drafts: bool = False,
-        hydrate_media: bool = True,
-    ) -> List[Entry]:
-        """Get entries within a date range based on entry_date."""
-        statement = select(Entry).where(
-            Entry.user_id == user_id,
-            Entry.entry_date >= start_date,
-            Entry.entry_date <= end_date
-        )
-
-        if not include_drafts:
-            statement = statement.where(col(Entry.is_draft).is_(False))
-
-        if journal_id:
-            statement = statement.where(Entry.journal_id == journal_id)
-
-        statement = statement.order_by(col(Entry.entry_datetime_utc).desc())
-        entries = list(self.session.exec(statement))
-        if hydrate_media:
-            return [self._hydrate_entry(entry, user_id) for entry in entries]
-        return entries
-
-    def _hydrate_entry(self, entry: Entry, user_id: uuid.UUID) -> Entry:
-        """
-        Hydrate media UUIDs in content_delta to signed URLs.
-
-        Optimization: Skip traversal if media_count == 0.
-        """
-        if entry.media_count == 0 or not entry.content_delta:
-            return entry
-
-        from app.core.media_signing import attach_signed_urls_to_delta
-        from app.models.entry import EntryMedia
-        from app.models.integration import Integration, IntegrationProvider
-        from app.schemas.entry import QuillDelta
-
-        media = self.session.exec(
-            select(EntryMedia).where(EntryMedia.entry_id == entry.id)
-        ).all()
-
-        immich_integration = self.session.exec(
-            select(Integration)
-            .where(Integration.user_id == user_id)
-            .where(Integration.provider == IntegrationProvider.IMMICH)
-        ).first()
-        immich_base_url = immich_integration.base_url if immich_integration else None
-
-        delta_dict = attach_signed_urls_to_delta(
-            entry.content_delta,
-            list(media),
-            str(user_id),
-            external_base_url=immich_base_url,
-        )
-
-        if delta_dict:
-            entry.content_delta = QuillDelta.model_validate(delta_dict).model_dump()
-
-        return entry
-
-    def add_media_to_entry(
-        self,
-        entry_id: uuid.UUID,
-        user_id: uuid.UUID,
-        media_data: EntryMediaCreate | EntryMediaCreateRequest
-    ) -> EntryMedia:
-        """Add media to an entry."""
-        # Verify the entry belongs to the user
-        entry = self._get_owned_entry(entry_id, user_id)
-        moment_id = None
-        try:
-            from app.models.moment import Moment
-            moment = self.session.exec(
-                select(Moment).where(Moment.entry_id == entry.id, Moment.user_id == user_id)
-            ).first()
-            moment_id = moment.id if moment else None
-        except Exception:
-            logging.exception(
-                "Failed to resolve moment for entry media add: entry_id=%s user_id=%s",
-                entry_id,
-                user_id,
-            )
-            moment_id = None
-
-        media = EntryMedia(
-            entry_id=entry_id,
-            moment_id=moment_id,
-            media_type=media_data.media_type,
-            file_path=media_data.file_path,
-            original_filename=media_data.original_filename,
-            file_size=media_data.file_size,
-            mime_type=media_data.mime_type,
-            thumbnail_path=media_data.thumbnail_path,
-            display_path=media_data.display_path,
-            duration=media_data.duration,
-            width=media_data.width,
-            height=media_data.height,
-            alt_text=media_data.alt_text,
-            upload_status=media_data.upload_status,
-            file_metadata=media_data.file_metadata,
-            checksum=media_data.checksum,
-            external_provider=getattr(media_data, "external_provider", None),
-            external_asset_id=getattr(media_data, "external_asset_id", None),
-            external_url=getattr(media_data, "external_url", None),
-            external_created_at=getattr(media_data, "external_created_at", None),
-            external_metadata=getattr(media_data, "external_metadata", None),
-        )
-
-        try:
-            self.session.add(media)
-            self._commit()
-            self.session.refresh(media)
-        except SQLAlchemyError as exc:
-            self.session.rollback()
-            log_error(exc)
-            raise
-
-        log_info(f"Media added to entry {entry_id} for user {user_id}: {media.id}")
-
-        # Trigger addition to Immich album for linked assets
-        if media.external_provider == "immich" and not media.file_path and media.external_asset_id:
-            try:
-                from app.core.celery_app import celery_app
-                celery_app.send_task(
-                    "app.integrations.tasks.add_assets_to_album_task",
-                    args=[str(user_id), "immich", [media.external_asset_id]]
-                )
-            except Exception as exc:
-                log_warning(f"Failed to trigger album asset addition task: {exc}")
-
-        return media
-
-    def get_entry_media(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> List[EntryMedia]:
-        """Get all media for an entry."""
-        # Verify the entry belongs to the user
-        self._get_owned_entry(entry_id, user_id)
-
-        statement = select(EntryMedia).where(
-            EntryMedia.entry_id == entry_id,
-        )
-        return list(self.session.exec(statement))
 
     def delete_entry_media(self, media_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """Hard delete an entry media file.
@@ -1253,15 +479,11 @@ class EntryService:
         Raises:
             EntryNotFoundError: If media doesn't exist or doesn't belong to user's entry
         """
-        # Get the media and verify it belongs to user's entry
-        statement = select(EntryMedia).join(Entry).where(
-            EntryMedia.id == media_id,
-            Entry.user_id == user_id,
-        )
-        media = self.session.exec(statement).first()
+        try:
+            return MediaService(self.session).delete_media_by_id_sync(media_id, user_id)
+        except MediaNotFoundError as exc:
+            raise EntryNotFoundError("Media not found") from exc
 
-        if not media:
-            raise EntryNotFoundError("Media not found")
-
-        success, _, _ = self._delete_media_internal(media_id, user_id, should_commit=True, media=media)
-        return success
+    def finalize_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
+        """Finalize a draft entry by marking is_draft=False via standard update flow."""
+        return self.update_entry(entry_id, user_id, EntryUpdate(is_draft=False))

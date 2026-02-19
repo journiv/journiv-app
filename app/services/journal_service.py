@@ -21,7 +21,7 @@ class JournalService:
     def __init__(self, session: Session):
         self.session = session
 
-    def _get_owned_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID, *, include_deleted: bool = False) -> Journal:
+    def _get_owned_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> Journal:
         """Retrieve a journal ensuring ownership, raising when missing."""
         statement = select(Journal).where(
             Journal.id == journal_id,
@@ -81,16 +81,13 @@ class JournalService:
         )
         return self.session.exec(statement).first()
 
-    def get_user_journals(self, user_id: uuid.UUID, include_archived: bool = False) -> List[Journal]:
-        """
-        Get all journals for a user with custom ordering.
-
-        Ordering logic: favorites first (by position ASC), then regular journals (by position ASC),
-        with created_at DESC as fallback for NULL positions.
-        """
-        statement = select(Journal).where(
-            Journal.user_id == user_id,
-        )
+    def get_user_journals(
+        self,
+        user_id: uuid.UUID,
+        include_archived: bool = False,
+    ) -> List[Journal]:
+        """Get all journals for a user."""
+        statement = select(Journal).where(Journal.user_id == user_id)
 
         if not include_archived:
             statement = statement.where(col(Journal.is_archived).is_(False))
@@ -134,22 +131,13 @@ class JournalService:
         log_info(f"Journal updated for {user_id}: {journal.id}")
         return journal
 
-    async def delete_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-        """Hard delete a journal and all related entries and media."""
+    def delete_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """
+        Hard delete a journal and its entries while preserving moments as quick logs.
+
+        In moment-first architecture, deleting entries must not delete their moments.
+        """
         journal = self._get_owned_journal(journal_id, user_id)
-
-        # Get all entries in this journal
-        from app.models.entry import Entry
-        from app.services.entry_service import EntryService
-
-        entries = self.session.exec(
-            select(Entry).where(Entry.journal_id == journal_id)
-        ).all()
-
-        # Delete each entry (which handles media deletion, Immich cleanup, etc.)
-        entry_service = EntryService(self.session)
-        for entry in entries:
-            await entry_service.delete_entry(entry.id, user_id)
 
         # Hard delete the journal itself
         self.session.delete(journal)
@@ -161,7 +149,22 @@ class JournalService:
             log_error(exc)
             raise
 
-        log_info(f"Journal and related entries/media hard-deleted for {user_id}: {journal_id}")
+        # Recalculate user-level streak once after successful deletion.
+        try:
+            from app.services.analytics_service import AnalyticsService
+
+            AnalyticsService(self.session).recalculate_writing_streak_stats(user_id)
+        except Exception as exc:
+            log_warning(f"Failed to update writing streak stats after journal deletion: {exc}")
+            try:
+                self.session.rollback()
+            except Exception:
+                # Session cleanup is best-effort only.
+                pass
+
+        log_info(
+            f"Journal deleted and entries removed; moments preserved as quick logs for {user_id}: {journal_id}"
+        )
         return True
     def get_favorite_journals(self, user_id: uuid.UUID) -> List[Journal]:
         """
@@ -271,14 +274,18 @@ class JournalService:
         """
         from app.models.entry import Entry
 
-        journal = self._get_owned_journal(journal_id, user_id, include_deleted=True)
+        journal = self._get_owned_journal(journal_id, user_id)
+
+        from app.models.moment import Moment
 
         stats = self.session.exec(
             select(
                 func.count(Entry.id).label("count"),
                 func.sum(Entry.word_count).label("total_words"),
-                func.max(Entry.entry_datetime_utc).label("last_created")
-            ).where(
+                func.max(Moment.logged_at_utc).label("last_created")
+            )
+            .join(Moment, Entry.moment_id == Moment.id)
+            .where(
                 Entry.journal_id == journal_id,
                 col(Entry.is_draft).is_(False)
             )

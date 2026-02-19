@@ -9,7 +9,6 @@ from typing import Any, Dict
 import pytest
 
 from app.core.time_utils import utc_now
-
 from tests.integration.helpers import EndpointCase, assert_requires_authentication
 from tests.lib import ApiUser, JournivApiClient
 
@@ -67,9 +66,9 @@ def analytics_dataset(
     journal_entry_counts: Dict[str, int] = defaultdict(int)
     journal_word_totals: Dict[str, int] = defaultdict(int)
 
-    def _register_entry(entry_date: date, words: int, journal_id: str) -> None:
+    def _register_entry(logged_date: date, words: int, journal_id: str) -> None:
         nonlocal total_entries, total_words, current_month_entries, current_month_words, last_month_entries
-        iso_date = entry_date.isoformat()
+        iso_date = logged_date.isoformat()
         day_stats = entries_by_day.setdefault(iso_date, {"entry_count": 0, "total_words": 0})
         day_stats["entry_count"] += 1
         day_stats["total_words"] += words
@@ -79,23 +78,23 @@ def analytics_dataset(
 
         total_entries += 1
         total_words += words
-        if entry_date >= month_start:
+        if logged_date >= month_start:
             current_month_entries += 1
             current_month_words += words
-        elif last_month_start <= entry_date < month_start:
+        elif last_month_start <= logged_date < month_start:
             last_month_entries += 1
 
-    def _create_entry(journal: Dict[str, Any], entry_date: date, words: int, title: str) -> Dict[str, Any]:
-        entry = api_client.create_entry(
+    def _create_entry(journal: Dict[str, Any], logged_date: date, words: int, title: str) -> Dict[str, Any]:
+        entry = api_client.create_entry_with_moment(
             token,
             journal_id=journal["id"],
             title=title,
             content=_content_with_words(words),
-            entry_date=entry_date.isoformat(),
-            entry_timezone="UTC",
+            logged_date=logged_date.isoformat(),
+            logged_timezone="UTC",
         )
-        _register_entry(entry_date, words, journal["id"])
-        return {"id": entry["id"], "date": entry_date}
+        _register_entry(logged_date, words, journal["id"])
+        return {"id": entry["id"], "moment_id": entry["moment_id"], "date": logged_date}
 
     # Entries that build history outside the streak.
     last_month_entry_date = last_month_start + timedelta(days=2)
@@ -106,24 +105,24 @@ def analytics_dataset(
     # Create a 4-day streak leading up to today.
     streak_dates = [utc_date - timedelta(days=offset) for offset in range(3, -1, -1)]
     streak_entries = []
-    for idx, entry_date in enumerate(streak_dates):
+    for idx, logged_date in enumerate(streak_dates):
         words = 20 + (idx * 10)
         streak_entries.append(
-            _create_entry(primary, entry_date, words, f"Streak day {idx + 1}")
+            _create_entry(primary, logged_date, words, f"Streak day {idx + 1}")
         )
 
     # Tag usage for writing pattern analytics.
-    def _assign_tags(entry_id: str, names: list[str]) -> None:
+    def _assign_tags(moment_id: str, names: list[str]) -> None:
         api_client.request(
             "POST",
-            f"/tags/entry/{entry_id}/bulk",
+            f"/moments/{moment_id}/tags",
             token=token,
             json=names,
             expected=(200,),
         )
 
-    _assign_tags(streak_entries[-1]["id"], ["gratitude"])
-    _assign_tags(streak_entries[-2]["id"], ["gratitude", "focus"])
+    _assign_tags(streak_entries[-1]["moment_id"], ["gratitude"])
+    _assign_tags(streak_entries[-2]["moment_id"], ["gratitude", "focus"])
     tag_usage = {"gratitude": 2, "focus": 1}
 
     # Moments with moods to exercise writing pattern mood tracking.

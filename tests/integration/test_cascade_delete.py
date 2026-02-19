@@ -3,8 +3,8 @@ Behavioural tests that assert cascades through the public API surface.
 """
 
 from tests.integration.helpers import (
-    EndpointCase,
     UNKNOWN_UUID,
+    EndpointCase,
     assert_requires_authentication,
     sample_jpeg_bytes,
 )
@@ -24,7 +24,7 @@ def test_deleting_journal_removes_entries_and_media(
 
     api_client.upload_media(
         api_user.access_token,
-        entry_id=entry_one["id"],
+        moment_id=entry_one["moment_id"],
         filename="photo.jpg",
         content=sample_jpeg_bytes(),
         content_type="image/jpeg",
@@ -56,24 +56,46 @@ def test_deleting_journal_removes_entries_and_media(
         assert response.status_code == 404
 
 
-def test_deleting_entry_removes_related_artifacts(
+def test_deleting_entry_preserves_moment_artifacts(
     api_client: JournivApiClient,
     api_user: ApiUser,
     entry_factory,
 ):
-    """Deleting an entry should remove pins and media associated with it."""
+    """Deleting an entry should revert to quick log, preserving moment media/pin."""
     entry = entry_factory(title="Cascade Entry")
+    moment_id = entry["moment_id"]
 
-    api_client.upload_media(
+    uploaded = api_client.upload_media(
         api_user.access_token,
-        entry_id=entry["id"],
+        moment_id=moment_id,
         filename="entry-media.jpg",
         content=sample_jpeg_bytes(),
         content_type="image/jpeg",
     )
 
-    api_client.pin_entry(api_user.access_token, entry["id"])
+    api_client.pin_moment(api_user.access_token, moment_id)
     api_client.delete_entry(api_user.access_token, entry["id"])
+
+    entry_response = api_client.request(
+        "GET", f"/entries/{entry['id']}", token=api_user.access_token
+    )
+    assert entry_response.status_code == 404
+
+    moment_response = api_client.request(
+        "GET", f"/moments/{moment_id}", token=api_user.access_token
+    )
+    assert moment_response.status_code == 200
+    assert moment_response.json()["is_pinned"] is True
+
+    # media still belongs to the moment after entry deletion
+    api_client.wait_for_media_ready(api_user.access_token, uploaded["id"])
+    sign_response = api_client.request(
+        "GET",
+        f"/media/{uploaded['id']}/sign",
+        token=api_user.access_token,
+        expected=(200,),
+    )
+    assert sign_response.status_code == 200
 
     entries = api_client.list_entries(api_user.access_token, limit=50)
     assert all(item["id"] != entry["id"] for item in entries)

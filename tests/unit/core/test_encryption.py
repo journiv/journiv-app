@@ -6,7 +6,12 @@ sensitive integration tokens using Fernet symmetric encryption.
 """
 import pytest
 
-from app.core.encryption import encrypt_token, decrypt_token, is_encrypted, reset_key_cache
+from app.core.encryption import (
+    decrypt_token,
+    encrypt_token,
+    is_encrypted,
+    reset_key_cache,
+)
 
 
 def make_fake_token(label: str) -> str:

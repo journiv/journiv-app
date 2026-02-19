@@ -5,11 +5,12 @@ Revises: def789abc123
 Create Date: 2026-01-03 14:02:11.871424
 
 """
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 import uuid
 
+import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'f0cf0baa6c0d'

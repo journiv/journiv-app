@@ -1,10 +1,10 @@
 import uuid
-
-import pytest
 from unittest.mock import MagicMock, patch
 
-from app.models.user import User
+import pytest
+
 from app.models.enums import UserRole
+from app.models.user import User
 
 
 @pytest.mark.asyncio
@@ -47,8 +47,8 @@ async def test_get_current_user_uses_cache():
 @pytest.mark.asyncio
 async def test_get_current_user_detached_success():
     """Test get_current_user_detached returns user with valid credentials."""
+
     from app.api import dependencies
-    from fastapi import HTTPException
 
     user = User(
         id=uuid.uuid4(),
@@ -83,8 +83,9 @@ async def test_get_current_user_detached_success():
 @pytest.mark.asyncio
 async def test_get_current_user_detached_invalid_uuid():
     """Test get_current_user_detached raises 401 for invalid UUID subject."""
-    from app.api import dependencies
     from fastapi import HTTPException
+
+    from app.api import dependencies
 
     with patch("app.api.dependencies.verify_token") as mock_verify:
         # Return a non-UUID subject

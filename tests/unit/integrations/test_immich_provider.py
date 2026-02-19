@@ -1,12 +1,14 @@
 
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 from app.integrations import immich
 from app.integrations.immich import IMMICH_API_SEARCH_METADATA
-from app.models.integration import Integration, IntegrationProvider, AssetType
+from app.models.integration import AssetType, Integration, IntegrationProvider
 from app.models.user import User
-import httpx
+
 
 class TestImmichProvider:
 

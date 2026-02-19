@@ -3,7 +3,11 @@ Entry API integration coverage.
 """
 from datetime import date, timedelta
 
-from tests.integration.helpers import EndpointCase, UNKNOWN_UUID, assert_requires_authentication
+from tests.integration.helpers import (
+    UNKNOWN_UUID,
+    EndpointCase,
+    assert_requires_authentication,
+)
 from tests.lib import ApiUser, JournivApiClient
 
 
@@ -14,22 +18,31 @@ def test_entry_crud_and_pin_flow(
 ):
     """End-to-end coverage for entry creation, updates, and pinning."""
     journal = journal_factory()
-    created = api_client.create_entry(
+    created = api_client.create_entry_with_moment(
         api_user.access_token,
         journal_id=journal["id"],
         title="My first entry",
         content="Writing something meaningful.",
-        entry_date=date.today().isoformat(),
+        logged_date=date.today().isoformat(),
         location_json={"name": "Home"},
         weather_json={"condition": "Sunny", "temp_c": 21.0},
         weather_summary="Sunny",
     )
 
     entry_id = created["id"]
+    moment_id = created["moment_id"]
     assert created["journal_id"] == journal["id"]
-    assert created["location_json"]["name"] == "Home"
-    assert created["weather_json"]["condition"] == "Sunny"
-    assert created["weather_summary"] == "Sunny"
+
+    # Metadata is now on the moment
+    moment = api_client.request(
+        "GET",
+        f"/moments/{moment_id}",
+        token=api_user.access_token,
+        expected=(200,),
+    ).json()
+    assert moment["location_json"]["name"] == "Home"
+    assert moment["weather_json"]["condition"] == "Sunny"
+    assert moment["weather_summary"] == "Sunny"
 
     fetched = api_client.get_entry(api_user.access_token, entry_id)
     assert fetched["title"] == "My first entry"
@@ -40,16 +53,24 @@ def test_entry_crud_and_pin_flow(
         {
             "title": "Updated title",
             "content": "Updated content",
-            "location_json": {"name": "Office"},
         },
     )
     assert updated["title"] == "Updated title"
-    assert updated["location_json"]["name"] == "Office"
 
-    pinned = api_client.pin_entry(api_user.access_token, entry_id)
+    # Verify moment metadata is preserved/independent
+    updated_moment = api_client.update_moment(
+        api_user.access_token,
+        moment_id,
+        {
+            "location_json": {"name": "Office"},
+        }
+    )
+    assert updated_moment["location_json"]["name"] == "Office"
+
+    pinned = api_client.pin_moment(api_user.access_token, moment_id)
     assert pinned["is_pinned"] is True
 
-    unpinned = api_client.unpin_entry(api_user.access_token, entry_id)
+    unpinned = api_client.unpin_moment(api_user.access_token, moment_id)
     assert unpinned["is_pinned"] is False
 
     api_client.delete_entry(api_user.access_token, entry_id)
@@ -74,28 +95,26 @@ def test_entry_listing_supports_pagination(
     assert first_page[0]["id"] != second_page[0]["id"]
 
 
-def test_update_entry_adjusts_metadata(
+def test_update_moment_adjusts_metadata(
     api_client: JournivApiClient,
     api_user: ApiUser,
     entry_factory,
 ):
-    """Updating entry content/date should recalculate metadata fields."""
+    """Updating moment metadata."""
     entry = entry_factory(title="Original title", content="Original body text")
+    moment_id = entry["moment_id"]
+
     new_date = (date.today() - timedelta(days=3)).isoformat()
     payload = {
-        "title": "Edited title",
-        "content": "This entry has four words.",
-        "entry_date": new_date,
+        "logged_date_tz": new_date,
         "weather_json": {"condition": "Rainy", "temp_c": 18.0},
         "weather_summary": "Rainy",
     }
 
-    updated = api_client.update_entry(api_user.access_token, entry["id"], payload)
-    assert updated["title"] == "Edited title"
-    assert updated["entry_date"] == new_date
+    updated = api_client.update_moment(api_user.access_token, moment_id, payload)
+    assert updated["logged_date_tz"] == new_date
     assert updated["weather_json"]["condition"] == "Rainy"
     assert updated["weather_summary"] == "Rainy"
-    assert updated["word_count"] == 5
 
 
 def test_update_entry_can_change_journal(
@@ -140,14 +159,14 @@ def test_journal_stats_update_when_entry_moves_between_journals(
         title="Entry One",
         content="This entry has exactly five words"  # 6 words
     )
-    entry2 = entry_factory(
+    entry_factory(
         journal=source_journal,
         title="Entry Two",
         content="Another test entry with more words here"  # 7 words
     )
 
     # Create one entry in target journal
-    entry3 = entry_factory(
+    entry_factory(
         journal=target_journal,
         title="Target Entry",
         content="Initial target journal entry"  # 4 words
@@ -251,37 +270,38 @@ def test_entry_search_and_date_range_filters(
         journal=journal,
         title="Weekly Review",
         content="Reflecting on goals and gratitude",
-        entry_date=(today - timedelta(days=5)).isoformat(),
+        logged_date=(today - timedelta(days=5)).isoformat(),
     )
     target = entry_factory(
         journal=journal,
         title="Unique Tracker",
         content="Contains UniqueSearchToken for lookup",
-        entry_date=(today - timedelta(days=2)).isoformat(),
+        logged_date=(today - timedelta(days=2)).isoformat(),
     )
     later = entry_factory(
         journal=journal,
         title="Weekend Recap",
         content="Relaxed weekend activities",
-        entry_date=(today - timedelta(days=1)).isoformat(),
+        logged_date=(today - timedelta(days=1)).isoformat(),
     )
 
     search_response = api_client.request(
         "GET",
-        "/entries/search",
+        "/moments",
         token=api_user.access_token,
-        params={"q": "UniqueSearchToken"},
+        params={"search": "UniqueSearchToken"},
     ).json()
-    search_items = (
-        search_response["items"]
-        if isinstance(search_response, dict) and "items" in search_response
-        else search_response
-    )
-    assert {entry["id"] for entry in search_items} == {target["id"]}
+    search_items = search_response["items"] if isinstance(search_response, dict) else []
+    search_entry_ids = {
+        item["entry"]["id"]
+        for item in search_items
+        if isinstance(item, dict) and item.get("entry")
+    }
+    assert search_entry_ids == {target["id"]}
 
     date_range = api_client.request(
         "GET",
-        "/entries/date-range",
+        "/moments",
         token=api_user.access_token,
         params={
             "start_date": (today - timedelta(days=3)).isoformat(),
@@ -289,7 +309,12 @@ def test_entry_search_and_date_range_filters(
             "journal_id": journal["id"],
         },
     ).json()
-    returned_ids = {entry["id"] for entry in date_range}
+    date_items = date_range["items"] if isinstance(date_range, dict) else []
+    returned_ids = {
+        item["entry"]["id"]
+        for item in date_items
+        if isinstance(item, dict) and item.get("entry")
+    }
     assert target["id"] in returned_ids
     assert later["id"] in returned_ids
     assert earlier["id"] not in returned_ids
@@ -306,7 +331,7 @@ def test_journal_listing_respects_pinned_flag(
     first_entry = entry_factory(journal=journal, title="First entry")
     pinned_entry = entry_factory(journal=journal, title="Pinned entry")
 
-    api_client.pin_entry(api_user.access_token, pinned_entry["id"])
+    api_client.pin_moment(api_user.access_token, pinned_entry["moment_id"])
 
     with_pinned = api_client.request(
         "GET",
@@ -340,13 +365,13 @@ def test_entry_endpoints_require_auth(api_client: JournivApiClient):
                     "title": "Unauthorized",
                     "content": "No token sent",
                     "journal_id": UNKNOWN_UUID,
-                    "entry_date": today,
+                    "logged_date": today,
                 },
             ),
-            EndpointCase("GET", "/entries/search", params={"q": "test"}),
+            EndpointCase("GET", "/moments", params={"search": "test"}),
             EndpointCase(
                 "GET",
-                "/entries/date-range",
+                "/moments",
                 params={"start_date": today, "end_date": today},
             ),
         ],

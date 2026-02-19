@@ -1,13 +1,16 @@
 
-import pytest
 import uuid
 from datetime import datetime
-from app.schemas.entry import EntryMediaResponse, QuillDelta, QuillOp
-from app.models.enums import MediaType, UploadStatus
 
-def test_entry_media_response_url_computation():
+import pytest
+
+from app.models.enums import MediaType, UploadStatus
+from app.schemas.entry import MomentMediaResponse, QuillDelta, QuillOp
+
+
+def test_media_response_url_computation():
     """
-    Verify that EntryMediaResponse correctly handles serialization
+    Verify that MomentMediaResponse correctly handles serialization
     for both local and link-only media.
 
     The schema excludes internal fields like external_provider and external_asset_id
@@ -18,9 +21,9 @@ def test_entry_media_response_url_computation():
 
     # Case 1: Link-only Media (Immich)
     # No file_path, has external_provider and external_asset_id
-    link_only_media = EntryMediaResponse(
+    link_only_media = MomentMediaResponse(
         id=media_id,
-        entry_id=entry_id,
+        moment_id=entry_id,
         created_at=datetime.utcnow(),
         media_type=MediaType.IMAGE,
         mime_type="image/jpeg",
@@ -44,14 +47,14 @@ def test_entry_media_response_url_computation():
 
     # Verify the response has the expected fields
     assert "id" in dumped
-    assert "entry_id" in dumped
+    assert "moment_id" in dumped
     assert "media_type" in dumped
     assert dumped["id"] == media_id
 
     # Case 2: Local Media
-    local_media = EntryMediaResponse(
+    local_media = MomentMediaResponse(
         id=media_id,
-        entry_id=entry_id,
+        moment_id=entry_id,
         created_at=datetime.utcnow(),
         media_type=MediaType.IMAGE,
         mime_type="image/jpeg",
@@ -68,7 +71,7 @@ def test_entry_media_response_url_computation():
 
     # Verify the response has the expected fields
     assert "id" in dumped_local
-    assert "entry_id" in dumped_local
+    assert "moment_id" in dumped_local
     assert dumped_local["id"] == media_id
 
 

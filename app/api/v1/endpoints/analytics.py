@@ -76,7 +76,7 @@ async def get_writing_patterns(
         patterns = analytics_service.get_writing_patterns(current_user.id, days)
         return patterns
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Unexpected error fetching writing patterns",
             extra={"user_id": str(current_user.id), "days": days, "error": str(e)}
         )
@@ -188,9 +188,8 @@ async def get_analytics_dashboard(
         }
         return result
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Unexpected error fetching analytics dashboard",
             extra={"user_id": str(current_user.id), "days": days, "error": str(e)}
         )
         raise HTTPException(status_code=500, detail="An error occurred while fetching analytics dashboard") from None
-

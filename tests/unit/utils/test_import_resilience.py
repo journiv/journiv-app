@@ -1,10 +1,10 @@
 import tempfile
-import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
-from app.utils.import_export.zip_handler import ZipHandler
+
 from app.utils.import_export.media_handler import MediaHandler
-from app.core.config import settings
+from app.utils.import_export.zip_handler import ZipHandler
+
 
 def test_media_handler_validate_media_returns_4_values():
     """Test that MediaHandler.validate_media returns (is_valid, mime_type, category, error_msg)."""
