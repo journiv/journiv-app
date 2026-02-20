@@ -376,3 +376,84 @@ def test_entry_endpoints_require_auth(api_client: JournivApiClient):
             ),
         ],
     )
+
+
+def test_entry_includes_hydrated_content_delta_with_media(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    journal_factory,
+):
+    """Entry content delta should be hydrated with signed media URLs."""
+    journal = journal_factory()
+    created = api_client.create_entry_with_moment(
+        api_user.access_token,
+        journal_id=journal["id"],
+        title="Entry with media hydration",
+        content="Initial content",
+    )
+    entry_id = created["id"]
+    moment_id = created["moment_id"]
+
+    # Upload media
+    from tests.integration.helpers import upload_sample_media
+    media = upload_sample_media(
+        api_client,
+        api_user.access_token,
+        moment_id,
+    )
+    media_id = media["id"]
+
+    # Wait for media to be ready
+    api_client.wait_for_media_ready(api_user.access_token, media_id)
+
+    # Update entry to reference the media in content_delta
+    delta = {
+        "ops": [
+            {"insert": "Look at this image: "},
+            {"insert": {"image": media_id}},
+            {"insert": "\n"}
+        ]
+    }
+
+    # Use the bare request to avoid _wrap_content_to_delta stripping content_delta from PUT params if it is smart, or use update_entry
+    api_client.request(
+        "PUT",
+        f"/entries/{entry_id}",
+        token=api_user.access_token,
+        json={"content_delta": delta},
+        expected=(200,)
+    )
+
+    # Fetch entry individually
+    fetched = api_client.get_entry(api_user.access_token, entry_id)
+    ops = fetched.get("content_delta", {}).get("ops", [])
+
+    image_op = None
+    for op in ops:
+        insert = op.get("insert")
+        if isinstance(insert, dict) and "image" in insert:
+            image_op = insert["image"]
+            break
+
+    assert image_op is not None, "Image operation missing from hydrated delta"
+    assert image_op != media_id, "Media ID was not hydrated"
+    assert "/api/v1/media/" in image_op, "Hydrated URL is invalid"
+    assert "sig=" in image_op, "Hydrated URL is missing signature"
+
+    # Also fetch via entries list
+    entries_list = api_client.list_entries(api_user.access_token, journal_id=journal["id"])
+    assert len(entries_list) == 1
+    list_ops = entries_list[0].get("content_delta", {}).get("ops", [])
+
+    list_image_op = None
+    for op in list_ops:
+        insert = op.get("insert")
+        if isinstance(insert, dict) and "image" in insert:
+            list_image_op = insert["image"]
+            break
+
+    assert list_image_op is not None, "Image operation missing from hydrated delta in list endpoint"
+    assert list_image_op != media_id, "Media ID was not hydrated in list endpoint"
+    assert "/api/v1/media/" in list_image_op, "Hydrated URL in list endpoint is invalid"
+    assert "sig=" in list_image_op, "Hydrated URL in list endpoint is missing signature"
+
