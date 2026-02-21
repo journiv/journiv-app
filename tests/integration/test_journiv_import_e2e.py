@@ -710,6 +710,21 @@ class TestJournivImportExportE2E:
         assert imported_journal is not None
         assert imported_journal["description"] == "A journal from import"
         assert imported_journal["icon"] == "📖"
+        assert imported_journal["entry_count"] == 2
+        assert imported_journal["total_words"] == 10
+        assert imported_journal["last_entry_at"] is not None
+
+        # Also verify the journal detail endpoint reflects recalculated stats.
+        journal_detail = api_client.request(
+            "GET",
+            f"/journals/{imported_journal['id']}",
+            token=api_user.access_token,
+            expected=(200,),
+        ).json()
+        assert journal_detail["entry_count"] == 2
+        assert journal_detail["total_words"] == 10
+        assert journal_detail["last_entry_at"] is not None
+
         # Verify entries were created
         entries = api_client.list_entries(
             api_user.access_token,
