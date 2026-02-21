@@ -104,6 +104,7 @@ class DaylioToJournivMapper:
                     day_entry,
                     import_timestamp=import_timestamp,
                     journal_external_id=journal.external_id,
+                    media_items=moment.media,
                 )
                 timeline_moments.append(moment)
                 continue
@@ -377,12 +378,17 @@ class DaylioToJournivMapper:
         *,
         import_timestamp: datetime,
         journal_external_id: Optional[str],
+        media_items: Optional[List[MomentMediaDTO]] = None,
     ) -> EntryDTO:
         logged_at = _ms_to_utc(day_entry.datetime) or import_timestamp
 
         title = (day_entry.note_title or "").strip() or None
         note = (day_entry.note or "").strip()
         content_delta = html_to_delta(note) if note else wrap_plain_text(None)
+        content_delta = DaylioToJournivMapper._append_media_to_entry_delta(
+            content_delta=content_delta,
+            media_items=media_items or [],
+        )
 
         return EntryDTO(
             title=title,
@@ -400,6 +406,51 @@ class DaylioToJournivMapper:
             updated_at=logged_at,
             external_id=f"daylio-entry-{day_entry.datetime}",
         )
+
+    @staticmethod
+    def _append_media_to_entry_delta(
+        *,
+        content_delta: Dict[str, Any],
+        media_items: List[MomentMediaDTO],
+    ) -> Dict[str, Any]:
+        """
+        Append imported media embeds to the end of entry content.
+
+        Daylio media is attached at moment level. For entry-backed moments we append
+        media placeholders so later entry edits preserve media ownership unless user
+        explicitly removes embeds.
+        """
+        if not media_items:
+            return content_delta
+
+        delta = content_delta if isinstance(content_delta, dict) else wrap_plain_text(None)
+        ops = delta.get("ops")
+        if not isinstance(ops, list):
+            ops = [{"insert": "\n"}]
+            delta["ops"] = ops
+
+        # Ensure we end on a newline before appending embeds.
+        if not ops:
+            ops.append({"insert": "\n"})
+        else:
+            last_insert = ops[-1].get("insert") if isinstance(ops[-1], dict) else None
+            if isinstance(last_insert, dict):
+                ops.append({"insert": "\n"})
+            elif isinstance(last_insert, str) and not last_insert.endswith("\n"):
+                ops.append({"insert": "\n"})
+
+        for media in media_items:
+            if not media.external_id:
+                continue
+            key = "image"
+            if media.media_type == "video":
+                key = "video"
+            elif media.media_type == "audio":
+                key = "audio"
+            ops.append({"insert": {key: media.external_id}})
+            ops.append({"insert": "\n"})
+
+        return delta
 
     @staticmethod
     def _map_moment(
