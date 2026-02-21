@@ -352,7 +352,7 @@ def _ensure_starter_moods_for_user(conn, user_id: str) -> None:
                         :category,
                         :score,
                         :position,
-                        1,
+                        TRUE,
                         :stable_key
                     )
                     """
