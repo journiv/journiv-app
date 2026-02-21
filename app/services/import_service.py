@@ -11,8 +11,7 @@ from uuid import UUID
 
 from sqlalchemy import func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import Session
-from sqlmodel import col, select
+from sqlmodel import Session, col, select
 
 from app.core.config import settings
 from app.core.logging_config import log_error, log_info, log_warning
@@ -58,6 +57,7 @@ from app.schemas.dto import (
     MoodGroupPreferenceDTO,
     MoodPreferenceDTO,
 )
+from app.services.journal_service import JournalService
 from app.services.media_storage_service import MediaStorageService
 from app.utils.import_export import (
     MediaHandler,
@@ -675,7 +675,39 @@ class ImportService:
                     log_warning(warning_msg, user_id=str(user_id))
                     self._add_warning(summary, warning_msg, "Skipped (goal log error)")
 
-            self.db.commit()
+            # Moment-first imports bypass per-entry journal stat updates.
+            # Reuse JournalService recalculation logic for all user journals.
+            try:
+                journal_service = JournalService(self.db)
+                journal_ids = self.db.execute(
+                    select(Journal.id).where(Journal.user_id == user_id)
+                ).scalars().all()
+                for journal_id in journal_ids:
+                    try:
+                        journal_service.recalculate_journal_entry_count(journal_id, user_id)
+                    except Exception as recalc_error:
+                        log_error(
+                            recalc_error,
+                            user_id=str(user_id),
+                            journal_id=str(journal_id),
+                            context="journal_recalculation_failed_after_import",
+                        )
+                        self._add_warning(
+                            summary,
+                            f"Failed to recalculate journal stats for {journal_id}: {recalc_error}",
+                            "Stats recalculation warning",
+                        )
+            except Exception as recalc_setup_error:
+                log_error(
+                    recalc_setup_error,
+                    user_id=str(user_id),
+                    context="journal_recalculation_setup_failed_after_import",
+                )
+                self._add_warning(
+                    summary,
+                    f"Failed to run post-import journal stats recalculation: {recalc_setup_error}",
+                    "Stats recalculation warning",
+                )
 
             log_info(
                 f"Import completed: {summary.journals_created} journals, "

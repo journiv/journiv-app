@@ -81,6 +81,9 @@ class TestDayOneImportE2E:
         imported_journal = imported_journals[0]
         assert imported_journal["title"] == "Test Journal"
         assert "Imported from Day One" in imported_journal["description"]
+        assert imported_journal["entry_count"] == 5
+        assert imported_journal["total_words"] > 0
+        assert imported_journal["last_entry_at"] is not None
 
         # 5. Verify entries were created
         entries = api_client.list_entries(api_user.access_token)
