@@ -607,25 +607,89 @@ def _ensure_starter_data_for_users(conn) -> None:
         _ensure_starter_goal_data_for_user(conn, user_id)
 
 
-def _legacy_mood_stable_key(key: Optional[str], name: Optional[str]) -> Optional[str]:
+def _legacy_mood_stable_key(
+    key: Optional[str],
+    name: Optional[str],
+    category: Optional[str] = None,
+    score: Optional[int] = None,
+) -> Optional[str]:
     lookup = (key or "").strip().lower()
     name_lookup = (name or "").strip().lower()
+    category_lookup = (category or "").strip().lower()
     if lookup in {"awesome", "very_positive", "verypositive"} or name_lookup in {"awesome", "very positive"}:
         return "mood_awesome"
-    if lookup in {"good", "positive"} or name_lookup in {"good", "positive"}:
+    if lookup in {
+        "good",
+        "positive",
+        "happy",
+        "excited",
+        "grateful",
+        "curious",
+        "surprised",
+        "proud",
+        "hopeful",
+        "motivated",
+    } or name_lookup in {
+        "good",
+        "positive",
+        "happy",
+        "excited",
+        "grateful",
+        "curious",
+        "surprised",
+        "proud",
+        "hopeful",
+        "motivated",
+    }:
         return "mood_good"
-    if lookup in {"meh", "neutral"} or name_lookup in {"meh", "neutral"}:
+    if lookup in {"meh", "neutral", "calm", "focused", "relaxed", "confused"} or name_lookup in {
+        "meh",
+        "neutral",
+        "calm",
+        "focused",
+        "relaxed",
+        "confused",
+    }:
         return "mood_meh"
-    if lookup in {"bad", "negative"} or name_lookup in {"bad", "negative"}:
+    if lookup in {"bad", "negative", "sad", "stressed", "tired", "disappointed", "anxious"} or name_lookup in {
+        "bad",
+        "negative",
+        "sad",
+        "stressed",
+        "tired",
+        "disappointed",
+        "anxious",
+    }:
         return "mood_bad"
-    if lookup in {"awful", "very_negative", "verynegative"} or name_lookup in {"awful", "very negative"}:
+    if lookup in {"awful", "very_negative", "verynegative", "angry", "lonely"} or name_lookup in {
+        "awful",
+        "very negative",
+        "angry",
+        "lonely",
+    }:
         return "mood_awful"
+    if score is not None:
+        if score >= 5:
+            return "mood_awesome"
+        if score == 4:
+            return "mood_good"
+        if score == 3:
+            return "mood_meh"
+        if score == 2:
+            return "mood_bad"
+        return "mood_awful"
+    if category_lookup == "positive":
+        return "mood_good"
+    if category_lookup == "neutral":
+        return "mood_meh"
+    if category_lookup == "negative":
+        return "mood_bad"
     return None
 
 
 def _remap_and_remove_system_moods(conn) -> None:
     system_moods = conn.execute(
-        sa.text("SELECT id, key, name FROM mood WHERE user_id IS NULL")
+        sa.text("SELECT id, key, name, category, score FROM mood WHERE user_id IS NULL")
     ).fetchall()
     if not system_moods:
         return
@@ -635,7 +699,12 @@ def _remap_and_remove_system_moods(conn) -> None:
 
     for legacy_mood in system_moods:
         old_mood_id = str(legacy_mood.id)
-        stable_key = _legacy_mood_stable_key(legacy_mood.key, legacy_mood.name)
+        stable_key = _legacy_mood_stable_key(
+            legacy_mood.key,
+            legacy_mood.name,
+            legacy_mood.category,
+            legacy_mood.score,
+        )
         if stable_key is None:
             skipped_legacy_moods.append(
                 f"id={old_mood_id}, key={legacy_mood.key!r}, name={legacy_mood.name!r}"
