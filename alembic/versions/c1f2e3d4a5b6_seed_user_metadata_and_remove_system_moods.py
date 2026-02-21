@@ -248,17 +248,19 @@ def _backfill_table_stable_keys(
     )
 
     rows = conn.execute(stmt).fetchall()
-    user_seen: Dict[str, set[str]] = {}
+    user_seen: Dict[object, set[str]] = {}
     for row in rows:
-        user_id = str(row.user_id)
+        if row.user_id is None:
+            continue
+        user_id = row.user_id
         seen = user_seen.setdefault(user_id, set())
         if row.stable_key:
             seen.add(str(row.stable_key))
 
     for row in rows:
-        if row.stable_key:
+        if row.stable_key or row.user_id is None:
             continue
-        user_id = str(row.user_id)
+        user_id = row.user_id
         seen = user_seen.setdefault(user_id, set())
         base_key = _stable_key_for(prefix, row.label_value)
         stable_key = _next_unique_key(seen, base_key)
@@ -629,11 +631,15 @@ def _remap_and_remove_system_moods(conn) -> None:
         return
 
     user_ids = [str(row.id) for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()]
+    skipped_legacy_moods: list[str] = []
 
     for legacy_mood in system_moods:
         old_mood_id = str(legacy_mood.id)
         stable_key = _legacy_mood_stable_key(legacy_mood.key, legacy_mood.name)
         if stable_key is None:
+            skipped_legacy_moods.append(
+                f"id={old_mood_id}, key={legacy_mood.key!r}, name={legacy_mood.name!r}"
+            )
             continue
 
         for user_id in user_ids:
@@ -797,6 +803,12 @@ def _remap_and_remove_system_moods(conn) -> None:
                     "new_mood_id": new_mood_id,
                 },
             )
+
+    if skipped_legacy_moods:
+        raise RuntimeError(
+            "Migration aborted: encountered unmapped legacy system moods. "
+            f"Add explicit mappings before cleanup. Details: {', '.join(skipped_legacy_moods)}"
+        )
 
     conn.execute(
         sa.text(
