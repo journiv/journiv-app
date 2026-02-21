@@ -809,6 +809,13 @@ class ImportService:
             if media_dto.external_id and media_dto.external_asset_id in media_id_map:
                 media_id_map[media_dto.external_id] = media_id_map[media_dto.external_asset_id]
 
+        # Daylio and other imports may use media.external_id placeholders directly
+        # in entry delta embeds. Resolve those placeholders using recorded ID mappings.
+        media_mappings = summary.id_mappings.get("media", {})
+        for media_dto in moment_dto.media:
+            if media_dto.external_id and media_dto.external_id in media_mappings:
+                media_id_map[media_dto.external_id] = media_mappings[media_dto.external_id]
+
         placeholder_map = self._build_dayone_placeholder_map(
             entry_dto,
             moment_dto.media,
@@ -1002,7 +1009,7 @@ class ImportService:
                     media_dir=media_dir,
                     existing_checksums=existing_media_checksums,
                     summary=summary,
-                    record_mapping=None,
+                    record_mapping=record_mapping,
                 )
                 if media_result["imported"]:
                     summary.media_files_imported += 1
