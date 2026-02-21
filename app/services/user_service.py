@@ -36,6 +36,7 @@ from app.schemas.user import (
     UserSettingsUpdate,
     UserUpdate,
 )
+from app.services.starter_data_service import StarterDataService
 
 # Hash evaluated once to keep timing consistent for missing users
 _DUMMY_PASSWORD_HASH = get_password_hash("journiv-dummy-password")
@@ -207,6 +208,7 @@ class UserService:
             self.session.flush()
             # Create default user settings without committing
             self.create_user_settings(user.id, UserSettingsCreate(), commit=False)
+            StarterDataService(self.session).ensure_user_seeded(user.id, commit=False)
             self.session.commit()
             self.session.refresh(user)
 
@@ -511,6 +513,7 @@ class UserService:
 
                 # Create default user settings
                 self.create_user_settings(user.id, UserSettingsCreate(), commit=False)
+                StarterDataService(self.session).ensure_user_seeded(user.id, commit=False)
 
                 # Commit user creation
                 self.session.commit()
@@ -622,6 +625,7 @@ class UserService:
             self.session.flush()
             # Create default user settings without committing
             self.create_user_settings(user.id, UserSettingsCreate(), commit=False)
+            StarterDataService(self.session).ensure_user_seeded(user.id, commit=False)
             self.session.commit()
             self.session.refresh(user)
 

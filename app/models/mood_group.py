@@ -17,15 +17,13 @@ if TYPE_CHECKING:
 class MoodGroup(BaseModel, table=True):
     """
     Mood group/collection for organizing moods in the UI.
-    System groups have user_id NULL.
     """
     __tablename__ = "mood_group"
 
-    user_id: Optional[uuid.UUID] = Field(
-        default=None,
+    user_id: uuid.UUID = Field(
         sa_column=Column(
             ForeignKey("user.id", ondelete="CASCADE"),
-            nullable=True,
+            nullable=False,
             index=True,
         ),
     )
@@ -36,6 +34,7 @@ class MoodGroup(BaseModel, table=True):
         sa_column=Column(BigInteger, nullable=True),
     )
     position: int = Field(default=0, sa_column=Column(Integer, nullable=False, server_default="0"))
+    stable_key: Optional[str] = Field(default=None, max_length=100, index=True)
 
     user: Optional["User"] = Relationship(back_populates="mood_groups")
     links: List["MoodGroupLink"] = Relationship(
@@ -45,6 +44,7 @@ class MoodGroup(BaseModel, table=True):
 
     __table_args__ = (
         Index("idx_mood_group_user_position", "user_id", "position"),
+        Index("uq_mood_group_user_stable_key", "user_id", "stable_key", unique=True),
     )
 
 

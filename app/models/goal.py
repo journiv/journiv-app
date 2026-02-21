@@ -123,6 +123,10 @@ class Goal(BaseModel, table=True):
         default=0,
         sa_column=Column(Integer, nullable=False, server_default="0"),
     )
+    stable_key: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(100), nullable=True, index=True),
+    )
     archived_at: Optional[datetime] = Field(
         default=None,
         sa_column=Column(DateTime(timezone=True), nullable=True)
@@ -145,6 +149,7 @@ class Goal(BaseModel, table=True):
         Index("idx_goal_user_active", "user_id", "archived_at"),
         Index("idx_goal_user_position", "user_id", "position"),
         Index("idx_goal_user_category_position", "user_id", "category_id", "position"),
+        UniqueConstraint("user_id", "stable_key", name="uq_goal_user_stable_key"),
     )
 
 

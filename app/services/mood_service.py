@@ -1,7 +1,6 @@
 """
 Mood service for handling mood-related operations.
 """
-import re
 import uuid
 from datetime import date, timedelta
 from typing import Any, Dict, List, Optional
@@ -54,34 +53,16 @@ class MoodService:
             return MoodCategory.NEGATIVE.value
         return MoodCategory.NEUTRAL.value
 
-    @staticmethod
-    def _tier_group_name(score: int) -> str:
-        if score >= 5:
-            return "Very Positive"
-        if score == 4:
-            return "Positive"
-        if score == 3:
-            return "Neutral"
-        if score == 2:
-            return "Negative"
-        return "Very Negative"
-
-    @staticmethod
-    def _slugify_key(name: str) -> str:
-        normalized = name.strip().lower()
-        normalized = re.sub(r"\s+", "-", normalized)
-        normalized = re.sub(r"[^a-z0-9-]", "", normalized)
-        normalized = re.sub(r"-{2,}", "-", normalized).strip("-")
-        return normalized
-
     def _generate_unique_key(self, user_id: uuid.UUID, name: str) -> str:
-        base_key = self._slugify_key(name) or "mood"
+        from app.utils.keys import generate_stable_key
+
+        base_key = generate_stable_key("mood", name).replace("mood_", "", 1) or "mood"
         base_key = base_key[:50]
         candidate = base_key
         suffix = 2
         while self.session.exec(
             select(Mood.id).where(
-                (col(Mood.user_id) == user_id) | (col(Mood.user_id).is_(None)),
+                col(Mood.user_id) == user_id,
                 col(Mood.key) == candidate,
             )
         ).first():
@@ -91,41 +72,32 @@ class MoodService:
             suffix += 1
         return candidate
 
-    def _get_tier_group_id(self, score: int) -> Optional[uuid.UUID]:
-        group_name = self._tier_group_name(score)
-        statement = select(MoodGroup.id).where(
-            col(MoodGroup.user_id).is_(None),
-            col(MoodGroup.name) == group_name,
-        )
-        return self.session.exec(statement).first()
-
-    def _ensure_tier_group_link(self, mood: Mood) -> None:
-        group_id = self._get_tier_group_id(mood.score)
-        if not group_id:
-            return
-        existing_link = self.session.exec(
-            select(MoodGroupLink)
-            .join(
-                MoodGroup,
-                col(MoodGroupLink.mood_group_id) == col(MoodGroup.id),
-            )
-            .where(
-                col(MoodGroupLink.mood_id) == mood.id,
-                col(MoodGroup.user_id).is_(None),
+    def _ensure_default_group_link(self, user_id: uuid.UUID, mood: Mood) -> None:
+        core_group = self.session.exec(
+            select(MoodGroup).where(
+                col(MoodGroup.user_id) == user_id,
+                col(MoodGroup.stable_key) == "moodgroup_core_moods",
             )
         ).first()
-        if existing_link and existing_link.mood_group_id == group_id:
+        if not core_group:
+            return
+        existing_link = self.session.exec(
+            select(MoodGroupLink).where(
+                col(MoodGroupLink.mood_group_id) == core_group.id,
+                col(MoodGroupLink.mood_id) == mood.id,
+            )
+        ).first()
+        if existing_link:
             if existing_link.position != mood.position:
                 existing_link.position = mood.position
             return
-        if existing_link:
-            self.session.delete(existing_link)
-        link = MoodGroupLink(
-            mood_group_id=group_id,
-            mood_id=mood.id,
-            position=mood.position,
+        self.session.add(
+            MoodGroupLink(
+                mood_group_id=core_group.id,
+                mood_id=mood.id,
+                position=mood.position,
+            )
         )
-        self.session.add(link)
 
     def _commit(self) -> None:
         try:
@@ -141,7 +113,7 @@ class MoodService:
         category: Optional[str] = None,
         include_hidden: bool = False,
     ) -> List[Dict[str, Any]]:
-        """Get moods visible to a user (system + user-defined), optionally filtered."""
+        """Get moods visible to a user, optionally filtered."""
         normalized_category = self._normalize_category(category) if category else None
         statement = (
             select(Mood, UserMoodPreference.is_hidden, UserMoodPreference.sort_order)
@@ -152,7 +124,7 @@ class MoodService:
             )
             .where(
                 col(Mood.is_active).is_(True),
-                (col(Mood.user_id).is_(None) | (col(Mood.user_id) == user_id)),
+                col(Mood.user_id) == user_id,
             )
         )
         if normalized_category:
@@ -233,7 +205,7 @@ class MoodService:
         if position is None:
             max_position = self.session.exec(
                 select(func.coalesce(func.max(Mood.position), 0)).where(
-                    (col(Mood.user_id) == user_id) | (col(Mood.user_id).is_(None))
+                    col(Mood.user_id) == user_id
                 )
             ).one()
             position = int(max_position) + 10
@@ -252,7 +224,7 @@ class MoodService:
         )
         self.session.add(mood)
         self.session.flush()
-        self._ensure_tier_group_link(mood)
+        self._ensure_default_group_link(user_id, mood)
         self._commit()
         self.session.refresh(mood)
         return mood
@@ -303,7 +275,6 @@ class MoodService:
 
         mood.updated_at = utc_now()
         self.session.flush()
-        self._ensure_tier_group_link(mood)
         self._commit()
         self.session.refresh(mood)
         return mood
@@ -321,7 +292,7 @@ class MoodService:
         mood = self.get_mood_by_id(mood_id)
         if not mood:
             raise MoodNotFoundError("Mood not found")
-        if not mood.is_active or (mood.user_id is not None and mood.user_id != user_id):
+        if not mood.is_active or mood.user_id != user_id:
             raise MoodNotFoundError("Mood not found")
         preference = self.session.exec(
             select(UserMoodPreference).where(
@@ -351,7 +322,7 @@ class MoodService:
             self.session.exec(
                 select(Mood.id).where(
                     col(Mood.is_active).is_(True),
-                    (col(Mood.user_id).is_(None)) | (col(Mood.user_id) == user_id),
+                    col(Mood.user_id) == user_id,
                 )
             ).all()
         )

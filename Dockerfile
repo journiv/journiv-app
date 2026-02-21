@@ -77,7 +77,6 @@ COPY alembic/ alembic/
 COPY alembic.ini .
 
 # Copy scripts directory (seed data and entrypoint)
-COPY scripts/moods.json scripts/moods.json
 COPY scripts/prompts.json scripts/prompts.json
 COPY scripts/docker-entrypoint.sh scripts/docker-entrypoint.sh
 COPY journiv-admin journiv-admin
