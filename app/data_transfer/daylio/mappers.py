@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import shutil
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -101,7 +101,12 @@ class DaylioToJournivMapper:
         activities = DaylioToJournivMapper._map_activities(backup, import_timestamp)
 
         goals = DaylioToJournivMapper._map_goals(backup, import_timestamp, ctx)
-        goal_logs = DaylioToJournivMapper._map_goal_logs(backup, import_timestamp)
+        daily_goal_logs = DaylioToJournivMapper._map_goal_logs(backup, import_timestamp)
+        weekly_goal_logs = DaylioToJournivMapper._map_goal_success_weeks(backup, import_timestamp)
+        goal_logs = DaylioToJournivMapper._merge_goal_logs(
+            daily_logs=daily_goal_logs,
+            weekly_logs=weekly_goal_logs,
+        )
 
         journal = DaylioToJournivMapper._map_journal(
             backup,
@@ -354,6 +359,94 @@ class DaylioToJournivMapper:
         return logs
 
     @staticmethod
+    def _map_goal_success_weeks(
+        backup: DaylioBackup,
+        import_timestamp: datetime,
+    ) -> List[GoalLogDTO]:
+        logs: List[GoalLogDTO] = []
+        for week_entry in backup.goalSuccessWeeks:
+            try:
+                week_start = date.fromisocalendar(week_entry.year, week_entry.week, 1)
+            except ValueError:
+                log_warning(
+                    "Skipping invalid Daylio goalSuccessWeeks record",
+                    goal_id=week_entry.goal_id,
+                    week=week_entry.week,
+                    year=week_entry.year,
+                )
+                continue
+
+            week_end = week_start + timedelta(days=6)
+            created_at = import_timestamp
+            if (
+                week_entry.create_at_year is not None
+                and week_entry.create_at_month is not None
+                and week_entry.create_at_day is not None
+            ):
+                try:
+                    created_date = date(
+                        week_entry.create_at_year,
+                        week_entry.create_at_month + 1,
+                        week_entry.create_at_day,
+                    )
+                    created_at = datetime.combine(
+                        created_date,
+                        datetime.min.time(),
+                        tzinfo=timezone.utc,
+                    )
+                except ValueError as exc:
+                    log_warning(
+                        "Invalid Daylio goalSuccessWeeks created_at components; using import timestamp",
+                        goal_id=week_entry.goal_id,
+                        create_at_year=week_entry.create_at_year,
+                        create_at_month=week_entry.create_at_month,
+                        create_at_day=week_entry.create_at_day,
+                        error=str(exc),
+                    )
+                    created_at = import_timestamp
+
+            logs.append(
+                GoalLogDTO(
+                    goal_external_id=str(week_entry.goal_id),
+                    logged_date=week_end,
+                    period_start=week_start,
+                    period_end=week_end,
+                    status=GoalLogStatus.SUCCESS,
+                    count=1,
+                    source=GoalLogSource.AUTO,
+                    last_updated_at=created_at,
+                    moment_external_id=None,
+                    created_at=created_at,
+                    updated_at=created_at,
+                    external_id=f"daylio-week-{week_entry.goal_id}-{week_entry.year}-{week_entry.week}",
+                )
+            )
+        return logs
+
+    @staticmethod
+    def _merge_goal_logs(
+        *,
+        daily_logs: List[GoalLogDTO],
+        weekly_logs: List[GoalLogDTO],
+    ) -> List[GoalLogDTO]:
+        """
+        Merge daily and weekly goal logs without letting weekly snapshots
+        overwrite daily records that share the same period_start.
+        """
+        merged: List[GoalLogDTO] = list(daily_logs)
+        seen_keys = {
+            (log.goal_external_id, log.period_start): log
+            for log in daily_logs
+        }
+        for weekly_log in weekly_logs:
+            key = (weekly_log.goal_external_id, weekly_log.period_start)
+            if key in seen_keys:
+                continue
+            seen_keys[key] = weekly_log
+            merged.append(weekly_log)
+        return merged
+
+    @staticmethod
     def _map_journal(
         backup: DaylioBackup,
         ctx: DaylioMappingContext,
@@ -390,6 +483,8 @@ class DaylioToJournivMapper:
                 "source_version": backup.version,
                 "imported_at": import_timestamp.isoformat().replace("+00:00", "Z"),
                 "raw_export_metadata": backup.metadata,
+                "daylio_goal_entries_count": len(backup.goalEntries),
+                "daylio_goal_success_weeks_count": len(backup.goalSuccessWeeks),
             },
             created_at=first_entry_at or import_timestamp,
             updated_at=import_timestamp,
@@ -568,7 +663,12 @@ class DaylioToJournivMapper:
             )
             return mapped_name, None
 
-        return None, str(mood_ref)
+        log_warning(
+            "Unknown Daylio mood reference in day entry; skipping mood mapping",
+            mood_ref=mood_ref,
+            datetime=day_entry.datetime,
+        )
+        return None, None
 
     @staticmethod
     def _map_media(
