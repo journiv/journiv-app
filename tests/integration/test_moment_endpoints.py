@@ -227,3 +227,33 @@ def test_moment_media_count_tracks_upload_and_delete(
         expected=(200,),
     ).json()
     assert without_media["media_count"] == 0
+
+
+def test_moment_response_includes_completed_goals_for_activity_driven_goal(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    activity = api_client.create_activity(api_user.access_token, name="Walk")
+    goal = api_client.create_goal(
+        api_user.access_token,
+        title="Walk once daily",
+        goal_type="achieve",
+        frequency_type="daily",
+        target_count=1,
+        activity_id=activity["id"],
+    )
+
+    moment = api_client.create_moment(
+        api_user.access_token,
+        mood_activity=[{"activity_id": activity["id"]}],
+        note="Walked today",
+    )
+    fetched = api_client.request(
+        "GET",
+        f"/moments/{moment['id']}",
+        token=api_user.access_token,
+        expected=(200,),
+    ).json()
+
+    completed_goals = fetched.get("completed_goals") or []
+    assert any(item["goal_id"] == goal["id"] for item in completed_goals)

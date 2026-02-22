@@ -337,9 +337,62 @@ class DaylioToJournivMapper:
     @staticmethod
     def _map_goal_logs(backup: DaylioBackup, import_timestamp: datetime) -> List[GoalLogDTO]:
         logs = []
+        day_entries_by_date: Dict[tuple[int, int, int], List[DaylioDayEntry]] = {}
+        for day_entry in backup.dayEntries:
+            key = (day_entry.year, day_entry.month, day_entry.day)
+            day_entries_by_date.setdefault(key, []).append(day_entry)
         for entry in backup.goalEntries:
-            logged_date = date(entry.year, entry.month + 1, entry.day)
             created_at = _ms_to_utc(entry.createdAt) or import_timestamp
+            year_month_candidates: List[tuple[int, int]] = [(entry.year, entry.month)]
+            if entry.month == 0:
+                year_month_candidates.append((entry.year - 1, 11))
+            else:
+                year_month_candidates.append((entry.year, entry.month - 1))
+            if entry.month == 11:
+                year_month_candidates.append((entry.year + 1, 0))
+            else:
+                year_month_candidates.append((entry.year, entry.month + 1))
+
+            matched_entries: List[DaylioDayEntry] = []
+            for candidate_year, candidate_month in year_month_candidates:
+                matched_entries = day_entries_by_date.get((candidate_year, candidate_month, entry.day), [])
+                if matched_entries:
+                    break
+
+            matched_day_entry: Optional[DaylioDayEntry] = None
+            if len(matched_entries) == 1:
+                matched_day_entry = matched_entries[0]
+            elif len(matched_entries) > 1:
+                # Prefer the day entry closest to goal createdAt timestamp.
+                target_ms = entry.createdAt
+                matched_day_entry = min(
+                    matched_entries,
+                    key=lambda item: abs((item.datetime or target_ms) - target_ms),
+                )
+
+            if matched_day_entry is not None:
+                logged_date = date(
+                    matched_day_entry.year,
+                    matched_day_entry.month + 1,
+                    matched_day_entry.day,
+                )
+            else:
+                # Daylio goalEntries month encoding can vary by platform (0-based vs 1-based).
+                candidate_dates: List[date] = []
+                for month_value in (entry.month, entry.month + 1):
+                    try:
+                        candidate_dates.append(date(entry.year, month_value, entry.day))
+                    except ValueError:
+                        continue
+                if candidate_dates:
+                    created_date = created_at.date()
+                    logged_date = min(
+                        candidate_dates,
+                        key=lambda candidate: abs((candidate - created_date).days),
+                    )
+                else:
+                    logged_date = created_at.date()
+
             logs.append(
                 GoalLogDTO(
                     goal_external_id=str(entry.goalId),
@@ -350,7 +403,11 @@ class DaylioToJournivMapper:
                     count=1,
                     source=GoalLogSource.AUTO,
                     last_updated_at=created_at,
-                    moment_external_id=None,
+                    moment_external_id=(
+                        f"daylio-moment-{matched_day_entry.datetime}"
+                        if matched_day_entry is not None
+                        else None
+                    ),
                     created_at=created_at,
                     updated_at=created_at,
                     external_id=str(entry.id),
