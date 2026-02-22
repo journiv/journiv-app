@@ -589,7 +589,7 @@ def _ensure_starter_goal_data_for_user(conn, user_id: str) -> None:
             "user_id": user_id,
             "category_id": category_id,
             "title": STARTER_GOAL["title"],
-            "icon": STARTER_GOAL.get("icon"),
+            "icon": STARTER_GOAL["icon"],
             "goal_type": STARTER_GOAL["goal_type"],
             "frequency_type": STARTER_GOAL["frequency_type"],
             "target_count": STARTER_GOAL["target_count"],
