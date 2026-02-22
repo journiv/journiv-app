@@ -38,15 +38,23 @@ from .models import (
 )
 
 _PREDEFINED_MOOD_NAMES = {
-    1: "Awful",
-    2: "Bad",
+    1: "Rad",
+    2: "Good",
     3: "Meh",
-    4: "Good",
-    5: "Rad",
+    4: "Bad",
+    5: "Awful",
 }
 
 _DAYLIO_TO_SYSTEM_OVERRIDES = {
     "rad": "Awesome",
+}
+
+_SYSTEM_MOOD_META: Dict[str, tuple[int, str]] = {
+    "awesome": (5, "positive"),
+    "good": (4, "positive"),
+    "meh": (3, "neutral"),
+    "bad": (2, "negative"),
+    "awful": (1, "negative"),
 }
 
 
@@ -59,6 +67,18 @@ class DaylioMappingContext:
 
 
 class DaylioToJournivMapper:
+    @staticmethod
+    def _normalize_daylio_mood_name(
+        *,
+        custom_name: Optional[str],
+        predefined_name_id: Optional[int],
+        fallback_label: str,
+    ) -> str:
+        name = (custom_name or "").strip()
+        if not name:
+            name = _PREDEFINED_MOOD_NAMES.get(predefined_name_id or -1, fallback_label)
+        return _DAYLIO_TO_SYSTEM_OVERRIDES.get(name.lower(), name)
+
     @staticmethod
     def build_export(
         backup: DaylioBackup,
@@ -167,19 +187,23 @@ class DaylioToJournivMapper:
         unmatched_group_position = 999
         unmatched_group_created = False
         for mood in backup.customMoods:
-            name = (mood.custom_name or "").strip()
-            if not name:
-                name = _PREDEFINED_MOOD_NAMES.get(mood.predefined_name_id, f"Daylio Mood {mood.id}")
-            normalized_name = name
-            mapped_name = _DAYLIO_TO_SYSTEM_OVERRIDES.get(normalized_name.lower(), normalized_name)
+            mapped_name = DaylioToJournivMapper._normalize_daylio_mood_name(
+                custom_name=mood.custom_name,
+                predefined_name_id=mood.predefined_name_id,
+                fallback_label=f"Daylio Mood {mood.id}",
+            )
             is_system_match = mapped_name.lower() in {"awful", "bad", "meh", "good", "awesome"}
             mood_group_id = mood.mood_group_id if mood.mood_group_id is not None else 3
-            score = max(1, min(5, mood_group_id))
-            category = "neutral"
-            if mood.mood_group_id in (1, 2):
-                category = "negative"
-            elif mood.mood_group_id in (4, 5):
-                category = "positive"
+            mood_meta = _SYSTEM_MOOD_META.get(mapped_name.lower())
+            if mood_meta:
+                score, category = mood_meta
+            else:
+                score = max(1, min(5, mood_group_id))
+                category = "neutral"
+                if mood.mood_group_id in (1, 2):
+                    category = "negative"
+                elif mood.mood_group_id in (4, 5):
+                    category = "positive"
             position = getattr(mood, "mood_group_order", 0) or 0
             moods.append(
                 MoodDefinitionDTO(
@@ -464,16 +488,20 @@ class DaylioToJournivMapper:
         logged_at = _ms_to_utc(day_entry.datetime) or import_timestamp
         tz_offset = _offset_to_timezone(day_entry.timeZoneOffset)
         logged_date = date(day_entry.year, day_entry.month + 1, day_entry.day)
+        primary_mood_name, primary_mood_external_id = DaylioToJournivMapper._resolve_day_entry_mood(
+            day_entry,
+            ctx,
+        )
 
         mood_activity = []
 
         # Add mood to mood_activity if present
-        if day_entry.mood is not None:
+        if primary_mood_name is not None or primary_mood_external_id is not None:
             mood_activity.append(
                 MomentMoodActivityDTO(
-                    mood_name=None,
+                    mood_name=primary_mood_name,
                     activity_name=None,
-                    mood_external_id=str(day_entry.mood),
+                    mood_external_id=primary_mood_external_id,
                     activity_external_id=None,
                 )
             )
@@ -498,14 +526,49 @@ class DaylioToJournivMapper:
             note=None,
             location_json=None,
             weather_json=None,
-            primary_mood_name=None,
+            primary_mood_name=primary_mood_name,
             mood_activity=mood_activity,
             media=media,
             created_at=logged_at,
             updated_at=logged_at,
             external_id=f"daylio-moment-{day_entry.datetime}",
-            primary_mood_external_id=str(day_entry.mood) if day_entry.mood is not None else None,
+            primary_mood_external_id=primary_mood_external_id,
         )
+
+    @staticmethod
+    def _resolve_day_entry_mood(
+        day_entry: DaylioDayEntry,
+        ctx: DaylioMappingContext,
+    ) -> tuple[Optional[str], Optional[str]]:
+        """
+        Resolve Daylio mood reference for a day entry.
+
+        Daylio exports can reference a custom mood by ID or a predefined mood
+        scale value. For predefined values we prefer name-based mapping.
+        """
+        if day_entry.mood is None:
+            return None, None
+
+        mood_ref = day_entry.mood
+        mood_obj = ctx.moods_by_id.get(mood_ref)
+        if mood_obj:
+            mapped_name = DaylioToJournivMapper._normalize_daylio_mood_name(
+                custom_name=mood_obj.get("custom_name"),
+                predefined_name_id=mood_obj.get("predefined_name_id"),
+                fallback_label=f"Daylio Mood {mood_ref}",
+            )
+            return mapped_name, str(mood_ref)
+
+        predefined_name = _PREDEFINED_MOOD_NAMES.get(mood_ref)
+        if predefined_name:
+            mapped_name = DaylioToJournivMapper._normalize_daylio_mood_name(
+                custom_name=predefined_name,
+                predefined_name_id=None,
+                fallback_label=f"Daylio Mood {mood_ref}",
+            )
+            return mapped_name, None
+
+        return None, str(mood_ref)
 
     @staticmethod
     def _map_media(
