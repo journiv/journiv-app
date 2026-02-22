@@ -184,6 +184,7 @@ class MomentService:
             user_id=user_id,
             reference_date=reference_date,
             activity_ids=activity_ids,
+            triggering_moment_id=moment.id,
         )
 
     def _sync_activity_links_for_entry(

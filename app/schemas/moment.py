@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.models.enums import GoalLogStatus
 from app.schemas.activity import ActivityResponse
 from app.schemas.base import TimestampMixin
 from app.schemas.entry import EntryPreviewResponse, EntryUpdate, QuillDelta
@@ -80,6 +81,15 @@ class MomentMoodActivityResponse(TimestampMixin):
     activity: Optional[ActivityResponse] = None
 
 
+class MomentCompletedGoalResponse(BaseModel):
+    goal_id: uuid.UUID
+    title: str
+    icon: Optional[str] = None
+    color_value: Optional[int] = None
+    status: GoalLogStatus
+    count: int
+
+
 class MomentResponse(TimestampMixin):
     id: uuid.UUID
     user_id: uuid.UUID
@@ -98,6 +108,7 @@ class MomentResponse(TimestampMixin):
     is_pinned: bool = False
     mood_activity: List[MomentMoodActivityResponse] = Field(default_factory=list)
     tags: List[TagResponse] = Field(default_factory=list)
+    completed_goals: List[MomentCompletedGoalResponse] = Field(default_factory=list)
     media_count: int = 0
     media: List[MomentMediaThumbnail] = Field(default_factory=list)
 

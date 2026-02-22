@@ -164,6 +164,7 @@ class GoalService:
         goal: Goal,
         reference_date: date,
         is_period_closed: bool = False,
+        triggering_moment_id: Optional[uuid.UUID] = None,
     ) -> None:
         period_start, period_end = self._get_period_range(
             goal.user_id,
@@ -194,6 +195,7 @@ class GoalService:
                 count=count,
                 source=GoalLogSource.AUTO,
                 last_updated_at=utc_now(),
+                moment_id=triggering_moment_id if status == GoalLogStatus.SUCCESS else None,
             )
             self.session.add(log)
         else:
@@ -204,6 +206,10 @@ class GoalService:
                 existing.status = status
                 existing.count = count
                 existing.last_updated_at = utc_now()
+                if status == GoalLogStatus.SUCCESS and triggering_moment_id is not None:
+                    existing.moment_id = triggering_moment_id
+                else:
+                    existing.moment_id = None
                 self.session.add(existing)
 
     def recalculate_for_activities(
@@ -211,6 +217,7 @@ class GoalService:
         user_id: uuid.UUID,
         reference_date: date,
         activity_ids: List[uuid.UUID],
+        triggering_moment_id: Optional[uuid.UUID] = None,
     ) -> None:
         if not activity_ids:
             return
@@ -225,7 +232,11 @@ class GoalService:
             )
         )
         for goal in goals:
-            self.recalculate_period(goal, reference_date)
+            self.recalculate_period(
+                goal,
+                reference_date,
+                triggering_moment_id=triggering_moment_id,
+            )
 
     def create_goal(self, user_id: uuid.UUID, data: GoalCreate) -> Goal:
         try:

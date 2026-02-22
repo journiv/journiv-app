@@ -142,6 +142,14 @@ def test_daylio_import_from_real_fixture_file(
             ),
         )
     )
+    expected_linked_goal_logs = sum(
+        1
+        for log in DaylioToJournivMapper._map_goal_logs(
+            backup_model,
+            mapper_import_timestamp,
+        )
+        if log.moment_external_id
+    )
     pre_import_goals = api_client.list_goals(api_user.access_token)
     pre_import_total_goal_logs = _total_goal_logs(
         api_client,
@@ -206,6 +214,12 @@ def test_daylio_import_from_real_fixture_file(
         post_import_goals,
     )
     assert post_import_total_goal_logs - pre_import_total_goal_logs == expected_goal_logs
+
+    imported_goal_logs = []
+    for goal in post_import_goals:
+        imported_goal_logs.extend(api_client.list_goal_logs(api_user.access_token, goal["id"], limit=365))
+    linked_goal_logs = [log for log in imported_goal_logs if log.get("moment_id") is not None]
+    assert len(linked_goal_logs) >= expected_linked_goal_logs
 
     moments = api_client.list_moments(api_user.access_token, limit=200)
     assert len(moments) == expected_moments

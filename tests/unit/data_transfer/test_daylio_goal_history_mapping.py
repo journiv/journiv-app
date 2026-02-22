@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from app.data_transfer.daylio.mappers import DaylioToJournivMapper
 from app.data_transfer.daylio.models import (
     DaylioBackup,
+    DaylioDayEntry,
     DaylioGoalEntry,
     DaylioGoalSuccessWeek,
 )
@@ -66,3 +67,42 @@ def test_merge_goal_logs_prefers_daily_when_period_start_collides():
     assert len(weekly_logs) == 1
     assert len(merged) == 1
     assert merged[0].external_id == "1"
+
+
+def test_map_goal_logs_links_to_day_entry_moment_external_id_with_month_normalization():
+    backup = DaylioBackup(
+        version=19,
+        dayEntries=[
+            # Day entry month is 0-based (Feb -> 1)
+            DaylioDayEntry(
+                datetime=1770577260000,
+                year=2026,
+                month=1,
+                day=8,
+                hour=11,
+                minute=1,
+            ),
+        ],
+        goalEntries=[
+            # Goal entry month is 1-based in this fixture style (Feb -> 2)
+            DaylioGoalEntry(
+                id=3,
+                goalId=1,
+                createdAt=1770594609002,
+                year=2026,
+                month=2,
+                day=8,
+                hour=15,
+                minute=50,
+                second=6,
+            ),
+        ],
+    )
+
+    logs = DaylioToJournivMapper._map_goal_logs(
+        backup,
+        import_timestamp=datetime(2026, 2, 20, tzinfo=timezone.utc),
+    )
+
+    assert len(logs) == 1
+    assert logs[0].moment_external_id == "daylio-moment-1770577260000"

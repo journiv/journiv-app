@@ -12,6 +12,8 @@ from app.api.dependencies import get_current_user, get_session
 from app.core.db_utils import normalize_uuid_list
 from app.core.exceptions import TagNotFoundError, ValidationError
 from app.core.logging_config import log_error, log_warning
+from app.models.enums import GoalLogStatus
+from app.models.goal import Goal, GoalLog
 from app.models.moment import Moment, MomentMoodActivity
 from app.models.user import User
 from app.models.user_mood_preference import UserMoodPreference
@@ -19,6 +21,7 @@ from app.schemas.activity import ActivityResponse
 from app.schemas.entry import EntryPreviewResponse, MomentMediaResponse
 from app.schemas.moment import (
     MomentCalendarItem,
+    MomentCompletedGoalResponse,
     MomentCreate,
     MomentMediaThumbnail,
     MomentMoodActivityResponse,
@@ -84,6 +87,7 @@ def _build_moment_response(
     current_user: User,
     *,
     media: List[MomentMediaThumbnail] | None = None,
+    completed_goals: List[MomentCompletedGoalResponse] | None = None,
 ) -> MomentResponse:
     entry_preview = EntryPreviewResponse.model_validate(moment.entry) if moment.entry else None
     links = list(moment.mood_activity_links or [])
@@ -115,11 +119,49 @@ def _build_moment_response(
         is_pinned=moment.is_pinned,
         mood_activity=mood_activity,
         tags=tags,
+        completed_goals=completed_goals or [],
         media_count=moment.media_count,
         media=media or [],
         created_at=moment.created_at,
         updated_at=moment.updated_at,
     )
+
+
+def _load_completed_goals_map(
+    session: Session,
+    user_id: uuid.UUID,
+    moment_ids: Iterable[uuid.UUID],
+) -> dict[uuid.UUID, List[MomentCompletedGoalResponse]]:
+    unique_ids = list({moment_id for moment_id in moment_ids if moment_id})
+    if not unique_ids:
+        return {}
+    rows = session.exec(
+        select(GoalLog, Goal)
+        .join(Goal, col(Goal.id) == col(GoalLog.goal_id))
+        .where(
+            GoalLog.user_id == user_id,
+            col(GoalLog.moment_id).in_(normalize_uuid_list(unique_ids)),
+            GoalLog.status == GoalLogStatus.SUCCESS,
+        )
+        .order_by(col(Goal.position), col(Goal.title))
+    ).all()
+    results: dict[uuid.UUID, List[MomentCompletedGoalResponse]] = {
+        moment_id: [] for moment_id in unique_ids
+    }
+    for goal_log, goal in rows:
+        if goal_log.moment_id is None:
+            continue
+        results.setdefault(goal_log.moment_id, []).append(
+            MomentCompletedGoalResponse(
+                goal_id=goal.id,
+                title=goal.title,
+                icon=goal.icon,
+                color_value=goal.color_value,
+                status=goal_log.status,
+                count=goal_log.count,
+            )
+        )
+    return results
 
 
 def _build_moment_responses(
@@ -142,6 +184,11 @@ def _build_moment_responses(
         [link.mood_id for link in links if link.mood_id],
     )
     responses: List[MomentResponse] = []
+    completed_goals_map = _load_completed_goals_map(
+        session,
+        current_user.id,
+        [moment.id for moment in moments],
+    )
     for moment in moments:
         try:
             logged_date_tz = _require_logged_date_tz(moment)
@@ -178,6 +225,7 @@ def _build_moment_responses(
                     for tag in (moment.tags or [])
                     if tag.user_id == current_user.id
                 ],
+                completed_goals=completed_goals_map.get(moment.id, []),
                 media_count=moment.media_count,
                 media=(media_map or {}).get(moment.id, []),
                 created_at=moment.created_at,
@@ -205,7 +253,12 @@ async def create_moment(
     moment_service = MomentService(session)
     try:
         moment = moment_service.create_moment(current_user.id, moment_data)
-        return _build_moment_response(session, moment, current_user)
+        return _build_moment_response(
+            session,
+            moment,
+            current_user,
+            completed_goals=_load_completed_goals_map(session, current_user.id, [moment.id]).get(moment.id, []),
+        )
     except (ValueError, ValidationError) as exc:
         log_error(exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -409,7 +462,8 @@ async def get_moment(
             session,
             moment,
             current_user,
-            media=media_map.get(moment.id, [])
+            media=media_map.get(moment.id, []),
+            completed_goals=_load_completed_goals_map(session, current_user.id, [moment.id]).get(moment.id, []),
         )
     except MomentNotFoundError:
         raise HTTPException(status_code=404, detail="Moment not found") from None
@@ -441,7 +495,12 @@ async def update_moment(
     moment_service = MomentService(session)
     try:
         moment = moment_service.update_moment(moment_id, current_user.id, moment_data)
-        return _build_moment_response(session, moment, current_user)
+        return _build_moment_response(
+            session,
+            moment,
+            current_user,
+            completed_goals=_load_completed_goals_map(session, current_user.id, [moment.id]).get(moment.id, []),
+        )
     except MomentNotFoundError:
         raise HTTPException(status_code=404, detail="Moment not found") from None
     except (ValueError, ValidationError) as exc:
