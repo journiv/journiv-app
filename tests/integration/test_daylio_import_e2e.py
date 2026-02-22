@@ -7,11 +7,14 @@ from __future__ import annotations
 import base64
 import json
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from app.data_transfer.daylio.mappers import DaylioToJournivMapper
+from app.data_transfer.daylio.models import DaylioBackup
 from tests.integration.helpers import wait_for_import_completion
 from tests.lib import ApiUser, JournivApiClient
 
@@ -41,6 +44,17 @@ def _load_daylio_backup_from_fixture(fixture_path: Path) -> dict[str, Any]:
     with zipfile.ZipFile(fixture_path) as archive:
         raw = archive.read("backup.daylio")
     return json.loads(base64.b64decode(raw))
+
+
+def _total_goal_logs(
+    api_client: JournivApiClient,
+    token: str,
+    goals: list[dict[str, Any]],
+) -> int:
+    total = 0
+    for goal in goals:
+        total += len(api_client.list_goal_logs(token, goal["id"], limit=365))
+    return total
 
 
 def _should_create_entry(day_entry: dict[str, Any]) -> bool:
@@ -95,6 +109,7 @@ def test_daylio_import_from_real_fixture_file(
 
     fixture_bytes = fixture_path.read_bytes()
     backup = _load_daylio_backup_from_fixture(fixture_path)
+    backup_model = DaylioBackup.model_validate(backup)
 
     day_entries = backup.get("dayEntries", [])
     custom_moods_by_id = {m["id"]: m for m in backup.get("customMoods", [])}
@@ -106,6 +121,33 @@ def test_daylio_import_from_real_fixture_file(
         if _should_create_entry(entry) or _should_create_moment(entry)
     )
     expected_asset_refs = sum(len(entry.get("assets") or []) for entry in day_entries)
+    mapper_ctx = DaylioToJournivMapper._build_context(backup_model)
+    mapper_import_timestamp = datetime.now(tz=timezone.utc)
+    expected_goals = len(
+        DaylioToJournivMapper._map_goals(
+            backup_model,
+            mapper_import_timestamp,
+            mapper_ctx,
+        )
+    )
+    expected_goal_logs = len(
+        DaylioToJournivMapper._merge_goal_logs(
+            daily_logs=DaylioToJournivMapper._map_goal_logs(
+                backup_model,
+                mapper_import_timestamp,
+            ),
+            weekly_logs=DaylioToJournivMapper._map_goal_success_weeks(
+                backup_model,
+                mapper_import_timestamp,
+            ),
+        )
+    )
+    pre_import_goals = api_client.list_goals(api_user.access_token)
+    pre_import_total_goal_logs = _total_goal_logs(
+        api_client,
+        api_user.access_token,
+        pre_import_goals,
+    )
 
     expected_mood_names = {
         mood_name
@@ -139,6 +181,9 @@ def test_daylio_import_from_real_fixture_file(
     result_data = completed_job.get("result_data", {})
     assert result_data["journals_created"] == 1
     assert result_data["entries_created"] == expected_entries
+    assert result_data["goals_created"] == expected_goals
+    assert result_data["goal_logs_created"] == expected_goal_logs
+    assert result_data["goal_manual_logs_created"] == 0
     assert result_data.get("media_files_imported", 0) + result_data.get(
         "media_files_skipped", 0
     ) == (expected_asset_refs)
@@ -153,6 +198,14 @@ def test_daylio_import_from_real_fixture_file(
 
     entries = api_client.list_entries(api_user.access_token)
     assert len(entries) == expected_entries
+
+    post_import_goals = api_client.list_goals(api_user.access_token)
+    post_import_total_goal_logs = _total_goal_logs(
+        api_client,
+        api_user.access_token,
+        post_import_goals,
+    )
+    assert post_import_total_goal_logs - pre_import_total_goal_logs == expected_goal_logs
 
     moments = api_client.list_moments(api_user.access_token, limit=200)
     assert len(moments) == expected_moments
