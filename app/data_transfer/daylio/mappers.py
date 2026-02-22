@@ -485,7 +485,6 @@ class DaylioToJournivMapper:
                 "raw_export_metadata": backup.metadata,
                 "daylio_goal_entries_count": len(backup.goalEntries),
                 "daylio_goal_success_weeks_count": len(backup.goalSuccessWeeks),
-                "daylio_goal_success_weeks": [entry.model_dump() for entry in backup.goalSuccessWeeks],
             },
             created_at=first_entry_at or import_timestamp,
             updated_at=import_timestamp,
