@@ -15,6 +15,7 @@ from app.core.logging_config import log_error
 from app.models.user import User
 from app.schemas.goal import (
     GoalCreate,
+    GoalLogResponse,
     GoalReorderRequest,
     GoalResponse,
     GoalToggleRequest,
@@ -207,6 +208,35 @@ async def toggle_goal_completion(
         raise HTTPException(
             status_code=500,
             detail="An error occurred while toggling goal",
+        ) from exc
+
+
+@router.get(
+    "/{goal_id}/logs",
+    response_model=List[GoalLogResponse],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Goal not found"},
+    },
+)
+async def get_goal_logs(
+    goal_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    limit: int = Query(default=12, ge=1, le=365),
+):
+    goal_service = GoalService(session)
+    try:
+        logs = goal_service.list_goal_logs(goal_id, current_user.id, limit=limit)
+        return [GoalLogResponse.model_validate(log) for log in logs]
+    except GoalNotFoundError:
+        raise HTTPException(status_code=404, detail="Goal not found") from None
+    except Exception as exc:
+        log_error(exc, request_id=None, user_id=current_user.id)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while fetching goal logs",
         ) from exc
 
 

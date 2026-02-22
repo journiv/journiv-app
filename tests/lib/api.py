@@ -953,6 +953,21 @@ class JournivApiClient:
             expected=(200,),
         ).json()
 
+    def list_goal_logs(
+        self,
+        token: str,
+        goal_id: str,
+        *,
+        limit: int = 12,
+    ) -> list[Dict[str, Any]]:
+        return self.request(
+            "GET",
+            f"/goals/{goal_id}/logs",
+            token=token,
+            params={"limit": limit},
+            expected=(200,),
+        ).json()
+
     # ------------------------------------------------------------------ #
     # Prompt helpers
     # ------------------------------------------------------------------ #

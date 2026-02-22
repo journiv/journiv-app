@@ -379,6 +379,29 @@ class GoalService:
             )
         return results
 
+    def list_goal_logs(
+        self,
+        goal_id: uuid.UUID,
+        user_id: uuid.UUID,
+        *,
+        limit: int = 12,
+    ) -> List[GoalLog]:
+        """
+        Return historical goal logs for a single goal ordered by newest period first.
+        """
+        self.get_goal(goal_id, user_id)
+        return list(
+            self.session.exec(
+                select(GoalLog)
+                .where(
+                    col(GoalLog.goal_id) == goal_id,
+                    col(GoalLog.user_id) == user_id,
+                )
+                .order_by(col(GoalLog.period_start).desc(), col(GoalLog.created_at).desc())
+                .limit(limit)
+            )
+        )
+
     def _get_activity_days_for_activities(
         self,
         user_id: uuid.UUID,

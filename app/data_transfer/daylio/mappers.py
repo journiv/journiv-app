@@ -379,14 +379,14 @@ class DaylioToJournivMapper:
             week_end = week_start + timedelta(days=6)
             created_at = import_timestamp
             if (
-                week_entry.create_at_year
-                and week_entry.create_at_month
-                and week_entry.create_at_day
+                week_entry.create_at_year is not None
+                and week_entry.create_at_month is not None
+                and week_entry.create_at_day is not None
             ):
                 try:
                     created_date = date(
                         week_entry.create_at_year,
-                        week_entry.create_at_month,
+                        week_entry.create_at_month + 1,
                         week_entry.create_at_day,
                     )
                     created_at = datetime.combine(
@@ -394,7 +394,15 @@ class DaylioToJournivMapper:
                         datetime.min.time(),
                         tzinfo=timezone.utc,
                     )
-                except ValueError:
+                except ValueError as exc:
+                    log_warning(
+                        "Invalid Daylio goalSuccessWeeks created_at components; using import timestamp",
+                        goal_id=week_entry.goal_id,
+                        create_at_year=week_entry.create_at_year,
+                        create_at_month=week_entry.create_at_month,
+                        create_at_day=week_entry.create_at_day,
+                        error=str(exc),
+                    )
                     created_at = import_timestamp
 
             logs.append(
@@ -656,7 +664,12 @@ class DaylioToJournivMapper:
             )
             return mapped_name, None
 
-        return None, str(mood_ref)
+        log_warning(
+            "Unknown Daylio mood reference in day entry; skipping mood mapping",
+            mood_ref=mood_ref,
+            datetime=day_entry.datetime,
+        )
+        return None, None
 
     @staticmethod
     def _map_media(
