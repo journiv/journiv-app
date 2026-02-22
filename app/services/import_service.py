@@ -1788,16 +1788,23 @@ class ImportService:
             mood_name_for_insert = mood_dto.name
 
             if existing_mood:
-                existing_mood.icon = mood_dto.icon
-                existing_mood.key = mood_dto.key
-                existing_mood.color_value = mood_dto.color_value
-                if mood_dto.score is not None:
-                    existing_mood.score = mood_dto.score
-                existing_mood.position = mood_dto.position
-                existing_mood.is_active = mood_dto.is_active
-                existing_mood.category = mood_dto.category
-                if mood_dto.updated_at:
-                    existing_mood.updated_at = mood_dto.updated_at
+                # Keep starter moods stable when matched by name/external mapping.
+                # We should not mutate core identifiers or deactivate default moods
+                # based on source-app metadata.
+                if not existing_mood.stable_key:
+                    existing_mood.icon = mood_dto.icon
+                    if mood_dto.key and not existing_mood.key:
+                        existing_mood.key = mood_dto.key
+                    existing_mood.color_value = mood_dto.color_value
+                    if mood_dto.score is not None:
+                        existing_mood.score = mood_dto.score
+                    existing_mood.position = mood_dto.position
+                    existing_mood.category = mood_dto.category
+                    if mood_dto.updated_at:
+                        existing_mood.updated_at = mood_dto.updated_at
+
+                # Never downgrade active moods to inactive on import merge.
+                existing_mood.is_active = bool(existing_mood.is_active or mood_dto.is_active)
                 summary.moods_reused += 1
                 mood_id = existing_mood.id
             else:
