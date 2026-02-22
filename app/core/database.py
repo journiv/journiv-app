@@ -180,25 +180,18 @@ def seed_initial_data():
     # Set SKIP_DATA_SEEDING=false to enable seeding in workers (e.g., for development)
     skip_data_seeding = os.getenv("SKIP_DATA_SEEDING", "true").lower() in ("true", "1", "yes")
     if skip_data_seeding:
-        logger.info("Skipping mood/prompt seeding in worker (already performed by entrypoint script)")
+        logger.info("Skipping startup prompt seeding in worker (already handled by entrypoint script)")
 
-    logger.info("Checking if initial data seeding is needed...")
+    logger.info(
+        "Checking startup data initialization (prompts may be skipped; instance details are always ensured)..."
+    )
 
     with Session(engine) as session:
         try:
             # Import models here to avoid circular imports
-            from app.models.mood import Mood
             from app.models.prompt import Prompt
 
             if not skip_data_seeding:
-                # Check if moods exist
-                existing_moods = session.exec(select(Mood)).first()
-                if not existing_moods:
-                    logger.info("Seeding moods data...")
-                    seed_moods(session)
-                else:
-                    logger.info("Moods already exist, skipping mood seeding")
-
                 # Check if prompts exist
                 existing_prompts = session.exec(select(Prompt)).first()
                 if not existing_prompts:
@@ -243,12 +236,6 @@ def _seed_data_from_json(session: Session, model: type[SQLModel], file_path: Pat
     except Exception as e:
         logger.error(e)
         session.rollback()
-
-
-def seed_moods(session: Session):
-    """Seed moods from JSON file."""
-    from app.models.mood import Mood
-    _seed_data_from_json(session, Mood, PROJECT_ROOT / "scripts/moods.json", "name")
 
 
 def seed_prompts(session: Session):

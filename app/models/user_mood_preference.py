@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 class UserMoodPreference(BaseModel, table=True):
     """
-    Per-user preferences for moods (e.g., hiding system moods).
+    Per-user preferences for moods.
     """
     __tablename__ = "user_mood_preference"
 

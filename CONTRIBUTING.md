@@ -157,7 +157,6 @@ journiv-backend/
 │   ├── docker-entrypoint.sh      # Container startup script
 │   ├── fresh_migration.sh        # Regenerate migrations (uv)
 │   ├── test.sh                   # Test runner (uv sync + uv run pytest)
-│   ├── moods.json                # Seed data
 │   └── prompts.json              # Seed data
 ├── pyproject.toml                # Project and dependencies (uv)
 ├── uv.lock                       # Locked dependencies

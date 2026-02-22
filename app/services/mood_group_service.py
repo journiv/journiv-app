@@ -41,7 +41,7 @@ class MoodGroupService:
             select(Mood.id).where(
                 col(Mood.id).in_(normalize_uuid_list(ids)),
                 col(Mood.is_active).is_(True),
-                (col(Mood.user_id).is_(None) | (col(Mood.user_id) == user_id)),
+                col(Mood.user_id) == user_id,
             )
         ).all()
         if len(rows) != len(set(ids)):
@@ -112,7 +112,7 @@ class MoodGroupService:
         include_hidden: bool = False,
     ) -> dict:
         group = self.get_group_by_id(group_id)
-        if not group or (group.user_id is not None and group.user_id != user_id):
+        if not group or group.user_id != user_id:
             raise MoodGroupNotFoundError(f"Mood group {group_id} not found")
 
         pref = self.session.exec(
@@ -142,7 +142,7 @@ class MoodGroupService:
         groups = self.session.exec(
             select(MoodGroup)
             .where(
-                (col(MoodGroup.user_id).is_(None)) | (col(MoodGroup.user_id) == user_id)
+                col(MoodGroup.user_id) == user_id
             )
         ).all()
         preferences = self.session.exec(
@@ -236,7 +236,7 @@ class MoodGroupService:
         group_ids = [group_id for group_id, _ in updates]
         groups = self.session.exec(
             select(MoodGroup).where(
-                (col(MoodGroup.user_id).is_(None)) | (col(MoodGroup.user_id) == user_id),
+                col(MoodGroup.user_id) == user_id,
                 col(MoodGroup.id).in_(normalize_uuid_list(group_ids)),
             )
         ).all()
@@ -271,7 +271,7 @@ class MoodGroupService:
 
     def set_group_hidden(self, user_id: uuid.UUID, group_id: uuid.UUID, is_hidden: bool) -> None:
         group = self.get_group_by_id(group_id)
-        if not group or (group.user_id is not None and group.user_id != user_id):
+        if not group or group.user_id != user_id:
             raise MoodGroupNotFoundError(f"Mood group {group_id} not found")
         pref = self.session.exec(
             select(UserMoodGroupPreference).where(
@@ -300,7 +300,7 @@ class MoodGroupService:
         group = self.get_group_by_id(group_id)
         if not group:
             raise MoodGroupNotFoundError(f"Mood group {group_id} not found")
-        if group.user_id is not None and group.user_id != user_id:
+        if group.user_id != user_id:
             raise MoodGroupNotFoundError(f"Mood group {group_id} not found")
         self._validate_mood_ids(user_id, mood_ids)
         links = self.session.exec(
@@ -374,7 +374,7 @@ class MoodGroupService:
             .where(
                 col(MoodGroupLink.mood_group_id).in_(normalize_uuid_list(group_ids)),
                 col(Mood.is_active).is_(True),
-                (col(Mood.user_id).is_(None) | (col(Mood.user_id) == user_id)),
+                col(Mood.user_id) == user_id,
             )
             .order_by(
                 col(MoodGroupLink.mood_group_id),

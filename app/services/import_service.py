@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, cast
 from uuid import UUID
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, col, select
 
@@ -905,9 +905,8 @@ class ImportService:
                 select(Mood)
                 .where(
                     func.lower(Mood.name) == mood_name.lower(),
-                    or_(col(Mood.user_id) == user_id, col(Mood.user_id).is_(None)),
+                    col(Mood.user_id) == user_id,
                 )
-                .order_by(col(Mood.user_id).is_(None))
             )
             .scalars()
             .first()
@@ -1748,13 +1747,10 @@ class ImportService:
         return lookup
 
     def _get_existing_mood_names(self, user_id: UUID) -> set:
-        """
-        Get set of existing mood names (system-wide, lowercase).
-
-        Note: Moods are system-wide, so user_id parameter is not used.
-        It's kept for API consistency with other _get_existing_* methods.
-        """
-        moods = self.db.execute(select(Mood.name)).all()
+        """Get set of existing user mood names (lowercase)."""
+        moods = self.db.execute(
+            select(Mood.name).where(col(Mood.user_id) == user_id)
+        ).all()
         return {m[0].lower() for m in moods}
 
     def _import_mood_definitions(
@@ -1767,80 +1763,44 @@ class ImportService:
         """Import mood definitions and return external_id -> mood_id map."""
         existing = (
             self.db.execute(
-                select(Mood).where(
-                    or_(col(Mood.user_id) == user_id, col(Mood.user_id).is_(None))
-                )
+                select(Mood).where(col(Mood.user_id) == user_id)
             )
             .scalars()
             .all()
         )
-        system_by_key: Dict[str, Mood] = {}
-        system_by_name: Dict[str, Mood] = {}
         user_by_key: Dict[str, Mood] = {}
         user_by_name: Dict[str, Mood] = {}
         for mood in existing:
-            if mood.user_id is None:
-                if mood.key:
-                    system_by_key[mood.key] = mood
-                system_by_name[mood.name.lower()] = mood
-            else:
-                if mood.key:
-                    user_by_key[mood.key] = mood
-                user_by_name[mood.name.lower()] = mood
+            if mood.key:
+                user_by_key[mood.key] = mood
+            user_by_name[mood.name.lower()] = mood
 
         mood_id_map: Dict[str, UUID] = {}
         for mood_dto in mood_definitions:
-            is_custom = bool(getattr(mood_dto, "is_custom", False))
             lookup_key = mood_dto.key or ""
             lookup_name = mood_dto.name.lower()
             existing_mood = None
-            allow_system_match = lookup_key.startswith("daylio:")
-
-            if is_custom:
-                if lookup_key and lookup_key in user_by_key:
-                    existing_mood = user_by_key[lookup_key]
-                elif lookup_name in user_by_name:
-                    existing_mood = user_by_name[lookup_name]
-                elif allow_system_match and lookup_name in system_by_name:
-                    existing_mood = system_by_name[lookup_name]
-            else:
-                if lookup_key and lookup_key in system_by_key:
-                    existing_mood = system_by_key[lookup_key]
-                elif lookup_name in system_by_name:
-                    existing_mood = system_by_name[lookup_name]
+            if lookup_key and lookup_key in user_by_key:
+                existing_mood = user_by_key[lookup_key]
+            elif lookup_name in user_by_name:
+                existing_mood = user_by_name[lookup_name]
 
             mood_name_for_insert = mood_dto.name
 
             if existing_mood:
-                if allow_system_match and existing_mood.user_id is None:
-                    summary.moods_reused += 1
-                    mood_id = existing_mood.id
-                    if mood_dto.external_id:
-                        mood_id_map[mood_dto.external_id] = mood_id
-                        record_mapping("moods", mood_dto.external_id, mood_id)
-                    continue
-
-                if is_custom and existing_mood.user_id == user_id:
-                    existing_mood.icon = mood_dto.icon
-                    existing_mood.key = mood_dto.key
-                    existing_mood.color_value = mood_dto.color_value
-                    if mood_dto.score is not None:
-                        existing_mood.score = mood_dto.score
-                    existing_mood.position = mood_dto.position
-                    existing_mood.is_active = mood_dto.is_active
-                    existing_mood.category = mood_dto.category
-                    if mood_dto.updated_at:
-                        existing_mood.updated_at = mood_dto.updated_at
+                existing_mood.icon = mood_dto.icon
+                existing_mood.key = mood_dto.key
+                existing_mood.color_value = mood_dto.color_value
+                if mood_dto.score is not None:
+                    existing_mood.score = mood_dto.score
+                existing_mood.position = mood_dto.position
+                existing_mood.is_active = mood_dto.is_active
+                existing_mood.category = mood_dto.category
+                if mood_dto.updated_at:
+                    existing_mood.updated_at = mood_dto.updated_at
                 summary.moods_reused += 1
                 mood_id = existing_mood.id
             else:
-                if not is_custom:
-                    warning_msg = (
-                        f"System mood not found: '{mood_name_for_insert}', "
-                        "skipping to avoid creating global moods"
-                    )
-                    self._add_warning(summary, warning_msg, "Skipped (mood)")
-                    continue
                 mood = Mood(
                     name=mood_name_for_insert,
                     category=mood_dto.category,
@@ -1858,14 +1818,9 @@ class ImportService:
                 self.db.flush()
                 summary.moods_created += 1
                 mood_id = mood.id
-                if is_custom:
-                    user_by_name[mood.name.lower()] = mood
-                    if lookup_key:
-                        user_by_key[lookup_key] = mood
-                else:
-                    system_by_name[mood.name.lower()] = mood
-                    if lookup_key:
-                        system_by_key[lookup_key] = mood
+                user_by_name[mood.name.lower()] = mood
+                if lookup_key:
+                    user_by_key[lookup_key] = mood
 
             if mood_dto.external_id:
                 mood_id_map[mood_dto.external_id] = mood_id
@@ -1884,30 +1839,20 @@ class ImportService:
         """Import mood groups and return external_id -> group_id map."""
         mood_group_id_map: Dict[str, UUID] = {}
         for group_dto in mood_groups:
-            is_custom = bool(getattr(group_dto, "is_custom", True))
             query = select(MoodGroup).where(
-                func.lower(MoodGroup.name) == group_dto.name.lower()
+                func.lower(MoodGroup.name) == group_dto.name.lower(),
+                col(MoodGroup.user_id) == user_id,
             )
-            if is_custom:
-                query = query.where(col(MoodGroup.user_id) == user_id)
-            else:
-                query = query.where(col(MoodGroup.user_id).is_(None))
             existing = self.db.execute(query).scalars().first()
 
             if existing:
-                if is_custom and existing.user_id == user_id:
-                    existing.icon = group_dto.icon
-                    existing.color_value = group_dto.color_value
-                    existing.position = group_dto.position
-                    if group_dto.updated_at:
-                        existing.updated_at = group_dto.updated_at
+                existing.icon = group_dto.icon
+                existing.color_value = group_dto.color_value
+                existing.position = group_dto.position
+                if group_dto.updated_at:
+                    existing.updated_at = group_dto.updated_at
                 group_id = existing.id
             else:
-                # Skip creating system groups if missing to avoid global side-effects.
-                if not is_custom:
-                    warning_msg = f"System mood group not found: '{group_dto.name}', skipping"
-                    self._add_warning(summary, warning_msg, "Skipped (mood group)")
-                    continue
                 group = MoodGroup(
                     user_id=user_id,
                     name=group_dto.name,

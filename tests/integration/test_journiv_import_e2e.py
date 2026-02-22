@@ -169,9 +169,10 @@ class TestJournivImportExportE2E:
             color_value=0x22C55E,
             position=1,
         )
+        activity_name = f"Exercise-{uuid.uuid4().hex[:8]}"
         activity = api_client.create_activity(
             api_user.access_token,
-            name="Exercise",
+            name=activity_name,
             group_id=activity_group["id"],
             icon="🏃",
             color="#16A34A",
@@ -201,7 +202,7 @@ class TestJournivImportExportE2E:
             position=1,
         )
 
-        # Create custom moods and mood group (ensure names are unique across system moods)
+        # Create custom moods and mood group (ensure names are unique across seeded moods)
         mood_name_one = f"Curious-{uuid.uuid4().hex[:8]}"
         mood_name_two = f"Grounded-{uuid.uuid4().hex[:8]}"
         custom_mood = api_client.create_mood(

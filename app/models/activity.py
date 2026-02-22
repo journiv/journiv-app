@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import field_validator
 from sqlalchemy import Column, ForeignKey
-from sqlmodel import CheckConstraint, Field, Index, Relationship
+from sqlmodel import CheckConstraint, Field, Index, Relationship, UniqueConstraint
 
 from .base import BaseModel
 
@@ -35,6 +35,7 @@ class Activity(BaseModel, table=True):
     icon: Optional[str] = Field(None, max_length=50)  # e.g., "🏃" or "mdi-run"
     color: Optional[str] = Field(None, max_length=50)  # hex color or theme token
     position: int = Field(default=0, nullable=False)
+    stable_key: Optional[str] = Field(default=None, max_length=100, index=True)
     group_id: Optional[uuid.UUID] = Field(
         default=None,
         sa_column=Column(
@@ -57,6 +58,7 @@ class Activity(BaseModel, table=True):
         Index('idx_activity_user_name', 'user_id', 'name'),
         Index('idx_activity_user_group_position', 'user_id', 'group_id', 'position'),
         CheckConstraint('length(name) > 0', name='check_activity_name_not_empty'),
+        UniqueConstraint('user_id', 'stable_key', name='uq_activity_user_stable_key'),
     )
 
     @field_validator('name')

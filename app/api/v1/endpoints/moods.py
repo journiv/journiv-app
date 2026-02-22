@@ -508,7 +508,7 @@ async def get_mood(
         mood = mood_service.get_mood_by_id(mood_id)
         if not mood:
             raise HTTPException(status_code=404, detail="Mood not found")
-        if mood.user_id is not None and mood.user_id != current_user.id:
+        if mood.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="Mood not found")
         preference = session.exec(
             select(UserMoodPreference)
@@ -587,7 +587,7 @@ async def update_mood_visibility(
         mood = mood_service.get_mood_by_id(mood_id)
         if not mood:
             raise HTTPException(status_code=404, detail="Mood not found")
-        if mood.user_id is not None and mood.user_id != current_user.id:
+        if mood.user_id != current_user.id:
             raise HTTPException(status_code=404, detail="Mood not found")
         mood_service.set_mood_hidden(current_user.id, mood_id, payload.is_hidden)
         return None

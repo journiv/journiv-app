@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 class Mood(BaseModel, table=True):
     """
-    Mood definitions for mood tracking (system and user).
+    User-owned mood definitions for mood tracking.
     """
     __tablename__ = "mood"
 
@@ -38,14 +38,14 @@ class Mood(BaseModel, table=True):
     score: int = Field(default=3, ge=1, le=5)
     position: int = Field(default=0, nullable=False)
     is_active: bool = Field(default=True, nullable=False)
-    user_id: Optional[uuid.UUID] = Field(
-        default=None,
+    user_id: uuid.UUID = Field(
         sa_column=Column(
             ForeignKey("user.id", ondelete="CASCADE"),
-            nullable=True,
+            nullable=False,
             index=True,
         ),
     )
+    stable_key: Optional[str] = Field(default=None, max_length=100, index=True)
 
     # Relations
     moment_activity_links: List["MomentMoodActivity"] = Relationship(
@@ -70,6 +70,7 @@ class Mood(BaseModel, table=True):
             name='check_mood_category'
         ),
         Index('idx_mood_user_position', 'user_id', 'position'),
+        Index('uq_mood_user_stable_key', 'user_id', 'stable_key', unique=True),
     )
 
     @field_validator('name')

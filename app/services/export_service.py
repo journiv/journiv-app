@@ -749,7 +749,7 @@ class ExportService:
 
     def _get_mood_definitions(self, user_id: UUID) -> List[MoodDefinitionDTO]:
         """
-        Get mood definitions (system + user custom).
+        Get user mood definitions.
 
         Maps database fields to DTO structure:
         - mood.name -> name
@@ -758,7 +758,7 @@ class ExportService:
         """
         moods_result = self.db.execute(
             select(Mood).where(
-                col(Mood.user_id).is_(None) | (col(Mood.user_id) == user_id)
+                col(Mood.user_id) == user_id
             )
         )
         moods = list(moods_result.unique().scalars().all())
@@ -774,7 +774,7 @@ class ExportService:
                 score=mood.score,
                 position=mood.position,
                 is_active=mood.is_active,
-                is_custom=mood.user_id is not None,
+                is_custom=True,
                 created_at=mood.created_at,
                 updated_at=mood.updated_at,
                 external_id=str(mood.id),
@@ -971,9 +971,7 @@ class ExportService:
         groups = (
             self.db.execute(
                 select(MoodGroup)
-                .where(
-                    col(MoodGroup.user_id).is_(None) | (col(MoodGroup.user_id) == user_id)
-                )
+                .where(col(MoodGroup.user_id) == user_id)
                 .order_by(col(MoodGroup.position), col(MoodGroup.created_at))
             )
             .scalars()
@@ -985,7 +983,7 @@ class ExportService:
                 icon=group.icon,
                 color_value=group.color_value,
                 position=group.position,
-                is_custom=group.user_id is not None,
+                is_custom=True,
                 created_at=group.created_at,
                 updated_at=group.updated_at,
                 external_id=str(group.id),
@@ -998,7 +996,7 @@ class ExportService:
         group_ids = (
             self.db.execute(
                 select(col(MoodGroup.id)).where(
-                    col(MoodGroup.user_id).is_(None) | (col(MoodGroup.user_id) == user_id)
+                    col(MoodGroup.user_id) == user_id
                 )
             )
             .scalars()

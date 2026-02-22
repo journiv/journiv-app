@@ -110,7 +110,7 @@ class MomentService:
             normalized_ids = normalize_uuid_list(mood_ids)
             statement = select(Mood.id).where(
                 col(Mood.is_active).is_(True),
-                (col(Mood.user_id).is_(None)) | (col(Mood.user_id) == user_id),
+                col(Mood.user_id) == user_id,
             ).where(col(Mood.id).in_(normalized_ids))
             existing_moods = self.session.exec(statement).all()
             if len(existing_moods) != len(mood_ids):
@@ -130,7 +130,7 @@ class MomentService:
         """Helper to check if a mood exists and is active for the user."""
         statement = select(Mood.id).where(
             col(Mood.is_active).is_(True),
-            (col(Mood.user_id).is_(None)) | (col(Mood.user_id) == user_id),
+            col(Mood.user_id) == user_id,
             col(Mood.id) == mood_id,
         )
         return self.session.exec(statement).first() is not None

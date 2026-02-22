@@ -5,7 +5,7 @@ import uuid
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import BigInteger, Column, ForeignKey
-from sqlmodel import Field, Index, Relationship
+from sqlmodel import Field, Index, Relationship, UniqueConstraint
 
 from .base import BaseModel
 
@@ -34,6 +34,7 @@ class GoalCategory(BaseModel, table=True):
     )
     icon: Optional[str] = Field(None, max_length=50)
     position: int = Field(default=0, nullable=False)
+    stable_key: Optional[str] = Field(default=None, max_length=100, index=True)
 
     # Relations
     user: "User" = Relationship(back_populates="goal_categories")
@@ -44,4 +45,5 @@ class GoalCategory(BaseModel, table=True):
 
     __table_args__ = (
         Index('idx_goal_category_user_name', 'user_id', 'name', unique=True),
+        UniqueConstraint('user_id', 'stable_key', name='uq_goal_category_user_stable_key'),
     )
