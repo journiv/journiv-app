@@ -227,3 +227,54 @@ class TestDBDriverValidation:
                 postgres_password=None,  # Explicitly None to override env vars
             )
         assert "DB_DRIVER=postgres requires either DATABASE_URL" in str(exc_info.value)
+
+
+class TestEnvListParsing:
+    """Test parsing list-like settings from environment variables."""
+
+    def test_allowed_media_types_empty_env_uses_defaults(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_MEDIA_TYPES", "")
+
+        settings = make_settings(
+            secret_key="test-secret-key-for-testing-only-32-chars",
+            db_driver="sqlite",
+            database_url=DEFAULT_SQLITE_URL,
+        )
+
+        assert "image/jpeg" in settings.allowed_media_types
+        assert len(settings.allowed_media_types) > 5
+
+    def test_allowed_media_types_csv_env_parses(self, monkeypatch):
+        monkeypatch.setenv("ALLOWED_MEDIA_TYPES", "image/jpeg,image/png")
+
+        settings = make_settings(
+            secret_key="test-secret-key-for-testing-only-32-chars",
+            db_driver="sqlite",
+            database_url=DEFAULT_SQLITE_URL,
+        )
+
+        assert settings.allowed_media_types == ["image/jpeg", "image/png"]
+
+    def test_cors_origins_json_env_parses(self, monkeypatch):
+        monkeypatch.setenv("CORS_ORIGINS", '["https://example.com","https://app.example.com"]')
+
+        settings = make_settings(
+            secret_key="test-secret-key-for-testing-only-32-chars",
+            db_driver="sqlite",
+            database_url=DEFAULT_SQLITE_URL,
+            enable_cors=True,
+        )
+
+        assert settings.cors_origins == ["https://example.com", "https://app.example.com"]
+
+    def test_cors_origins_csv_env_parses(self, monkeypatch):
+        monkeypatch.setenv("CORS_ORIGINS", "https://example.com,https://app.example.com")
+
+        settings = make_settings(
+            secret_key="test-secret-key-for-testing-only-32-chars",
+            db_driver="sqlite",
+            database_url=DEFAULT_SQLITE_URL,
+            enable_cors=True,
+        )
+
+        assert settings.cors_origins == ["https://example.com", "https://app.example.com"]

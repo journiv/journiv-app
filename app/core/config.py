@@ -6,10 +6,10 @@ import logging
 import os
 import secrets
 from pathlib import Path
-from typing import Any, Dict, List, Optional, cast
+from typing import Annotated, Any, Dict, List, Optional, cast
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 try:
     from sqlalchemy.engine import URL, make_url
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     # API
     api_v1_prefix: str = "/api/v1"
     enable_cors: bool = False
-    cors_origins: Optional[List[str]] = None
+    cors_origins: Annotated[Optional[List[str]], NoDecode] = None
 
     # Database Configuration
     # Database driver selection: "sqlite" (default) or "postgres"
@@ -139,8 +139,8 @@ class Settings(BaseSettings):
     media_root: str = "/data/media"
     # media_url_prefix: str = "/media"
     max_file_size_mb: int = 100
-    allowed_media_types: List[str] = Field(default_factory=list)
-    allowed_file_extensions: List[str] = Field(default_factory=list)
+    allowed_media_types: Annotated[List[str], NoDecode] = Field(default_factory=list)
+    allowed_file_extensions: Annotated[List[str], NoDecode] = Field(default_factory=list)
     media_signed_url_ttl_seconds: int = 300  # 5 minutes for images and general media
     media_signed_url_video_ttl_seconds: int = 1200  # 20 minutes for videos
     media_thumbnail_signed_url_ttl_seconds: int = 86400  # 24 hours for thumbnails
@@ -188,7 +188,7 @@ class Settings(BaseSettings):
         default_factory=lambda: os.getenv("RATE_LIMITING_ENABLED", "false" if os.getenv("ENVIRONMENT") == "test" else "true").lower() == "true"
     )
     rate_limit_storage_uri: str = "memory://"
-    rate_limit_default_limits: Optional[List[str]] = None
+    rate_limit_default_limits: Annotated[Optional[List[str]], NoDecode] = None
     rate_limit_config: Optional[Dict[str, Dict[str, str]]] = None
 
     # Journiv Plus Server integration
@@ -336,6 +336,25 @@ class Settings(BaseSettings):
 
         return v
 
+    @staticmethod
+    def _parse_csv_or_json_list(raw: str) -> List[str]:
+        """Parse list-like env values from JSON array or comma-separated string."""
+        value = raw.strip()
+        if not value:
+            return []
+
+        if value.startswith("[") and value.endswith("]"):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return [str(item).strip() for item in parsed if str(item).strip()]
+            except json.JSONDecodeError:
+                # Fall back to CSV parsing for malformed bracketed values.
+                pass
+
+        stripped = value.strip("[]")
+        return [item.strip().strip('"').strip("'") for item in stripped.split(",") if item.strip()]
+
     @field_validator('cors_origins', mode='before')
     @classmethod
     def parse_cors_origins(cls, v):
@@ -348,8 +367,7 @@ class Settings(BaseSettings):
             # Handle empty string
             if not v.strip():
                 return []
-            # Handle comma-separated string from env
-            return [origin.strip() for origin in v.split(',') if origin.strip()]
+            return cls._parse_csv_or_json_list(v)
 
         # Handle list
         if isinstance(v, list):
@@ -457,21 +475,17 @@ class Settings(BaseSettings):
     @classmethod
     def parse_list_fields(cls, v):
         """Parse list fields from string or list."""
-        # Handle None
+        # Non-optional list fields should always receive a list.
         if v is None:
-            return None
+            return []
 
         if isinstance(v, str):
-            if not v.strip():
-                return None
-            # Remove brackets if present
-            v = v.strip('[]')
-            return [item.strip().strip('"').strip("'") for item in v.split(',') if item.strip()]
+            return cls._parse_csv_or_json_list(v)
 
         if isinstance(v, list):
             return v
 
-        return None
+        return []
 
     @field_validator('allowed_media_types')
     @classmethod
@@ -490,7 +504,14 @@ class Settings(BaseSettings):
     @classmethod
     def parse_rate_limit_default_limits(cls, v):
         """Parse rate limit defaults specified as string."""
-        return cls.parse_list_fields(v)
+        if v is None:
+            return None
+        if isinstance(v, str):
+            parsed = cls._parse_csv_or_json_list(v)
+            return parsed or None
+        if isinstance(v, list):
+            return v
+        return None
 
     @field_validator('rate_limit_config', mode='before')
     @classmethod
