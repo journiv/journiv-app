@@ -3,6 +3,7 @@ Moment schemas.
 """
 import uuid
 from datetime import date, datetime
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, model_validator
@@ -123,3 +124,22 @@ class MomentPageResponse(BaseModel):
     items: List[MomentResponse]
     next_cursor_logged_at_utc: Optional[datetime] = None
     next_cursor_id: Optional[uuid.UUID] = None
+
+
+class MemoriesFilter(str, Enum):
+    auto = "auto"
+    last_years = "last_years"
+    last_month = "last_month"
+    last_week = "last_week"
+
+
+class MemoriesAppliedFilter(str, Enum):
+    last_years = "last_years"
+    last_month = "last_month"
+    last_week = "last_week"
+
+
+class MomentMemoriesResponse(BaseModel):
+    items: List[MomentResponse]
+    requested_filter: MemoriesFilter
+    applied_filter: MemoriesAppliedFilter

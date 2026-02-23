@@ -20,10 +20,12 @@ from app.models.user_mood_preference import UserMoodPreference
 from app.schemas.activity import ActivityResponse
 from app.schemas.entry import EntryPreviewResponse, MomentMediaResponse
 from app.schemas.moment import (
+    MemoriesFilter,
     MomentCalendarItem,
     MomentCompletedGoalResponse,
     MomentCreate,
     MomentMediaThumbnail,
+    MomentMemoriesResponse,
     MomentMoodActivityResponse,
     MomentPageResponse,
     MomentResponse,
@@ -430,6 +432,58 @@ async def remove_tag_from_moment(
     except Exception as exc:
         log_error(exc)
         raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@router.get(
+    "/memories",
+    response_model=MomentMemoriesResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def get_memories(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 10,
+    memories_filter: Annotated[MemoriesFilter | None, Query(alias="filter")] = None,
+    include_media: Annotated[str | None, Query()] = "thumbnails",
+):
+    requested_filter = memories_filter or MemoriesFilter.auto
+    if include_media not in (None, "thumbnails"):
+        raise HTTPException(status_code=400, detail="include_media must be 'thumbnails' when provided")
+    moment_service = MomentService(session)
+    try:
+        moments, applied_filter = moment_service.get_memories(
+            current_user.id,
+            limit=limit,
+            memories_filter=requested_filter,
+        )
+    except Exception as exc:
+        log_error(exc, message="Error fetching memories", user_id=str(current_user.id))
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+    media_map: dict[uuid.UUID, List[MomentMediaThumbnail]] = {}
+    if include_media == "thumbnails" and moments:
+        moment_ids = [moment.id for moment in moments]
+        media_service = MediaService(session)
+        _, media_map = media_service.get_moment_media_thumbnails(
+            session,
+            current_user.id,
+            moment_ids,
+        )
+    items = _build_moment_responses(
+        session,
+        moments,
+        current_user,
+        media_map=media_map if include_media == "thumbnails" else None,
+    )
+    return MomentMemoriesResponse(
+        items=items,
+        requested_filter=requested_filter,
+        applied_filter=applied_filter,
+    )
 
 
 @router.get(

@@ -1,6 +1,8 @@
 """
 Moment API integration coverage.
 """
+import calendar
+from datetime import datetime, timedelta, timezone
 
 from tests.integration.helpers import sample_jpeg_bytes
 from tests.lib import ApiUser, JournivApiClient
@@ -257,3 +259,79 @@ def test_moment_response_includes_completed_goals_for_activity_driven_goal(
 
     completed_goals = fetched.get("completed_goals") or []
     assert any(item["goal_id"] == goal["id"] for item in completed_goals)
+
+
+def test_moment_memories_endpoint_uses_auto_fallback_order(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    today = datetime.now(timezone.utc).date()
+
+    # Last-years memory (highest auto priority)
+    last_year_day = calendar.monthrange(today.year - 1, today.month)[1]
+    last_year = today.replace(year=today.year - 1, day=min(today.day, last_year_day))
+    yearly_memory = moment_factory(
+        logged_date=last_year.isoformat(),
+        logged_timezone="UTC",
+        note="Yearly memory",
+    )
+
+    # Last-week memory (should be ignored when yearly exists)
+    last_week = today - timedelta(days=3)
+    moment_factory(
+        logged_date=last_week.isoformat(),
+        logged_timezone="UTC",
+        note="Weekly memory",
+    )
+
+    response = api_client.request(
+        "GET",
+        "/moments/memories",
+        token=api_user.access_token,
+        params={"limit": 10},
+        expected=(200,),
+    ).json()
+
+    assert response["requested_filter"] == "auto"
+    assert response["applied_filter"] == "last_years"
+    returned_ids = {item["id"] for item in response["items"]}
+    assert yearly_memory["id"] in returned_ids
+
+
+def test_moment_memories_endpoint_supports_explicit_last_month_filter(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    today = datetime.now(timezone.utc).date()
+    previous_month_end = today.replace(day=1) - timedelta(days=1)
+    previous_month_last_day = calendar.monthrange(previous_month_end.year, previous_month_end.month)[1]
+    previous_month_date = previous_month_end.replace(day=min(today.day, previous_month_last_day))
+
+    month_memory = moment_factory(
+        logged_date=previous_month_date.isoformat(),
+        logged_timezone="UTC",
+        note="Previous month memory",
+    )
+
+    # Noise that should not appear with explicit filter (current month, never last month)
+    noise_moment = moment_factory(
+        logged_date=today.isoformat(),
+        logged_timezone="UTC",
+        note="Current month noise",
+    )
+
+    response = api_client.request(
+        "GET",
+        "/moments/memories",
+        token=api_user.access_token,
+        params={"filter": "last_month", "limit": 10},
+        expected=(200,),
+    ).json()
+
+    assert response["requested_filter"] == "last_month"
+    assert response["applied_filter"] == "last_month"
+    returned_ids = {item["id"] for item in response["items"]}
+    assert month_memory["id"] in returned_ids
+    assert noise_moment["id"] not in returned_ids

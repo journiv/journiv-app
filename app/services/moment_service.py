@@ -2,10 +2,10 @@
 Moment service for unified timeline operations.
 """
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, List, Optional, Tuple
 
-from sqlalchemy import or_
+from sqlalchemy import extract, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, col, delete, select
@@ -18,7 +18,10 @@ from app.models.activity import Activity
 from app.models.entry import Entry
 from app.models.moment import Moment, MomentMoodActivity
 from app.models.mood import Mood
+from app.models.user import UserSettings
 from app.schemas.moment import (
+    MemoriesAppliedFilter,
+    MemoriesFilter,
     MomentCreate,
     MomentMoodActivityInput,
     MomentUpdate,
@@ -557,6 +560,176 @@ class MomentService:
         if end_date:
             statement = statement.where(col(Moment.logged_date_tz) <= end_date)
         return statement
+
+    def _base_moment_statement(self, user_id: uuid.UUID) -> Any:
+        return (
+            select(Moment)
+            .where(Moment.user_id == user_id)
+            .options(
+                selectinload(Moment.entry),  # type: ignore[arg-type]
+                selectinload(Moment.tags),  # type: ignore[arg-type]
+                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
+                .selectinload(MomentMoodActivity.mood),  # type: ignore[arg-type]
+                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
+                .selectinload(MomentMoodActivity.activity),  # type: ignore[arg-type]
+            )
+            .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
+            .where((col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False)))
+        )
+
+    def _resolve_user_local_today(self, user_id: uuid.UUID) -> date:
+        now_utc = utc_now()
+        timezone_name = self.session.exec(
+            select(UserSettings.time_zone).where(UserSettings.user_id == user_id)
+        ).first() or "UTC"
+        try:
+            return local_date_for_user(now_utc, timezone_name)
+        except Exception as exc:
+            log_warning(
+                exc,
+                message="Invalid user timezone encountered while resolving memories date; falling back to UTC",
+                user_id=str(user_id),
+                timezone=timezone_name,
+            )
+            return now_utc.date()
+
+    @staticmethod
+    def _to_applied_filter(memories_filter: MemoriesFilter) -> MemoriesAppliedFilter:
+        if memories_filter == MemoriesFilter.last_years:
+            return MemoriesAppliedFilter.last_years
+        if memories_filter == MemoriesFilter.last_month:
+            return MemoriesAppliedFilter.last_month
+        return MemoriesAppliedFilter.last_week
+
+    @staticmethod
+    def _last_month_window(today_local: date) -> tuple[date, date]:
+        current_month_start = today_local.replace(day=1)
+        previous_month_end = current_month_start - timedelta(days=1)
+        previous_month_start = previous_month_end.replace(day=1)
+        return previous_month_start, previous_month_end
+
+    @staticmethod
+    def _last_week_window(today_local: date) -> tuple[date, date]:
+        week_start = today_local - timedelta(days=7)
+        week_end = today_local - timedelta(days=1)
+        return week_start, week_end
+
+    def _apply_memories_filter(
+        self,
+        statement: Any,
+        *,
+        memories_filter: MemoriesFilter,
+        today_local: date,
+    ) -> Any:
+        if memories_filter == MemoriesFilter.last_years:
+            return (
+                statement
+                .where(extract("month", col(Moment.logged_date_tz)) == today_local.month)
+                .where(extract("day", col(Moment.logged_date_tz)) == today_local.day)
+                .where(extract("year", col(Moment.logged_date_tz)) < today_local.year)
+            )
+        if memories_filter == MemoriesFilter.last_month:
+            previous_month_start, previous_month_end = self._last_month_window(today_local)
+            return (
+                statement
+                .where(col(Moment.logged_date_tz) >= previous_month_start)
+                .where(col(Moment.logged_date_tz) <= previous_month_end)
+            )
+
+        week_start, week_end = self._last_week_window(today_local)
+        return (
+            statement
+            .where(col(Moment.logged_date_tz) >= week_start)
+            .where(col(Moment.logged_date_tz) <= week_end)
+        )
+
+    def _base_memories_probe_statement(self, user_id: uuid.UUID) -> Any:
+        return (
+            select(Moment.id)
+            .where(Moment.user_id == user_id)
+            .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
+            .where((col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False)))
+        )
+
+    def _fetch_memories(
+        self,
+        user_id: uuid.UUID,
+        *,
+        today_local: date,
+        memories_filter: MemoriesFilter,
+        limit: int,
+    ) -> List[Moment]:
+        statement = (
+            self._apply_memories_filter(
+                self._base_moment_statement(user_id),
+                memories_filter=memories_filter,
+                today_local=today_local,
+            )
+            .order_by(
+                col(Moment.logged_date_tz).desc(),
+                col(Moment.logged_at_utc).desc(),
+                col(Moment.id).desc(),
+            )
+            .limit(limit)
+        )
+        return list(self.session.exec(statement))
+
+    def _has_memories(
+        self,
+        user_id: uuid.UUID,
+        *,
+        today_local: date,
+        memories_filter: MemoriesFilter,
+    ) -> bool:
+        probe_statement = self._apply_memories_filter(
+            self._base_memories_probe_statement(user_id),
+            memories_filter=memories_filter,
+            today_local=today_local,
+        )
+        return self.session.exec(probe_statement.limit(1)).first() is not None
+
+    def get_memories(
+        self,
+        user_id: uuid.UUID,
+        *,
+        limit: int = 10,
+        memories_filter: MemoriesFilter = MemoriesFilter.auto,
+    ) -> Tuple[List[Moment], MemoriesAppliedFilter]:
+        today_local = self._resolve_user_local_today(user_id)
+
+        if memories_filter != MemoriesFilter.auto:
+            return (
+                self._fetch_memories(
+                    user_id,
+                    today_local=today_local,
+                    memories_filter=memories_filter,
+                    limit=limit,
+                ),
+                self._to_applied_filter(memories_filter),
+            )
+
+        # Auto fallback: last years -> last month -> last week.
+        for candidate in (
+            MemoriesFilter.last_years,
+            MemoriesFilter.last_month,
+            MemoriesFilter.last_week,
+        ):
+            if self._has_memories(
+                user_id,
+                today_local=today_local,
+                memories_filter=candidate,
+            ):
+                return (
+                    self._fetch_memories(
+                        user_id,
+                        today_local=today_local,
+                        memories_filter=candidate,
+                        limit=limit,
+                    ),
+                    self._to_applied_filter(candidate),
+                )
+
+        return [], MemoriesAppliedFilter.last_week
 
     def sync_entry_activity_links(
         self,
