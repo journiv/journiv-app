@@ -3,7 +3,7 @@ Unit tests for MomentService.
 """
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 import pytest
 from sqlmodel import Session, create_engine, select
@@ -13,9 +13,15 @@ from app.models.base import BaseModel
 from app.models.entry import Entry
 from app.models.journal import Journal
 from app.models.moment import Moment, MomentMoodActivity
-from app.models.user import User
+from app.models.user import User, UserSettings
 from app.schemas.entry import EntryUpdate
-from app.schemas.moment import MomentCreate, MomentEntryCreate, MomentUpdate
+from app.schemas.moment import (
+    MemoriesAppliedFilter,
+    MemoriesFilter,
+    MomentCreate,
+    MomentEntryCreate,
+    MomentUpdate,
+)
 from app.services.moment_service import MomentService
 
 
@@ -449,3 +455,165 @@ def test_update_moment_updates_existing_entry(
     # Verify DB
     db_entry = test_db.get(Entry, entry.id)
     assert db_entry.title == "Updated Title"
+
+
+def test_get_memories_auto_prefers_last_years(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 2, 23, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2025, 2, 23, 8, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2025, 2, 23),
+        note="Last year memory",
+    )
+    test_db.add(memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_years
+    assert [item.id for item in items] == [memory.id]
+
+
+def test_get_memories_auto_falls_back_to_last_month(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 3, 10, 10, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2026, 2, 20, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2026, 2, 20),
+        note="Last month memory",
+    )
+    test_db.add(memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_month
+    assert [item.id for item in items] == [memory.id]
+
+
+def test_get_memories_auto_falls_back_to_last_week(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 3, 10, 10, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2026, 3, 5, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2026, 3, 5),
+        note="Last week memory",
+    )
+    test_db.add(memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_week
+    assert [item.id for item in items] == [memory.id]
+
+
+def test_get_memories_excludes_draft_entries(
+    test_db: Session,
+    test_user: User,
+    test_journal: Journal,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 2, 23, 12, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    draft_moment = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2025, 2, 23, 9, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2025, 2, 23),
+        note="Draft memory",
+    )
+    published_moment = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2025, 2, 23, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2025, 2, 23),
+        note="Published memory",
+    )
+    test_db.add(draft_moment)
+    test_db.add(published_moment)
+    test_db.commit()
+    test_db.refresh(draft_moment)
+    test_db.refresh(published_moment)
+
+    test_db.add(
+        Entry(
+            user_id=test_user.id,
+            journal_id=test_journal.id,
+            moment_id=draft_moment.id,
+            title="Draft entry",
+            is_draft=True,
+        )
+    )
+    test_db.add(
+        Entry(
+            user_id=test_user.id,
+            journal_id=test_journal.id,
+            moment_id=published_moment.id,
+            title="Published entry",
+            is_draft=False,
+        )
+    )
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_years
+    assert [item.id for item in items] == [published_moment.id]
+
+
+def test_get_memories_invalid_timezone_falls_back_to_utc(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 3, 10, 10, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    test_db.add(UserSettings(user_id=test_user.id, time_zone="Invalid/Timezone"))
+
+    memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2026, 3, 7, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2026, 3, 7),
+        note="UTC fallback memory",
+    )
+    test_db.add(memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_week
+    assert [item.id for item in items] == [memory.id]
