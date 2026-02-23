@@ -946,6 +946,32 @@ def _remap_and_remove_system_moods(conn) -> None:
     conn.execute(sa.text("DELETE FROM mood WHERE user_id IS NULL"))
 
 
+def _repair_legacy_hidden_starter_moods(conn) -> None:
+    """Unhide starter moods hidden by legacy preference rows remapped to new mood IDs."""
+    starter_stable_keys = [m["stable_key"] for m in STARTER_MOODS]
+    conn.execute(
+        sa.text(
+            """
+            UPDATE user_mood_preference
+            SET is_hidden = FALSE,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE is_hidden = TRUE
+              AND EXISTS (
+                SELECT 1
+                FROM mood
+                WHERE mood.id = user_mood_preference.mood_id
+                  AND mood.user_id = user_mood_preference.user_id
+                  AND mood.stable_key IN :starter_stable_keys
+                  AND user_mood_preference.created_at < mood.created_at
+              )
+            """
+        ).bindparams(
+            sa.bindparam("starter_stable_keys", expanding=True),
+        ),
+        {"starter_stable_keys": starter_stable_keys},
+    )
+
+
 def _ensure_not_null_user_ids(conn) -> None:
     null_mood_count = conn.execute(
         sa.text("SELECT COUNT(*) FROM mood WHERE user_id IS NULL")
@@ -1073,6 +1099,7 @@ def upgrade() -> None:
 
     _ensure_starter_data_for_users(conn)
     _remap_and_remove_system_moods(conn)
+    _repair_legacy_hidden_starter_moods(conn)
 
     _ensure_not_null_user_ids(conn)
     _enforce_non_nullable_user_id(conn)
