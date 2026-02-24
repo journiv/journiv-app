@@ -182,7 +182,9 @@ def _column_exists(conn, table_name: str, column_name: str) -> bool:
 
 def _index_exists(conn, table_name: str, index_name: str) -> bool:
     inspector = sa.inspect(conn)
-    return any(idx.get("name") == index_name for idx in inspector.get_indexes(table_name))
+    return any(
+        idx.get("name") == index_name for idx in inspector.get_indexes(table_name)
+    )
 
 
 def _constraint_exists(conn, table_name: str, constraint_name: str) -> bool:
@@ -242,10 +244,9 @@ def _backfill_table_stable_keys(
         sa.column("created_at"),
     )
     label_expr = getattr(table.c, label_column).label("label_value")
-    stmt = (
-        sa.select(table.c.id, table.c.user_id, label_expr, table.c.stable_key)
-        .order_by(table.c.user_id, table.c.created_at, table.c.id)
-    )
+    stmt = sa.select(
+        table.c.id, table.c.user_id, label_expr, table.c.stable_key
+    ).order_by(table.c.user_id, table.c.created_at, table.c.id)
 
     rows = conn.execute(stmt).fetchall()
     user_seen: Dict[object, set[str]] = {}
@@ -600,7 +601,9 @@ def _ensure_starter_goal_data_for_user(conn, user_id: str) -> None:
 
 
 def _ensure_starter_data_for_users(conn) -> None:
-    user_ids = [str(row.id) for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()]
+    user_ids = [
+        str(row.id) for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()
+    ]
     for user_id in user_ids:
         _ensure_starter_moods_for_user(conn, user_id)
         _ensure_starter_activity_data_for_user(conn, user_id)
@@ -616,7 +619,10 @@ def _legacy_mood_stable_key(
     lookup = (key or "").strip().lower()
     name_lookup = (name or "").strip().lower()
     category_lookup = (category or "").strip().lower()
-    if lookup in {"awesome", "very_positive", "verypositive"} or name_lookup in {"awesome", "very positive"}:
+    if lookup in {"awesome", "very_positive", "verypositive"} or name_lookup in {
+        "awesome",
+        "very positive",
+    }:
         return "mood_awesome"
     if lookup in {
         "good",
@@ -642,7 +648,14 @@ def _legacy_mood_stable_key(
         "motivated",
     }:
         return "mood_good"
-    if lookup in {"meh", "neutral", "calm", "focused", "relaxed", "confused"} or name_lookup in {
+    if lookup in {
+        "meh",
+        "neutral",
+        "calm",
+        "focused",
+        "relaxed",
+        "confused",
+    } or name_lookup in {
         "meh",
         "neutral",
         "calm",
@@ -651,7 +664,15 @@ def _legacy_mood_stable_key(
         "confused",
     }:
         return "mood_meh"
-    if lookup in {"bad", "negative", "sad", "stressed", "tired", "disappointed", "anxious"} or name_lookup in {
+    if lookup in {
+        "bad",
+        "negative",
+        "sad",
+        "stressed",
+        "tired",
+        "disappointed",
+        "anxious",
+    } or name_lookup in {
         "bad",
         "negative",
         "sad",
@@ -661,7 +682,13 @@ def _legacy_mood_stable_key(
         "anxious",
     }:
         return "mood_bad"
-    if lookup in {"awful", "very_negative", "verynegative", "angry", "lonely"} or name_lookup in {
+    if lookup in {
+        "awful",
+        "very_negative",
+        "verynegative",
+        "angry",
+        "lonely",
+    } or name_lookup in {
         "awful",
         "very negative",
         "angry",
@@ -694,7 +721,9 @@ def _remap_and_remove_system_moods(conn) -> None:
     if not system_moods:
         return
 
-    user_ids = [str(row.id) for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()]
+    user_ids = [
+        str(row.id) for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()
+    ]
     skipped_legacy_moods: list[str] = []
 
     for legacy_mood in system_moods:
@@ -947,7 +976,7 @@ def _remap_and_remove_system_moods(conn) -> None:
 
 
 def _repair_legacy_hidden_starter_moods(conn) -> None:
-    """Unhide starter moods hidden by legacy preference rows remapped to new mood IDs."""
+    """Ensure starter moods are visible after remapping away from system moods."""
     starter_stable_keys = [m["stable_key"] for m in STARTER_MOODS]
     conn.execute(
         sa.text(
@@ -962,7 +991,6 @@ def _repair_legacy_hidden_starter_moods(conn) -> None:
                 WHERE mood.id = user_mood_preference.mood_id
                   AND mood.user_id = user_mood_preference.user_id
                   AND mood.stable_key IN :starter_stable_keys
-                  AND user_mood_preference.created_at < mood.created_at
               )
             """
         ).bindparams(
@@ -973,12 +1001,18 @@ def _repair_legacy_hidden_starter_moods(conn) -> None:
 
 
 def _ensure_not_null_user_ids(conn) -> None:
-    null_mood_count = conn.execute(
-        sa.text("SELECT COUNT(*) FROM mood WHERE user_id IS NULL")
-    ).scalar() or 0
-    null_group_count = conn.execute(
-        sa.text("SELECT COUNT(*) FROM mood_group WHERE user_id IS NULL")
-    ).scalar() or 0
+    null_mood_count = (
+        conn.execute(
+            sa.text("SELECT COUNT(*) FROM mood WHERE user_id IS NULL")
+        ).scalar()
+        or 0
+    )
+    null_group_count = (
+        conn.execute(
+            sa.text("SELECT COUNT(*) FROM mood_group WHERE user_id IS NULL")
+        ).scalar()
+        or 0
+    )
     if null_mood_count or null_group_count:
         raise RuntimeError(
             "Cannot enforce non-null user_id on mood/mood_group while NULL rows remain"
@@ -987,23 +1021,39 @@ def _ensure_not_null_user_ids(conn) -> None:
 
 def _add_columns(conn) -> None:
     if not _column_exists(conn, "activity_group", "stable_key"):
-        op.add_column("activity_group", sa.Column("stable_key", sa.String(length=100), nullable=True))
+        op.add_column(
+            "activity_group",
+            sa.Column("stable_key", sa.String(length=100), nullable=True),
+        )
     if not _column_exists(conn, "activity", "stable_key"):
-        op.add_column("activity", sa.Column("stable_key", sa.String(length=100), nullable=True))
+        op.add_column(
+            "activity", sa.Column("stable_key", sa.String(length=100), nullable=True)
+        )
     if not _column_exists(conn, "goal_category", "stable_key"):
-        op.add_column("goal_category", sa.Column("stable_key", sa.String(length=100), nullable=True))
+        op.add_column(
+            "goal_category",
+            sa.Column("stable_key", sa.String(length=100), nullable=True),
+        )
     if not _column_exists(conn, "goal", "stable_key"):
-        op.add_column("goal", sa.Column("stable_key", sa.String(length=100), nullable=True))
+        op.add_column(
+            "goal", sa.Column("stable_key", sa.String(length=100), nullable=True)
+        )
     if not _column_exists(conn, "mood_group", "stable_key"):
-        op.add_column("mood_group", sa.Column("stable_key", sa.String(length=100), nullable=True))
+        op.add_column(
+            "mood_group", sa.Column("stable_key", sa.String(length=100), nullable=True)
+        )
     if not _column_exists(conn, "mood", "stable_key"):
-        op.add_column("mood", sa.Column("stable_key", sa.String(length=100), nullable=True))
+        op.add_column(
+            "mood", sa.Column("stable_key", sa.String(length=100), nullable=True)
+        )
 
 
 def _add_constraints(conn) -> None:
     is_sqlite = conn.dialect.name == "sqlite"
     if is_sqlite:
-        if not _index_exists(conn, "activity_group", "uq_activity_group_user_stable_key"):
+        if not _index_exists(
+            conn, "activity_group", "uq_activity_group_user_stable_key"
+        ):
             op.create_index(
                 "uq_activity_group_user_stable_key",
                 "activity_group",
@@ -1032,7 +1082,9 @@ def _add_constraints(conn) -> None:
                 unique=True,
             )
     else:
-        if not _constraint_exists(conn, "activity_group", "uq_activity_group_user_stable_key"):
+        if not _constraint_exists(
+            conn, "activity_group", "uq_activity_group_user_stable_key"
+        ):
             op.create_unique_constraint(
                 "uq_activity_group_user_stable_key",
                 "activity_group",
@@ -1044,7 +1096,9 @@ def _add_constraints(conn) -> None:
                 "activity",
                 ["user_id", "stable_key"],
             )
-        if not _constraint_exists(conn, "goal_category", "uq_goal_category_user_stable_key"):
+        if not _constraint_exists(
+            conn, "goal_category", "uq_goal_category_user_stable_key"
+        ):
             op.create_unique_constraint(
                 "uq_goal_category_user_stable_key",
                 "goal_category",
@@ -1090,10 +1144,14 @@ def upgrade() -> None:
 
     _add_columns(conn)
 
-    _backfill_table_stable_keys(conn, table_name="activity_group", prefix="activitygroup")
+    _backfill_table_stable_keys(
+        conn, table_name="activity_group", prefix="activitygroup"
+    )
     _backfill_table_stable_keys(conn, table_name="activity", prefix="activity")
     _backfill_table_stable_keys(conn, table_name="goal_category", prefix="goalcat")
-    _backfill_table_stable_keys(conn, table_name="goal", prefix="goal", label_column="title")
+    _backfill_table_stable_keys(
+        conn, table_name="goal", prefix="goal", label_column="title"
+    )
     _backfill_table_stable_keys(conn, table_name="mood_group", prefix="moodgroup")
     _backfill_table_stable_keys(conn, table_name="mood", prefix="mood")
 
@@ -1113,20 +1171,34 @@ def _drop_constraints(conn) -> None:
         if _index_exists(conn, "goal", "uq_goal_user_stable_key"):
             op.drop_index("uq_goal_user_stable_key", table_name="goal")
         if _index_exists(conn, "goal_category", "uq_goal_category_user_stable_key"):
-            op.drop_index("uq_goal_category_user_stable_key", table_name="goal_category")
+            op.drop_index(
+                "uq_goal_category_user_stable_key", table_name="goal_category"
+            )
         if _index_exists(conn, "activity", "uq_activity_user_stable_key"):
             op.drop_index("uq_activity_user_stable_key", table_name="activity")
         if _index_exists(conn, "activity_group", "uq_activity_group_user_stable_key"):
-            op.drop_index("uq_activity_group_user_stable_key", table_name="activity_group")
+            op.drop_index(
+                "uq_activity_group_user_stable_key", table_name="activity_group"
+            )
     else:
         if _constraint_exists(conn, "goal", "uq_goal_user_stable_key"):
             op.drop_constraint("uq_goal_user_stable_key", "goal", type_="unique")
-        if _constraint_exists(conn, "goal_category", "uq_goal_category_user_stable_key"):
-            op.drop_constraint("uq_goal_category_user_stable_key", "goal_category", type_="unique")
+        if _constraint_exists(
+            conn, "goal_category", "uq_goal_category_user_stable_key"
+        ):
+            op.drop_constraint(
+                "uq_goal_category_user_stable_key", "goal_category", type_="unique"
+            )
         if _constraint_exists(conn, "activity", "uq_activity_user_stable_key"):
-            op.drop_constraint("uq_activity_user_stable_key", "activity", type_="unique")
-        if _constraint_exists(conn, "activity_group", "uq_activity_group_user_stable_key"):
-            op.drop_constraint("uq_activity_group_user_stable_key", "activity_group", type_="unique")
+            op.drop_constraint(
+                "uq_activity_user_stable_key", "activity", type_="unique"
+            )
+        if _constraint_exists(
+            conn, "activity_group", "uq_activity_group_user_stable_key"
+        ):
+            op.drop_constraint(
+                "uq_activity_group_user_stable_key", "activity_group", type_="unique"
+            )
     if _index_exists(conn, "mood_group", "uq_mood_group_user_stable_key"):
         op.drop_index("uq_mood_group_user_stable_key", table_name="mood_group")
     if _index_exists(conn, "mood", "uq_mood_user_stable_key"):

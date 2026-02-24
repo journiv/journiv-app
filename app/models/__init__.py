@@ -15,11 +15,10 @@ from .journal import Journal
 from .moment import Moment, MomentMedia, MomentMoodActivity
 from .moment_tag_link import MomentTagLink
 from .mood import Mood
-from .mood_group import MoodGroup, MoodGroupLink, UserMoodGroupPreference
+from .mood_group import MoodGroup, MoodGroupLink
 from .prompt import Prompt
 from .tag import Tag
 from .user import User, UserSettings
-from .user_mood_preference import UserMoodPreference
 
 __all__ = [
     "BaseModel",
@@ -45,8 +44,6 @@ __all__ = [
     "GoalCategory",
     "Moment",
     "MomentMoodActivity",
-    "UserMoodPreference",
     "MoodGroup",
     "MoodGroupLink",
-    "UserMoodGroupPreference",
 ]

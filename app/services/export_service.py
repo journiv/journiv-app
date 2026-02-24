@@ -31,8 +31,6 @@ from app.models import (
     MoodGroup,
     MoodGroupLink,
     User,
-    UserMoodGroupPreference,
-    UserMoodPreference,
 )
 from app.models.enums import ExportType
 from app.models.export_job import ExportJob
@@ -1024,45 +1022,15 @@ class ExportService:
             for link in links
         ]
 
-    def _get_mood_preferences(self, user_id: UUID) -> List[MoodPreferenceDTO]:
-        """Get user mood preferences for export."""
-        preferences = (
-            self.db.execute(
-                select(UserMoodPreference).where(col(UserMoodPreference.user_id) == user_id)
-            )
-            .scalars()
-            .all()
-        )
-        return [
-            MoodPreferenceDTO(
-                mood_external_id=str(pref.mood_id),
-                sort_order=pref.sort_order,
-                is_hidden=pref.is_hidden,
-                created_at=pref.created_at,
-                updated_at=pref.updated_at,
-            )
-            for pref in preferences
-        ]
+    def _get_mood_preferences(self, _user_id: UUID) -> List[MoodPreferenceDTO]:
+        """User mood preferences have been removed; keep export field empty."""
+        log_warning("Mood preferences are omitted from export because the feature was removed")
+        return []
 
-    def _get_mood_group_preferences(self, user_id: UUID) -> List[MoodGroupPreferenceDTO]:
-        """Get user mood group preferences for export."""
-        preferences = (
-            self.db.execute(
-                select(UserMoodGroupPreference).where(col(UserMoodGroupPreference.user_id) == user_id)
-            )
-            .scalars()
-            .all()
-        )
-        return [
-            MoodGroupPreferenceDTO(
-                mood_group_external_id=str(pref.mood_group_id),
-                sort_order=pref.sort_order,
-                is_hidden=pref.is_hidden,
-                created_at=pref.created_at,
-                updated_at=pref.updated_at,
-            )
-            for pref in preferences
-        ]
+    def _get_mood_group_preferences(self, _user_id: UUID) -> List[MoodGroupPreferenceDTO]:
+        """User mood-group preferences have been removed; keep export field empty."""
+        log_warning("Mood group preferences are omitted from export because the feature was removed")
+        return []
 
     def _collect_media_files(
         self, export_data: JournivExportDTO, user_id: UUID

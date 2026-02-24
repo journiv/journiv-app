@@ -20,10 +20,6 @@ from app.models.enums import MoodCategory
 from app.models.moment import Moment, MomentMoodActivity
 from app.models.mood import Mood
 from app.models.mood_group import MoodGroup, MoodGroupLink
-from app.models.user_mood_preference import UserMoodPreference
-
-DEFAULT_MOOD_PAGE_LIMIT = 50
-MAX_MOOD_PAGE_LIMIT = 100
 
 
 class MoodService:
@@ -33,17 +29,16 @@ class MoodService:
         self.session = session
 
     @staticmethod
-    def _normalize_limit(limit: int) -> int:
-        if limit <= 0:
-            return DEFAULT_MOOD_PAGE_LIMIT
-        return min(limit, MAX_MOOD_PAGE_LIMIT)
-
-    @staticmethod
     def _normalize_category(category: str) -> str:
         try:
             return MoodCategory(category.lower()).value
         except ValueError as exc:
             raise MoodNotFoundError(f"Invalid mood category '{category}'") from exc
+
+    @staticmethod
+    def _ensure_unique_ids(ids: List[uuid.UUID], *, label: str) -> None:
+        if len(ids) != len(set(ids)):
+            raise ValidationError(f"Duplicate {label} IDs are not allowed")
 
     @staticmethod
     def _category_from_score(score: int) -> str:
@@ -111,40 +106,23 @@ class MoodService:
         self,
         user_id: uuid.UUID,
         category: Optional[str] = None,
-        include_hidden: bool = False,
     ) -> List[Dict[str, Any]]:
         """Get moods visible to a user, optionally filtered."""
         normalized_category = self._normalize_category(category) if category else None
-        statement = (
-            select(Mood, UserMoodPreference.is_hidden, UserMoodPreference.sort_order)
-            .outerjoin(
-                UserMoodPreference,
-                (col(UserMoodPreference.mood_id) == col(Mood.id))
-                & (col(UserMoodPreference.user_id) == user_id),
-            )
-            .where(
-                col(Mood.is_active).is_(True),
-                col(Mood.user_id) == user_id,
-            )
+        statement = select(Mood).where(
+            col(Mood.is_active).is_(True),
+            col(Mood.user_id) == user_id,
         )
         if normalized_category:
             statement = statement.where(col(Mood.category) == normalized_category)
-        if not include_hidden:
-            statement = statement.where(
-                (col(UserMoodPreference.is_hidden).is_(None))
-                | (col(UserMoodPreference.is_hidden).is_(False))
-            )
 
         statement = statement.order_by(
-            func.coalesce(
-                col(UserMoodPreference.sort_order),
-                col(Mood.position),
-            ).asc(),
+            col(Mood.position).asc(),
             col(Mood.name).asc(),
         )
         rows = list(self.session.exec(statement))
         moods: List[Dict[str, Any]] = []
-        for mood, is_hidden, sort_order in rows:
+        for mood in rows:
             moods.append(
                 {
                     "id": mood.id,
@@ -159,8 +137,6 @@ class MoodService:
                     "user_id": mood.user_id,
                     "created_at": mood.created_at,
                     "updated_at": mood.updated_at,
-                    "is_hidden": bool(is_hidden) if is_hidden is not None else False,
-                    "sort_order": sort_order,
                 }
             )
         return moods
@@ -168,14 +144,6 @@ class MoodService:
     def get_mood_by_id(self, mood_id: uuid.UUID) -> Optional[Mood]:
         """Get a mood by ID."""
         statement = select(Mood).where(Mood.id == mood_id)
-        return self.session.exec(statement).first()
-
-    def find_mood_by_name(self, mood_name: str) -> Optional[Mood]:
-        """Find a mood by name (case-insensitive)."""
-        if not mood_name:
-            raise ValidationError("Mood name cannot be empty")
-        normalized = mood_name.strip().lower()
-        statement = select(Mood).where(func.lower(Mood.name) == normalized)
         return self.session.exec(statement).first()
 
     def create_user_mood(self, user_id: uuid.UUID, data: Dict[str, Any]) -> Mood:
@@ -209,6 +177,13 @@ class MoodService:
                 )
             ).one()
             position = int(max_position) + 10
+        else:
+            try:
+                position = int(position)
+            except (TypeError, ValueError) as exc:
+                raise ValidationError("position must be an integer") from exc
+            if position < 0:
+                raise ValidationError("position must be a non-negative integer")
 
         key = self._generate_unique_key(user_id, name)
         mood = Mood(
@@ -270,8 +245,13 @@ class MoodService:
                 mood.position = int(data["position"])
             except (TypeError, ValueError) as exc:
                 raise ValidationError("position must be an integer") from exc
+            if mood.position < 0:
+                raise ValidationError("position must be a non-negative integer")
         if "is_active" in data and data["is_active"] is not None:
-            mood.is_active = bool(data["is_active"])
+            is_active = data["is_active"]
+            if not isinstance(is_active, bool):
+                raise ValidationError("is_active must be a boolean")
+            mood.is_active = is_active
 
         mood.updated_at = utc_now()
         self.session.flush()
@@ -287,36 +267,11 @@ class MoodService:
         mood.updated_at = utc_now()
         self._commit()
 
-    def set_mood_hidden(self, user_id: uuid.UUID, mood_id: uuid.UUID, is_hidden: bool) -> None:
-        """Set per-user mood visibility."""
-        mood = self.get_mood_by_id(mood_id)
-        if not mood:
-            raise MoodNotFoundError("Mood not found")
-        if not mood.is_active or mood.user_id != user_id:
-            raise MoodNotFoundError("Mood not found")
-        preference = self.session.exec(
-            select(UserMoodPreference).where(
-                UserMoodPreference.user_id == user_id,
-                UserMoodPreference.mood_id == mood_id,
-            )
-        ).first()
-        if preference:
-            preference.is_hidden = is_hidden
-            preference.updated_at = utc_now()
-        else:
-            preference = UserMoodPreference(
-                user_id=user_id,
-                mood_id=mood_id,
-                sort_order=mood.position,
-                is_hidden=is_hidden,
-            )
-            self.session.add(preference)
-        self._commit()
-
     def reorder_moods(self, user_id: uuid.UUID, mood_ids: List[uuid.UUID]) -> None:
-        """Persist per-user mood ordering for the unified list."""
+        """Persist mood ordering directly on mood.position."""
         if not mood_ids:
             return
+        self._ensure_unique_ids(mood_ids, label="mood")
 
         allowed = set(
             self.session.exec(
@@ -330,30 +285,23 @@ class MoodService:
         if missing:
             raise MoodNotFoundError("One or more moods not found")
 
-        existing = {
-            pref.mood_id: pref
-            for pref in self.session.exec(
-                select(UserMoodPreference).where(
-                    UserMoodPreference.user_id == user_id,
-                    col(UserMoodPreference.mood_id).in_(normalize_uuid_list(mood_ids)),
+        mood_map = {
+            mood.id: mood
+            for mood in self.session.exec(
+                select(Mood).where(
+                    col(Mood.user_id) == user_id,
+                    col(Mood.id).in_(normalize_uuid_list(mood_ids)),
+                    col(Mood.is_active).is_(True),
                 )
             ).all()
         }
 
         for index, mood_id in enumerate(mood_ids):
-            pref = existing.get(mood_id)
-            if pref:
-                pref.sort_order = index
-                pref.updated_at = utc_now()
-            else:
-                self.session.add(
-                    UserMoodPreference(
-                        user_id=user_id,
-                        mood_id=mood_id,
-                        sort_order=index,
-                        is_hidden=False,
-                    )
-                )
+            mood = mood_map.get(mood_id)
+            if mood is None:
+                continue
+            mood.position = index
+            mood.updated_at = utc_now()
 
         self._commit()
 

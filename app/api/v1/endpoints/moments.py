@@ -16,7 +16,6 @@ from app.models.enums import GoalLogStatus
 from app.models.goal import Goal, GoalLog
 from app.models.moment import Moment, MomentMoodActivity
 from app.models.user import User
-from app.models.user_mood_preference import UserMoodPreference
 from app.schemas.activity import ActivityResponse
 from app.schemas.entry import EntryPreviewResponse, MomentMediaResponse
 from app.schemas.moment import (
@@ -46,34 +45,12 @@ def _require_logged_date_tz(moment: Moment) -> date:
     return moment.logged_date_tz
 
 
-def _load_mood_preferences(
-    session: Session,
-    user_id: uuid.UUID,
-    mood_ids: Iterable[uuid.UUID],
-) -> dict[uuid.UUID, UserMoodPreference]:
-    unique_ids = {mood_id for mood_id in mood_ids if mood_id}
-    if not unique_ids:
-        return {}
-    preferences = session.exec(
-        select(UserMoodPreference).where(
-            UserMoodPreference.user_id == user_id,
-            col(UserMoodPreference.mood_id).in_(normalize_uuid_list(unique_ids)),
-        )
-    ).all()
-    return {preference.mood_id: preference for preference in preferences}
-
-
 def _build_mood_activity_response(
     link: MomentMoodActivity,
-    preferences_map: dict[uuid.UUID, UserMoodPreference],
 ) -> MomentMoodActivityResponse:
     mood_response = None
     if link.mood:
         mood_response = MoodResponse.model_validate(link.mood)
-        preference = preferences_map.get(link.mood_id) if link.mood_id else None
-        if preference:
-            mood_response.is_hidden = preference.is_hidden
-            mood_response.sort_order = preference.sort_order
     return MomentMoodActivityResponse(
         id=link.id,
         mood=mood_response,
@@ -94,12 +71,7 @@ def _build_moment_response(
     entry_preview = EntryPreviewResponse.model_validate(moment.entry) if moment.entry else None
     links = list(moment.mood_activity_links or [])
 
-    preferences_map = _load_mood_preferences(
-        session,
-        current_user.id,
-        [link.mood_id for link in links if link.mood_id],
-    )
-    mood_activity = [_build_mood_activity_response(link, preferences_map) for link in links]
+    mood_activity = [_build_mood_activity_response(link) for link in links]
     tags = [TagResponse.model_validate(tag) for tag in (moment.tags or []) if tag.user_id == current_user.id]
 
     logged_date_tz = _require_logged_date_tz(moment)
@@ -180,11 +152,6 @@ def _build_moment_responses(
     for moment in moments:
         links.extend(moment.mood_activity_links or [])
 
-    preferences_map = _load_mood_preferences(
-        session,
-        current_user.id,
-        [link.mood_id for link in links if link.mood_id],
-    )
     responses: List[MomentResponse] = []
     completed_goals_map = _load_completed_goals_map(
         session,
@@ -219,7 +186,7 @@ def _build_moment_responses(
                 weather_summary=moment.weather_summary,
                 is_pinned=moment.is_pinned,
                 mood_activity=[
-                    _build_mood_activity_response(link, preferences_map)
+                    _build_mood_activity_response(link)
                     for link in (moment.mood_activity_links or [])
                 ],
                 tags=[

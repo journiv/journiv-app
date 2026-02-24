@@ -32,8 +32,6 @@ from app.models import (
     MoodGroupLink,
     Tag,
     User,
-    UserMoodGroupPreference,
-    UserMoodPreference,
 )
 from app.models.enums import ImportSourceType, JournalColor, MediaType, UploadStatus
 from app.models.goal import GoalManualLog
@@ -1934,42 +1932,8 @@ class ImportService:
         mood_id_map: Dict[str, UUID],
         summary: ImportResultSummary,
     ) -> None:
-        """Import user mood preferences."""
-        for pref_dto in mood_preferences:
-            mood_id = mood_id_map.get(pref_dto.mood_external_id)
-            if not mood_id:
-                warning_msg = "Skipping mood preference due to missing mood mapping"
-                self._add_warning(summary, warning_msg, "Skipped (mood preference)")
-                continue
-
-            existing = (
-                self.db.execute(
-                    select(UserMoodPreference).where(
-                        col(UserMoodPreference.user_id) == user_id,
-                        col(UserMoodPreference.mood_id) == mood_id,
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if existing:
-                existing.sort_order = pref_dto.sort_order
-                existing.is_hidden = pref_dto.is_hidden
-                if pref_dto.updated_at:
-                    existing.updated_at = pref_dto.updated_at
-            else:
-                pref = UserMoodPreference(
-                    user_id=user_id,
-                    mood_id=mood_id,
-                    sort_order=pref_dto.sort_order,
-                    is_hidden=pref_dto.is_hidden,
-                    created_at=pref_dto.created_at or utc_now(),
-                    updated_at=pref_dto.updated_at or utc_now(),
-                )
-                self.db.add(pref)
-                summary.mood_preferences_imported += 1
-
-        self.db.flush()
+        """Mood preferences were removed; ignore legacy import payload."""
+        return
 
     def _import_mood_group_preferences(
         self,
@@ -1978,42 +1942,8 @@ class ImportService:
         mood_group_id_map: Dict[str, UUID],
         summary: ImportResultSummary,
     ) -> None:
-        """Import user mood group preferences."""
-        for pref_dto in mood_group_preferences:
-            group_id = mood_group_id_map.get(pref_dto.mood_group_external_id)
-            if not group_id:
-                warning_msg = "Skipping mood group preference due to missing group mapping"
-                self._add_warning(summary, warning_msg, "Skipped (mood group preference)")
-                continue
-
-            existing = (
-                self.db.execute(
-                    select(UserMoodGroupPreference).where(
-                        col(UserMoodGroupPreference.user_id) == user_id,
-                        col(UserMoodGroupPreference.mood_group_id) == group_id,
-                    )
-                )
-                .scalars()
-                .first()
-            )
-            if existing:
-                existing.sort_order = pref_dto.sort_order
-                existing.is_hidden = pref_dto.is_hidden
-                if pref_dto.updated_at:
-                    existing.updated_at = pref_dto.updated_at
-            else:
-                pref = UserMoodGroupPreference(
-                    user_id=user_id,
-                    mood_group_id=group_id,
-                    sort_order=pref_dto.sort_order,
-                    is_hidden=pref_dto.is_hidden,
-                    created_at=pref_dto.created_at or utc_now(),
-                    updated_at=pref_dto.updated_at or utc_now(),
-                )
-                self.db.add(pref)
-                summary.mood_group_preferences_imported += 1
-
-        self.db.flush()
+        """Mood group preferences were removed; ignore legacy import payload."""
+        return
 
     def _import_activity_groups(
         self,

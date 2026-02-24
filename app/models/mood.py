@@ -10,15 +10,11 @@ from sqlmodel import CheckConstraint, Field, Index, Relationship
 
 from .base import BaseModel
 from .enums import MoodCategory
-from .user_mood_preference import (
-    UserMoodPreference,  # Ensure mapper registry knows this model.
-)
 
 if TYPE_CHECKING:
     from .moment import MomentMoodActivity
     from .mood_group import MoodGroupLink
     from .user import User
-    from .user_mood_preference import UserMoodPreference
 
 
 class Mood(BaseModel, table=True):
@@ -52,10 +48,6 @@ class Mood(BaseModel, table=True):
         back_populates="mood"
     )
     user: Optional["User"] = Relationship(back_populates="moods")
-    preferences: List["UserMoodPreference"] = Relationship(
-        back_populates="mood",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
-    )
     group_links: List["MoodGroupLink"] = Relationship(
         back_populates="mood",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"},
