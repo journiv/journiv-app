@@ -295,13 +295,33 @@ class MoodService:
                 )
             ).all()
         }
+        core_group = self.session.exec(
+            select(MoodGroup).where(
+                col(MoodGroup.user_id) == user_id,
+                col(MoodGroup.stable_key) == "moodgroup_core_moods",
+            )
+        ).first()
+        core_group_link_map: dict[uuid.UUID, MoodGroupLink] = {}
+        if core_group:
+            core_group_links = self.session.exec(
+                select(MoodGroupLink).where(
+                    col(MoodGroupLink.mood_group_id) == core_group.id,
+                    col(MoodGroupLink.mood_id).in_(normalize_uuid_list(mood_ids)),
+                )
+            ).all()
+            core_group_link_map = {link.mood_id: link for link in core_group_links}
 
         for index, mood_id in enumerate(mood_ids):
             mood = mood_map.get(mood_id)
             if mood is None:
                 continue
+            now = utc_now()
             mood.position = index
-            mood.updated_at = utc_now()
+            mood.updated_at = now
+            core_link = core_group_link_map.get(mood_id)
+            if core_link is not None:
+                core_link.position = index
+                core_link.updated_at = now
 
         self._commit()
 
