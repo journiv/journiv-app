@@ -137,6 +137,44 @@ def test_verify_moments_exist():
         print(f"Moments not available (skipping verification): {e}")
 
 
+def test_verify_mood_group_links_and_moment_moods():
+    """Verify mood-group links and moment mood references survived upgrade."""
+    print("\n=== Verifying mood group links and moment mood references ===")
+
+    token = login(TEST_EMAIL, TEST_PASSWORD)
+
+    moods_response = http_get("/moods/", token)
+    assert moods_response.status_code == 200, f"/moods failed: {moods_response.status_code}"
+    moods = moods_response.json()
+    mood_ids = {m["id"] for m in moods if m.get("id")}
+    assert mood_ids, "Expected at least one mood after upgrade"
+
+    groups_response = http_get("/moods/groups", token)
+    assert groups_response.status_code == 200, f"/moods/groups failed: {groups_response.status_code}"
+    groups = groups_response.json()
+    core_group = next(
+        (g for g in groups if str(g.get("name", "")).strip().lower() == "daily moods"),
+        None,
+    )
+    if core_group is None and len(groups) == 1:
+        core_group = groups[0]
+    assert core_group is not None, "Core mood group missing after upgrade"
+    core_group_moods = core_group.get("moods") or []
+    assert core_group_moods, "Core mood group has no linked moods after upgrade"
+    for mood in core_group_moods:
+        assert mood.get("id") in mood_ids, f"Core group linked unknown mood ID: {mood.get('id')}"
+
+    moments = get_moments(token)
+    moments_with_primary_mood = [m for m in moments if m.get("primary_mood_id")]
+    if moments_with_primary_mood:
+        missing = [
+            m["id"]
+            for m in moments_with_primary_mood
+            if m.get("primary_mood_id") not in mood_ids
+        ]
+        assert not missing, f"Moment primary_mood_id points to missing mood IDs: {missing}"
+
+
 def test_verify_user_settings_readable():
     """Verify user settings are still readable."""
     print("\n=== Verifying user settings ===")
