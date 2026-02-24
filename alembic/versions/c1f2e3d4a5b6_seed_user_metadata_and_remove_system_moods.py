@@ -195,6 +195,19 @@ def _constraint_exists(conn, table_name: str, constraint_name: str) -> bool:
     )
 
 
+def _is_sqlite(conn) -> bool:
+    return conn.dialect.name == "sqlite"
+
+
+def _uuid_param(value, *, sqlite: bool) -> str:
+    raw = value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+    return raw.hex if sqlite else str(raw)
+
+
+def _new_uuid_param(*, sqlite: bool) -> str:
+    return uuid.uuid4().hex if sqlite else str(uuid.uuid4())
+
+
 def _slugify(value: Optional[str]) -> str:
     raw = (value or "").strip().lower()
     raw = re.sub(r"[^a-z0-9]+", "_", raw)
@@ -274,6 +287,8 @@ def _backfill_table_stable_keys(
 
 
 def _ensure_starter_moods_for_user(conn, user_id: str) -> None:
+    sqlite = _is_sqlite(conn)
+    user_id = _uuid_param(user_id, sqlite=sqlite)
     group = conn.execute(
         sa.text(
             """
@@ -287,9 +302,9 @@ def _ensure_starter_moods_for_user(conn, user_id: str) -> None:
     ).fetchone()
 
     if group:
-        mood_group_id = str(group.id)
+        mood_group_id = _uuid_param(group.id, sqlite=sqlite)
     else:
-        mood_group_id = str(uuid.uuid4())
+        mood_group_id = _new_uuid_param(sqlite=sqlite)
         conn.execute(
             sa.text(
                 """
@@ -322,9 +337,9 @@ def _ensure_starter_moods_for_user(conn, user_id: str) -> None:
         ).fetchone()
 
         if mood:
-            mood_id = str(mood.id)
+            mood_id = _uuid_param(mood.id, sqlite=sqlite)
         else:
-            mood_id = str(uuid.uuid4())
+            mood_id = _new_uuid_param(sqlite=sqlite)
             conn.execute(
                 sa.text(
                     """
@@ -394,7 +409,7 @@ def _ensure_starter_moods_for_user(conn, user_id: str) -> None:
                     """
                 ),
                 {
-                    "id": str(uuid.uuid4()),
+                    "id": _new_uuid_param(sqlite=sqlite),
                     "mood_group_id": mood_group_id,
                     "mood_id": mood_id,
                     "position": mood_data["position"],
@@ -403,6 +418,8 @@ def _ensure_starter_moods_for_user(conn, user_id: str) -> None:
 
 
 def _ensure_starter_activity_data_for_user(conn, user_id: str) -> None:
+    sqlite = _is_sqlite(conn)
+    user_id = _uuid_param(user_id, sqlite=sqlite)
     for group_data in STARTER_ACTIVITY_GROUPS:
         group = conn.execute(
             sa.text(
@@ -416,9 +433,9 @@ def _ensure_starter_activity_data_for_user(conn, user_id: str) -> None:
             {"user_id": user_id, "stable_key": group_data["stable_key"]},
         ).fetchone()
         if group:
-            group_id = str(group.id)
+            group_id = _uuid_param(group.id, sqlite=sqlite)
         else:
-            group_id = str(uuid.uuid4())
+            group_id = _new_uuid_param(sqlite=sqlite)
             conn.execute(
                 sa.text(
                     """
@@ -481,7 +498,7 @@ def _ensure_starter_activity_data_for_user(conn, user_id: str) -> None:
                     """
                 ),
                 {
-                    "id": str(uuid.uuid4()),
+                    "id": _new_uuid_param(sqlite=sqlite),
                     "name": activity_data["name"],
                     "user_id": user_id,
                     "icon": activity_data["icon"],
@@ -494,6 +511,8 @@ def _ensure_starter_activity_data_for_user(conn, user_id: str) -> None:
 
 
 def _ensure_starter_goal_data_for_user(conn, user_id: str) -> None:
+    sqlite = _is_sqlite(conn)
+    user_id = _uuid_param(user_id, sqlite=sqlite)
     category = conn.execute(
         sa.text(
             """
@@ -507,9 +526,9 @@ def _ensure_starter_goal_data_for_user(conn, user_id: str) -> None:
     ).fetchone()
 
     if category:
-        category_id = str(category.id)
+        category_id = _uuid_param(category.id, sqlite=sqlite)
     else:
-        category_id = str(uuid.uuid4())
+        category_id = _new_uuid_param(sqlite=sqlite)
         conn.execute(
             sa.text(
                 """
@@ -586,7 +605,7 @@ def _ensure_starter_goal_data_for_user(conn, user_id: str) -> None:
             """
         ),
         {
-            "id": str(uuid.uuid4()),
+            "id": _new_uuid_param(sqlite=sqlite),
             "user_id": user_id,
             "category_id": category_id,
             "title": STARTER_GOAL["title"],
@@ -601,8 +620,10 @@ def _ensure_starter_goal_data_for_user(conn, user_id: str) -> None:
 
 
 def _ensure_starter_data_for_users(conn) -> None:
+    sqlite = _is_sqlite(conn)
     user_ids = [
-        str(row.id) for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()
+        _uuid_param(row.id, sqlite=sqlite)
+        for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()
     ]
     for user_id in user_ids:
         _ensure_starter_moods_for_user(conn, user_id)
@@ -715,6 +736,7 @@ def _legacy_mood_stable_key(
 
 
 def _remap_and_remove_system_moods(conn) -> None:
+    sqlite = _is_sqlite(conn)
     system_moods = conn.execute(
         sa.text("SELECT id, key, name, category, score FROM mood WHERE user_id IS NULL")
     ).fetchall()
@@ -722,12 +744,13 @@ def _remap_and_remove_system_moods(conn) -> None:
         return
 
     user_ids = [
-        str(row.id) for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()
+        _uuid_param(row.id, sqlite=sqlite)
+        for row in conn.execute(sa.text('SELECT id FROM "user"')).fetchall()
     ]
     skipped_legacy_moods: list[str] = []
 
     for legacy_mood in system_moods:
-        old_mood_id = str(legacy_mood.id)
+        old_mood_id = _uuid_param(legacy_mood.id, sqlite=sqlite)
         stable_key = _legacy_mood_stable_key(
             legacy_mood.key,
             legacy_mood.name,
@@ -754,7 +777,7 @@ def _remap_and_remove_system_moods(conn) -> None:
             ).fetchone()
             if not target_row:
                 continue
-            new_mood_id = str(target_row.id)
+            new_mood_id = _uuid_param(target_row.id, sqlite=sqlite)
 
             conn.execute(
                 sa.text(
