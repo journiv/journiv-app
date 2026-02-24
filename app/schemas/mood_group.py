@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.schemas.mood import MoodResponse
 
@@ -38,16 +38,11 @@ class MoodGroupResponse(MoodGroupBase):
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
-    is_hidden: bool = False
     model_config = {"from_attributes": True}
 
 
 class MoodGroupWithMoodsResponse(MoodGroupResponse):
-    moods: List[MoodResponse] = []
-
-
-class MoodGroupVisibilityUpdate(BaseModel):
-    is_hidden: bool
+    moods: List[MoodResponse] = Field(default_factory=list)
 
 
 class MoodGroupReorderItem(BaseModel):

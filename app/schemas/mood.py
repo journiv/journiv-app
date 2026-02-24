@@ -61,12 +61,6 @@ class MoodResponse(MoodBase, TimestampMixin):
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
-    is_hidden: bool = False
-    sort_order: Optional[int] = None
-
-
-class MoodVisibilityUpdate(BaseModel):
-    is_hidden: bool
 
 
 class MoodReorderRequest(BaseModel):

@@ -226,7 +226,7 @@ def test_daylio_import_from_real_fixture_file(
 
     mood_lookup = {
         mood["id"]: mood["name"]
-        for mood in api_client.list_moods(api_user.access_token, include_hidden=True)
+        for mood in api_client.list_moods(api_user.access_token)
     }
     imported_mood_names: set[str] = set()
     imported_media_total = 0

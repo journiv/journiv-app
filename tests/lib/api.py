@@ -592,9 +592,8 @@ class JournivApiClient:
         token: str,
         *,
         category: Optional[str] = None,
-        include_hidden: bool = False,
     ) -> list[Dict[str, Any]]:
-        params: Dict[str, Any] = {"include_hidden": include_hidden}
+        params: Dict[str, Any] = {}
         if category is not None:
             params["category"] = category
         return self.request(
@@ -610,9 +609,8 @@ class JournivApiClient:
         token: str,
         *,
         name: str,
-        include_hidden: bool = False,
     ) -> list[Dict[str, Any]]:
-        moods = self.list_moods(token, include_hidden=include_hidden)
+        moods = self.list_moods(token)
         return [mood for mood in moods if mood.get("name") == name]
 
     def get_mood_by_name(
@@ -620,13 +618,8 @@ class JournivApiClient:
         token: str,
         *,
         name: str,
-        include_hidden: bool = False,
     ) -> Optional[Dict[str, Any]]:
-        matches = self.get_moods_by_name(
-            token,
-            name=name,
-            include_hidden=include_hidden,
-        )
+        matches = self.get_moods_by_name(token, name=name)
         return matches[0] if matches else None
 
     def create_mood(
@@ -660,15 +653,6 @@ class JournivApiClient:
             expected=(204,),
         )
 
-    def set_mood_visibility(self, token: str, mood_id: str, *, is_hidden: bool) -> None:
-        self.request(
-            "POST",
-            f"/moods/{mood_id}/visibility",
-            token=token,
-            json={"is_hidden": is_hidden},
-            expected=(204,),
-        )
-
     # ------------------------------------------------------------------ #
     # Mood group helpers
     # ------------------------------------------------------------------ #
@@ -699,14 +683,11 @@ class JournivApiClient:
             expected=(201,),
         ).json()
 
-    def list_mood_groups(
-        self, token: str, *, include_hidden: bool = False
-    ) -> list[Dict[str, Any]]:
+    def list_mood_groups(self, token: str) -> list[Dict[str, Any]]:
         return self.request(
             "GET",
             "/moods/groups",
             token=token,
-            params={"include_hidden": include_hidden},
             expected=(200,),
         ).json()
 
@@ -715,9 +696,8 @@ class JournivApiClient:
         token: str,
         *,
         name: str,
-        include_hidden: bool = False,
     ) -> list[Dict[str, Any]]:
-        groups = self.list_mood_groups(token, include_hidden=include_hidden)
+        groups = self.list_mood_groups(token)
         return [group for group in groups if group.get("name") == name]
 
     def get_mood_group_by_name(
@@ -725,13 +705,8 @@ class JournivApiClient:
         token: str,
         *,
         name: str,
-        include_hidden: bool = False,
     ) -> Optional[Dict[str, Any]]:
-        matches = self.get_mood_groups_by_name(
-            token,
-            name=name,
-            include_hidden=include_hidden,
-        )
+        matches = self.get_mood_groups_by_name(token, name=name)
         return matches[0] if matches else None
 
     def reorder_mood_groups(self, token: str, updates: list[Dict[str, Any]]) -> None:
@@ -751,17 +726,6 @@ class JournivApiClient:
             f"/moods/groups/{group_id}/moods/reorder",
             token=token,
             json={"mood_ids": mood_ids},
-            expected=(204,),
-        )
-
-    def set_mood_group_visibility(
-        self, token: str, group_id: str, *, is_hidden: bool
-    ) -> None:
-        self.request(
-            "PUT",
-            f"/moods/groups/{group_id}/visibility",
-            token=token,
-            json={"is_hidden": is_hidden},
             expected=(204,),
         )
 

@@ -220,16 +220,7 @@ class TestJournivImportExportE2E:
             color_value=0x10B981,
         )
 
-        api_client.set_mood_visibility(
-            api_user.access_token,
-            custom_mood["id"],
-            is_hidden=True,
-        )
-
-        all_moods = api_client.list_moods(
-            api_user.access_token,
-            include_hidden=True,
-        )
+        all_moods = api_client.list_moods(api_user.access_token)
         mood_ids = [mood["id"] for mood in all_moods]
         api_client.reorder_moods(api_user.access_token, mood_ids)
 
@@ -246,12 +237,6 @@ class TestJournivImportExportE2E:
             mood_group["id"],
             mood_ids=[custom_mood_two["id"], custom_mood["id"]],
         )
-        api_client.set_mood_group_visibility(
-            api_user.access_token,
-            mood_group["id"],
-            is_hidden=True,
-        )
-
         api_client.reorder_mood_groups(
             api_user.access_token,
             updates=[{"id": mood_group["id"], "position": 1}],
@@ -350,16 +335,8 @@ class TestJournivImportExportE2E:
                 )
                 assert exported_group is not None
 
-                assert any(
-                    pref["mood_external_id"] == exported_mood["external_id"]
-                    and pref["is_hidden"] is True
-                    for pref in data["mood_preferences"]
-                )
-                assert any(
-                    pref["mood_group_external_id"] == exported_group["external_id"]
-                    and pref["is_hidden"] is True
-                    for pref in data["mood_group_preferences"]
-                )
+                assert data["mood_preferences"] == []
+                assert data["mood_group_preferences"] == []
 
                 assert any(
                     link["mood_group_external_id"] == exported_group["external_id"]
@@ -534,20 +511,16 @@ class TestJournivImportExportE2E:
         imported_custom_mood = api_client.get_mood_by_name(
             import_user.access_token,
             name=mood_name_one,
-            include_hidden=True,
         )
         assert imported_custom_mood is not None
         first_import_mood_id = imported_custom_mood["id"]
-        assert imported_custom_mood.get("is_hidden") is True
 
         imported_group = api_client.get_mood_group_by_name(
             import_user.access_token,
             name="Morning Check-in",
-            include_hidden=True,
         )
         assert imported_group is not None
         first_import_group_id = imported_group["id"]
-        assert imported_group.get("is_hidden") is True
         group_moods = [m["name"] for m in imported_group.get("moods", [])]
         assert mood_name_one in group_moods
         assert mood_name_two in group_moods
@@ -572,7 +545,6 @@ class TestJournivImportExportE2E:
         moods_after_second = api_client.get_moods_by_name(
             import_user.access_token,
             name=mood_name_one,
-            include_hidden=True,
         )
         assert len(moods_after_second) == 1
         assert moods_after_second[0]["id"] == first_import_mood_id
@@ -580,7 +552,6 @@ class TestJournivImportExportE2E:
         groups_after_second = api_client.get_mood_groups_by_name(
             import_user.access_token,
             name="Morning Check-in",
-            include_hidden=True,
         )
         assert len(groups_after_second) == 1
         assert groups_after_second[0]["id"] == first_import_group_id

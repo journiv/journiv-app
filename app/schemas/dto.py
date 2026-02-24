@@ -291,11 +291,10 @@ class MoodDefinitionDTO(BaseModel):
 
 class MoodPreferenceDTO(BaseModel):
     """
-    User mood visibility/order preferences for import/export.
+    User mood order preferences for import/export.
     """
     mood_external_id: str = Field(..., description="Original mood ID from export")
     sort_order: int = Field(default=0, description="User-specific sort order")
-    is_hidden: bool = Field(default=False, description="Whether mood is hidden")
     created_at: datetime = Field(..., description="Preference creation time in UTC")
     updated_at: datetime = Field(..., description="Preference last update time in UTC")
 
@@ -329,11 +328,10 @@ class MoodGroupLinkDTO(BaseModel):
 
 class MoodGroupPreferenceDTO(BaseModel):
     """
-    User mood group visibility/order preferences for import/export.
+    User mood group order preferences for import/export.
     """
     mood_group_external_id: str = Field(..., description="Original mood group ID")
     sort_order: int = Field(default=0, description="User-specific sort order")
-    is_hidden: bool = Field(default=False, description="Whether mood group is hidden")
     created_at: datetime = Field(..., description="Preference creation time in UTC")
     updated_at: datetime = Field(..., description="Preference last update time in UTC")
 
@@ -640,8 +638,8 @@ DATABASE SCHEMA MAPPING NOTES:
    - Mood definitions: Stored in 'mood' table (name, key, icon, color_value, category,
      score, position, is_active, user_id)
    - Mood links stored in moment_mood_activity, primary mood stored on moment
-   - User preferences stored in user_mood_preference (sort_order, is_hidden)
-   - Mood groups stored in mood_group + mood_group_link + user_mood_group_preference
+   - Mood ordering stored in mood.position
+   - Mood groups stored in mood_group + mood_group_link (ordering in mood_group.position)
    - Placeholders: emoji, color (string) not stored in database
 
 3. ACTIVITIES:

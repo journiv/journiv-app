@@ -137,3 +137,62 @@ def test_mood_endpoints_require_authentication(api_client: JournivApiClient):
             EndpointCase("GET", "/moods/analytics/streak"),
         ],
     )
+
+
+def test_reorder_moods_rejects_duplicate_ids(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    mood = _pick_mood(api_client, api_user.access_token)
+    response = api_client.request(
+        "PUT",
+        "/moods/reorder",
+        token=api_user.access_token,
+        json={"mood_ids": [mood["id"], mood["id"]]},
+        expected=(400,),
+    )
+    assert "duplicate" in response.json()["detail"].lower()
+
+
+def test_reorder_mood_groups_rejects_unknown_group(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    response = api_client.request(
+        "PUT",
+        "/moods/groups/reorder",
+        token=api_user.access_token,
+        json={"updates": [{"id": str(uuid.uuid4()), "position": 0}]},
+        expected=(400,),
+    )
+    assert "not found" in response.json()["detail"].lower()
+
+
+def test_reorder_mood_group_moods_rejects_non_member_moods(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    mood_in_group = api_client.create_mood(
+        api_user.access_token,
+        name=f"Mood In Group {uuid.uuid4().hex[:6]}",
+        score=4,
+    )
+    mood_outside_group = api_client.create_mood(
+        api_user.access_token,
+        name=f"Mood Outside Group {uuid.uuid4().hex[:6]}",
+        score=2,
+    )
+    group = api_client.create_mood_group(
+        api_user.access_token,
+        name=f"Group {uuid.uuid4().hex[:6]}",
+        mood_ids=[mood_in_group["id"]],
+    )
+
+    response = api_client.request(
+        "PUT",
+        f"/moods/groups/{group['id']}/moods/reorder",
+        token=api_user.access_token,
+        json={"mood_ids": [mood_outside_group["id"]]},
+        expected=(400,),
+    )
+    assert "do not belong" in response.json()["detail"].lower()

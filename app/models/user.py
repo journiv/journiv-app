@@ -26,10 +26,9 @@ if TYPE_CHECKING:
     from .journal import Journal
     from .moment import Moment
     from .mood import Mood
-    from .mood_group import MoodGroup, UserMoodGroupPreference
+    from .mood_group import MoodGroup
     from .prompt import Prompt
     from .tag import Tag
-    from .user_mood_preference import UserMoodPreference
 
 
 class User(BaseModel, table=True):
@@ -113,15 +112,7 @@ class User(BaseModel, table=True):
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
-    mood_preferences: List["UserMoodPreference"] = Relationship(
-        back_populates="user",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
     mood_groups: List["MoodGroup"] = Relationship(
-        back_populates="user",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
-    )
-    mood_group_preferences: List["UserMoodGroupPreference"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
