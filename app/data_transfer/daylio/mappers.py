@@ -307,9 +307,10 @@ class DaylioToJournivMapper:
                 reminder_time = f"{goal.reminder_hour:02d}:{goal.reminder_minute:02d}"
 
             frequency = GoalFrequency.DAILY
-            target = goal.repeat_value or 1
+            target = 1
             if goal.repeat_type == 2:
                 frequency = GoalFrequency.WEEKLY
+                target = goal.repeat_value or 1
             elif goal.repeat_type == 1:
                 frequency = GoalFrequency.DAILY
 
