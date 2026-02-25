@@ -122,7 +122,14 @@ services:
   celery-worker:
     <<: *celery-common
     container_name: journiv-celery-worker
-    command: celery -A app.core.celery_app worker --loglevel=info
+    # Keep idle memory predictable for self-hosted deployments.
+    # Defaults can be overridden in .env without editing compose.
+    command: >
+      celery -A app.core.celery_app worker
+      --loglevel=info
+      --concurrency=${CELERY_WORKER_CONCURRENCY:-1}
+      --max-memory-per-child=${CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB:-300000}
+      --max-tasks-per-child=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-200}
     environment:
       <<: *base-env
       SERVICE_ROLE: celery-worker
