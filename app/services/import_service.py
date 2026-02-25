@@ -2023,9 +2023,27 @@ class ImportService:
 
             if existing:
                 if stable_key and not existing.stable_key:
-                    existing.stable_key = stable_key
-                    self.db.flush()
-                    activities_by_stable_key[stable_key] = existing
+                    backfill_sp = self.db.begin_nested()
+                    try:
+                        existing.stable_key = stable_key
+                        self.db.flush()
+                        backfill_sp.commit()
+                        activities_by_stable_key[stable_key] = existing
+                    except IntegrityError:
+                        backfill_sp.rollback()
+                        concurrent = (
+                            self.db.execute(
+                                select(Activity).where(
+                                    col(Activity.user_id) == user_id,
+                                    col(Activity.stable_key) == stable_key,
+                                )
+                            )
+                            .scalars()
+                            .first()
+                        )
+                        if concurrent is not None:
+                            existing = concurrent
+                            activities_by_stable_key[stable_key] = concurrent
                 activity_id = existing.id
             else:
                 group_id = None
