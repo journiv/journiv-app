@@ -1996,37 +1996,36 @@ class ImportService:
     ) -> Dict[str, UUID]:
         """Import activities and return external_id -> activity_id map."""
         activity_id_map: Dict[str, UUID] = {}
+        existing_activities = (
+            self.db.execute(
+                select(Activity).where(col(Activity.user_id) == user_id)
+            )
+            .scalars()
+            .all()
+        )
+        activities_by_stable_key: Dict[str, Activity] = {}
+        activities_by_name: Dict[str, Activity] = {}
+        for activity in existing_activities:
+            if activity.stable_key:
+                activities_by_stable_key[activity.stable_key] = activity
+            activities_by_name[activity.name.strip().lower()] = activity
+
         for activity_dto in activities:
+            normalized_activity_name = activity_dto.name.strip()
             stable_key = generate_import_stable_key("imp_activity", activity_dto.external_id)
 
             existing: Optional[Activity] = None
             if stable_key:
-                existing = (
-                    self.db.execute(
-                        select(Activity).where(
-                            col(Activity.user_id) == user_id,
-                            col(Activity.stable_key) == stable_key,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
+                existing = activities_by_stable_key.get(stable_key)
 
             if existing is None:
-                name_match_query = select(Activity).where(
-                    col(Activity.user_id) == user_id,
-                    func.lower(Activity.name) == activity_dto.name.lower(),
-                )
-                if stable_key:
-                    # Preserve distinct same-name items in the same import while
-                    # still matching older pre-stable-key imports.
-                    name_match_query = name_match_query.where(col(Activity.stable_key).is_(None))
-                existing = self.db.execute(name_match_query).scalars().first()
+                existing = activities_by_name.get(normalized_activity_name.lower())
 
             if existing:
                 if stable_key and not existing.stable_key:
                     existing.stable_key = stable_key
                     self.db.flush()
+                    activities_by_stable_key[stable_key] = existing
                 activity_id = existing.id
             else:
                 group_id = None
@@ -2034,7 +2033,7 @@ class ImportService:
                     group_id = activity_group_id_map.get(activity_dto.group_external_id)
                 activity = Activity(
                     user_id=user_id,
-                    name=activity_dto.name,
+                    name=normalized_activity_name,
                     icon=activity_dto.icon,
                     color=activity_dto.color,
                     position=activity_dto.position or 0,
@@ -2043,10 +2042,36 @@ class ImportService:
                     created_at=activity_dto.created_at or utc_now(),
                     updated_at=activity_dto.updated_at or utc_now(),
                 )
-                self.db.add(activity)
-                self.db.flush()
-                summary.activities_created += 1
-                activity_id = activity.id
+                savepoint = self.db.begin_nested()
+                try:
+                    self.db.add(activity)
+                    self.db.flush()
+                    savepoint.commit()
+                    summary.activities_created += 1
+                    activity_id = activity.id
+                    activities_by_name[normalized_activity_name.lower()] = activity
+                    if stable_key:
+                        activities_by_stable_key[stable_key] = activity
+                except IntegrityError:
+                    savepoint.rollback()
+                    existing = (
+                        self.db.execute(
+                            select(Activity).where(
+                                col(Activity.user_id) == user_id,
+                                func.lower(Activity.name) == normalized_activity_name.lower(),
+                            )
+                        )
+                        .scalars()
+                        .first()
+                    )
+                    if not existing:
+                        raise
+                    if stable_key and not existing.stable_key:
+                        existing.stable_key = stable_key
+                        self.db.flush()
+                        activities_by_stable_key[stable_key] = existing
+                    activity_id = existing.id
+                    activities_by_name[normalized_activity_name.lower()] = existing
 
             if activity_dto.external_id:
                 activity_id_map[activity_dto.external_id] = activity_id
@@ -2110,37 +2135,36 @@ class ImportService:
     ) -> Dict[str, UUID]:
         """Import goals and return external_id -> goal_id map."""
         goal_id_map: Dict[str, UUID] = {}
+        existing_goals = (
+            self.db.execute(
+                select(Goal).where(col(Goal.user_id) == user_id)
+            )
+            .scalars()
+            .all()
+        )
+        goals_by_stable_key: Dict[str, Goal] = {}
+        goals_by_title: Dict[str, Goal] = {}
+        for goal in existing_goals:
+            if goal.stable_key:
+                goals_by_stable_key[goal.stable_key] = goal
+            goals_by_title[goal.title.strip().lower()] = goal
+
         for goal_dto in goals:
+            normalized_goal_title = goal_dto.title.strip()
             stable_key = generate_import_stable_key("imp_goal", goal_dto.external_id)
 
             existing: Optional[Goal] = None
             if stable_key:
-                existing = (
-                    self.db.execute(
-                        select(Goal).where(
-                            col(Goal.user_id) == user_id,
-                            col(Goal.stable_key) == stable_key,
-                        )
-                    )
-                    .scalars()
-                    .first()
-                )
+                existing = goals_by_stable_key.get(stable_key)
 
             if existing is None:
-                name_match_query = select(Goal).where(
-                    col(Goal.user_id) == user_id,
-                    func.lower(col(Goal.title)) == goal_dto.title.lower(),
-                )
-                if stable_key:
-                    # Preserve distinct same-title items in the same import while
-                    # still matching older pre-stable-key imports.
-                    name_match_query = name_match_query.where(col(Goal.stable_key).is_(None))
-                existing = self.db.execute(name_match_query).scalars().first()
+                existing = goals_by_title.get(normalized_goal_title.lower())
 
             if existing:
                 if stable_key and not existing.stable_key:
                     existing.stable_key = stable_key
                     self.db.flush()
+                    goals_by_stable_key[stable_key] = existing
                 if goal_dto.external_id:
                     goal_id_map[goal_dto.external_id] = existing.id
                     record_mapping("goals", goal_dto.external_id, existing.id)
@@ -2157,7 +2181,7 @@ class ImportService:
                 user_id=user_id,
                 activity_id=activity_id,
                 category_id=category_id,
-                title=goal_dto.title,
+                title=normalized_goal_title,
                 goal_type=goal_dto.goal_type,
                 frequency_type=goal_dto.frequency_type,
                 target_count=goal_dto.target_count,
@@ -2174,6 +2198,9 @@ class ImportService:
             self.db.add(goal)
             self.db.flush()
             summary.goals_created += 1
+            goals_by_title[normalized_goal_title.lower()] = goal
+            if stable_key:
+                goals_by_stable_key[stable_key] = goal
 
             if goal_dto.external_id:
                 goal_id_map[goal_dto.external_id] = goal.id

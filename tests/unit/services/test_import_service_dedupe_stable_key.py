@@ -22,7 +22,7 @@ def _create_test_user(db: Session) -> User:
     return user
 
 
-def test_import_activities_keeps_distinct_same_name_when_external_ids_differ():
+def test_import_activities_reuses_same_name_when_external_ids_differ():
     engine = create_engine("sqlite:///:memory:")
     from app.models.base import BaseModel
 
@@ -65,8 +65,8 @@ def test_import_activities_keeps_distinct_same_name_when_external_ids_differ():
         )
 
         persisted = db.exec(select(Activity).where(Activity.user_id == user.id)).all()
-        assert len(persisted) == 2
-        assert mapping["daylio-activity-1"] != mapping["daylio-activity-2"]
+        assert len(persisted) == 1
+        assert mapping["daylio-activity-1"] == mapping["daylio-activity-2"]
 
         # Re-import should be idempotent through stable keys.
         summary_second = ImportResultSummary()
@@ -78,10 +78,10 @@ def test_import_activities_keeps_distinct_same_name_when_external_ids_differ():
             record_mapping=lambda *args, **kwargs: None,
         )
         persisted_after_second = db.exec(select(Activity).where(Activity.user_id == user.id)).all()
-        assert len(persisted_after_second) == 2
+        assert len(persisted_after_second) == 1
 
 
-def test_import_goals_keeps_distinct_same_title_when_external_ids_differ():
+def test_import_goals_reuses_same_title_when_external_ids_differ():
     engine = create_engine("sqlite:///:memory:")
     from app.models.base import BaseModel
 
@@ -117,8 +117,8 @@ def test_import_goals_keeps_distinct_same_title_when_external_ids_differ():
         )
 
         persisted = db.exec(select(Goal).where(Goal.user_id == user.id)).all()
-        assert len(persisted) == 2
-        assert mapping["daylio-goal-1"] != mapping["daylio-goal-2"]
+        assert len(persisted) == 1
+        assert mapping["daylio-goal-1"] == mapping["daylio-goal-2"]
 
         # Re-import should be idempotent through stable keys.
         summary_second = ImportResultSummary()
@@ -131,4 +131,55 @@ def test_import_goals_keeps_distinct_same_title_when_external_ids_differ():
             record_mapping=lambda *args, **kwargs: None,
         )
         persisted_after_second = db.exec(select(Goal).where(Goal.user_id == user.id)).all()
-        assert len(persisted_after_second) == 2
+        assert len(persisted_after_second) == 1
+
+
+def test_import_activities_reuses_existing_starter_name_even_with_stable_key():
+    engine = create_engine("sqlite:///:memory:")
+    from app.models.base import BaseModel
+
+    BaseModel.metadata.create_all(engine)
+    with Session(engine) as db:
+        user = _create_test_user(db)
+        service = ImportService(db)
+        now = datetime.now(timezone.utc)
+
+        existing = Activity(
+            user_id=user.id,
+            name="Steps",
+            icon="footprints",
+            color="#3DBE5D",
+            position=1,
+            stable_key="activity_steps",
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(existing)
+        db.commit()
+        db.refresh(existing)
+
+        activities = [
+            ActivityDTO(
+                name="Steps",
+                icon="footprints",
+                color="#3DBE5D",
+                position=10,
+                group_external_id=None,
+                created_at=now,
+                updated_at=now,
+                external_id="import-steps-1",
+            )
+        ]
+
+        summary = ImportResultSummary()
+        mapping = service._import_activities(
+            user_id=user.id,
+            activities=activities,
+            activity_group_id_map={},
+            summary=summary,
+            record_mapping=lambda *args, **kwargs: None,
+        )
+
+        persisted = db.exec(select(Activity).where(Activity.user_id == user.id)).all()
+        assert len(persisted) == 1
+        assert mapping["import-steps-1"] == existing.id

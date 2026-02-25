@@ -8,7 +8,7 @@ from app.schemas.dto import ImportResultSummary
 
 
 @pytest.fixture
-def mock_dependencies():
+def mock_dependencies(tmp_path):
     """Fixture to mock all external dependencies for import_data."""
     with patch("app.cli.commands.import_cmd.setup_cli_logging"), \
          patch("app.cli.commands.import_cmd.run_preflight_checks") as mock_preflight, \
@@ -25,7 +25,7 @@ def mock_dependencies():
 
         # Mock settings
         mock_settings.media_root = "/tmp/media"
-        mock_settings.import_temp_dir = "/tmp"
+        mock_settings.import_temp_dir = str(tmp_path)
 
         # Setup mock behavior for context managers
         mock_db = MagicMock()
