@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from app.core.config import settings
 from app.core.logging_config import log_error, log_warning
 from app.utils.import_export.media_handler import MediaHandler
+from app.utils.import_export.temp_paths import get_import_temp_root
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ class ZipHandler:
     @staticmethod
     def prepare_extract_dir(extract_to: Path) -> None:
         """Validate and prepare the extraction directory."""
-        base_temp_dir = Path(settings.import_temp_dir).resolve()
+        base_temp_dir = get_import_temp_root().resolve()
         extract_to_resolved = extract_to.resolve()
 
         root_path = Path("/")

@@ -441,11 +441,42 @@ class DaylioToJournivMapper:
                 and week_entry.create_at_day is not None
             ):
                 try:
-                    created_date = date(
-                        week_entry.create_at_year,
-                        week_entry.create_at_month + 1,
-                        week_entry.create_at_day,
+                    # Daylio month encoding varies by platform/export version
+                    # (0-based vs 1-based). Try both and choose the one
+                    # closest to the goal week to avoid date drift.
+                    candidate_dates: List[tuple[date, bool]] = []
+                    month_candidates = (
+                        (week_entry.create_at_month, False),
+                        (week_entry.create_at_month + 1, True),
                     )
+                    for month_value, is_corrected_month in month_candidates:
+                        try:
+                            candidate_dates.append(
+                                (
+                                    date(
+                                        week_entry.create_at_year,
+                                        month_value,
+                                        week_entry.create_at_day,
+                                    ),
+                                    is_corrected_month,
+                                )
+                            )
+                        except ValueError:
+                            continue
+
+                    if not candidate_dates:
+                        raise ValueError(
+                            "invalid create_at components after month normalization"
+                        )
+
+                    week_mid = week_start + timedelta(days=3)
+                    created_date = min(
+                        candidate_dates,
+                        key=lambda item: (
+                            abs((item[0] - week_mid).days),
+                            0 if item[1] else 1,
+                        ),
+                    )[0]
                     created_at = datetime.combine(
                         created_date,
                         datetime.min.time(),

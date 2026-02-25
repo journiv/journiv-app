@@ -106,3 +106,56 @@ def test_map_goal_logs_links_to_day_entry_moment_external_id_with_month_normaliz
 
     assert len(logs) == 1
     assert logs[0].moment_external_id == "daylio-moment-1770577260000"
+
+
+def test_map_goal_success_weeks_handles_one_based_month_without_fallback():
+    backup = DaylioBackup(
+        version=19,
+        goalSuccessWeeks=[
+            DaylioGoalSuccessWeek(
+                goal_id=1,
+                week=52,
+                year=2024,
+                create_at_year=2024,
+                create_at_month=12,  # One-based month (December)
+                create_at_day=29,
+            ),
+        ],
+    )
+    import_timestamp = datetime(2026, 2, 20, tzinfo=timezone.utc)
+
+    logs = DaylioToJournivMapper._map_goal_success_weeks(
+        backup,
+        import_timestamp=import_timestamp,
+    )
+
+    assert len(logs) == 1
+    assert logs[0].created_at == datetime(2024, 12, 29, tzinfo=timezone.utc)
+
+
+def test_map_goal_success_weeks_handles_month_one_day_thirty_without_fallback():
+    # Intentional mismatch: ISO week/year metadata may disagree with raw created_at
+    # components in real Daylio exports. Mapper should preserve create_at_* timestamp
+    # (after month normalization), not clamp it into the ISO week window.
+    backup = DaylioBackup(
+        version=19,
+        goalSuccessWeeks=[
+            DaylioGoalSuccessWeek(
+                goal_id=1,
+                week=5,
+                year=2022,
+                create_at_year=2022,
+                create_at_month=1,
+                create_at_day=30,
+            ),
+        ],
+    )
+    import_timestamp = datetime(2026, 2, 20, tzinfo=timezone.utc)
+
+    logs = DaylioToJournivMapper._map_goal_success_weeks(
+        backup,
+        import_timestamp=import_timestamp,
+    )
+
+    assert len(logs) == 1
+    assert logs[0].created_at == datetime(2022, 1, 30, tzinfo=timezone.utc)

@@ -62,6 +62,8 @@ from app.utils.import_export import (
     ZipHandler,
 )
 from app.utils.import_export.constants import ExportConfig
+from app.utils.import_export.temp_paths import get_import_temp_root
+from app.utils.keys import generate_import_stable_key
 from app.utils.quill_delta import extract_plain_text, replace_media_ids, wrap_plain_text
 
 
@@ -214,8 +216,7 @@ class ImportService:
             IOError: If extraction fails
         """
         # Create temp directory for extraction
-        temp_dir = Path(settings.import_temp_dir)
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = get_import_temp_root()
 
         # Extract ZIP
         extract_result = self.zip_handler.extract_zip(
@@ -260,9 +261,7 @@ class ImportService:
         log_info(f"Starting Day One import for user {user_id}", user_id=str(user_id), file_path=str(file_path))
 
         if not extraction_dir:
-            temp_dir = Path(settings.import_temp_dir)
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            extract_dir = temp_dir / file_path.stem
+            extract_dir = get_import_temp_root() / file_path.stem
         else:
             if not extraction_dir.exists() or not extraction_dir.is_dir():
                 raise ValueError(f"Extraction directory not found: {extraction_dir}")
@@ -330,9 +329,7 @@ class ImportService:
         log_info(f"Starting Daylio import for user {user_id}", user_id=str(user_id), file_path=str(file_path))
 
         if not extraction_dir:
-            temp_dir = Path(settings.import_temp_dir)
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            extract_dir = temp_dir / file_path.stem
+            extract_dir = get_import_temp_root() / file_path.stem
         else:
             if not extraction_dir.exists() or not extraction_dir.is_dir():
                 raise ValueError(f"Extraction directory not found: {extraction_dir}")
@@ -1999,18 +1996,54 @@ class ImportService:
     ) -> Dict[str, UUID]:
         """Import activities and return external_id -> activity_id map."""
         activity_id_map: Dict[str, UUID] = {}
-        for activity_dto in activities:
-            existing = (
-                self.db.execute(
-                    select(Activity).where(
-                        col(Activity.user_id) == user_id,
-                        func.lower(Activity.name) == activity_dto.name.lower(),
-                    )
-                )
-                .scalars()
-                .first()
+        existing_activities = (
+            self.db.execute(
+                select(Activity).where(col(Activity.user_id) == user_id)
             )
+            .scalars()
+            .all()
+        )
+        activities_by_stable_key: Dict[str, Activity] = {}
+        activities_by_name: Dict[str, Activity] = {}
+        for activity in existing_activities:
+            if activity.stable_key:
+                activities_by_stable_key[activity.stable_key] = activity
+            activities_by_name[activity.name.strip().lower()] = activity
+
+        for activity_dto in activities:
+            normalized_activity_name = activity_dto.name.strip()
+            stable_key = generate_import_stable_key("imp_activity", activity_dto.external_id)
+
+            existing: Optional[Activity] = None
+            if stable_key:
+                existing = activities_by_stable_key.get(stable_key)
+
+            if existing is None:
+                existing = activities_by_name.get(normalized_activity_name.lower())
+
             if existing:
+                if stable_key and not existing.stable_key:
+                    backfill_sp = self.db.begin_nested()
+                    try:
+                        existing.stable_key = stable_key
+                        self.db.flush()
+                        backfill_sp.commit()
+                        activities_by_stable_key[stable_key] = existing
+                    except IntegrityError:
+                        backfill_sp.rollback()
+                        concurrent = (
+                            self.db.execute(
+                                select(Activity).where(
+                                    col(Activity.user_id) == user_id,
+                                    col(Activity.stable_key) == stable_key,
+                                )
+                            )
+                            .scalars()
+                            .first()
+                        )
+                        if concurrent is not None:
+                            existing = concurrent
+                            activities_by_stable_key[stable_key] = concurrent
                 activity_id = existing.id
             else:
                 group_id = None
@@ -2018,18 +2051,76 @@ class ImportService:
                     group_id = activity_group_id_map.get(activity_dto.group_external_id)
                 activity = Activity(
                     user_id=user_id,
-                    name=activity_dto.name,
+                    name=normalized_activity_name,
                     icon=activity_dto.icon,
                     color=activity_dto.color,
                     position=activity_dto.position or 0,
                     group_id=group_id,
+                    stable_key=stable_key,
                     created_at=activity_dto.created_at or utc_now(),
                     updated_at=activity_dto.updated_at or utc_now(),
                 )
-                self.db.add(activity)
-                self.db.flush()
-                summary.activities_created += 1
-                activity_id = activity.id
+                savepoint = self.db.begin_nested()
+                try:
+                    self.db.add(activity)
+                    self.db.flush()
+                    savepoint.commit()
+                    summary.activities_created += 1
+                    activity_id = activity.id
+                    activities_by_name[normalized_activity_name.lower()] = activity
+                    if stable_key:
+                        activities_by_stable_key[stable_key] = activity
+                except IntegrityError:
+                    savepoint.rollback()
+                    existing = None
+                    if stable_key:
+                        existing = (
+                            self.db.execute(
+                                select(Activity).where(
+                                    col(Activity.user_id) == user_id,
+                                    col(Activity.stable_key) == stable_key,
+                                )
+                            )
+                            .scalars()
+                            .first()
+                        )
+                    if existing is None:
+                        existing = (
+                            self.db.execute(
+                                select(Activity).where(
+                                    col(Activity.user_id) == user_id,
+                                    func.lower(Activity.name) == normalized_activity_name.lower(),
+                                )
+                            )
+                            .scalars()
+                            .first()
+                        )
+                    if not existing:
+                        raise
+                    if stable_key and not existing.stable_key:
+                        backfill_sp = self.db.begin_nested()
+                        try:
+                            existing.stable_key = stable_key
+                            self.db.flush()
+                            backfill_sp.commit()
+                            activities_by_stable_key[stable_key] = existing
+                        except IntegrityError:
+                            backfill_sp.rollback()
+                            concurrent = (
+                                self.db.execute(
+                                    select(Activity).where(
+                                        col(Activity.user_id) == user_id,
+                                        col(Activity.stable_key) == stable_key,
+                                    )
+                                )
+                                .scalars()
+                                .first()
+                            )
+                            if concurrent is not None:
+                                existing = concurrent
+                                activities_by_stable_key[stable_key] = concurrent
+                    activity_id = existing.id
+                    activities_by_name[normalized_activity_name.lower()] = existing
 
             if activity_dto.external_id:
                 activity_id_map[activity_dto.external_id] = activity_id
@@ -2093,18 +2184,54 @@ class ImportService:
     ) -> Dict[str, UUID]:
         """Import goals and return external_id -> goal_id map."""
         goal_id_map: Dict[str, UUID] = {}
-        for goal_dto in goals:
-            existing = (
-                self.db.execute(
-                    select(Goal).where(
-                        col(Goal.user_id) == user_id,
-                        func.lower(col(Goal.title)) == goal_dto.title.lower(),
-                    )
-                )
-                .scalars()
-                .first()
+        existing_goals = (
+            self.db.execute(
+                select(Goal).where(col(Goal.user_id) == user_id)
             )
+            .scalars()
+            .all()
+        )
+        goals_by_stable_key: Dict[str, Goal] = {}
+        goals_by_title: Dict[str, Goal] = {}
+        for goal in existing_goals:
+            if goal.stable_key:
+                goals_by_stable_key[goal.stable_key] = goal
+            goals_by_title[goal.title.strip().lower()] = goal
+
+        for goal_dto in goals:
+            normalized_goal_title = goal_dto.title.strip()
+            stable_key = generate_import_stable_key("imp_goal", goal_dto.external_id)
+
+            existing: Optional[Goal] = None
+            if stable_key:
+                existing = goals_by_stable_key.get(stable_key)
+
+            if existing is None:
+                existing = goals_by_title.get(normalized_goal_title.lower())
+
             if existing:
+                if stable_key and not existing.stable_key:
+                    backfill_sp = self.db.begin_nested()
+                    try:
+                        existing.stable_key = stable_key
+                        self.db.flush()
+                        backfill_sp.commit()
+                        goals_by_stable_key[stable_key] = existing
+                    except IntegrityError:
+                        backfill_sp.rollback()
+                        concurrent = (
+                            self.db.execute(
+                                select(Goal).where(
+                                    col(Goal.user_id) == user_id,
+                                    col(Goal.stable_key) == stable_key,
+                                )
+                            )
+                            .scalars()
+                            .first()
+                        )
+                        if concurrent is not None:
+                            existing = concurrent
+                            goals_by_stable_key[stable_key] = concurrent
                 if goal_dto.external_id:
                     goal_id_map[goal_dto.external_id] = existing.id
                     record_mapping("goals", goal_dto.external_id, existing.id)
@@ -2121,7 +2248,7 @@ class ImportService:
                 user_id=user_id,
                 activity_id=activity_id,
                 category_id=category_id,
-                title=goal_dto.title,
+                title=normalized_goal_title,
                 goal_type=goal_dto.goal_type,
                 frequency_type=goal_dto.frequency_type,
                 target_count=goal_dto.target_count,
@@ -2130,6 +2257,7 @@ class ImportService:
                 icon=goal_dto.icon,
                 color_value=goal_dto.color_value,
                 position=goal_dto.position,
+                stable_key=stable_key,
                 archived_at=goal_dto.archived_at,
                 created_at=goal_dto.created_at or utc_now(),
                 updated_at=goal_dto.updated_at or utc_now(),
@@ -2137,6 +2265,9 @@ class ImportService:
             self.db.add(goal)
             self.db.flush()
             summary.goals_created += 1
+            goals_by_title[normalized_goal_title.lower()] = goal
+            if stable_key:
+                goals_by_stable_key[stable_key] = goal
 
             if goal_dto.external_id:
                 goal_id_map[goal_dto.external_id] = goal.id
@@ -2301,17 +2432,29 @@ class ImportService:
             file_path: Path to uploaded file
         """
         try:
-            upload_root = (Path(settings.import_temp_dir) / "uploads").resolve()
-            temp_root = Path(settings.import_temp_dir).resolve()
+            temp_root = get_import_temp_root().resolve()
+            upload_root = (temp_root / "uploads").resolve()
             file_path_resolved = file_path.resolve()
 
             # Only delete files inside the configured upload directory
-            if str(file_path_resolved).startswith(str(upload_root)) and file_path_resolved.exists():
+            if (
+                file_path_resolved.exists()
+                and (
+                    file_path_resolved == upload_root
+                    or file_path_resolved.is_relative_to(upload_root)
+                )
+            ):
                 file_path_resolved.unlink()
 
             # Remove extraction directory (always under import_temp_dir/<stem>)
             extract_dir = (temp_root / file_path.stem).resolve()
-            if str(extract_dir).startswith(str(temp_root)) and extract_dir.exists():
+            if (
+                extract_dir.exists()
+                and (
+                    extract_dir == temp_root
+                    or extract_dir.is_relative_to(temp_root)
+                )
+            ):
                 shutil.rmtree(extract_dir)
 
             log_info(f"Cleaned up temp files for: {file_path}", file_path=str(file_path))
@@ -2323,7 +2466,7 @@ class ImportService:
         """Best-effort cleanup of stale import temp files/directories."""
         removed = 0
         try:
-            temp_root = Path(settings.import_temp_dir).resolve()
+            temp_root = get_import_temp_root().resolve()
             if not temp_root.exists():
                 return 0
             cutoff_ts = (utc_now().timestamp() - (older_than_hours * 3600))
