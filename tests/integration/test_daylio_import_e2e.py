@@ -5,6 +5,7 @@ End-to-end integration tests for Daylio import using real fixture exports.
 from __future__ import annotations
 
 import base64
+from collections import Counter
 import json
 import zipfile
 from datetime import datetime, timezone
@@ -123,12 +124,15 @@ def test_daylio_import_from_real_fixture_file(
     expected_asset_refs = sum(len(entry.get("assets") or []) for entry in day_entries)
     mapper_ctx = DaylioToJournivMapper._build_context(backup_model)
     mapper_import_timestamp = datetime.now(tz=timezone.utc)
-    expected_goals = len(
-        DaylioToJournivMapper._map_goals(
-            backup_model,
-            mapper_import_timestamp,
-            mapper_ctx,
-        )
+    expected_goal_dtos = DaylioToJournivMapper._map_goals(
+        backup_model,
+        mapper_import_timestamp,
+        mapper_ctx,
+    )
+    expected_goals = len(expected_goal_dtos)
+    expected_goal_frequency_target_pairs = Counter(
+        (goal.frequency_type.value, goal.target_count)
+        for goal in expected_goal_dtos
     )
     expected_goal_logs = len(
         DaylioToJournivMapper._merge_goal_logs(
@@ -151,6 +155,7 @@ def test_daylio_import_from_real_fixture_file(
         if log.moment_external_id
     )
     pre_import_goals = api_client.list_goals(api_user.access_token)
+    pre_import_goal_ids = {goal["id"] for goal in pre_import_goals}
     pre_import_total_goal_logs = _total_goal_logs(
         api_client,
         api_user.access_token,
@@ -208,6 +213,15 @@ def test_daylio_import_from_real_fixture_file(
     assert len(entries) == expected_entries
 
     post_import_goals = api_client.list_goals(api_user.access_token)
+    imported_goals = [goal for goal in post_import_goals if goal["id"] not in pre_import_goal_ids]
+    imported_goal_frequency_target_pairs = Counter(
+        (goal.get("frequency_type"), goal.get("target_count"))
+        for goal in imported_goals
+    )
+
+    assert len(imported_goals) == expected_goals
+    assert imported_goal_frequency_target_pairs == expected_goal_frequency_target_pairs
+
     post_import_total_goal_logs = _total_goal_logs(
         api_client,
         api_user.access_token,

@@ -4,9 +4,11 @@ from app.data_transfer.daylio.mappers import DaylioToJournivMapper
 from app.data_transfer.daylio.models import (
     DaylioBackup,
     DaylioDayEntry,
+    DaylioGoal,
     DaylioGoalEntry,
     DaylioGoalSuccessWeek,
 )
+from app.models.enums import GoalFrequency
 
 
 def test_map_goal_success_weeks_to_weekly_goal_logs():
@@ -159,3 +161,55 @@ def test_map_goal_success_weeks_handles_month_one_day_thirty_without_fallback():
 
     assert len(logs) == 1
     assert logs[0].created_at == datetime(2022, 1, 30, tzinfo=timezone.utc)
+
+
+def test_map_goals_uses_unit_target_for_daily_repeat_bitmask():
+    backup = DaylioBackup(
+        version=19,
+        goals=[
+            DaylioGoal(
+                goal_id=1,
+                name="short exercise",
+                repeat_type=1,
+                repeat_value=127,  # Daylio daily schedule bitmask (all days of the week selected)
+            ),
+        ],
+    )
+    import_timestamp = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    ctx = DaylioToJournivMapper._build_context(backup)
+
+    goals = DaylioToJournivMapper._map_goals(
+        backup,
+        import_timestamp=import_timestamp,
+        ctx=ctx,
+    )
+
+    assert len(goals) == 1
+    assert goals[0].frequency_type == GoalFrequency.DAILY
+    assert goals[0].target_count == 1
+
+
+def test_map_goals_uses_repeat_value_for_weekly_target():
+    backup = DaylioBackup(
+        version=19,
+        goals=[
+            DaylioGoal(
+                goal_id=2,
+                name="Journal 3 days this week",
+                repeat_type=2,
+                repeat_value=3,
+            ),
+        ],
+    )
+    import_timestamp = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    ctx = DaylioToJournivMapper._build_context(backup)
+
+    goals = DaylioToJournivMapper._map_goals(
+        backup,
+        import_timestamp=import_timestamp,
+        ctx=ctx,
+    )
+
+    assert len(goals) == 1
+    assert goals[0].frequency_type == GoalFrequency.WEEKLY
+    assert goals[0].target_count == 3
