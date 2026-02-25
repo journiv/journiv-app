@@ -25,6 +25,7 @@ def mock_dependencies():
 
         # Mock settings
         mock_settings.media_root = "/tmp/media"
+        mock_settings.import_temp_dir = "/tmp"
 
         # Setup mock behavior for context managers
         mock_db = MagicMock()

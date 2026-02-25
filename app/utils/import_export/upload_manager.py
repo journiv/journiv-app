@@ -10,6 +10,7 @@ from fastapi import HTTPException, UploadFile
 from app.core.config import settings
 from app.core.logging_config import log_error, log_file_upload
 from app.utils.import_export.media_handler import MediaHandler
+from app.utils.import_export.temp_paths import get_import_temp_root
 from app.utils.import_export.zip_handler import ZipHandler
 
 
@@ -41,7 +42,7 @@ class UploadManager:
             )
 
         # Create temp upload directory
-        upload_dir = Path(settings.import_temp_dir) / "uploads"
+        upload_dir = get_import_temp_root() / "uploads"
         upload_dir.mkdir(parents=True, exist_ok=True)
 
         # Generate unique filename

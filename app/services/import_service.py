@@ -62,6 +62,7 @@ from app.utils.import_export import (
     ZipHandler,
 )
 from app.utils.import_export.constants import ExportConfig
+from app.utils.import_export.temp_paths import get_import_temp_root
 from app.utils.quill_delta import extract_plain_text, replace_media_ids, wrap_plain_text
 
 
@@ -214,8 +215,7 @@ class ImportService:
             IOError: If extraction fails
         """
         # Create temp directory for extraction
-        temp_dir = Path(settings.import_temp_dir)
-        temp_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = get_import_temp_root()
 
         # Extract ZIP
         extract_result = self.zip_handler.extract_zip(
@@ -260,9 +260,7 @@ class ImportService:
         log_info(f"Starting Day One import for user {user_id}", user_id=str(user_id), file_path=str(file_path))
 
         if not extraction_dir:
-            temp_dir = Path(settings.import_temp_dir)
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            extract_dir = temp_dir / file_path.stem
+            extract_dir = get_import_temp_root() / file_path.stem
         else:
             if not extraction_dir.exists() or not extraction_dir.is_dir():
                 raise ValueError(f"Extraction directory not found: {extraction_dir}")
@@ -330,9 +328,7 @@ class ImportService:
         log_info(f"Starting Daylio import for user {user_id}", user_id=str(user_id), file_path=str(file_path))
 
         if not extraction_dir:
-            temp_dir = Path(settings.import_temp_dir)
-            temp_dir.mkdir(parents=True, exist_ok=True)
-            extract_dir = temp_dir / file_path.stem
+            extract_dir = get_import_temp_root() / file_path.stem
         else:
             if not extraction_dir.exists() or not extraction_dir.is_dir():
                 raise ValueError(f"Extraction directory not found: {extraction_dir}")
@@ -2301,8 +2297,8 @@ class ImportService:
             file_path: Path to uploaded file
         """
         try:
-            upload_root = (Path(settings.import_temp_dir) / "uploads").resolve()
-            temp_root = Path(settings.import_temp_dir).resolve()
+            temp_root = get_import_temp_root().resolve()
+            upload_root = (temp_root / "uploads").resolve()
             file_path_resolved = file_path.resolve()
 
             # Only delete files inside the configured upload directory
@@ -2323,7 +2319,7 @@ class ImportService:
         """Best-effort cleanup of stale import temp files/directories."""
         removed = 0
         try:
-            temp_root = Path(settings.import_temp_dir).resolve()
+            temp_root = get_import_temp_root().resolve()
             if not temp_root.exists():
                 return 0
             cutoff_ts = (utc_now().timestamp() - (older_than_hours * 3600))

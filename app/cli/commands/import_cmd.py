@@ -4,7 +4,6 @@ Import command for CLI.
 Handles large file imports bypassing web upload limits.
 """
 import shutil
-import tempfile
 from pathlib import Path
 from typing import Annotated
 
@@ -33,6 +32,7 @@ from app.models.enums import ImportSourceType
 from app.models.import_job import ImportJob
 from app.services.import_service import ImportService
 from app.services.user_service import UserService
+from app.utils.import_export.temp_paths import import_temp_directory
 from app.utils.import_export.zip_handler import ZipHandler
 
 app = typer.Typer(help="Import data from files")
@@ -194,8 +194,7 @@ def import_data(
                 media_dest.mkdir(parents=True, exist_ok=True)
 
                 try:
-                    with tempfile.TemporaryDirectory() as temp_dir:
-                        temp_path = Path(temp_dir)
+                    with import_temp_directory(prefix="cli-import-") as temp_path:
                         result = ZipHandler.stream_extract(
                             zip_path=file_path,
                             extract_to=temp_path,
