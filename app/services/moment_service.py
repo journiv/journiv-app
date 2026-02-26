@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Any, List, Optional, Tuple
 
-from sqlalchemy import and_, extract, func, or_
+from sqlalchemy import String, and_, cast, extract, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, col, delete, select
@@ -269,7 +269,9 @@ class MomentService:
             )
         )
         if moment_ids:
-            statement = statement.where(col(Moment.id).in_(normalize_uuid_list(set(moment_ids))))
+            filtered_ids = [moment_id for moment_id in moment_ids if moment_id is not None]
+            if filtered_ids:
+                statement = statement.where(col(Moment.id).in_(normalize_uuid_list(set(filtered_ids))))
 
         candidates = list(self.session.exec(statement))
         deleted_count = 0
@@ -643,6 +645,8 @@ class MomentService:
         """Exclude structurally empty moments unless explicitly requested."""
         if include_empty:
             return statement
+        location_json_text = func.trim(cast(col(Moment.location_json), String))
+        weather_json_text = func.trim(cast(col(Moment.weather_json), String))
         return statement.where(
             or_(
                 col(Entry.id).is_not(None),
@@ -653,8 +657,16 @@ class MomentService:
                 col(Moment.media_count) > 0,
                 col(Moment.latitude).is_not(None),
                 col(Moment.longitude).is_not(None),
-                col(Moment.location_json).is_not(None),
-                col(Moment.weather_json).is_not(None),
+                and_(
+                    col(Moment.location_json).is_not(None),
+                    location_json_text != "",
+                    location_json_text.notin_(["{}", "[]"]),
+                ),
+                and_(
+                    col(Moment.weather_json).is_not(None),
+                    weather_json_text != "",
+                    weather_json_text.notin_(["{}", "[]"]),
+                ),
                 and_(
                     col(Moment.weather_summary).is_not(None),
                     func.trim(col(Moment.weather_summary)) != "",
