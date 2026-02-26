@@ -660,12 +660,12 @@ class MomentService:
                 and_(
                     col(Moment.location_json).is_not(None),
                     location_json_text != "",
-                    location_json_text.notin_(["{}", "[]"]),
+                    func.lower(location_json_text).notin_(["{}", "[]", "null"]),
                 ),
                 and_(
                     col(Moment.weather_json).is_not(None),
                     weather_json_text != "",
-                    weather_json_text.notin_(["{}", "[]"]),
+                    func.lower(weather_json_text).notin_(["{}", "[]", "null"]),
                 ),
                 and_(
                     col(Moment.weather_summary).is_not(None),
