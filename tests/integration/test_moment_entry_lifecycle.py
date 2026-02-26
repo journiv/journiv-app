@@ -1,11 +1,9 @@
 """
 Moment-Entry Lifecycle Integration Tests.
 """
-from datetime import date
-import pytest
 
-from tests.lib import ApiUser, JournivApiClient
 from tests.integration.helpers import sample_jpeg_bytes
+from tests.lib import ApiUser, JournivApiClient
 
 
 def test_cascade_deletion(
@@ -177,3 +175,104 @@ def test_revert_to_quick_log_preserves_context(
             has_activity = True
             break
     assert has_activity, "Activity should persist"
+
+
+def test_delete_entry_prunes_structurally_empty_moment(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    journal_factory,
+    moment_factory,
+):
+    """Deleting an entry should remove its moment when no meaningful context remains."""
+    journal = journal_factory()
+    moment = moment_factory(
+        entry={
+            "title": "Entry Only",
+            "content": "No lasting context",
+            "journal_id": journal["id"],
+        }
+    )
+    moment_id = moment["id"]
+    entry_id = moment["entry"]["id"]
+
+    api_client.request("DELETE", f"/entries/{entry_id}", token=api_user.access_token, expected=(204,))
+
+    api_client.request("GET", f"/entries/{entry_id}", token=api_user.access_token, expected=(404,))
+    api_client.request("GET", f"/moments/{moment_id}", token=api_user.access_token, expected=(404,))
+
+    timeline_items = api_client.list_moments(api_user.access_token)
+    assert all(item["id"] != moment_id for item in timeline_items)
+
+
+def test_get_moments_hides_empty_moments_by_default(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """Timeline should hide empty moments by default while allowing explicit include_empty."""
+    empty_moment = moment_factory()
+    meaningful_moment = moment_factory(note="A meaningful quick log")
+
+    default_items = api_client.list_moments(api_user.access_token)
+    assert any(item["id"] == meaningful_moment["id"] for item in default_items)
+    assert all(item["id"] != empty_moment["id"] for item in default_items)
+
+    all_items = api_client.list_moments(api_user.access_token, include_empty=True)
+    assert any(item["id"] == meaningful_moment["id"] for item in all_items)
+    assert any(item["id"] == empty_moment["id"] for item in all_items)
+
+
+def test_delete_journal_prunes_only_empty_promoted_moments(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    journal_factory,
+    moment_factory,
+):
+    """Journal delete should prune promoted moments that become empty and keep meaningful ones."""
+    journal = journal_factory()
+
+    empty_promoted = moment_factory(
+        entry={
+            "title": "Delete Journal Empty",
+            "content": "Will become empty",
+            "journal_id": journal["id"],
+        }
+    )
+    meaningful_promoted = moment_factory(
+        entry={
+            "title": "Delete Journal Keep",
+            "content": "Will keep note",
+            "journal_id": journal["id"],
+        },
+        note="Keep this quick log after journal delete",
+    )
+
+    api_client.delete_journal(api_user.access_token, journal["id"])
+
+    api_client.request(
+        "GET",
+        f"/entries/{empty_promoted['entry']['id']}",
+        token=api_user.access_token,
+        expected=(404,),
+    )
+    api_client.request(
+        "GET",
+        f"/entries/{meaningful_promoted['entry']['id']}",
+        token=api_user.access_token,
+        expected=(404,),
+    )
+
+    api_client.request(
+        "GET",
+        f"/moments/{empty_promoted['id']}",
+        token=api_user.access_token,
+        expected=(404,),
+    )
+    kept = api_client.request(
+        "GET",
+        f"/moments/{meaningful_promoted['id']}",
+        token=api_user.access_token,
+        expected=(200,),
+    ).json()
+    assert kept["entry"] is None
+    assert kept["note"] == "Keep this quick log after journal delete"

@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Any, List, Optional, Tuple
 
-from sqlalchemy import extract, or_
+from sqlalchemy import and_, extract, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, col, delete, select
@@ -16,7 +16,9 @@ from app.core.logging_config import log_error, log_info, log_warning
 from app.core.time_utils import ensure_utc, local_date_for_user, utc_now
 from app.models.activity import Activity
 from app.models.entry import Entry
+from app.models.goal import GoalLog
 from app.models.moment import Moment, MomentMoodActivity
+from app.models.moment_tag_link import MomentTagLink
 from app.models.mood import Mood
 from app.models.user import UserSettings
 from app.schemas.moment import (
@@ -209,6 +211,82 @@ class MomentService:
                     activity_id=activity_id,
                 )
             )
+
+    @staticmethod
+    def _note_has_content(note: Optional[str]) -> bool:
+        return bool(note and note.strip())
+
+    @staticmethod
+    def _json_has_content(value: Optional[dict]) -> bool:
+        return bool(value and len(value) > 0)
+
+    def is_meaningful_moment(self, moment: Moment) -> bool:
+        """Return True when a moment contains user-meaningful context."""
+        if moment.entry is not None:
+            return True
+        if self._note_has_content(moment.note):
+            return True
+        if moment.primary_mood_id is not None:
+            return True
+        if moment.prompt_id is not None:
+            return True
+        if moment.media_count > 0:
+            return True
+        if moment.is_pinned:
+            return True
+        if self._json_has_content(moment.location_json):
+            return True
+        if self._json_has_content(moment.weather_json):
+            return True
+        if moment.weather_summary and moment.weather_summary.strip():
+            return True
+        if moment.latitude is not None or moment.longitude is not None:
+            return True
+        if bool(moment.tags):
+            return True
+        if bool(moment.mood_activity_links):
+            return True
+        if bool(moment.goal_logs):
+            return True
+        return False
+
+    def prune_empty_moments(
+        self,
+        user_id: uuid.UUID,
+        moment_ids: Optional[List[uuid.UUID]] = None,
+        *,
+        commit: bool = True,
+    ) -> int:
+        """Delete user moments that no longer have meaningful content."""
+        statement = (
+            select(Moment)
+            .where(Moment.user_id == user_id)
+            .options(
+                selectinload(Moment.entry),  # type: ignore[arg-type]
+                selectinload(Moment.tags),  # type: ignore[arg-type]
+                selectinload(Moment.mood_activity_links),  # type: ignore[arg-type]
+                selectinload(Moment.goal_logs),  # type: ignore[arg-type]
+            )
+        )
+        if moment_ids:
+            statement = statement.where(col(Moment.id).in_(normalize_uuid_list(set(moment_ids))))
+
+        candidates = list(self.session.exec(statement))
+        deleted_count = 0
+        for moment in candidates:
+            if self.is_meaningful_moment(moment):
+                continue
+            self.session.delete(moment)
+            deleted_count += 1
+
+        if deleted_count == 0:
+            return 0
+
+        if commit:
+            self._commit()
+        else:
+            self.session.flush()
+        return deleted_count
 
     def _create_associated_entry(
         self,
@@ -561,6 +639,34 @@ class MomentService:
             statement = statement.where(col(Moment.logged_date_tz) <= end_date)
         return statement
 
+    def _apply_non_empty_filter(self, statement: Any, include_empty: bool) -> Any:
+        """Exclude structurally empty moments unless explicitly requested."""
+        if include_empty:
+            return statement
+        return statement.where(
+            or_(
+                col(Entry.id).is_not(None),
+                and_(col(Moment.note).is_not(None), func.trim(col(Moment.note)) != ""),
+                col(Moment.primary_mood_id).is_not(None),
+                col(Moment.prompt_id).is_not(None),
+                col(Moment.is_pinned).is_(True),
+                col(Moment.media_count) > 0,
+                col(Moment.latitude).is_not(None),
+                col(Moment.longitude).is_not(None),
+                col(Moment.location_json).is_not(None),
+                col(Moment.weather_json).is_not(None),
+                and_(
+                    col(Moment.weather_summary).is_not(None),
+                    func.trim(col(Moment.weather_summary)) != "",
+                ),
+                col(Moment.id).in_(select(MomentTagLink.moment_id)),
+                col(Moment.id).in_(select(MomentMoodActivity.moment_id)),
+                col(Moment.id).in_(
+                    select(GoalLog.moment_id).where(col(GoalLog.moment_id).is_not(None))
+                ),
+            )
+        )
+
     def _base_moment_statement(self, user_id: uuid.UUID) -> Any:
         return (
             select(Moment)
@@ -754,6 +860,7 @@ class MomentService:
         mood_ids: Optional[List[uuid.UUID]] = None,
         search: Optional[str] = None,
         include_drafts: bool = False,
+        include_empty: bool = False,
     ) -> Tuple[List[Moment], Optional[datetime], Optional[uuid.UUID]]:
         """Get moments for a user with filtering."""
         statement = (
@@ -775,6 +882,7 @@ class MomentService:
         statement = self._apply_search_filter(statement, search)
         statement = self._apply_cursor_filter(statement, cursor_logged_at_utc, cursor_id)
         statement = self._apply_date_filter(statement, start_date, end_date)
+        statement = self._apply_non_empty_filter(statement, include_empty)
 
         statement = statement.order_by(
             col(Moment.logged_at_utc).desc(),

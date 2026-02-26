@@ -433,8 +433,9 @@ class EntryService:
         """
         entry = self._get_owned_entry(entry_id, user_id)
 
-        # Store journal_id for recount before deleting entry
+        # Store related IDs before deleting the entry
         journal_id = entry.journal_id
+        moment_id = entry.moment_id
 
         # Hard delete the entry only — moment, media, and tags remain on the moment
         self.session.delete(entry)
@@ -462,6 +463,19 @@ class EntryService:
             analytics_service.recalculate_writing_streak_stats(user_id)
         except Exception as exc:
             log_warning(f"Failed to update writing streak stats after entry deletion: {exc}")
+
+        # Clean up any orphaned moment that became structurally empty after entry deletion.
+        try:
+            from app.services.moment_service import MomentService
+            deleted_count = MomentService(self.session).prune_empty_moments(
+                user_id,
+                moment_ids=[moment_id],
+            )
+            if deleted_count > 0:
+                log_info(f"Pruned empty moment after entry deletion for user {user_id}: {moment_id}")
+        except Exception as exc:
+            # Non-critical cleanup; timeline filtering still prevents empty-card rendering.
+            log_warning(f"Failed to prune empty moment after entry deletion: {exc}")
 
         log_info(f"Entry hard-deleted for user {user_id}: {entry_id}")
         return True
