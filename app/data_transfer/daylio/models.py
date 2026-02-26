@@ -79,6 +79,7 @@ class DaylioGoal(DaylioBaseModel):
     repeat_type: Optional[int] = None
     repeat_value: Optional[int] = None
     state: Optional[int] = None
+    end_date: Optional[int] = None
     created_at: Optional[int] = None
     is_displayed_in_reports: Optional[bool] = None
 

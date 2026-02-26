@@ -4,7 +4,7 @@ Goal endpoints.
 import uuid
 from typing import Annotated, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import ValidationError as PydanticValidationError
 from sqlmodel import Session
 
@@ -149,8 +149,8 @@ async def update_goal(
         ) from exc
 
 
-@router.delete(
-    "/{goal_id}",
+@router.patch(
+    "/{goal_id}/archive",
     response_model=GoalResponse,
     responses={
         401: {"description": "Not authenticated"},
@@ -173,6 +173,61 @@ async def archive_goal(
         raise HTTPException(
             status_code=500,
             detail="An error occurred while archiving goal",
+        ) from exc
+
+
+@router.post(
+    "/{goal_id}/unarchive",
+    response_model=GoalResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Goal not found"},
+    },
+)
+async def unarchive_goal(
+    goal_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    goal_service = GoalService(session)
+    try:
+        return goal_service.unarchive_goal(goal_id, current_user.id)
+    except GoalNotFoundError:
+        raise HTTPException(status_code=404, detail="Goal not found") from None
+    except Exception as exc:
+        log_error(exc, request_id=None, user_id=current_user.id)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while unarchiving goal",
+        ) from exc
+
+
+@router.delete(
+    "/{goal_id}",
+    status_code=204,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Goal not found"},
+    },
+)
+async def delete_goal_permanently(
+    goal_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    goal_service = GoalService(session)
+    try:
+        goal_service.delete_goal_permanently(goal_id, current_user.id)
+        return Response(status_code=204)
+    except GoalNotFoundError:
+        raise HTTPException(status_code=404, detail="Goal not found") from None
+    except Exception as exc:
+        log_error(exc, request_id=None, user_id=current_user.id)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred while deleting goal",
         ) from exc
 
 

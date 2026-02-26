@@ -5,9 +5,9 @@ End-to-end integration tests for Daylio import using real fixture exports.
 from __future__ import annotations
 
 import base64
-from collections import Counter
 import json
 import zipfile
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -130,6 +130,8 @@ def test_daylio_import_from_real_fixture_file(
         mapper_ctx,
     )
     expected_goals = len(expected_goal_dtos)
+    expected_archived_goals = sum(1 for goal in expected_goal_dtos if goal.archived_at is not None)
+    expected_active_goals = expected_goals - expected_archived_goals
     expected_goal_frequency_target_pairs = Counter(
         (goal.frequency_type.value, goal.target_count)
         for goal in expected_goal_dtos
@@ -154,7 +156,7 @@ def test_daylio_import_from_real_fixture_file(
         )
         if log.moment_external_id
     )
-    pre_import_goals = api_client.list_goals(api_user.access_token)
+    pre_import_goals = api_client.list_goals(api_user.access_token, include_archived=True)
     pre_import_goal_ids = {goal["id"] for goal in pre_import_goals}
     pre_import_total_goal_logs = _total_goal_logs(
         api_client,
@@ -212,15 +214,20 @@ def test_daylio_import_from_real_fixture_file(
     entries = api_client.list_entries(api_user.access_token)
     assert len(entries) == expected_entries
 
-    post_import_goals = api_client.list_goals(api_user.access_token)
+    post_import_active_goals = api_client.list_goals(api_user.access_token)
+    post_import_goals = api_client.list_goals(api_user.access_token, include_archived=True)
     imported_goals = [goal for goal in post_import_goals if goal["id"] not in pre_import_goal_ids]
+    imported_active_goals = [goal for goal in imported_goals if goal.get("archived_at") is None]
     imported_goal_frequency_target_pairs = Counter(
         (goal.get("frequency_type"), goal.get("target_count"))
         for goal in imported_goals
     )
 
     assert len(imported_goals) == expected_goals
+    assert len(imported_active_goals) == expected_active_goals
+    assert sum(1 for goal in imported_goals if goal.get("archived_at") is not None) == expected_archived_goals
     assert imported_goal_frequency_target_pairs == expected_goal_frequency_target_pairs
+    imported_archived_goal_ids = {goal["id"] for goal in imported_goals if goal.get("archived_at") is not None}
 
     post_import_total_goal_logs = _total_goal_logs(
         api_client,
@@ -234,6 +241,7 @@ def test_daylio_import_from_real_fixture_file(
         imported_goal_logs.extend(api_client.list_goal_logs(api_user.access_token, goal["id"], limit=365))
     linked_goal_logs = [log for log in imported_goal_logs if log.get("moment_id") is not None]
     assert len(linked_goal_logs) >= expected_linked_goal_logs
+    assert all(goal["id"] not in imported_archived_goal_ids for goal in post_import_active_goals)
 
     moments = api_client.list_moments(api_user.access_token, limit=200)
     assert len(moments) == expected_moments

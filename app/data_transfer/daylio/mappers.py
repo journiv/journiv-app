@@ -35,6 +35,7 @@ from .html_to_delta import html_to_delta
 from .models import (
     DaylioBackup,
     DaylioDayEntry,
+    DaylioGoal,
 )
 
 _PREDEFINED_MOOD_NAMES = {
@@ -313,6 +314,11 @@ class DaylioToJournivMapper:
                 target = goal.repeat_value or 1
             elif goal.repeat_type == 1:
                 frequency = GoalFrequency.DAILY
+            archived_at = DaylioToJournivMapper._resolve_goal_archived_at(
+                goal=goal,
+                import_timestamp=import_timestamp,
+            )
+            is_archived = archived_at is not None
 
             goals.append(
                 GoalDTO(
@@ -321,11 +327,11 @@ class DaylioToJournivMapper:
                     frequency_type=frequency,
                     target_count=target,
                     reminder_time=reminder_time,
-                    is_paused=(goal.state or 0) != 0,
+                    is_paused=(goal.state or 0) != 0 and not is_archived,
                     icon=str(goal.id_icon) if goal.id_icon is not None else None,
                     color_value=None,
                     position=goal.order_number or goal.order or 0,
-                    archived_at=None,
+                    archived_at=archived_at,
                     activity_external_id=str(goal.id_tag) if goal.id_tag else None,
                     category_external_id=None,
                     created_at=_ms_to_utc(goal.created_at) or import_timestamp,
@@ -334,6 +340,19 @@ class DaylioToJournivMapper:
                 )
             )
         return goals
+
+    @staticmethod
+    def _resolve_goal_archived_at(
+        *,
+        goal: DaylioGoal,
+        import_timestamp: datetime,
+    ) -> Optional[datetime]:
+        end_date_utc = _ms_to_utc(goal.end_date) if goal.end_date and goal.end_date > 0 else None
+        if end_date_utc is not None:
+            return end_date_utc
+        if (goal.state or 0) == 1:
+            return import_timestamp
+        return None
 
     @staticmethod
     def _map_goal_logs(backup: DaylioBackup, import_timestamp: datetime) -> List[GoalLogDTO]:
