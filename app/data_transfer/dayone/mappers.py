@@ -304,7 +304,18 @@ class DayOneToJournivMapper:
             dayone_entry.modified_date or dayone_entry.creation_date
         )
         entry_timezone = normalize_timezone(dayone_entry.time_zone)
-        entry_date = local_date_for_user(creation_date_utc, entry_timezone)
+        try:
+            entry_date = local_date_for_user(creation_date_utc, entry_timezone)
+        except (OverflowError, ValueError) as exc:
+            log_warning(
+                "Failed to derive local date from Day One entry timestamp; falling back to UTC date",
+                entry_id=dayone_entry.uuid,
+                timezone=entry_timezone,
+                creation_date=str(creation_date_utc),
+                error=str(exc),
+            )
+            entry_timezone = "UTC"
+            entry_date = creation_date_utc.date()
 
         location_json = None
         latitude = None

@@ -19,7 +19,15 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from sqlalchemy import Column, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlmodel import Field, Index, Relationship
 
 from app.models.base import BaseModel
@@ -91,6 +99,17 @@ class Integration(BaseModel, table=True):
     """
     __tablename__ = "integration"
 
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
+        description="UTC timestamp when this record was created",
+    )
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False, onupdate=func.now()),
+        description="UTC timestamp when this record was last updated",
+    )
+
     user_id: uuid.UUID = Field(
         sa_column=Column(
             ForeignKey("user.id", ondelete="CASCADE"),
@@ -123,6 +142,7 @@ class Integration(BaseModel, table=True):
 
     token_expires_at: Optional[datetime] = Field(
         default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
         description="Token expiration time (future use for OAuth)"
     )
 
@@ -135,6 +155,7 @@ class Integration(BaseModel, table=True):
     # Sync tracking
     last_synced_at: Optional[datetime] = Field(
         default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
         description="Last successful sync timestamp"
     )
 
@@ -146,6 +167,7 @@ class Integration(BaseModel, table=True):
 
     last_error_at: Optional[datetime] = Field(
         default=None,
+        sa_column=Column(DateTime(timezone=True), nullable=True),
         description="When the last error occurred"
     )
 
@@ -157,6 +179,7 @@ class Integration(BaseModel, table=True):
 
     connected_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
+        sa_column=Column(DateTime(timezone=True), nullable=False),
         description="When the user first connected this integration"
     )
 
@@ -213,4 +236,3 @@ class Integration(BaseModel, table=True):
         current = self.get_metadata()
         current.update(kwargs)
         self.set_metadata(current)
-

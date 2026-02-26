@@ -45,7 +45,8 @@ class Mood(BaseModel, table=True):
 
     # Relations
     moment_activity_links: List["MomentMoodActivity"] = Relationship(
-        back_populates="mood"
+        back_populates="mood",
+        sa_relationship_kwargs={"passive_deletes": True},
     )
     user: Optional["User"] = Relationship(back_populates="moods")
     group_links: List["MoodGroupLink"] = Relationship(

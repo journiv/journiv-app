@@ -521,6 +521,8 @@ async def sync_integration(
         log_info(f"Skipping sync for inactive {provider} integration (user {user.id})")
         return
 
+    integration_id = integration.id
+
     # Delegate to provider module
     provider_module = get_provider_module(provider)
     try:
@@ -537,14 +539,31 @@ async def sync_integration(
         session.add(integration)
         await _commit(session)
 
-        log_info(f"Synced {provider} for user {user.id} (integration {integration.id})")
+        log_info(f"Synced {provider} for user {user.id} (integration {integration_id})")
     except Exception as e:
-        log_error(e, user_id=user.id)
-        # Update error tracking
-        integration.last_error = str(e)
-        integration.last_error_at = utc_now()
-        session.add(integration)
-        await _commit(session)
+        log_error(e, user_id=user.id, integration_id=integration_id, provider=provider)
+        await _rollback(session)
+
+        # Update error tracking using a fresh instance after rollback.
+        try:
+            integration_to_update = (await _exec(
+                session,
+                select(Integration).where(Integration.id == integration_id)
+            )).first()
+            if integration_to_update:
+                integration_to_update.last_error = str(e)
+                integration_to_update.last_error_at = utc_now()
+                session.add(integration_to_update)
+                await _commit(session)
+        except Exception as persist_error:
+            await _rollback(session)
+            log_error(
+                persist_error,
+                user_id=user.id,
+                provider=provider,
+                integration_id=integration_id,
+                message="Failed to persist integration sync error state",
+            )
         raise
 
 
@@ -555,38 +574,39 @@ async def sync_all_integrations(session: Session | AsyncSession) -> None:
     This function is called by scheduled background tasks (e.g., every 6 hours).
     It iterates through all active integrations and syncs them.
     """
-    integrations = (await _exec(
+    integration_rows = (await _exec(
         session,
-        select(Integration)
+        select(Integration.id, Integration.user_id, Integration.provider)
         .where(Integration.is_active)
     )).all()
 
-    log_info(f"Starting batch sync for {len(integrations)} active integrations")
+    log_info(f"Starting batch sync for {len(integration_rows)} active integrations")
 
-    for integration in integrations:
+    for integration_id, integration_user_id, integration_provider in integration_rows:
         try:
             # Get user (needed by provider modules)
             user = (await _exec(
                 session,
-                select(User).where(User.id == integration.user_id)
+                select(User).where(User.id == integration_user_id)
             )).first()
 
             if not user:
-                log_warning(f"User {integration.user_id} not found for integration {integration.id}")
+                log_warning(f"User {integration_user_id} not found for integration {integration_id}")
                 continue
 
-            await sync_integration(session, user, integration.provider)
+            await sync_integration(session, user, integration_provider)
         except Exception as e:
+            await _rollback(session)
             log_error(
                 e,
-                integration_id=integration.id,
-                provider=integration.provider,
-                user_id=integration.user_id
+                integration_id=integration_id,
+                provider=integration_provider,
+                user_id=integration_user_id
             )
             # Continue with next integration (don't stop the batch)
             continue
 
-    log_info(f"Completed batch sync for {len(integrations)} integrations")
+    log_info(f"Completed batch sync for {len(integration_rows)} integrations")
 
 
 async def update_integration_settings(

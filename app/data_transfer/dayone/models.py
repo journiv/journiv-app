@@ -6,10 +6,69 @@ Day One export format documentation:
 https://dayoneapp.com/guides/tips-and-tutorials/exporting-entries/
 """
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field, field_validator
+
+_EPOCH_MS_THRESHOLD = 1_000_000_000_000  # ~2001 in milliseconds
+_EPOCH_US_THRESHOLD = 1_000_000_000_000_000  # ~2001 in microseconds
+_EPOCH_NS_THRESHOLD = 1_000_000_000_000_000_000  # ~2001 in nanoseconds
+_MIN_IMPORT_DATETIME_UTC = datetime(1900, 1, 1, tzinfo=timezone.utc)
+_MAX_IMPORT_DATETIME_UTC = datetime(9998, 12, 31, 23, 59, 59, 999999, tzinfo=timezone.utc)
+
+
+def _parse_dayone_datetime(value: Any) -> Any:
+    """Normalize Day One datetime payloads before Pydantic coercion."""
+    if value is None or isinstance(value, datetime):
+        return value
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid datetime value type: {type(value).__name__}")
+
+    numeric_value: float | None = None
+    if isinstance(value, (int, float)):
+        numeric_value = float(value)
+    elif isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return value
+        try:
+            numeric_value = float(stripped)
+        except ValueError:
+            return value
+    else:
+        return value
+
+    if not math.isfinite(numeric_value):
+        raise ValueError(f"Invalid non-finite datetime value: {value}")
+
+    epoch_seconds = numeric_value
+    abs_value = abs(numeric_value)
+    if abs_value >= _EPOCH_NS_THRESHOLD:
+        epoch_seconds = numeric_value / 1_000_000_000
+    elif abs_value >= _EPOCH_US_THRESHOLD:
+        epoch_seconds = numeric_value / 1_000_000
+    elif abs_value >= _EPOCH_MS_THRESHOLD:
+        epoch_seconds = numeric_value / 1_000
+
+    try:
+        return datetime.fromtimestamp(epoch_seconds, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError) as exc:
+        raise ValueError(f"Invalid epoch datetime value: {value}") from exc
+
+
+def _validate_dayone_datetime_range(dt: datetime, field_name: str) -> datetime:
+    if dt.tzinfo is None:
+        dt_utc = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt_utc = dt.astimezone(timezone.utc)
+
+    if dt_utc < _MIN_IMPORT_DATETIME_UTC or dt_utc > _MAX_IMPORT_DATETIME_UTC:
+        raise ValueError(
+            f"{field_name} out of supported range: {dt_utc.isoformat()} "
+            f"(expected {_MIN_IMPORT_DATETIME_UTC.isoformat()}..{_MAX_IMPORT_DATETIME_UTC.isoformat()})"
+        )
+    return dt_utc
 
 
 class DayOneLocation(BaseModel):
@@ -98,6 +157,18 @@ class DayOnePhoto(BaseModel):
             raise ValueError("MD5 must be a valid hex string")
         return v.lower() if v else v
 
+    @field_validator("date", mode="before")
+    @classmethod
+    def normalize_date(cls, v: Optional[Any]) -> Optional[Any]:
+        return _parse_dayone_datetime(v)
+
+    @field_validator("date")
+    @classmethod
+    def validate_date_range(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is None:
+            return v
+        return _validate_dayone_datetime_range(v, "photo.date")
+
     class Config:
         populate_by_name = True
         extra = "allow"
@@ -124,6 +195,18 @@ class DayOneVideo(BaseModel):
         if v is not None and not all(c in '0123456789abcdefABCDEF' for c in v):
             raise ValueError("MD5 must be a valid hex string")
         return v.lower() if v else v
+
+    @field_validator("date", mode="before")
+    @classmethod
+    def normalize_date(cls, v: Optional[Any]) -> Optional[Any]:
+        return _parse_dayone_datetime(v)
+
+    @field_validator("date")
+    @classmethod
+    def validate_date_range(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is None:
+            return v
+        return _validate_dayone_datetime_range(v, "video.date")
 
     class Config:
         populate_by_name = True
@@ -179,6 +262,18 @@ class DayOneEntry(BaseModel):
                 if cleaned:
                     validated.append(cleaned)
         return validated
+
+    @field_validator("creation_date", "modified_date", mode="before")
+    @classmethod
+    def normalize_entry_datetimes(cls, v: Optional[Any]) -> Optional[Any]:
+        return _parse_dayone_datetime(v)
+
+    @field_validator("creation_date", "modified_date")
+    @classmethod
+    def validate_entry_datetime_range(cls, v: Optional[datetime], info) -> Optional[datetime]:
+        if v is None:
+            return v
+        return _validate_dayone_datetime_range(v, info.field_name)
 
     class Config:
         populate_by_name = True
