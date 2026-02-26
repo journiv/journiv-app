@@ -579,6 +579,7 @@ async def get_moments(
     mood_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
     search: Annotated[str | None, Query()] = None,
     include_drafts: Annotated[bool, Query()] = False,
+    include_empty: Annotated[bool, Query()] = False,
 ):
     if (cursor_logged_at_utc is None) ^ (cursor_id is None):
         raise HTTPException(
@@ -599,6 +600,7 @@ async def get_moments(
         mood_ids=mood_ids if mood_ids else None,
         search=search,
         include_drafts=include_drafts,
+        include_empty=include_empty,
     )
 
     media_map: dict[uuid.UUID, List[MomentMediaThumbnail]] = {}

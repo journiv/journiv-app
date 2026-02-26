@@ -11,6 +11,7 @@ from sqlmodel import Session, col, func, select
 from app.core.exceptions import JournalNotFoundError
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.time_utils import utc_now
+from app.models.entry import Entry
 from app.models.journal import Journal
 from app.schemas.journal import JournalCreate, JournalUpdate
 
@@ -138,6 +139,14 @@ class JournalService:
         In moment-first architecture, deleting entries must not delete their moments.
         """
         journal = self._get_owned_journal(journal_id, user_id)
+        affected_moment_ids = list(
+            self.session.exec(
+                select(Entry.moment_id).where(
+                    Entry.user_id == user_id,
+                    Entry.journal_id == journal_id,
+                )
+            ).all()
+        )
 
         # Hard delete the journal itself
         self.session.delete(journal)
@@ -148,6 +157,22 @@ class JournalService:
             self.session.rollback()
             log_error(exc)
             raise
+
+        # Journal deletion cascades entry deletion in DB; prune moments that became empty.
+        if affected_moment_ids:
+            try:
+                from app.services.moment_service import MomentService
+
+                pruned = MomentService(self.session).prune_empty_moments(
+                    user_id,
+                    moment_ids=affected_moment_ids,
+                )
+                if pruned > 0:
+                    log_info(
+                        f"Pruned {pruned} empty moments after journal deletion for user {user_id}: {journal_id}"
+                    )
+            except Exception as exc:
+                log_warning(f"Failed to prune empty moments after journal deletion: {exc}")
 
         # Recalculate user-level streak once after successful deletion.
         try:
