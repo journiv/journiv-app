@@ -48,7 +48,8 @@ class Activity(BaseModel, table=True):
     # Relations
     user: "User" = Relationship(back_populates="activities")
     moment_activity_links: List["MomentMoodActivity"] = Relationship(
-        back_populates="activity"
+        back_populates="activity",
+        sa_relationship_kwargs={"passive_deletes": True},
     )
     group: Optional["ActivityGroup"] = Relationship(back_populates="activities")
     goals: List["Goal"] = Relationship(back_populates="activity")

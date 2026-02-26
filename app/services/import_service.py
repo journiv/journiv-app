@@ -948,7 +948,18 @@ class ImportService:
 
         logged_at_utc = moment_dto.logged_at_utc or utc_now()
         logged_timezone = normalize_timezone(moment_dto.logged_timezone)
-        logged_date_tz = local_date_for_user(logged_at_utc, logged_timezone)
+        try:
+            logged_date_tz = local_date_for_user(logged_at_utc, logged_timezone)
+        except (OverflowError, ValueError) as exc:
+            log_warning(
+                "Failed to derive moment local date; falling back to UTC date",
+                moment_external_id=moment_dto.external_id,
+                timezone=logged_timezone,
+                logged_at_utc=str(logged_at_utc),
+                error=str(exc),
+            )
+            logged_timezone = "UTC"
+            logged_date_tz = logged_at_utc.date()
 
         moment = Moment(
             user_id=user_id,

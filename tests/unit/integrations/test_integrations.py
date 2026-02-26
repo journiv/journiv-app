@@ -18,7 +18,9 @@ from app.integrations.schemas import (
     IntegrationConnectRequest,
     IntegrationStatusResponse,
 )
+from app.models.activity import Activity
 from app.models.integration import AssetType, Integration, IntegrationProvider
+from app.models.mood import Mood
 
 # ================================================================================
 # MODEL TESTS
@@ -51,6 +53,23 @@ class TestIntegrationModel:
         all_providers = list(IntegrationProvider)
         assert len(all_providers) >= 1
         assert IntegrationProvider.IMMICH in all_providers
+
+    def test_integration_datetime_columns_are_timezone_aware(self):
+        table = Integration.__table__
+        for column_name in (
+            "created_at",
+            "updated_at",
+            "token_expires_at",
+            "last_synced_at",
+            "last_error_at",
+            "connected_at",
+        ):
+            assert table.c[column_name].type.timezone is True
+        assert table.c["updated_at"].onupdate is not None
+
+    def test_mood_and_activity_links_use_passive_deletes(self):
+        assert Activity.__mapper__.relationships["moment_activity_links"].passive_deletes is True
+        assert Mood.__mapper__.relationships["moment_activity_links"].passive_deletes is True
 
 
 # ================================================================================
