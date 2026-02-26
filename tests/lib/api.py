@@ -917,6 +917,30 @@ class JournivApiClient:
             expected=(200,),
         ).json()
 
+    def archive_goal(self, token: str, goal_id: str) -> Dict[str, Any]:
+        return self.request(
+            "PATCH",
+            f"/goals/{goal_id}/archive",
+            token=token,
+            expected=(200,),
+        ).json()
+
+    def unarchive_goal(self, token: str, goal_id: str) -> Dict[str, Any]:
+        return self.request(
+            "POST",
+            f"/goals/{goal_id}/unarchive",
+            token=token,
+            expected=(200,),
+        ).json()
+
+    def delete_goal_permanently(self, token: str, goal_id: str) -> None:
+        self.request(
+            "DELETE",
+            f"/goals/{goal_id}",
+            token=token,
+            expected=(204,),
+        )
+
     def list_goal_logs(
         self,
         token: str,

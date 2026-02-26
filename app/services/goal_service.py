@@ -517,12 +517,40 @@ class GoalService:
     def archive_goal(self, goal_id: uuid.UUID, user_id: uuid.UUID) -> Goal:
         goal = self.get_goal(goal_id, user_id)
         if goal.archived_at is None:
-            goal.archived_at = utc_now()
-            goal.updated_at = utc_now()
+            now = utc_now()
+            goal.archived_at = now
+            goal.updated_at = now
             self.session.add(goal)
             self._commit()
             self.session.refresh(goal)
+            log_info(f"Goal archived for user {user_id}: {goal.id}")
         return goal
+
+    def unarchive_goal(self, goal_id: uuid.UUID, user_id: uuid.UUID) -> Goal:
+        goal = self.get_goal(goal_id, user_id)
+        if goal.archived_at is not None:
+            now = utc_now()
+            goal.archived_at = None
+            goal.updated_at = now
+            self.session.add(goal)
+            self._commit()
+            self.session.refresh(goal)
+            log_info(f"Goal unarchived for user {user_id}: {goal.id}")
+        return goal
+
+    def delete_goal_permanently(self, goal_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        goal = self.get_goal(goal_id, user_id)
+        # Keep deletion behavior deterministic across engines by explicitly
+        # removing dependent logs before deleting the goal row.
+        self.session.exec(
+            delete(GoalLog).where(col(GoalLog.goal_id) == goal.id)
+        )
+        self.session.exec(
+            delete(GoalManualLog).where(col(GoalManualLog.goal_id) == goal.id)
+        )
+        self.session.delete(goal)
+        self._commit()
+        log_info(f"Goal permanently deleted for user {user_id}: {goal_id}")
 
     def toggle_goal_completion(
         self,

@@ -213,3 +213,89 @@ def test_map_goals_uses_repeat_value_for_weekly_target():
     assert len(goals) == 1
     assert goals[0].frequency_type == GoalFrequency.WEEKLY
     assert goals[0].target_count == 3
+
+
+def test_map_goals_marks_daylio_archived_goal_with_archived_at():
+    end_date_ms = 1772036346918
+    backup = DaylioBackup(
+        version=19,
+        goals=[
+            DaylioGoal(
+                goal_id=3,
+                name="Archived goal",
+                repeat_type=1,
+                repeat_value=127,
+                state=1,
+                end_date=end_date_ms,
+            ),
+        ],
+    )
+    import_timestamp = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    ctx = DaylioToJournivMapper._build_context(backup)
+
+    goals = DaylioToJournivMapper._map_goals(
+        backup,
+        import_timestamp=import_timestamp,
+        ctx=ctx,
+    )
+
+    assert len(goals) == 1
+    assert goals[0].archived_at == datetime.fromtimestamp(end_date_ms / 1000, tz=timezone.utc)
+    assert goals[0].is_paused is False
+
+
+def test_map_goals_archives_from_state_when_end_date_missing():
+    backup = DaylioBackup(
+        version=19,
+        goals=[
+            DaylioGoal(
+                goal_id=4,
+                name="Archived from state",
+                repeat_type=1,
+                repeat_value=127,
+                state=1,
+                end_date=-1,
+            ),
+        ],
+    )
+    import_timestamp = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    ctx = DaylioToJournivMapper._build_context(backup)
+
+    goals = DaylioToJournivMapper._map_goals(
+        backup,
+        import_timestamp=import_timestamp,
+        ctx=ctx,
+    )
+
+    assert len(goals) == 1
+    assert goals[0].archived_at == import_timestamp
+    assert goals[0].is_paused is False
+
+
+def test_map_goals_archives_from_end_date_even_when_state_active():
+    end_date_ms = 1772036346918
+    backup = DaylioBackup(
+        version=19,
+        goals=[
+            DaylioGoal(
+                goal_id=5,
+                name="Archived from end date",
+                repeat_type=1,
+                repeat_value=127,
+                state=0,
+                end_date=end_date_ms,
+            ),
+        ],
+    )
+    import_timestamp = datetime(2026, 2, 20, tzinfo=timezone.utc)
+    ctx = DaylioToJournivMapper._build_context(backup)
+
+    goals = DaylioToJournivMapper._map_goals(
+        backup,
+        import_timestamp=import_timestamp,
+        ctx=ctx,
+    )
+
+    assert len(goals) == 1
+    assert goals[0].archived_at == datetime.fromtimestamp(end_date_ms / 1000, tz=timezone.utc)
+    assert goals[0].is_paused is False
