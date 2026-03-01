@@ -93,6 +93,21 @@ def test_mood_lists_support_filters_and_analytics(
         assert isinstance(streak, dict)
 
 
+def test_mood_streak_omits_null_fields_for_empty_history(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    """Fresh users should not receive null map values in streak payload."""
+    streak_response = api_client.request(
+        "GET", "/moods/analytics/streak", token=api_user.access_token
+    )
+    assert streak_response.status_code == 200
+    streak = streak_response.json()
+    assert streak["current_streak"] == 0
+    assert streak["total_days_logged"] == 0
+    assert "last_logged_date" not in streak
+
+
 def test_mood_log_rejects_unknown_ids(api_client: JournivApiClient, api_user: ApiUser):
     """Logging a moment with unknown mood IDs should return 400."""
     unknown_mood = str(uuid.uuid4())

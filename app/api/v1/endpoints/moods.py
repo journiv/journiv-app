@@ -36,6 +36,10 @@ from app.services.mood_service import MoodService
 router = APIRouter(prefix="/moods", tags=["moods"])
 
 
+def _strip_none_values(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove top-level null values for map-based API response compatibility."""
+    return {key: value for key, value in payload.items() if value is not None}
+
 
 @router.get(
     "/",
@@ -365,7 +369,9 @@ async def get_mood_statistics(
         )
     mood_service = MoodService(session)
     try:
-        return mood_service.get_mood_statistics(current_user.id, start_date, end_date)
+        return _strip_none_values(
+            mood_service.get_mood_statistics(current_user.id, start_date, end_date)
+        )
     except Exception as exc:
         log_error(exc, request_id=None, user_id=current_user.id)
         raise HTTPException(
@@ -389,7 +395,7 @@ async def get_mood_streak(
     """Get mood logging streak for the current user."""
     mood_service = MoodService(session)
     try:
-        return mood_service.get_mood_streak(current_user.id)
+        return _strip_none_values(mood_service.get_mood_streak(current_user.id))
     except Exception as exc:
         log_error(exc, request_id=None, user_id=current_user.id)
         raise HTTPException(

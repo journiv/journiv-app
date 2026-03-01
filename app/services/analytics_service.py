@@ -245,7 +245,7 @@ class AnalyticsService:
         """Get comprehensive writing analytics for a user."""
         streak = self.get_writing_streak(user_id)
         if not streak:
-            return {
+            return self._strip_none_values({
                 'current_streak': 0,
                 'longest_streak': 0,
                 'total_entries': 0,
@@ -253,9 +253,9 @@ class AnalyticsService:
                 'average_words_per_entry': 0.0,
                 'last_entry_date': None,
                 'streak_start_date': None
-            }
+            })
 
-        return {
+        return self._strip_none_values({
             'current_streak': streak.current_streak,
             'longest_streak': streak.longest_streak,
             'total_entries': streak.total_entries,
@@ -263,7 +263,12 @@ class AnalyticsService:
             'average_words_per_entry': round(streak.average_words_per_entry, 2),
             'last_entry_date': streak.last_entry_date,
             'streak_start_date': streak.streak_start_date
-        }
+        })
+
+    @staticmethod
+    def _strip_none_values(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove top-level keys with None values to keep map-value contracts non-null."""
+        return {key: value for key, value in payload.items() if value is not None}
 
     def get_writing_patterns(self, user_id: uuid.UUID, days: int = 30) -> Dict[str, Any]:
         """Get writing patterns for the last N days."""
