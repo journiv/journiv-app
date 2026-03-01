@@ -129,12 +129,14 @@ class MomentPageResponse(BaseModel):
 class MemoriesFilter(str, Enum):
     auto = "auto"
     last_years = "last_years"
+    last_year = "last_year"
     last_month = "last_month"
     last_week = "last_week"
 
 
 class MemoriesAppliedFilter(str, Enum):
     last_years = "last_years"
+    last_year = "last_year"
     last_month = "last_month"
     last_week = "last_week"
 
