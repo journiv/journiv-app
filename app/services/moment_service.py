@@ -715,6 +715,8 @@ class MomentService:
     def _to_applied_filter(memories_filter: MemoriesFilter) -> MemoriesAppliedFilter:
         if memories_filter == MemoriesFilter.last_years:
             return MemoriesAppliedFilter.last_years
+        if memories_filter == MemoriesFilter.last_year:
+            return MemoriesAppliedFilter.last_year
         if memories_filter == MemoriesFilter.last_month:
             return MemoriesAppliedFilter.last_month
         return MemoriesAppliedFilter.last_week
@@ -725,6 +727,11 @@ class MomentService:
         previous_month_end = current_month_start - timedelta(days=1)
         previous_month_start = previous_month_end.replace(day=1)
         return previous_month_start, previous_month_end
+
+    @staticmethod
+    def _last_year_window(today_local: date) -> tuple[date, date]:
+        previous_year = today_local.year - 1
+        return date(previous_year, 1, 1), date(previous_year, 12, 31)
 
     @staticmethod
     def _last_week_window(today_local: date) -> tuple[date, date]:
@@ -745,6 +752,13 @@ class MomentService:
                 .where(extract("month", col(Moment.logged_date_tz)) == today_local.month)
                 .where(extract("day", col(Moment.logged_date_tz)) == today_local.day)
                 .where(extract("year", col(Moment.logged_date_tz)) < today_local.year)
+            )
+        if memories_filter == MemoriesFilter.last_year:
+            previous_year_start, previous_year_end = self._last_year_window(today_local)
+            return (
+                statement
+                .where(col(Moment.logged_date_tz) >= previous_year_start)
+                .where(col(Moment.logged_date_tz) <= previous_year_end)
             )
         if memories_filter == MemoriesFilter.last_month:
             previous_month_start, previous_month_end = self._last_month_window(today_local)
@@ -826,12 +840,14 @@ class MomentService:
                 self._to_applied_filter(memories_filter),
             )
 
-        # Auto fallback: last years -> last month -> last week.
-        for candidate in (
-            MemoriesFilter.last_years,
-            MemoriesFilter.last_month,
-            MemoriesFilter.last_week,
-        ):
+        # Auto fallback: same date in previous years -> up to 3 from last year -> last month -> last week.
+        auto_candidates: List[Tuple[MemoriesFilter, int]] = [
+            (MemoriesFilter.last_years, limit),
+            (MemoriesFilter.last_year, min(limit, 3)),
+            (MemoriesFilter.last_month, limit),
+            (MemoriesFilter.last_week, limit),
+        ]
+        for candidate, candidate_limit in auto_candidates:
             if self._has_memories(
                 user_id,
                 today_local=today_local,
@@ -842,7 +858,7 @@ class MomentService:
                         user_id,
                         today_local=today_local,
                         memories_filter=candidate,
-                        limit=limit,
+                        limit=candidate_limit,
                     ),
                     self._to_applied_filter(candidate),
                 )

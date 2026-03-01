@@ -335,3 +335,36 @@ def test_moment_memories_endpoint_supports_explicit_last_month_filter(
     returned_ids = {item["id"] for item in response["items"]}
     assert month_memory["id"] in returned_ids
     assert noise_moment["id"] not in returned_ids
+
+
+def test_moment_memories_endpoint_supports_explicit_last_year_filter(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    today = datetime.now(timezone.utc).date()
+    previous_year_date = today.replace(year=today.year - 1, day=1)
+    previous_year_memory = moment_factory(
+        logged_date=previous_year_date.isoformat(),
+        logged_timezone="UTC",
+        note="Previous year memory",
+    )
+    noise_memory = moment_factory(
+        logged_date=today.isoformat(),
+        logged_timezone="UTC",
+        note="Current year noise",
+    )
+
+    response = api_client.request(
+        "GET",
+        "/moments/memories",
+        token=api_user.access_token,
+        params={"filter": "last_year", "limit": 20},
+        expected=(200,),
+    ).json()
+
+    assert response["requested_filter"] == "last_year"
+    assert response["applied_filter"] == "last_year"
+    returned_ids = {item["id"] for item in response["items"]}
+    assert previous_year_memory["id"] in returned_ids
+    assert noise_memory["id"] not in returned_ids

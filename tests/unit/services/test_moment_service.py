@@ -509,6 +509,109 @@ def test_get_memories_auto_falls_back_to_last_month(
     assert [item.id for item in items] == [memory.id]
 
 
+def test_get_memories_auto_falls_back_to_last_year_and_caps_to_three(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 3, 10, 10, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    moments = [
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 12, 31, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 12, 31),
+            note="Last year A",
+        ),
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 9, 12, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 9, 12),
+            note="Last year B",
+        ),
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 6, 1),
+            note="Last year C",
+        ),
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 1, 1),
+            note="Last year D",
+        ),
+    ]
+    for memory in moments:
+        test_db.add(memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+        limit=20,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_year
+    assert len(items) == 3
+    assert [item.logged_date_tz for item in items] == [date(2025, 12, 31), date(2025, 9, 12), date(2025, 6, 1)]
+
+
+def test_get_memories_explicit_last_year_uses_requested_limit(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 3, 10, 10, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    moments = [
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 12, 31, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 12, 31),
+            note="Last year A",
+        ),
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 9, 12, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 9, 12),
+            note="Last year B",
+        ),
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 6, 1, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 6, 1),
+            note="Last year C",
+        ),
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 1, 1),
+            note="Last year D",
+        ),
+    ]
+    for memory in moments:
+        test_db.add(memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.last_year,
+        limit=4,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_year
+    assert len(items) == 4
+    assert [item.logged_date_tz for item in items] == [
+        date(2025, 12, 31),
+        date(2025, 9, 12),
+        date(2025, 6, 1),
+        date(2025, 1, 1),
+    ]
+
+
 def test_get_memories_auto_falls_back_to_last_week(
     test_db: Session,
     test_user: User,
