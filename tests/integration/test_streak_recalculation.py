@@ -217,8 +217,8 @@ def test_case_d_deleting_all_entries_resets_to_zero(
     ).json()
     assert analytics_after["current_streak"] == 0
     assert analytics_after["longest_streak"] == 0
-    assert analytics_after["last_entry_date"] is None
-    assert analytics_after["streak_start_date"] is None
+    assert "last_entry_date" not in analytics_after
+    assert "streak_start_date" not in analytics_after
 
 
 def test_case_e_longest_streak_persists_historically(

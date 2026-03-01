@@ -102,6 +102,11 @@ class MoodService:
             log_error(exc)
             raise
 
+    @staticmethod
+    def _strip_none_values(payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove top-level keys with None values for map-value API compatibility."""
+        return {key: value for key, value in payload.items() if value is not None}
+
     def get_moods_for_user(
         self,
         user_id: uuid.UUID,
@@ -389,7 +394,7 @@ class MoodService:
                     (mood_distribution[category] / total_logs) * 100, 2
                 )
 
-        return {
+        return self._strip_none_values({
             "total_logs": total_logs,
             "date_range": {
                 "start_date": start_date.isoformat(),
@@ -419,7 +424,7 @@ class MoodService:
                 }
                 for trend in daily_moods
             ],
-        }
+        })
 
     def get_mood_streak(self, user_id: uuid.UUID) -> Dict[str, Any]:
         """Get current mood logging streak for a user based on moments."""
@@ -436,11 +441,11 @@ class MoodService:
         )
 
         if not mood_dates:
-            return {
+            return self._strip_none_values({
                 "current_streak": 0,
                 "total_days_logged": 0,
                 "last_logged_date": None,
-            }
+            })
 
         latest_date = mood_dates[0]
         today = utc_now().date()
@@ -460,8 +465,8 @@ class MoodService:
             else:
                 break
 
-        return {
+        return self._strip_none_values({
             "current_streak": current_streak,
             "total_days_logged": len(mood_dates),
             "last_logged_date": latest_date,
-        }
+        })
