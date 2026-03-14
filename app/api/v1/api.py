@@ -33,6 +33,9 @@ from app.api.v1.endpoints.export_data import router as export_router
 from app.api.v1.endpoints.import_data import router as import_router
 from app.integrations import router as integrations
 
+# Plus Smart Gateway router (inline .so or httpx proxy depending on PLUS_SERVICE_URL)
+from app.plus import plus_api_router
+
 api_router = APIRouter()
 
 # Include all endpoint routers
@@ -62,3 +65,4 @@ api_router.include_router(weather.router)
 api_router.include_router(integrations.router)
 api_router.include_router(activities.router)
 api_router.include_router(activity_groups.router)
+api_router.include_router(plus_api_router)

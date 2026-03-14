@@ -3,14 +3,16 @@ Shared API dependencies.
 """
 import hashlib
 import logging
-from typing import Annotated, Optional
+import uuid
+from importlib import import_module
+from typing import Annotated, Any, Dict, Optional, cast
 
 from fastapi import Cookie, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import ExpiredSignatureError, JWTError
 from sqlmodel import Session, select
 
-from app.core.config import JOURNIV_PLUS_DOC_URL, settings
+from app.core.config import settings
 from app.core.database import get_session
 from app.core.scoped_cache import ScopedCache
 from app.core.security import verify_token
@@ -174,10 +176,9 @@ async def get_current_user_detached(
         payload = verify_token(token_to_use, "access")
         user_id = payload.get("sub")
 
-        # We are doing trict Subject validation
-        # Thsis ensure sub is not only a string, but a valid UUID
-        # This prevents any potential injection or invalid format issues
-        import uuid
+        # Strict subject validation: sub must be a non-empty string
+        # that parses as a valid UUID. This prevents injection and
+        # invalid format issues from reaching the DB layer.
         try:
             if not isinstance(user_id, str) or not user_id:
                 raise credentials_exception
@@ -244,6 +245,77 @@ async def get_current_user_detached(
 
 
 
+async def get_plus_factory(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    """
+    Dependency for Plus-protected endpoints.
+
+    Returns verified license_data dict to pass directly to Plus services.
+    Only available in inline mode (PLUS_MODE=inline, .so loaded in process).
+    In proxy mode the Plus router handles its own license validation on the sidecar.
+
+    Raises:
+        HTTPException 503: Plus not available or running in proxy mode
+        HTTPException 403: No license found or license verification failed
+    """
+    from app.core.config import JOURNIV_PLUS_DOC_URL
+    from app.plus import PLUS_AVAILABLE, PLUS_MODE
+
+    if not PLUS_AVAILABLE or PLUS_MODE != "inline":
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "error": "plus_not_available",
+                "message": "Plus features are not available in this deployment.",
+                "upgrade_url": JOURNIV_PLUS_DOC_URL,
+            },
+        )
+
+    from app.models.instance_detail import InstanceDetail
+
+    instance = session.exec(select(InstanceDetail)).first()
+    if not instance:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "no_instance", "message": "Instance not initialized."},
+        )
+
+    if not instance.signed_license:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "license_required",
+                "message": "Journiv Plus license required.",
+                "upgrade_url": JOURNIV_PLUS_DOC_URL,
+            },
+        )
+
+    try:
+        # verify_license_signature lives inside the compiled .so and is
+        # reachable via its module path when loaded in inline mode.
+        security_module = import_module("app.plus.core.security")
+        verify_license_signature = security_module.verify_license_signature
+
+        license_data_raw = verify_license_signature(
+            signed_license_base64=instance.signed_license,
+            install_id=str(instance.install_id),
+        )
+        if not isinstance(license_data_raw, dict):
+            raise ValueError("Invalid license payload")
+        license_data = cast(Dict[str, Any], license_data_raw)
+        return license_data
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Plus license verification failed: %s", e)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": "license_invalid", "message": "License verification failed."},
+        ) from None
+
+
 async def get_current_admin_user(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
@@ -268,98 +340,3 @@ async def get_current_admin_user(
         )
 
     return current_user
-
-
-async def get_plus_factory(
-    current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
-):
-    """
-    Dependency to get PlusFeatureFactory instance with host bridge.
-
-    Creates a user-scoped bridge for privacy-preserving data access.
-
-    Raises:
-        HTTPException 403: If license is not found or validation fails
-        HTTPException 503: If Plus features are not available in this build
-        RuntimeError: If SECRET_KEY environment variable is not set
-    """
-    try:
-        # Import Plus components
-        from app.models.instance_detail import InstanceDetail
-        from app.plus import PLUS_FEATURES_AVAILABLE, PlusFeatureFactory
-        from app.plus.bridge_impl import JournivBridge
-
-        # Check if Plus features are available in this build
-        if not PLUS_FEATURES_AVAILABLE:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail={
-                    "error": "plus_not_available",
-                    "message": "Plus features are not available in this build",
-                    "upgrade_url": JOURNIV_PLUS_DOC_URL
-                }
-            )
-
-        # Get instance details from database
-        instance = session.exec(select(InstanceDetail)).first()
-
-        if not instance:
-            logger.error("No instance details found in database")
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "error": "no_instance",
-                    "message": "Instance not initialized"
-                }
-            )
-
-        # Check if signed license exists
-        if not instance.signed_license:
-            logger.info("No Plus license found", extra={"install_id": instance.install_id})
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "error": "license_required",
-                    "message": "Journiv Plus license required for this feature",
-                    "upgrade_url": JOURNIV_PLUS_DOC_URL
-                }
-            )
-
-        # Create host bridge for this user session
-        # All bridge operations are automatically scoped to current_user.id
-        bridge = JournivBridge(db=session, user_id=current_user.id)
-
-        # Create and return factory with bridge
-        # Factory generates platform_id internally for hardware change detection
-        try:
-            factory = PlusFeatureFactory(
-                signed_license=instance.signed_license,
-                bridge=bridge
-            )
-            return factory
-
-        except PermissionError as e:
-            # License verification failed in compiled code
-            logger.error(
-                "License verification failed in PlusFeatureFactory",
-                extra={"error": str(e)}
-            )
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail={
-                    "error": "license_invalid",
-                    "message": "License verification failed",
-                    "action": "Please check your license or contact support"
-                }
-            ) from None
-
-    except HTTPException:
-        # Re-raise HTTP exceptions as-is
-        raise
-    except Exception as e:
-        logger.error(f"Unexpected error in get_plus_factory: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="An error occurred while initializing Plus features"
-        ) from None

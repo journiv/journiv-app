@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }}</title>
+    <style>
+        /* Print-optimized CSS for PDF export */
+        @page {
+            size: A4;
+            margin: 2cm;
+            @bottom-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-size: 10pt;
+                color: #666;
+            }
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', 'system-ui', -apple-system, BlinkMacSystemFont,
+                        'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 11pt;
+            line-height: 1.6;
+            color: #1a1a1a;
+            max-width: 100%;
+        }
+
+        /* Headings */
+        h1, h2, h3, h4, h5, h6 {
+            font-weight: 600;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+            page-break-after: avoid;
+        }
+
+        h1 {
+            font-size: 24pt;
+            margin-top: 0;
+            border-bottom: 2px solid #333;
+            padding-bottom: 0.5em;
+        }
+
+        h2 {
+            font-size: 18pt;
+        }
+
+        h3 {
+            font-size: 14pt;
+        }
+
+        /* Paragraphs */
+        p {
+            margin-bottom: 1em;
+            orphans: 3;
+            widows: 3;
+        }
+
+        /* Lists */
+        ul, ol {
+            margin-left: 1.5em;
+            margin-bottom: 1em;
+        }
+
+        li {
+            margin-bottom: 0.3em;
+        }
+
+        /* Blockquotes */
+        blockquote {
+            border-left: 4px solid #ccc;
+            padding-left: 1em;
+            margin: 1em 0;
+            font-style: italic;
+            color: #555;
+        }
+
+        /* Code */
+        code {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f5f5f5;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-size: 10pt;
+        }
+
+        pre {
+            background-color: #f5f5f5;
+            padding: 1em;
+            border-radius: 5px;
+            overflow-x: auto;
+            margin: 1em 0;
+            page-break-inside: avoid;
+        }
+
+        pre code {
+            background: none;
+            padding: 0;
+        }
+
+        /* Links */
+        a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+
+        a:after {
+            content: " (" attr(href) ")";
+            font-size: 9pt;
+            color: #666;
+        }
+
+        /* Inline formatting */
+        strong {
+            font-weight: 600;
+        }
+
+        em {
+            font-style: italic;
+        }
+
+        /* Images and media */
+        img, video {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 1em auto;
+            page-break-inside: avoid;
+        }
+
+        video {
+            border: 1px solid #ddd;
+        }
+
+        /* Metadata section */
+        .metadata {
+            font-size: 10pt;
+            color: #666;
+            margin-bottom: 2em;
+            padding-bottom: 1em;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .metadata-item {
+            margin-bottom: 0.3em;
+        }
+
+        .metadata-label {
+            font-weight: 600;
+            margin-right: 0.5em;
+        }
+
+        /* Content wrapper */
+        .content {
+            margin-top: 1em;
+        }
+
+        /* Page break utilities */
+        .page-break {
+            page-break-before: always;
+        }
+
+        /* Prevent orphans and widows */
+        h1, h2, h3, h4, h5, h6 {
+            page-break-after: avoid;
+        }
+
+        img, video, pre, blockquote {
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+    <!-- Entry metadata -->
+    <div class="metadata">
+        <h1>{{ title }}</h1>
+        {% if date %}
+        <div class="metadata-item">
+            <span class="metadata-label">Date:</span>
+            <span>{{ date }}</span>
+        </div>
+        {% endif %}
+        {% if location %}
+        <div class="metadata-item">
+            <span class="metadata-label">Location:</span>
+            <span>{{ location }}</span>
+        </div>
+        {% endif %}
+        {% if tags %}
+        <div class="metadata-item">
+            <span class="metadata-label">Tags:</span>
+            <span>{{ tags }}</span>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Entry content -->
+    <div class="content">
+        {{ content|safe }}
+    </div>
+</body>
+</html>

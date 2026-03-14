@@ -150,7 +150,7 @@ async def search_tags(
 async def get_tag_analytics(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    plus_factory: Annotated[Any, Depends(get_plus_factory)]
+    license_data: Annotated[dict[str, Any], Depends(get_plus_factory)]
 ):
     """
     Get detailed tag analytics.
@@ -162,7 +162,7 @@ async def get_tag_analytics(
     """
     try:
         tag_service = TagService(session)
-        analytics = tag_service.get_tag_analytics(current_user.id, plus_factory)
+        analytics = tag_service.get_tag_analytics(current_user.id, license_data)
         return analytics
 
     except PermissionError as e:
@@ -181,6 +181,17 @@ async def get_tag_analytics(
                 "message": f"License verification failed: {str(e)}",
                 "action": "Please verify your license or contact support"
             }
+        ) from None
+    except RuntimeError as e:
+        log_error(
+            e,
+            request_id="",
+            user_email=current_user.email,
+            extra_context=f"Plus analytics unavailable: {e}",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Plus analytics temporarily unavailable",
         ) from None
     except Exception as e:
         log_error(
@@ -211,7 +222,7 @@ async def get_tag_detail_analytics(
     tag_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    plus_factory: Annotated[Any, Depends(get_plus_factory)],
+    license_data: Annotated[dict[str, Any], Depends(get_plus_factory)],
     days: Annotated[int, Query(ge=1, le=3650, description="Number of days to analyze")] = 365
 ):
     """
@@ -227,7 +238,7 @@ async def get_tag_detail_analytics(
         analytics = tag_service.get_tag_detail_analytics(
             tag_id=tag_id,
             user_id=current_user.id,
-            plus_factory=plus_factory,
+            license_data=license_data,
             days=days
         )
         return analytics
@@ -253,6 +264,17 @@ async def get_tag_detail_analytics(
                 "message": f"License verification failed: {str(e)}",
                 "action": "Please verify your license or contact support"
             }
+        ) from None
+    except RuntimeError as e:
+        log_error(
+            e,
+            request_id="",
+            user_email=current_user.email,
+            extra_context=f"Plus tag detail analytics unavailable: {e}",
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Plus analytics temporarily unavailable",
         ) from None
     except Exception as e:
         log_error(

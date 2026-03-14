@@ -22,6 +22,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
 from app.api.v1.api import api_router
+from app.api.v1.endpoints import public
 from app.core.cache import create_cache
 from app.core.config import settings
 from app.core.database import init_db
@@ -46,6 +47,7 @@ from app.core.logging_config import log_error, log_info, log_warning, setup_logg
 from app.core.rate_limiting import limiter, rate_limit_exceeded_handler
 from app.middleware.csp_middleware import create_csp_middleware
 from app.middleware.request_logging import RequestLoggingMiddleware, request_id_ctx
+from app.plus import plus_public_router
 
 # -----------------------------------------------------------------------------
 # Startup / Shutdown
@@ -68,11 +70,16 @@ async def lifespan(app: FastAPI):
 
         # Log Plus features availability
         try:
-            from app.plus import PLUS_FEATURES_AVAILABLE
-            if PLUS_FEATURES_AVAILABLE:
-                log_info("Journiv Plus features are available")
+            from app.plus import PLUS_AVAILABLE, PLUS_MODE
+
+            if PLUS_AVAILABLE:
+                log_info(f"Journiv Plus features available (mode: {PLUS_MODE})")
             else:
-                log_warning("Journiv Plus features are not available (using placeholders)")
+                log_warning(
+                    "Journiv Plus features not available — "
+                    "Plus .so not found in this image. "
+                    "Deploy a Plus-enabled image or set PLUS_SERVICE_URL."
+                )
         except Exception as e:
             log_warning(f"Could not check Plus features availability: {e}")
 
@@ -87,17 +94,30 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         log_warning(f"Failed to close HTTP client: {exc}")
 
+    try:
+        from app.plus import PLUS_MODE
+
+        if PLUS_MODE == "proxy":
+            from app.plus._proxy import close_proxy_client
+
+            await close_proxy_client()
+            log_info("Plus proxy HTTP client closed")
+    except Exception as exc:
+        log_warning(f"Failed to close Plus proxy client: {exc}")
+
 
 # -----------------------------------------------------------------------------
 # App Initialization
 # -----------------------------------------------------------------------------
+docs_enabled = settings.environment != "production"
+
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="A self-hosted private journal app with mood tracking, prompts, and analytics",
-    openapi_url=f"{settings.api_v1_prefix}/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    openapi_url=f"{settings.api_v1_prefix}/openapi.json" if docs_enabled else None,
+    docs_url="/docs" if docs_enabled else None,
+    redoc_url="/redoc" if docs_enabled else None,
     lifespan=lifespan,
 )
 
@@ -110,6 +130,7 @@ try:
     from slowapi.errors import RateLimitExceeded
 
     from app.core.rate_limiting import SLOWAPI_AVAILABLE
+
     if SLOWAPI_AVAILABLE:
         app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
         log_info("Rate limiting enabled with slowapi")
@@ -127,7 +148,13 @@ if cors_enabled:
         allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+        allow_headers=[
+            "Authorization",
+            "Content-Type",
+            "Accept",
+            "Origin",
+            "X-Requested-With",
+        ],
         max_age=3600,
     )
     log_info(f"CORS enabled for origins: {cors_origins}")
@@ -138,10 +165,15 @@ else:
 if not settings.domain_name:
     try:
         settings.domain_name = socket.gethostname() or "localhost"
-        log_info(f"DOMAIN_NAME not set; auto-detected hostname '{settings.domain_name}'")
+        log_info(
+            f"DOMAIN_NAME not set; auto-detected hostname '{settings.domain_name}'"
+        )
     except Exception:
         settings.domain_name = "localhost"
-        log_warning("DOMAIN_NAME not set and hostname auto-detect failed; defaulting to 'localhost'")
+        log_warning(
+            "DOMAIN_NAME not set and hostname auto-detect failed; defaulting to 'localhost'"
+        )
+
 
 def _extract_hostname(value: str) -> str:
     """Extract hostname from URL or domain string."""
@@ -169,7 +201,9 @@ else:
         for loopback in ("localhost", "127.0.0.1"):
             if loopback not in trusted_hosts:
                 trusted_hosts.append(loopback)
-        if not [host for host in trusted_hosts if host not in {"localhost", "127.0.0.1"}]:
+        if not [
+            host for host in trusted_hosts if host not in {"localhost", "127.0.0.1"}
+        ]:
             log_warning(
                 "CORS enabled but no valid hostnames extracted from CORS_ORIGINS; allowing all hosts as fallback."
             )
@@ -208,7 +242,9 @@ CSPMiddlewareClass = create_csp_middleware(
     enable_hsts=settings.enable_hsts and (settings.environment == "production"),
     enable_csp_reporting=settings.enable_csp_reporting,
     csp_report_uri=settings.csp_report_uri
-    or ("/api/v1/security/csp-report" if settings.environment == "production" else None),
+    or (
+        "/api/v1/security/csp-report" if settings.environment == "production" else None
+    ),
 )
 app.add_middleware(cast(Any, CSPMiddlewareClass))
 
@@ -219,6 +255,7 @@ app.add_middleware(
     https_only=(settings.environment == "production"),
     same_site="lax",  # required for OIDC redirects to keep cookies alive
 )
+
 
 # -----------------------------------------------------------------------------
 # General Middleware
@@ -231,6 +268,7 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(time.time() - start_time)
     return response
 
+
 # -----------------------------------------------------------------------------
 # Exception Handlers
 # -----------------------------------------------------------------------------
@@ -241,11 +279,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     errors = exc.errors()
 
     sanitized_errors = [
-        {
-            "loc": err.get("loc"),
-            "msg": err.get("msg"),
-            "type": err.get("type")
-        }
+        {"loc": err.get("loc"), "msg": err.get("msg"), "type": err.get("type")}
         for err in errors
     ]
 
@@ -255,7 +289,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         path=request.url.path,
         method=request.method,
         errors=sanitized_errors,
-        event="validation_error"
+        event="validation_error",
     )
 
     return JSONResponse(
@@ -263,7 +297,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         content={
             "error": "validation_error",
             "message": errors,
-            "request_id": request_id
+            "request_id": request_id,
         },
     )
 
@@ -274,7 +308,11 @@ async def value_error_handler(request: Request, exc: ValueError):
     log_error(exc, request_id=request_id)
     return JSONResponse(
         status_code=422,
-        content={"error": "validation_error", "message": str(exc), "request_id": request_id},
+        content={
+            "error": "validation_error",
+            "message": str(exc),
+            "request_id": request_id,
+        },
     )
 
 
@@ -284,9 +322,18 @@ async def journal_app_exception_handler(request: Request, exc: JournivAppExcepti
     log_error(exc, request_id=request_id)
 
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-    if isinstance(exc, (UserNotFoundError, JournalNotFoundError, EntryNotFoundError,
-                        MoodNotFoundError, PromptNotFoundError, MediaNotFoundError,
-                        TagNotFoundError)):
+    if isinstance(
+        exc,
+        (
+            UserNotFoundError,
+            JournalNotFoundError,
+            EntryNotFoundError,
+            MoodNotFoundError,
+            PromptNotFoundError,
+            MediaNotFoundError,
+            TagNotFoundError,
+        ),
+    ):
         status_code = status.HTTP_404_NOT_FOUND
     elif isinstance(exc, UserAlreadyExistsError):
         status_code = status.HTTP_409_CONFLICT
@@ -294,7 +341,9 @@ async def journal_app_exception_handler(request: Request, exc: JournivAppExcepti
         status_code = status.HTTP_401_UNAUTHORIZED
     elif isinstance(exc, UnauthorizedError):
         status_code = status.HTTP_403_FORBIDDEN
-    elif isinstance(exc, (FileTooLargeError, InvalidFileTypeError, FileValidationError)):
+    elif isinstance(
+        exc, (FileTooLargeError, InvalidFileTypeError, FileValidationError)
+    ):
         status_code = status.HTTP_400_BAD_REQUEST
 
     message = (
@@ -304,7 +353,11 @@ async def journal_app_exception_handler(request: Request, exc: JournivAppExcepti
     )
     return JSONResponse(
         status_code=status_code,
-        content={"error": type(exc).__name__, "message": message, "request_id": request_id},
+        content={
+            "error": type(exc).__name__,
+            "message": message,
+            "request_id": request_id,
+        },
     )
 
 
@@ -319,19 +372,28 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
     return JSONResponse(
         status_code=500,
-        content={"error": "internal_server_error", "message": msg, "request_id": request_id},
+        content={
+            "error": "internal_server_error",
+            "message": msg,
+            "request_id": request_id,
+        },
     )
+
 
 # -----------------------------------------------------------------------------
 # API Routers & Media
 # -----------------------------------------------------------------------------
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+app.include_router(public.router)
+app.include_router(plus_public_router)
 
 media_path = Path(settings.media_root)
 if media_path.exists():
     app.mount("/media", StaticFiles(directory=str(media_path)), name="media")
 else:
-    log_warning(f"Media directory {media_path} does not exist. File uploads may not work properly.")
+    log_warning(
+        f"Media directory {media_path} does not exist. File uploads may not work properly."
+    )
 
 # -----------------------------------------------------------------------------
 # Flutter Web PWA Mount (with 1-week caching)
@@ -355,7 +417,9 @@ if WEB_BUILD_PATH.exists():
             cache_header = f"public, max-age={ONE_WEEK}"
 
         headers = {"Cache-Control": cache_header}
-        return FileResponse(file_path, headers=headers, media_type=mimetypes.guess_type(file_path)[0])
+        return FileResponse(
+            file_path, headers=headers, media_type=mimetypes.guess_type(file_path)[0]
+        )
 
     @app.get("/manifest.json", include_in_schema=False)
     async def manifest():
@@ -363,7 +427,9 @@ if WEB_BUILD_PATH.exists():
 
     @app.get("/flutter_service_worker.js", include_in_schema=False)
     async def service_worker():
-        return serve_static_file(WEB_BUILD_PATH / "flutter_service_worker.js", cache=False)
+        return serve_static_file(
+            WEB_BUILD_PATH / "flutter_service_worker.js", cache=False
+        )
 
     @app.get("/icons/{icon_name}", include_in_schema=False)
     async def icons(icon_name: str):
@@ -380,7 +446,9 @@ if WEB_BUILD_PATH.exists():
         file_path = WEB_BUILD_PATH / full_path
         if file_path.is_file():
             # Static assets get long cache, except service worker
-            cache = not full_path.endswith(("service_worker.js", "flutter_service_worker.js"))
+            cache = not full_path.endswith(
+                ("service_worker.js", "flutter_service_worker.js")
+            )
             return serve_static_file(file_path, cache=cache)
 
         # For all other routes (including /oidc-finish, /login, etc.), serve index.html
@@ -401,6 +469,7 @@ if WEB_BUILD_PATH.exists():
 # -----------------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",

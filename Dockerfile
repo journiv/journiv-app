@@ -105,6 +105,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   celery-worker) /opt/venv/bin/python -m celery -A app.core.celery_app inspect ping -d "celery@$(hostname)" --timeout=5 | grep -q "pong" ;; \
   celery-beat) test -f /tmp/celerybeat.pid && kill -0 "$(cat /tmp/celerybeat.pid)" ;; \
   admin-cli) exit 0 ;; \
+  plus-service) curl -f http://localhost:${APP_PORT:-8000}/health ;; \
   *) curl -f http://localhost:8000/api/v1/health ;; \
   esac'
 

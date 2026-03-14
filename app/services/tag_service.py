@@ -1,9 +1,13 @@
 """
 Tag service for handling tag-related operations.
 """
+
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime
-from typing import Dict, List, Optional
+from importlib import import_module
+from typing import Any, Dict, List, Optional, Union
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, select
@@ -16,7 +20,6 @@ from app.models.moment import Moment
 from app.models.moment_tag_link import MomentTagLink
 from app.models.tag import Tag
 from app.schemas.tag import (
-    PeakMonth,
     TagAnalyticsResponse,
     TagCreate,
     TagDetailAnalyticsResponse,
@@ -66,10 +69,7 @@ class TagService:
         if existing_tag:
             return existing_tag
 
-        tag = Tag(
-            name=tag_data.name,
-            user_id=user_id
-        )
+        tag = Tag(name=tag_data.name, user_id=user_id)
 
         self.session.add(tag)
         self._commit()
@@ -97,7 +97,7 @@ class TagService:
         user_id: uuid.UUID,
         limit: int = DEFAULT_TAG_PAGE_LIMIT,
         offset: int = 0,
-        search: Optional[str] = None
+        search: Optional[str] = None,
     ) -> List[Tag]:
         """Get tags for a user with optional search."""
         statement = select(Tag).where(
@@ -106,20 +106,35 @@ class TagService:
 
         if search:
             escaped_search = self._escape_like_term(search)
-            statement = statement.where(col(Tag.name).ilike(f"%{escaped_search}%", escape="\\"))
+            statement = statement.where(
+                col(Tag.name).ilike(f"%{escaped_search}%", escape="\\")
+            )
 
-        statement = statement.order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).offset(offset).limit(limit)
+        statement = (
+            statement.order_by(col(Tag.usage_count).desc(), col(Tag.name).asc())
+            .offset(offset)
+            .limit(limit)
+        )
         return list(self.session.exec(statement))
 
-    def get_popular_tags(self, user_id: uuid.UUID, limit: int = DEFAULT_TAG_PAGE_LIMIT) -> List[Tag]:
+    def get_popular_tags(
+        self, user_id: uuid.UUID, limit: int = DEFAULT_TAG_PAGE_LIMIT
+    ) -> List[Tag]:
         """Get most popular tags for a user (excludes soft-deleted)."""
-        statement = select(Tag).where(
-            Tag.user_id == user_id,
-            Tag.usage_count > 0,
-        ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).limit(limit)
+        statement = (
+            select(Tag)
+            .where(
+                Tag.user_id == user_id,
+                Tag.usage_count > 0,
+            )
+            .order_by(col(Tag.usage_count).desc(), col(Tag.name).asc())
+            .limit(limit)
+        )
         return list(self.session.exec(statement))
 
-    def update_tag(self, tag_id: uuid.UUID, user_id: uuid.UUID, tag_data: TagUpdate) -> Tag:
+    def update_tag(
+        self, tag_id: uuid.UUID, user_id: uuid.UUID, tag_data: TagUpdate
+    ) -> Tag:
         """Update a tag."""
         tag = self.get_tag_by_id(tag_id, user_id)
         if not tag:
@@ -171,7 +186,9 @@ class TagService:
             raise ValueError("Moment not found")
         return moment
 
-    def add_tag_to_moment(self, moment_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID) -> MomentTagLink:
+    def add_tag_to_moment(
+        self, moment_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID
+    ) -> MomentTagLink:
         """Add a tag to a moment."""
         self._get_moment_for_user(moment_id, user_id)
 
@@ -181,18 +198,14 @@ class TagService:
 
         existing_link = self.session.exec(
             select(MomentTagLink).where(
-                MomentTagLink.moment_id == moment_id,
-                MomentTagLink.tag_id == tag_id
+                MomentTagLink.moment_id == moment_id, MomentTagLink.tag_id == tag_id
             )
         ).first()
 
         if existing_link:
             return existing_link
 
-        link = MomentTagLink(
-            moment_id=moment_id,
-            tag_id=tag_id
-        )
+        link = MomentTagLink(moment_id=moment_id, tag_id=tag_id)
 
         self.session.add(link)
 
@@ -203,7 +216,9 @@ class TagService:
         self.session.refresh(link)
         return link
 
-    def remove_tag_from_moment(self, moment_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+    def remove_tag_from_moment(
+        self, moment_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool:
         """Remove a tag from a moment."""
         self._get_moment_for_user(moment_id, user_id)
 
@@ -229,10 +244,15 @@ class TagService:
     def get_moment_tags(self, moment_id: uuid.UUID, user_id: uuid.UUID) -> List[Tag]:
         """Get all tags for a moment."""
         self._get_moment_for_user(moment_id, user_id)
-        statement = select(Tag).join(MomentTagLink).where(
-            MomentTagLink.moment_id == moment_id,
-            Tag.user_id == user_id,
-        ).order_by(col(Tag.name).asc())
+        statement = (
+            select(Tag)
+            .join(MomentTagLink)
+            .where(
+                MomentTagLink.moment_id == moment_id,
+                Tag.user_id == user_id,
+            )
+            .order_by(col(Tag.name).asc())
+        )
         return list(self.session.exec(statement))
 
     def get_moments_by_tag(
@@ -240,82 +260,99 @@ class TagService:
         tag_id: uuid.UUID,
         user_id: uuid.UUID,
         limit: int = DEFAULT_TAG_PAGE_LIMIT,
-        offset: int = 0
+        offset: int = 0,
     ) -> List[Moment]:
         """Get moments that have a specific tag."""
         tag = self.get_tag_by_id(tag_id, user_id)
         if not tag:
             raise TagNotFoundError("Tag not found")
 
-        statement = select(Moment).join(MomentTagLink).where(
-            MomentTagLink.tag_id == tag_id,
-            Moment.user_id == user_id,
-        ).order_by(col(Moment.logged_at_utc).desc()).offset(offset).limit(limit)
+        statement = (
+            select(Moment)
+            .join(MomentTagLink)
+            .where(
+                MomentTagLink.tag_id == tag_id,
+                Moment.user_id == user_id,
+            )
+            .order_by(col(Moment.logged_at_utc).desc())
+            .offset(offset)
+            .limit(limit)
+        )
         return list(self.session.exec(statement))
 
-    def get_tag_statistics(self, user_id: uuid.UUID, include_usage_over_time: bool = False) -> TagStatisticsResponse:
+    def get_tag_statistics(
+        self, user_id: uuid.UUID, include_usage_over_time: bool = False
+    ) -> TagStatisticsResponse:
         """Get tag usage statistics for a user.
 
         Privacy: All queries filter by user_id to prevent cross-user data leakage.
         """
         # Total tags
-        total_tags = self.session.exec(
-            select(func.count(Tag.id)).where(
-                Tag.user_id == user_id,
-            )
-        ).first() or 0
+        total_tags = (
+            self.session.exec(
+                select(func.count(Tag.id)).where(
+                    Tag.user_id == user_id,
+                )
+            ).first()
+            or 0
+        )
 
         # Tags with usage
-        used_tags = self.session.exec(
-            select(func.count(Tag.id)).where(
-                Tag.user_id == user_id,
-                Tag.usage_count > 0,
-            )
-        ).first() or 0
+        used_tags = (
+            self.session.exec(
+                select(func.count(Tag.id)).where(
+                    Tag.user_id == user_id,
+                    Tag.usage_count > 0,
+                )
+            ).first()
+            or 0
+        )
 
         # Most used tag
         most_used_tag = self.session.exec(
-            select(Tag).where(
+            select(Tag)
+            .where(
                 Tag.user_id == user_id,
-            ).order_by(col(Tag.usage_count).desc())
+            )
+            .order_by(col(Tag.usage_count).desc())
         ).first()
 
         # Average usage per tag
-        avg_usage = self.session.exec(
-            select(func.avg(Tag.usage_count)).where(
-                Tag.user_id == user_id,
-            )
-        ).first() or 0.0
+        avg_usage = (
+            self.session.exec(
+                select(func.avg(Tag.usage_count)).where(
+                    Tag.user_id == user_id,
+                )
+            ).first()
+            or 0.0
+        )
 
         # Tag usage ranking - ALL tags sorted by usage count (descending)
         all_tags = self.session.exec(
-            select(Tag).where(
+            select(Tag)
+            .where(
                 Tag.user_id == user_id,
-            ).order_by(col(Tag.usage_count).desc(), col(Tag.name).asc())
+            )
+            .order_by(col(Tag.usage_count).desc(), col(Tag.name).asc())
         ).all()
 
         tag_usage_ranking = [
-            TagSummary(
-                id=tag.id,
-                name=tag.name,
-                usage_count=tag.usage_count
-            )
+            TagSummary(id=tag.id, name=tag.name, usage_count=tag.usage_count)
             for tag in all_tags
         ]
 
         # Recently created tags (last 20)
         recently_created_tags = self.session.exec(
-            select(Tag).where(
+            select(Tag)
+            .where(
                 Tag.user_id == user_id,
-            ).order_by(col(Tag.created_at).desc()).limit(20)
+            )
+            .order_by(col(Tag.created_at).desc())
+            .limit(20)
         ).all()
 
         recently_created_summary = [
-            TagSummary(
-                id=tag.id,
-                name=tag.name,
-                usage_count=tag.usage_count
-            )
+            TagSummary(id=tag.id, name=tag.name, usage_count=tag.usage_count)
             for tag in recently_created_tags
         ]
 
@@ -323,16 +360,14 @@ class TagService:
         usage_over_time: Optional[Dict[str, int]] = None
         if include_usage_over_time:
             usage_data = self._compute_usage_over_time(user_id)
-            usage_over_time = {
-                item.month_key: item.count for item in usage_data
-            }
+            usage_over_time = {item.month_key: item.count for item in usage_data}
 
         most_used_summary = None
         if most_used_tag:
             most_used_summary = TagSummary(
                 id=most_used_tag.id,
                 name=most_used_tag.name,
-                usage_count=most_used_tag.usage_count
+                usage_count=most_used_tag.usage_count,
             )
 
         return TagStatisticsResponse(
@@ -343,14 +378,14 @@ class TagService:
             average_usage=round(float(avg_usage), 2),
             tag_usage_ranking=tag_usage_ranking,
             recently_created_tags=recently_created_summary,
-            usage_over_time=usage_over_time
+            usage_over_time=usage_over_time,
         )
 
     def _compute_usage_over_time(
         self,
         user_id: uuid.UUID,
         tag_id: Optional[uuid.UUID] = None,
-        start_date: Optional[datetime | date] = None
+        start_date: Optional[Union[datetime, date]] = None,
     ) -> List[MonthlyUsageData]:
         """
         Compute tag usage over time grouped by month using efficient SQL aggregation.
@@ -364,23 +399,20 @@ class TagService:
             List of MonthlyUsageData objects
         """
         # Use centralized database type detection from settings
-        if settings.database_type == 'postgres':
-            month_expr = func.to_char(Moment.logged_date_tz, 'YYYY-MM')
+        if settings.database_type == "postgres":
+            month_expr = func.to_char(Moment.logged_date_tz, "YYYY-MM")
         else:
-            month_expr = func.strftime('%Y-%m', Moment.logged_date_tz)
+            month_expr = func.strftime("%Y-%m", Moment.logged_date_tz)
 
-        statement = select(
-            month_expr.label('month_key'),
-            func.count().label('count')
-        ).select_from(
-            MomentTagLink
-        ).join(
-            Moment, Moment.id == MomentTagLink.moment_id
-        ).join(
-            Tag, Tag.id == MomentTagLink.tag_id
-        ).where(
-            Tag.user_id == user_id,
-            Moment.user_id == user_id,
+        statement = (
+            select(month_expr.label("month_key"), func.count().label("count"))
+            .select_from(MomentTagLink)
+            .join(Moment, Moment.id == MomentTagLink.moment_id)
+            .join(Tag, Tag.id == MomentTagLink.tag_id)
+            .where(
+                Tag.user_id == user_id,
+                Moment.user_id == user_id,
+            )
         )
 
         if tag_id:
@@ -400,75 +432,9 @@ class TagService:
             for row in results
         ]
 
-    def get_tag_analytics(self, user_id: uuid.UUID, plus_factory) -> TagAnalyticsResponse:
-        """
-        Get advanced tag analytics (Journiv Plus feature).
-
-        Plus features pull data via the host bridge (user-scoped).
-        All database queries are handled by the bridge implementation.
-
-        Args:
-            user_id: User UUID (used for bridge scoping in dependency)
-            plus_factory: PlusFeatureFactory instance with user-scoped bridge
-
-        Returns:
-            TagAnalyticsResponse with computed analytics from Plus
-
-        Raises:
-            PermissionError: If Plus license is invalid (should be caught by dependency)
-        """
-        # =====================================================================
-        # CALL PLUS SERVICE TO COMPUTE ANALYTICS
-        # Plus pulls data via bridge (all queries handled by bridge)
-        # =====================================================================
-
-        tag_service = plus_factory.get_tag_service()
-        plus_result = tag_service.compute_tag_analytics()
-
-        # =====================================================================
-        # CONVERT PLUS RESULT TO BACKEND SCHEMA
-        # =====================================================================
-
-        # Convert Plus TagSummary (id as string) back to backend TagSummary (id as UUID)
-        tag_usage_ranking = [
-            TagSummary(
-                id=uuid.UUID(tag.id),
-                name=tag.name,
-                usage_count=tag.usage_count
-            )
-            for tag in plus_result.tag_usage_ranking
-        ]
-
-        recently_created_summary = [
-            TagSummary(
-                id=uuid.UUID(tag.id),
-                name=tag.name,
-                usage_count=tag.usage_count
-            )
-            for tag in plus_result.recently_created_tags
-        ]
-
-        most_used_summary = None
-        if plus_result.most_used_tag:
-            most_used_summary = TagSummary(
-                id=uuid.UUID(plus_result.most_used_tag.id),
-                name=plus_result.most_used_tag.name,
-                usage_count=plus_result.most_used_tag.usage_count
-            )
-
-        return TagAnalyticsResponse(
-            total_tags=plus_result.total_tags,
-            used_tags=plus_result.used_tags,
-            unused_tags=plus_result.unused_tags,
-            most_used_tag=most_used_summary,
-            average_usage=plus_result.average_usage,
-            tag_usage_ranking=tag_usage_ranking,
-            recently_created_tags=recently_created_summary,
-            usage_over_time=plus_result.usage_over_time,
-            tag_distribution=plus_result.tag_distribution
-        )
-
-    def merge_tags(self, source_id: uuid.UUID, target_id: uuid.UUID, user_id: uuid.UUID) -> Tag:
+    def merge_tags(
+        self, source_id: uuid.UUID, target_id: uuid.UUID, user_id: uuid.UUID
+    ) -> Tag:
         """Merge source tag into target tag.
 
         Case-normalization rules:
@@ -497,7 +463,9 @@ class TagService:
         # Check if target tag name already exists with different case
         existing_tag = self.get_tag_by_name(user_id, target_tag.name)
         if existing_tag and existing_tag.id != target_id:
-            raise ValueError("Target tag name conflicts with existing tag (case-insensitive)")
+            raise ValueError(
+                "Target tag name conflicts with existing tag (case-insensitive)"
+            )
 
         # Move all moment-tag links from source to target using explicit
         # delete-old + insert-new pattern (avoid in-place composite PK mutation).
@@ -510,7 +478,7 @@ class TagService:
             existing_target_link = self.session.exec(
                 select(MomentTagLink).where(
                     MomentTagLink.moment_id == link.moment_id,
-                    MomentTagLink.tag_id == target_id
+                    MomentTagLink.tag_id == target_id,
                 )
             ).first()
 
@@ -520,7 +488,9 @@ class TagService:
             else:
                 # Delete old link and create new one
                 self.session.delete(link)
-                self.session.add(MomentTagLink(moment_id=link.moment_id, tag_id=target_id))
+                self.session.add(
+                    MomentTagLink(moment_id=link.moment_id, tag_id=target_id)
+                )
 
         # Recompute denormalized usage_count from link-table source of truth.
         target_usage_count = self.session.exec(
@@ -553,10 +523,7 @@ class TagService:
                 if not tag:
                     try:
                         # Try to create the tag, handle unique constraint violation
-                        tag = Tag(
-                            name=normalized_name,
-                            user_id=user_id
-                        )
+                        tag = Tag(name=normalized_name, user_id=user_id)
                         self.session.add(tag)
                         self._commit()
                         self.session.refresh(tag)
@@ -566,11 +533,15 @@ class TagService:
                         tag = self.get_tag_by_name(user_id, normalized_name)
                         if not tag:
                             # If we still can't find it, something went wrong
-                            raise ValueError(f"Failed to create or find tag '{normalized_name}': {str(e)}") from None
+                            raise ValueError(
+                                f"Failed to create or find tag '{normalized_name}': {str(e)}"
+                            ) from None
                 tags.append(tag)
         return tags
 
-    def bulk_add_tags_to_moment(self, moment_id: uuid.UUID, tag_names: List[str], user_id: uuid.UUID) -> List[Tag]:
+    def bulk_add_tags_to_moment(
+        self, moment_id: uuid.UUID, tag_names: List[str], user_id: uuid.UUID
+    ) -> List[Tag]:
         """Add multiple tags to a moment by name.
 
         Creates tags if they don't exist, then associates them with the moment.
@@ -620,81 +591,80 @@ class TagService:
         )
         if not include_unused:
             statement = statement.where(Tag.usage_count > 0)
-        statement = statement.order_by(col(Tag.usage_count).desc(), col(Tag.name).asc()).limit(limit)
+        statement = statement.order_by(
+            col(Tag.usage_count).desc(), col(Tag.name).asc()
+        ).limit(limit)
         return list(self.session.exec(statement))
+
+    # ------------------------------------------------------------------
+    # Plus analytics (inline mode only — license_data from get_plus_factory)
+    # ------------------------------------------------------------------
+
+    def get_tag_analytics(
+        self,
+        user_id: uuid.UUID,
+        license_data: Dict[str, Any],
+    ) -> TagAnalyticsResponse:
+        """Compute overall tag analytics via Plus (inline mode only)."""
+        try:
+            plus_svc = self._load_plus_tag_service(
+                user_id=user_id,
+                license_data=license_data,
+            )
+            r = plus_svc.compute_tag_analytics()
+            return TagAnalyticsResponse.model_validate(r.model_dump())
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            message = "Failed to compute Plus tag analytics."
+            log_error(exc)
+            raise RuntimeError(message) from exc
 
     def get_tag_detail_analytics(
         self,
         tag_id: uuid.UUID,
         user_id: uuid.UUID,
-        plus_factory,
-        days: int = 365
+        license_data: Dict[str, Any],
+        days: int = 365,
     ) -> TagDetailAnalyticsResponse:
-        """
-        Get per-tag analytics with trend analysis and insights (Journiv Plus feature).
-
-        Plus features pull data via the host bridge (user-scoped).
-        All database queries are handled by the bridge implementation.
-
-        Args:
-            tag_id: Tag UUID
-            user_id: User UUID (used for bridge scoping in dependency)
-            plus_factory: PlusFeatureFactory instance with user-scoped bridge
-            days: Number of days to analyze (default: 365)
-
-        Returns:
-            TagDetailAnalyticsResponse with computed analytics from Plus
-
-        Raises:
-            TagNotFoundError: If tag doesn't exist or doesn't belong to user
-            PermissionError: If Plus license is invalid (should be caught by dependency)
-        """
-        # =====================================================================
-        # VERIFY TAG EXISTS AND BELONGS TO USER
-        # =====================================================================
-
+        """Compute per-tag analytics via Plus (inline mode only)."""
         tag = self.get_tag_by_id(tag_id, user_id)
         if not tag:
             raise TagNotFoundError("Tag not found")
 
-        # =====================================================================
-        # CALL PLUS SERVICE TO COMPUTE ANALYTICS
-        # Plus pulls data via bridge (all queries handled by bridge)
-        # =====================================================================
-
-        tag_service = plus_factory.get_tag_service()
-        plus_result = tag_service.compute_tag_detail_analytics(
-            tag_id=str(tag_id),
-            tag_name=tag.name,
-            days=days
-        )
-
-        # =====================================================================
-        # CONVERT PLUS RESULT TO BACKEND SCHEMA
-        # =====================================================================
-
-        # Convert string datetime back to datetime objects
-        first_used_dt = datetime.fromisoformat(plus_result.first_used) if plus_result.first_used else None
-        last_used_dt = datetime.fromisoformat(plus_result.last_used) if plus_result.last_used else None
-
-        # Convert PeakMonthResult to PeakMonth (if present)
-
-        peak_month = None
-        if plus_result.peak_month:
-            peak_month = PeakMonth(
-                month=plus_result.peak_month.month,
-                count=plus_result.peak_month.count
+        try:
+            plus_svc = self._load_plus_tag_service(
+                user_id=user_id,
+                license_data=license_data,
             )
+            r = plus_svc.compute_tag_detail_analytics(
+                tag_id=str(tag_id), tag_name=tag.name, days=days
+            )
+            return TagDetailAnalyticsResponse.model_validate(r.model_dump())
+        except RuntimeError:
+            raise
+        except Exception as exc:
+            message = "Failed to compute Plus tag detail analytics."
+            log_error(exc)
+            raise RuntimeError(message) from exc
 
-        return TagDetailAnalyticsResponse(
-            tag_id=uuid.UUID(plus_result.tag_id),
-            tag_name=plus_result.tag_name,
-            usage_count=plus_result.usage_count,
-            usage_over_time=plus_result.usage_over_time,
-            first_used=first_used_dt,
-            last_used=last_used_dt,
-            peak_month=peak_month,
-            trend=plus_result.trend,
-            growth_rate=plus_result.growth_rate,
-            days_analyzed=plus_result.days_analyzed
+    def _load_plus_tag_service(
+        self,
+        *,
+        user_id: uuid.UUID,
+        license_data: Dict[str, Any],
+    ) -> Any:
+        try:
+            plus_module = import_module("app.plus.features._tags_plus")
+            PlusTagService = plus_module.TagService
+        except (ImportError, ModuleNotFoundError, AttributeError) as exc:
+            message = (
+                "Plus tag analytics module unavailable. "
+                "Ensure Journiv Plus is installed and compatible with this backend."
+            )
+            log_error(exc)
+            raise RuntimeError(message) from exc
+
+        return PlusTagService(
+            db=self.session, user_id=user_id, license_data=license_data
         )

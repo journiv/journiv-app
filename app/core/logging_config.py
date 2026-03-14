@@ -19,6 +19,8 @@ class LogCategory(str, Enum):
     DB = "app.db"
     SECURITY = "app.security"
     PLUS = "app.plus"
+    EXPORT = "app.export"
+    API = "app.api"
 
 
 DEFAULT_LOG_LEVEL = logging.INFO

@@ -9,6 +9,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
+    String,
     Text,
     UniqueConstraint,
     event,
@@ -70,6 +71,29 @@ class Entry(BaseModel, table=True):
         sa_column=Column(Boolean, server_default="false", nullable=False, index=True),
         description="Draft entries are not yet finalized"
     )
+
+    # Publishing fields (Plus feature)
+    public_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(12), nullable=True, unique=True, index=True),
+        description="Public URL-safe identifier (12 chars, generated on first publish)"
+    )
+    slug: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String(255), nullable=True, unique=True, index=True),
+        description="URL slug generated from title (user-customizable)"
+    )
+    is_published: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, server_default="false", nullable=False, index=True),
+        description="Whether this entry is publicly published"
+    )
+    is_indexed: bool = Field(
+        default=False,
+        sa_column=Column(Boolean, server_default="false", nullable=False),
+        description="Whether published entry should be indexed by search engines"
+    )
+
     import_metadata: Optional[dict] = Field(
         default=None,
         sa_column=SQLModelColumn(JSONType()),

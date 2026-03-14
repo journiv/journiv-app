@@ -139,7 +139,7 @@ class LicenseService:
 
         This method fetches license information for UI display purposes only.
         It does NOT perform license validation - that happens in the compiled module.
-        For license enforcement, use the get_plus_factory dependency in API endpoints.
+        For license enforcement, use the verify_plus_license dependency inside the Plus module.
 
         Args:
             refresh: If True, bypasses cache and fetches fresh data from server

@@ -1,0 +1,104 @@
+# docker-compose.override.plus-sidecar.yml
+#
+# ============================================================================
+# Journiv Plus — Privacy Mode for Development (Sidecar / Air-Gap)
+# ============================================================================
+#
+# Development variant of docker-compose.plus-sidecar.yml.
+# Uses build: . and volume mounts instead of the release image.
+#
+# USAGE
+# ─────
+# docker compose -f docker-compose.dev.yml \
+#                -f docker-compose.override.plus-sidecar.yml up -d
+#
+# For production use, see docker-compose.plus-sidecar.yml instead.
+# ============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # The sidecar: air-gapped, DB-only, no internet access
+  # ---------------------------------------------------------------------------
+  journiv-plus:
+    build: .
+    container_name: journiv-plus-sidecar
+    env_file: .env
+    ports:
+      - "127.0.0.1:8001:8000"  # host loopback only: prevents external interface exposure.
+    volumes:
+      - .:/app       # required in dev: compiled .so lives in the source tree
+      - ./data:/data
+    networks:
+      - journiv-internal    # internal network for sidecar ↔ app/db communication
+    environment:
+      SERVICE_ROLE: plus-service
+      DB_DRIVER: postgres
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      # SECRET_KEY is picked up from .env via env_file above
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
+
+  # ---------------------------------------------------------------------------
+  # postgres must join journiv-internal so the air-gapped sidecar can reach the DB.
+  # ---------------------------------------------------------------------------
+  postgres:
+    networks:
+      - default
+      - journiv-internal
+
+  # ---------------------------------------------------------------------------
+  # Patch the main app: join internal network + proxy to sidecar.
+  # Networks are explicitly listed to preserve the dev default network.
+  # ---------------------------------------------------------------------------
+  app:
+    networks:
+      - default
+      - journiv-internal
+    environment:
+      PLUS_SERVICE_URL: http://journiv-plus:8000
+    depends_on:
+      journiv-plus:
+        condition: service_healthy
+
+  celery-worker:
+    networks:
+      - default
+      - journiv-internal
+    environment:
+      PLUS_SERVICE_URL: http://journiv-plus:8000
+    depends_on:
+      journiv-plus:
+        condition: service_healthy
+
+  celery-beat:
+    networks:
+      - default
+      - journiv-internal
+    environment:
+      PLUS_SERVICE_URL: http://journiv-plus:8000
+    depends_on:
+      journiv-plus:
+        condition: service_healthy
+
+networks:
+  journiv-internal:
+    internal: true   # no default route to the outside world

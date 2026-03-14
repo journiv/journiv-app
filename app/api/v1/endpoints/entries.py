@@ -1,11 +1,13 @@
 """
 Entry endpoints.
 """
+
 import logging
 import uuid
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
 
 from app.api.dependencies import get_current_user
@@ -26,6 +28,11 @@ from app.schemas.entry import (
     EntryUpdate,
 )
 from app.services.entry_service import EntryService
+from app.services.pdf_service import (
+    EntryPDFService,
+    PDFEntryNotFoundError,
+    build_content_disposition,
+)
 
 router = APIRouter(prefix="/entries", tags=["entries"])
 logger = logging.getLogger(__name__)
@@ -41,16 +48,19 @@ def _hydrate_entry_deltas(
 
     # Collect all moment_ids that have content_delta needing hydration
     moment_ids = {
-        r.moment_id for r in responses
+        r.moment_id
+        for r in responses
         if r.content_delta is not None and r.moment_id is not None
     }
     if not moment_ids:
         return responses
 
     # Batch-load all media for the relevant moments
-    media_items = list(session.exec(
-        select(MomentMedia).where(MomentMedia.moment_id.in_(moment_ids))  # type: ignore[union-attr]
-    ).all())
+    media_items = list(
+        session.exec(
+            select(MomentMedia).where(MomentMedia.moment_id.in_(moment_ids))  # type: ignore[union-attr]
+        ).all()
+    )
 
     # Group by moment_id
     media_by_moment: dict[uuid.UUID, list[MomentMedia]] = {}
@@ -91,6 +101,7 @@ def _build_entry_response(
 ) -> EntryResponse:
     return _build_entry_responses(session, [entry], user_id)[0]
 
+
 @router.post(
     "/",
     response_model=EntryResponse,
@@ -101,7 +112,7 @@ def _build_entry_response(
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def create_entry(
     entry_data: EntryCreate,
@@ -112,7 +123,9 @@ async def create_entry(
     entry_service = EntryService(session)
     try:
         entry = entry_service.create_entry(current_user.id, entry_data)
-        log_user_action(current_user.email, f"created entry {entry.id}", request_id=None)
+        log_user_action(
+            current_user.email, f"created entry {entry.id}", request_id=None
+        )
         return _build_entry_response(session, entry, current_user.id)
     except JournalNotFoundError:
         raise HTTPException(status_code=404, detail="Journal not found") from None
@@ -122,7 +135,9 @@ async def create_entry(
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while creating entry") from None
+        raise HTTPException(
+            status_code=500, detail="An error occurred while creating entry"
+        ) from None
 
 
 @router.post(
@@ -135,7 +150,7 @@ async def create_entry(
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def create_draft_entry(
     entry_data: EntryDraftCreate,
@@ -146,7 +161,9 @@ async def create_draft_entry(
     entry_service = EntryService(session)
     try:
         entry = entry_service.create_entry(current_user.id, entry_data, is_draft=True)
-        log_user_action(current_user.email, f"created draft entry {entry.id}", request_id=None)
+        log_user_action(
+            current_user.email, f"created draft entry {entry.id}", request_id=None
+        )
         return _build_entry_response(session, entry, current_user.id)
     except JournalNotFoundError:
         raise HTTPException(status_code=404, detail="Journal not found") from None
@@ -156,7 +173,9 @@ async def create_draft_entry(
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while creating draft entry") from None
+        raise HTTPException(
+            status_code=500, detail="An error occurred while creating draft entry"
+        ) from None
 
 
 @router.get(
@@ -166,7 +185,7 @@ async def create_draft_entry(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def get_user_drafts(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -186,8 +205,14 @@ async def get_user_drafts(
         )
         return _build_entry_responses(session, entries, current_user.id)
     except Exception as e:
-        log_error(e, message="Unexpected error fetching draft entries", user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while fetching draft entries") from None
+        log_error(
+            e,
+            message="Unexpected error fetching draft entries",
+            user_email=current_user.email,
+        )
+        raise HTTPException(
+            status_code=500, detail="An error occurred while fetching draft entries"
+        ) from None
 
 
 @router.get(
@@ -197,7 +222,7 @@ async def get_user_drafts(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def get_user_entries(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -223,8 +248,14 @@ async def get_user_entries(
         )
         return _build_entry_responses(session, entries, current_user.id)
     except Exception as e:
-        log_error(e, message="Unexpected error fetching entries", user_email=current_user.email)
-        raise HTTPException(status_code=500, detail="An error occurred while fetching entries") from None
+        log_error(
+            e,
+            message="Unexpected error fetching entries",
+            user_email=current_user.email,
+        )
+        raise HTTPException(
+            status_code=500, detail="An error occurred while fetching entries"
+        ) from None
 
 
 @router.get(
@@ -235,7 +266,7 @@ async def get_user_entries(
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def get_journal_entries(
     journal_id: uuid.UUID,
@@ -263,9 +294,15 @@ async def get_journal_entries(
     except Exception as e:
         logger.error(
             "Unexpected error fetching journal entries",
-            extra={"user_id": str(current_user.id), "journal_id": str(journal_id), "error": str(e)}
+            extra={
+                "user_id": str(current_user.id),
+                "journal_id": str(journal_id),
+                "error": str(e),
+            },
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching journal entries") from None
+        raise HTTPException(
+            status_code=500, detail="An error occurred while fetching journal entries"
+        ) from None
 
 
 @router.get(
@@ -276,7 +313,7 @@ async def get_journal_entries(
         403: {"description": "Account inactive"},
         404: {"description": "Entry not found"},
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def get_entry(
     entry_id: uuid.UUID,
@@ -295,9 +332,15 @@ async def get_entry(
     except Exception as e:
         logger.error(
             "Unexpected error fetching entry",
-            extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(entry_id),
+                "error": str(e),
+            },
         )
-        raise HTTPException(status_code=500, detail="An error occurred while fetching entry") from None
+        raise HTTPException(
+            status_code=500, detail="An error occurred while fetching entry"
+        ) from None
 
 
 @router.put(
@@ -308,9 +351,11 @@ async def get_entry(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Entry not found"},
-        422: {"description": "Validation error (e.g., cannot move to archived journal)"},
+        422: {
+            "description": "Validation error (e.g., cannot move to archived journal)"
+        },
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def update_entry(
     entry_id: uuid.UUID,
@@ -327,7 +372,9 @@ async def update_entry(
     except EntryNotFoundError:
         raise HTTPException(status_code=404, detail="Entry not found") from None
     except JournalNotFoundError:
-        raise HTTPException(status_code=404, detail="Target journal not found") from None
+        raise HTTPException(
+            status_code=404, detail="Target journal not found"
+        ) from None
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     except ValueError as e:
@@ -335,9 +382,15 @@ async def update_entry(
     except Exception as e:
         logger.error(
             "Unexpected error updating entry",
-            extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(entry_id),
+                "error": str(e),
+            },
         )
-        raise HTTPException(status_code=500, detail="An error occurred while updating entry") from None
+        raise HTTPException(
+            status_code=500, detail="An error occurred while updating entry"
+        ) from None
 
 
 @router.delete(
@@ -348,12 +401,12 @@ async def update_entry(
         403: {"description": "Account inactive"},
         404: {"description": "Entry not found"},
         500: {"description": "Internal server error"},
-    }
+    },
 )
 async def delete_entry(
     entry_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
 ):
     """
     Delete an entry.
@@ -367,7 +420,46 @@ async def delete_entry(
     except Exception as e:
         logger.error(
             "Unexpected error deleting entry",
-            extra={"user_id": str(current_user.id), "entry_id": str(entry_id), "error": str(e)}
+            extra={
+                "user_id": str(current_user.id),
+                "entry_id": str(entry_id),
+                "error": str(e),
+            },
         )
-        raise HTTPException(status_code=500, detail="An error occurred while deleting entry") from None
+        raise HTTPException(
+            status_code=500, detail="An error occurred while deleting entry"
+        ) from None
 
+
+@router.get("/{entry_id}/pdf")
+async def download_entry_pdf(
+    entry_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    """Download an entry as PDF."""
+    pdf_service = EntryPDFService(session)
+    try:
+        pdf_stream, filename = pdf_service.generate_owned_entry_pdf(
+            entry_id=entry_id,
+            user_id=current_user.id,
+        )
+        log_user_action(
+            current_user.email, f"downloaded PDF for entry {entry_id}", request_id=None
+        )
+
+        return StreamingResponse(
+            pdf_stream,
+            media_type="application/pdf",
+            headers={"Content-Disposition": build_content_disposition(filename)},
+        )
+
+    except PDFEntryNotFoundError:
+        raise HTTPException(status_code=404, detail="Entry not found or access denied") from None
+    except Exception as e:
+        logger.error(
+            f"Error generating PDF for entry {entry_id}: {e}",
+            extra={"user_id": str(current_user.id), "entry_id": str(entry_id)},
+            exc_info=True,
+        )
+        raise HTTPException(status_code=500, detail="Failed to generate PDF") from None
