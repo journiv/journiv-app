@@ -39,6 +39,11 @@ _MEDIA_ID_PATTERN = re.compile(
     r"([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})",
     re.IGNORECASE,
 )
+_TRUSTED_PDF_MEDIA_PATH_PREFIXES = (
+    "/api/v1/media/",
+    "/api/v1/integrations/immich/proxy/",
+    "/pub/media/",
+)
 
 
 def build_content_disposition(filename: str) -> str:
@@ -498,6 +503,9 @@ class EntryPDFService:
             ttl_seconds = max(settings.media_signed_url_ttl_seconds, 300)
         signed_url_expires_at = int(time.time()) + ttl_seconds
 
+        def _is_trusted_internal_media_path(media_source: str) -> bool:
+            return media_source.startswith(_TRUSTED_PDF_MEDIA_PATH_PREFIXES)
+
         def resolver(media_type: str, media_source: str) -> str:
             media_id = self._extract_media_id(media_source, media_items)
             if media_id:
@@ -521,10 +529,12 @@ class EntryPDFService:
                             return ""
                         return f"{base_url}/pub/media/{media_id}"
 
-            if media_source.startswith("/"):
+            if media_source.startswith("/") and _is_trusted_internal_media_path(
+                media_source
+            ):
                 return f"{base_url}{media_source}"
 
-            return media_source
+            return ""
 
         return resolver
 

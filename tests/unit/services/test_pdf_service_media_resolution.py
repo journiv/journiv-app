@@ -98,6 +98,42 @@ def test_media_resolver_uses_public_media_route_when_local_file_missing():
     )
 
 
+def test_media_resolver_rejects_unknown_absolute_url():
+    service = EntryPDFService(session=None)
+
+    resolver = service._build_media_url_resolver(
+        media_items=[],
+        user_id=uuid.uuid4(),
+    )
+
+    assert resolver("video", "https://example.com/video.mp4") == ""
+
+
+def test_media_resolver_rejects_unknown_root_relative_path():
+    service = EntryPDFService(session=None)
+
+    resolver = service._build_media_url_resolver(
+        media_items=[],
+        user_id=uuid.uuid4(),
+    )
+
+    assert resolver("image", "/not-a-media-route/example.jpg") == ""
+
+
+def test_media_resolver_allows_trusted_public_media_path():
+    service = EntryPDFService(session=None)
+
+    resolver = service._build_media_url_resolver(
+        media_items=[],
+        public_fallback=True,
+    )
+
+    assert (
+        resolver("video", "/pub/media/fallback-preview")
+        == f"{service._get_base_url()}/pub/media/fallback-preview"
+    )
+
+
 def test_collect_attachment_image_urls_includes_moment_images_not_in_delta(
     tmp_path: Path,
 ):
