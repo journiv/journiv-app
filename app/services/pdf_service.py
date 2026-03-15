@@ -7,11 +7,12 @@ Converts journal entries to PDF format using the Delta-to-HTML render engine.
 import html
 import logging
 import re
+import time
 from copy import deepcopy
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from urllib.parse import quote
 from uuid import UUID
 
@@ -20,15 +21,24 @@ from sqlmodel import Session, col, select
 
 from app.core.config import settings
 from app.core.logging_config import LogCategory
-from app.core.media_signing import attach_signed_urls_to_delta
+from app.core.media_signing import (
+    signed_url_for_immich,
+    signed_url_for_journiv,
+)
 from app.models.entry import Entry
 from app.models.moment import Moment, MomentMedia
+from app.services.media_service import MediaService
+from app.utils.quill_delta import extract_media_sources
 from app.utils.render_engine import render_delta_to_html
 
 logger = logging.getLogger(LogCategory.EXPORT)
 
 # Template directory path
 TEMPLATE_DIR = Path(__file__).parent.parent / "templates"
+_MEDIA_ID_PATTERN = re.compile(
+    r"([a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12})",
+    re.IGNORECASE,
+)
 
 
 def build_content_disposition(filename: str) -> str:
@@ -228,8 +238,11 @@ class PDFService:
         date: Optional[str] = None,
         location: Optional[str] = None,
         tags: Optional[str] = None,
+        attachment_items: Optional[list[dict[str, Any]]] = None,
         media_url_resolver: Optional[Callable[[str, str], str]] = None,
         base_url: Optional[str] = None,
+        suppress_media_types: Optional[set[str]] = None,
+        media_preview_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
     ) -> bytes:
         """
         Generate a PDF from an entry's Delta content.
@@ -263,6 +276,8 @@ class PDFService:
                 sanitized_delta,
                 media_url_resolver=media_url_resolver,
                 print_mode=True,
+                suppress_media_types=suppress_media_types,
+                media_preview_resolver=media_preview_resolver,
             )
             content_html = self._sanitize_html_for_template(content_html)
 
@@ -276,6 +291,7 @@ class PDFService:
                 date=date,
                 location=location,
                 tags=tags,
+                attachment_items=attachment_items or [],
             )
 
             # Generate PDF using WeasyPrint
@@ -312,8 +328,11 @@ class PDFService:
         date: Optional[str] = None,
         location: Optional[str] = None,
         tags: Optional[str] = None,
+        attachment_items: Optional[list[dict[str, Any]]] = None,
         media_url_resolver: Optional[Callable[[str, str], str]] = None,
         base_url: Optional[str] = None,
+        suppress_media_types: Optional[set[str]] = None,
+        media_preview_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
     ) -> BytesIO:
         """
         Generate a PDF and return as BytesIO stream.
@@ -337,8 +356,11 @@ class PDFService:
             date=date,
             location=location,
             tags=tags,
+            attachment_items=attachment_items,
             media_url_resolver=media_url_resolver,
             base_url=base_url,
+            suppress_media_types=suppress_media_types,
+            media_preview_resolver=media_preview_resolver,
         )
 
         stream = BytesIO(pdf_bytes)
@@ -356,6 +378,7 @@ class EntryPDFService:
     def __init__(self, session: Session):
         self.session = session
         self.pdf_service = PDFService()
+        self.media_service = MediaService(session=session)
 
     @staticmethod
     def _get_base_url() -> str:
@@ -397,13 +420,202 @@ class EntryPDFService:
         name = name[:100]
         return f"{name}.pdf"
 
+    @staticmethod
+    def _extract_media_id(source: str, media_items: list[MomentMedia]) -> Optional[str]:
+        if not isinstance(source, str):
+            return None
+
+        stripped = source.strip()
+        if not stripped:
+            return None
+
+        media_ids = {str(item.id) for item in media_items if item.id}
+        if stripped in media_ids:
+            return stripped
+
+        match = _MEDIA_ID_PATTERN.search(stripped)
+        if match:
+            candidate = match.group(1)
+            if candidate in media_ids:
+                return candidate
+
+        return None
+
+    def _resolve_local_media_uri(self, media: MomentMedia) -> Optional[str]:
+        if not media.file_path:
+            return None
+
+        try:
+            if media.media_type.value == "image" and media.display_path:
+                root = self.media_service.media_root.resolve()
+                display_full_path = (root / media.display_path).resolve()
+                display_full_path.relative_to(root)
+                if display_full_path.exists():
+                    return display_full_path.as_uri()
+        except Exception:
+            logger.warning(
+                "Failed to resolve display media path for PDF export",
+                exc_info=True,
+            )
+
+        try:
+            return self.media_service.get_media_file_path(media).as_uri()
+        except Exception:
+            logger.warning(
+                "Failed to resolve local media path for PDF export",
+                extra={"media_id": str(media.id)},
+                exc_info=True,
+            )
+            return None
+
+    def _resolve_local_thumbnail_uri(self, media: MomentMedia) -> Optional[str]:
+        if not media.thumbnail_path:
+            return None
+
+        try:
+            return self.media_service.get_media_thumbnail_path(media).as_uri()
+        except Exception:
+            logger.warning(
+                "Failed to resolve local thumbnail path for PDF export",
+                extra={"media_id": str(media.id)},
+                exc_info=True,
+            )
+            return None
+
+    def _build_media_url_resolver(
+        self,
+        *,
+        media_items: list[MomentMedia],
+        user_id: Optional[UUID] = None,
+        public_fallback: bool = False,
+        variant: str = "original",
+    ) -> Callable[[str, str], str]:
+        media_by_id = {str(item.id): item for item in media_items if item.id}
+        base_url = self._get_base_url()
+        if variant == "thumbnail":
+            ttl_seconds = max(settings.media_thumbnail_signed_url_ttl_seconds, 300)
+        else:
+            ttl_seconds = max(settings.media_signed_url_ttl_seconds, 300)
+        signed_url_expires_at = int(time.time()) + ttl_seconds
+
+        def resolver(media_type: str, media_source: str) -> str:
+            media_id = self._extract_media_id(media_source, media_items)
+            if media_id:
+                media = media_by_id.get(media_id)
+                if media:
+                    local_uri: Optional[str] = None
+                    if variant == "thumbnail":
+                        local_uri = self._resolve_local_thumbnail_uri(media)
+                    elif media_type == "image":
+                        local_uri = self._resolve_local_media_uri(media)
+                    if local_uri:
+                        return local_uri
+
+                    if user_id is not None:
+                        if media.external_provider == "immich" and media.external_asset_id:
+                            return f"{base_url}{signed_url_for_immich(str(media.external_asset_id), str(user_id), variant, signed_url_expires_at)}"
+                        return f"{base_url}{signed_url_for_journiv(media_id, str(user_id), variant, signed_url_expires_at)}"
+
+                    if public_fallback:
+                        if variant == "thumbnail":
+                            return ""
+                        return f"{base_url}/pub/media/{media_id}"
+
+            if media_source.startswith("/"):
+                return f"{base_url}{media_source}"
+
+            return media_source
+
+        return resolver
+
+    def _collect_inline_media_ids(
+        self,
+        *,
+        delta_payload: dict,
+        media_items: list[MomentMedia],
+    ) -> set[str]:
+        inline_media_ids: set[str] = set()
+        for source in extract_media_sources(delta_payload):
+            media_id = self._extract_media_id(source, media_items)
+            if media_id:
+                inline_media_ids.add(media_id)
+        return inline_media_ids
+
+    def _collect_attachment_items(
+        self,
+        *,
+        delta_payload: dict,
+        media_items: list[MomentMedia],
+        media_url_resolver: Optional[Callable[[str, str], str]],
+        thumbnail_url_resolver: Optional[Callable[[str, str], str]] = None,
+    ) -> list[dict[str, Any]]:
+        if media_url_resolver is None:
+            return []
+
+        inline_media_ids = self._collect_inline_media_ids(
+            delta_payload=delta_payload,
+            media_items=media_items,
+        )
+        items: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+
+        for media in media_items:
+            media_type_value = getattr(media.media_type, "value", str(media.media_type)).lower()
+            if not media.id:
+                continue
+            media_id = str(media.id)
+            is_inline = media_id in inline_media_ids
+
+            try:
+                source_url = media_url_resolver(media_type_value, media_id)
+            except Exception:
+                logger.warning(
+                    "Failed to resolve media attachment for PDF export",
+                    extra={"media_id": media_id},
+                    exc_info=True,
+                )
+                continue
+
+            if not source_url:
+                continue
+
+            if media_type_value in {"image", "video"} and is_inline:
+                continue
+
+            key = (media_type_value, source_url)
+            if key in seen:
+                continue
+            seen.add(key)
+
+            item: dict[str, Any] = {
+                "kind": media_type_value,
+                "url": source_url,
+                "label": media.original_filename or f"{media_type_value.title()} attachment",
+                "alt_text": media.alt_text or "",
+            }
+
+            if media_type_value == "video" and thumbnail_url_resolver is not None:
+                try:
+                    preview_url = thumbnail_url_resolver("video", media_id)
+                except Exception:
+                    preview_url = None
+                if preview_url:
+                    item["preview_url"] = preview_url
+
+            items.append(item)
+
+        return items
+
     def _render_entry_pdf(
         self,
         *,
         entry: Entry,
         moment: Optional[Moment],
         delta_payload: dict,
+        attachment_items: Optional[list[dict[str, Any]]] = None,
         media_url_resolver: Optional[Callable[[str, str], str]] = None,
+        suppress_media_types: Optional[set[str]] = None,
+        media_preview_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
     ) -> BytesIO:
         date_str, tags_str, location_str = self._extract_moment_metadata(moment)
         return self.pdf_service.generate_pdf_stream(
@@ -412,8 +624,11 @@ class EntryPDFService:
             date=date_str,
             location=location_str,
             tags=tags_str,
+            attachment_items=attachment_items,
             media_url_resolver=media_url_resolver,
             base_url=self._get_base_url(),
+            suppress_media_types=suppress_media_types,
+            media_preview_resolver=media_preview_resolver,
         )
 
     def generate_owned_entry_pdf(
@@ -430,6 +645,10 @@ class EntryPDFService:
 
         moment = self.session.get(Moment, entry.moment_id) if entry.moment_id else None
         delta_payload = entry.content_delta or {"ops": []}
+        media_url_resolver: Optional[Callable[[str, str], str]] = None
+        attachment_items: list[dict[str, Any]] = []
+        suppress_media_types = {"audio"}
+        media_preview_resolver: Optional[Callable[[str, str], Optional[str]]] = None
 
         if entry.moment_id:
             moment_media = list(
@@ -438,18 +657,31 @@ class EntryPDFService:
                 ).all()
             )
             if moment_media:
-                hydrated_delta = attach_signed_urls_to_delta(
-                    delta_payload,
-                    moment_media,
-                    str(user_id),
+                media_url_resolver = self._build_media_url_resolver(
+                    media_items=moment_media,
+                    user_id=user_id,
                 )
-                if hydrated_delta is not None:
-                    delta_payload = hydrated_delta
+                thumbnail_url_resolver = self._build_media_url_resolver(
+                    media_items=moment_media,
+                    user_id=user_id,
+                    variant="thumbnail",
+                )
+                media_preview_resolver = thumbnail_url_resolver
+                attachment_items = self._collect_attachment_items(
+                    delta_payload=delta_payload,
+                    media_items=moment_media,
+                    media_url_resolver=media_url_resolver,
+                    thumbnail_url_resolver=thumbnail_url_resolver,
+                )
 
         pdf_stream = self._render_entry_pdf(
             entry=entry,
             moment=moment,
             delta_payload=delta_payload,
+            attachment_items=attachment_items,
+            media_url_resolver=media_url_resolver,
+            suppress_media_types=suppress_media_types,
+            media_preview_resolver=media_preview_resolver,
         )
         return pdf_stream, self._build_filename(entry)
 
@@ -471,15 +703,41 @@ class EntryPDFService:
             raise PDFEntryNotFoundError("Entry not found or not published")
 
         moment = self.session.get(Moment, entry.moment_id) if entry.moment_id else None
-
-        def media_url_resolver(media_type: str, media_id: str) -> str:
-            _ = media_type
-            return f"/pub/media/{media_id}"
+        media_url_resolver: Optional[Callable[[str, str], str]] = None
+        attachment_items: list[dict[str, Any]] = []
+        suppress_media_types = {"audio"}
+        media_preview_resolver: Optional[Callable[[str, str], Optional[str]]] = None
+        if entry.moment_id:
+            moment_media = list(
+                self.session.exec(
+                    select(MomentMedia).where(MomentMedia.moment_id == entry.moment_id)
+                ).all()
+            )
+            if moment_media:
+                media_url_resolver = self._build_media_url_resolver(
+                    media_items=moment_media,
+                    public_fallback=True,
+                )
+                thumbnail_url_resolver = self._build_media_url_resolver(
+                    media_items=moment_media,
+                    public_fallback=True,
+                    variant="thumbnail",
+                )
+                media_preview_resolver = thumbnail_url_resolver
+                attachment_items = self._collect_attachment_items(
+                    delta_payload=entry.content_delta or {"ops": []},
+                    media_items=moment_media,
+                    media_url_resolver=media_url_resolver,
+                    thumbnail_url_resolver=thumbnail_url_resolver,
+                )
 
         pdf_stream = self._render_entry_pdf(
             entry=entry,
             moment=moment,
             delta_payload=entry.content_delta or {"ops": []},
+            attachment_items=attachment_items,
             media_url_resolver=media_url_resolver,
+            suppress_media_types=suppress_media_types,
+            media_preview_resolver=media_preview_resolver,
         )
         return pdf_stream, self._build_filename(entry, include_public_id=True)
