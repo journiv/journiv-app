@@ -115,6 +115,11 @@
             color: #666;
         }
 
+        .media-link a:after,
+        .attachment-card a:after {
+            content: "";
+        }
+
         /* Inline formatting */
         strong {
             font-weight: 600;
@@ -160,6 +165,96 @@
             margin-top: 1em;
         }
 
+        .attachments {
+            margin: 0 0 2em 0;
+        }
+
+        .attachments h2 {
+            font-size: 14pt;
+            margin: 0 0 0.75em 0;
+        }
+
+        .attachments img {
+            margin: 0 0 1em 0;
+            border-radius: 8px;
+        }
+
+        .attachment-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 0.75em;
+            margin-bottom: 1em;
+            page-break-inside: avoid;
+        }
+
+        .attachment-card img {
+            margin-bottom: 0.75em;
+        }
+
+        .attachment-kind {
+            font-size: 9pt;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #666;
+            margin-bottom: 0.25em;
+        }
+
+        .attachment-label {
+            font-weight: 600;
+            margin-bottom: 0.25em;
+        }
+
+        .media-link {
+            margin-bottom: 1em;
+        }
+
+        .media-preview {
+            position: relative;
+            display: block;
+            margin: 1em 0;
+            text-decoration: none;
+            color: inherit;
+            page-break-inside: avoid;
+            overflow: hidden;
+            border-radius: 12px;
+        }
+
+        .media-preview img {
+            display: block;
+            width: 100%;
+            margin: 0;
+            border-radius: 12px;
+        }
+
+        .media-preview-overlay {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.08), rgba(0,0,0,0.26));
+            border-radius: 12px;
+        }
+
+        .media-video-badge {
+            position: absolute;
+            right: 18px;
+            bottom: 18px;
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            background: rgba(17, 17, 17, 0.72);
+            border: 1px solid rgba(255, 255, 255, 0.28);
+        }
+
+        .media-video-glyph {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            font-size: 14pt;
+            line-height: 1;
+            color: #fff;
+            margin-left: -4px;
+            margin-top: -10px;
+        }
+
         /* Page break utilities */
         .page-break {
             page-break-before: always;
@@ -198,6 +293,41 @@
         </div>
         {% endif %}
     </div>
+
+    {% if attachment_items %}
+    <div class="attachments">
+        <h2>Attachments</h2>
+        {% for attachment in attachment_items %}
+        {% if attachment.kind == "image" %}
+        <div class="attachment-card">
+            <div class="attachment-kind">Image</div>
+            {% if attachment.label %}
+            <div class="attachment-label">{{ attachment.label }}</div>
+            {% endif %}
+            <img src="{{ attachment.url }}" alt="{{ attachment.alt_text }}">
+        </div>
+        {% else %}
+        <div class="attachment-card">
+            <div class="attachment-kind">{{ attachment.kind }}</div>
+            {% if attachment.label %}
+            <div class="attachment-label">{{ attachment.label }}</div>
+            {% endif %}
+            {% if attachment.preview_url %}
+            <div class="media-preview media-preview-video">
+                <img src="{{ attachment.preview_url }}" alt="">
+                <span class="media-preview-overlay">
+                    <span class="media-video-badge">
+                        <span class="media-video-glyph">▶</span>
+                    </span>
+                </span>
+            </div>
+            <div class="attachment-label">{{ attachment.kind|title }} preview</div>
+            {% endif %}
+        </div>
+        {% endif %}
+        {% endfor %}
+    </div>
+    {% endif %}
 
     <!-- Entry content -->
     <div class="content">

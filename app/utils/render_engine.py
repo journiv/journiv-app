@@ -62,7 +62,9 @@ def render_delta_to_html(
     delta: Optional[Dict[str, Any]],
     *,
     media_url_resolver: Optional[Callable[[str, str], str]] = None,
-    print_mode: bool = False
+    print_mode: bool = False,
+    suppress_media_types: Optional[set[str]] = None,
+    media_preview_resolver: Optional[Callable[[str, str], Optional[str]]] = None,
 ) -> str:
     """
     Convert Quill Delta JSON to sanitized HTML fragment.
@@ -97,6 +99,7 @@ def render_delta_to_html(
 
     # Process ops into HTML blocks
     html_parts: List[str] = []
+    suppressed_media_types = {value.lower() for value in (suppress_media_types or set())}
     current_block: List[str] = []
     current_block_type: Optional[str] = None  # 'p', 'h1', 'h2', etc.
     list_items: List[str] = []
@@ -256,7 +259,7 @@ def render_delta_to_html(
                         if current_block:
                             current_block.append('<br>')
 
-        # Handle embed inserts (image, video)
+        # Handle embed inserts (image, video, audio)
         elif isinstance(insert, dict):
             # Flush any pending blocks before inserting media
             flush_block()
@@ -265,6 +268,8 @@ def render_delta_to_html(
 
             # Handle image embeds
             if "image" in insert:
+                if "image" in suppressed_media_types:
+                    continue
                 image_id = insert["image"]
                 if not isinstance(image_id, str):
                     continue
@@ -278,13 +283,15 @@ def render_delta_to_html(
                     allow_protocol_relative=True,
                     allow_plain_relative=False,
                     allow_fragment=False,
-                    allowed_schemes={"http", "https"},
+                    allowed_schemes={"http", "https", "file"} if print_mode else {"http", "https"},
                 ):
                     safe_url = html.escape(image_url, quote=True)
                     html_parts.append(f'<img src="{safe_url}" alt="">')
 
             # Handle video embeds
             elif "video" in insert:
+                if "video" in suppressed_media_types:
+                    continue
                 video_id = insert["video"]
                 if not isinstance(video_id, str):
                     continue
@@ -298,10 +305,66 @@ def render_delta_to_html(
                     allow_protocol_relative=True,
                     allow_plain_relative=False,
                     allow_fragment=False,
-                    allowed_schemes={"http", "https"},
+                    allowed_schemes={"http", "https", "file"} if print_mode else {"http", "https"},
                 ):
                     safe_url = html.escape(video_url, quote=True)
-                    html_parts.append(f'<video controls src="{safe_url}"></video>')
+                    if print_mode:
+                        preview_url = (
+                            media_preview_resolver("video", video_id)
+                            if media_preview_resolver is not None
+                            else None
+                        )
+                        if preview_url and _is_safe_url(
+                            preview_url,
+                            allow_protocol_relative=True,
+                            allow_plain_relative=False,
+                            allow_fragment=False,
+                            allowed_schemes={"http", "https", "file"},
+                        ):
+                            safe_preview_url = html.escape(preview_url, quote=True)
+                            html_parts.append(
+                                '<div class="media-preview media-preview-video">'
+                                f'<img src="{safe_preview_url}" alt="">'
+                                '<span class="media-preview-overlay">'
+                                '<span class="media-video-badge">'
+                                '<span class="media-video-glyph">▶</span>'
+                                "</span>"
+                                "</span>"
+                                "</div>"
+                            )
+                        else:
+                            html_parts.append(
+                                '<p class="media-link"><strong>Video attachment</strong></p>'
+                            )
+                    else:
+                        html_parts.append(f'<video controls src="{safe_url}"></video>')
+
+            # Handle audio embeds
+            elif "audio" in insert:
+                if "audio" in suppressed_media_types:
+                    continue
+                audio_id = insert["audio"]
+                if not isinstance(audio_id, str):
+                    continue
+                if media_url_resolver:
+                    audio_url = media_url_resolver("audio", audio_id)
+                else:
+                    audio_url = audio_id  # Fallback: use ID as URL
+
+                if _is_safe_url(
+                    audio_url,
+                    allow_protocol_relative=True,
+                    allow_plain_relative=False,
+                    allow_fragment=False,
+                    allowed_schemes={"http", "https", "file"} if print_mode else {"http", "https"},
+                ):
+                    safe_url = html.escape(audio_url, quote=True)
+                    if print_mode:
+                        html_parts.append(
+                            f'<p class="media-link"><strong>Audio:</strong> <a href="{safe_url}">Open audio attachment</a></p>'
+                        )
+                    else:
+                        html_parts.append(f'<audio controls src="{safe_url}"></audio>')
 
     # Flush any remaining blocks
     flush_block()

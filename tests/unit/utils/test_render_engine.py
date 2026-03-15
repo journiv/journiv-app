@@ -184,6 +184,22 @@ def test_render_image():
     assert '<img src="/pub/media/media-123"' in result
 
 
+def test_render_image_in_print_mode_allows_file_uri():
+    """Test rendering image embeds in print mode with local file URIs."""
+    delta = {
+        "ops": [
+            {"insert": {"image": "media-123"}},
+            {"insert": "\n"}
+        ]
+    }
+
+    def resolver(media_type, media_id):
+        return "file:///tmp/media-123.jpg"
+
+    result = render_delta_to_html(delta, media_url_resolver=resolver, print_mode=True)
+    assert '<img src="file:///tmp/media-123.jpg"' in result
+
+
 def test_render_video():
     """Test rendering video embeds."""
     delta = {
@@ -198,6 +214,90 @@ def test_render_video():
 
     result = render_delta_to_html(delta, media_url_resolver=resolver)
     assert '<video controls src="/pub/media/video-456"' in result
+
+
+def test_render_video_in_print_mode_as_placeholder():
+    """Test rendering video embeds in print mode without a preview thumbnail."""
+    delta = {
+        "ops": [
+            {"insert": {"video": "video-456"}},
+            {"insert": "\n"}
+        ]
+    }
+
+    def resolver(media_type, media_id):
+        return f"/pub/media/{media_id}"
+
+    result = render_delta_to_html(delta, media_url_resolver=resolver, print_mode=True)
+    assert "<video controls" not in result
+    assert "Video attachment" in result
+    assert 'href="/pub/media/video-456"' not in result
+
+
+def test_render_video_in_print_mode_with_preview():
+    """Test rendering inline video previews in print mode."""
+    delta = {
+        "ops": [
+            {"insert": {"video": "video-456"}},
+            {"insert": "\n"}
+        ]
+    }
+
+    def resolver(media_type, media_id):
+        return f"/pub/media/{media_id}"
+
+    def preview_resolver(media_type, media_id):
+        return f"/pub/media/{media_id}/thumb.jpg"
+
+    result = render_delta_to_html(
+        delta,
+        media_url_resolver=resolver,
+        media_preview_resolver=preview_resolver,
+        print_mode=True,
+    )
+    assert 'class="media-preview media-preview-video"' in result
+    assert 'src="/pub/media/video-456/thumb.jpg"' in result
+    assert 'href="/pub/media/video-456"' not in result
+    assert "media-video-glyph" in result
+
+
+def test_render_video_in_print_mode_can_be_suppressed():
+    """Test suppressing inline print rendering for video embeds."""
+    delta = {
+        "ops": [
+            {"insert": {"video": "video-456"}},
+            {"insert": "\n"}
+        ]
+    }
+
+    def resolver(media_type, media_id):
+        return f"/pub/media/{media_id}"
+
+    result = render_delta_to_html(
+        delta,
+        media_url_resolver=resolver,
+        print_mode=True,
+        suppress_media_types={"video"},
+    )
+    assert "Video:" not in result
+    assert 'href="/pub/media/video-456"' not in result
+
+
+def test_render_audio_in_print_mode_as_link():
+    """Test rendering audio embeds in print mode."""
+    delta = {
+        "ops": [
+            {"insert": {"audio": "audio-789"}},
+            {"insert": "\n"}
+        ]
+    }
+
+    def resolver(media_type, media_id):
+        return f"/pub/media/{media_id}"
+
+    result = render_delta_to_html(delta, media_url_resolver=resolver, print_mode=True)
+    assert "Audio:" in result
+    assert 'href="/pub/media/audio-789"' in result
 
 
 def test_render_complex_formatting():
