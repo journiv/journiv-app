@@ -6,7 +6,7 @@ Covers:
 - _build_display_path naming convention
 - _generate_heic_display_version transcoding (requires pillow-heif)
 - process_uploaded_file skips regeneration when display_path exists
-- get_media_file_for_serving transparently serves display version
+- get_media_file_for_serving serves original bytes for authenticated downloads
 - delete_media_by_id cleans up display version file
 """
 import shutil
@@ -262,14 +262,14 @@ class TestProcessUploadedFileHeicSkip:
             mock_gen.assert_not_called()
 
 
-# ─── get_media_file_for_serving: display version redirect ────────────
+# ─── get_media_file_for_serving: authenticated original serving ───────
 
 class TestServingHeicDisplayVersion:
     @pytest.mark.asyncio
     async def test_serves_display_version_when_present(
         self, tmp_path, test_db, test_user, test_entry
     ):
-        """If display_path exists on disk, serve it instead of the original."""
+        """Authenticated original download should still serve the original HEIC."""
         service = _build_service(tmp_path, test_db)
         media_root = tmp_path / "media"
         user_dir = media_root / str(test_user.id) / "images"
@@ -300,8 +300,8 @@ class TestServingHeicDisplayVersion:
             session=test_db,
         )
 
-        assert result["content_type"] == "image/webp"
-        assert result["file_path"] == display_file
+        assert result["content_type"] == "image/heic"
+        assert result["file_path"] == heic_file
 
     @pytest.mark.asyncio
     async def test_serves_original_when_no_display_path(

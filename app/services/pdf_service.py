@@ -8,6 +8,7 @@ import html
 import logging
 import re
 from copy import deepcopy
+from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
 from typing import Callable, Optional
@@ -83,21 +84,63 @@ class PDFService:
         if not content_html:
             return ""
 
-        suspicious_pattern = re.compile(
-            r"(?is)"
-            r"<\s*(script|iframe|object|embed|link|meta)\b"
-            r"|on[a-z0-9_-]+\s*="
-            r"|javascript:"
-            r"|vbscript:"
-            r"|data:\s*text/html"
-        )
-        if suspicious_pattern.search(content_html):
+        if PDFService._contains_unsafe_html_elements(content_html):
             logger.warning(
                 "Potentially unsafe HTML detected in PDF content; escaping content."
             )
             return f"<p>{html.escape(content_html)}</p>"
 
         return content_html
+
+    @staticmethod
+    def _contains_unsafe_html_elements(content_html: str) -> bool:
+        """Inspect parsed HTML elements/attributes for unsafe constructs."""
+
+        class _UnsafeHtmlDetector(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__()
+                self.found_unsafe = False
+                self._blocked_tags = {"script", "iframe", "object", "embed", "link", "meta"}
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+                self._check(tag, attrs)
+
+            def handle_startendtag(
+                self, tag: str, attrs: list[tuple[str, Optional[str]]]
+            ) -> None:
+                self._check(tag, attrs)
+
+            def _check(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+                if self.found_unsafe:
+                    return
+
+                tag_name = (tag or "").strip().lower()
+                if tag_name in self._blocked_tags:
+                    self.found_unsafe = True
+                    return
+
+                for attr_name, attr_value in attrs:
+                    name = (attr_name or "").strip().lower()
+                    value = (attr_value or "").strip().lower()
+
+                    if name.startswith("on"):
+                        self.found_unsafe = True
+                        return
+                    if value.startswith("javascript:") or value.startswith("vbscript:"):
+                        self.found_unsafe = True
+                        return
+                    if value.startswith("data:text/html"):
+                        self.found_unsafe = True
+                        return
+
+        parser = _UnsafeHtmlDetector()
+        try:
+            parser.feed(content_html)
+            parser.close()
+        except Exception:
+            # Invalid markup in a `|safe` path is treated as unsafe.
+            return True
+        return parser.found_unsafe
 
     @staticmethod
     def _is_uuid_identifier(value: str) -> bool:
@@ -413,10 +456,17 @@ class EntryPDFService:
     def generate_published_entry_pdf(self, *, identifier: str) -> tuple[BytesIO, str]:
         entry = self.session.exec(
             select(Entry).where(
-                Entry.is_published == True,  # noqa: E712
-                (col(Entry.public_id) == identifier) | (col(Entry.slug) == identifier),
+                col(Entry.is_published).is_(True),
+                col(Entry.public_id) == identifier,
             )
         ).first()
+        if not entry:
+            entry = self.session.exec(
+                select(Entry).where(
+                    col(Entry.is_published).is_(True),
+                    col(Entry.slug) == identifier,
+                )
+            ).first()
         if not entry:
             raise PDFEntryNotFoundError("Entry not found or not published")
 

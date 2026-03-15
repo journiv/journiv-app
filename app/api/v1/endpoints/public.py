@@ -26,7 +26,7 @@ router = APIRouter()
 
 
 @router.get("/pub/{identifier}/pdf")
-async def download_published_entry_pdf(
+def download_published_entry_pdf(
     identifier: str,
     db: Annotated[Session, Depends(get_db)],
 ):
