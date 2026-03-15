@@ -655,15 +655,21 @@ class TagService:
         license_data: Dict[str, Any],
     ) -> Any:
         try:
-            plus_module = import_module("app.plus.features._tags_plus")
+            plus_module = import_module("app.plus.plus_features")
             PlusTagService = plus_module.TagService
         except (ImportError, ModuleNotFoundError, AttributeError) as exc:
-            message = (
-                "Plus tag analytics module unavailable. "
-                "Ensure Journiv Plus is installed and compatible with this backend."
-            )
-            log_error(exc)
-            raise RuntimeError(message) from exc
+            try:
+                # Fallback for source-based local/dev layouts.
+                plus_module = import_module("app.plus.features._tags_plus")
+                PlusTagService = plus_module.TagService
+            except (ImportError, ModuleNotFoundError, AttributeError) as fallback_exc:
+                message = (
+                    "Plus tag analytics module unavailable. "
+                    "Ensure Journiv Plus is installed and compatible with this backend."
+                )
+                log_error(exc)
+                log_error(fallback_exc)
+                raise RuntimeError(message) from fallback_exc
 
         return PlusTagService(
             db=self.session, user_id=user_id, license_data=license_data

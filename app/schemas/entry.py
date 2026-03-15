@@ -118,6 +118,22 @@ class EntryResponse(EntryBase, TimestampMixin):
     word_count: int
     is_draft: bool = False
     user_id: uuid.UUID
+    public_id: Optional[str] = Field(
+        default=None,
+        description="Public URL-safe identifier (12 chars, generated on first publish)",
+    )
+    slug: Optional[str] = Field(
+        default=None,
+        description="URL slug generated from title (user-customizable)",
+    )
+    is_published: bool = Field(
+        default=False,
+        description="Whether this entry is publicly published",
+    )
+    is_indexed: bool = Field(
+        default=False,
+        description="Whether published entry should be indexed by search engines",
+    )
     content_plain_text: Optional[str] = None
     created_at: datetime
     updated_at: datetime
@@ -132,6 +148,22 @@ class EntryPreviewResponse(TimestampMixin):
     moment_id: uuid.UUID
     word_count: int = 0
     is_draft: bool = False
+    public_id: Optional[str] = Field(
+        default=None,
+        description="Public URL-safe identifier (12 chars, generated on first publish)",
+    )
+    slug: Optional[str] = Field(
+        default=None,
+        description="URL slug generated from title (user-customizable)",
+    )
+    is_published: bool = Field(
+        default=False,
+        description="Whether this entry is publicly published",
+    )
+    is_indexed: bool = Field(
+        default=False,
+        description="Whether published entry should be indexed by search engines",
+    )
     created_at: datetime
     updated_at: datetime
 

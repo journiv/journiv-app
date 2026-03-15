@@ -57,6 +57,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   libheif1 \
   libde265-0 \
+  libpango-1.0-0 \
+  libpangoft2-1.0-0 \
+  libharfbuzz-subset0 \
   && rm -rf /var/lib/apt/lists/* \
   && echo "🔍 Checking FFmpeg license (runtime stage)..." \
   && ffmpeg -version | grep -E "enable-gpl|enable-nonfree" && (echo "❌ GPL/nonfree FFmpeg detected!" && exit 1) || echo "✅ LGPL FFmpeg build verified."

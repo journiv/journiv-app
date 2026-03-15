@@ -1914,61 +1914,7 @@ class MediaService:
         return await self._build_media_file_info(
             media,
             range_header=range_header,
-            allow_display_version=True,
-        )
-
-    async def get_public_media_file_for_serving(
-        self,
-        media_id: uuid.UUID,
-        session: Session,
-        range_header: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Get media file for public serving (for published entries only).
-
-        This method checks that the media belongs to a published entry before serving.
-        Does NOT require user authentication - used for public entry pages.
-
-        Args:
-            media_id: UUID of the media record
-            session: Database session
-            range_header: Optional Range header value for video streaming
-
-        Returns:
-            Dict with file_path, file_size, content_type, and optional range info
-
-        Raises:
-            MediaNotFoundError: If media not found or entry is not published
-        """
-        from app.models.entry import Entry
-
-        # Get media record and verify it belongs to a published entry via Moment -> Entry
-        statement = (
-            select(MomentMedia)
-            .join(Moment, col(MomentMedia.moment_id) == Moment.id)
-            .join(Entry, col(Moment.id) == col(Entry.moment_id))
-            .where(
-                MomentMedia.id == media_id,
-                Entry.is_published == True  # noqa: E712
-            )
-        )
-        media = session.exec(statement).first()
-
-        if not media:
-            raise MediaNotFoundError(
-                "Media not found or entry is not published"
-            )
-        mime_type = (media.mime_type or "").lower()
-        use_display_version = mime_type in {
-            "image/heic",
-            "image/heif",
-            "image/heic-sequence",
-            "image/heif-sequence",
-        }
-        return await self._build_media_file_info(
-            media,
-            range_header=range_header,
-            allow_display_version=use_display_version,
+            allow_display_version=False,
         )
 
     async def process_moment_media(self, moment_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> int:

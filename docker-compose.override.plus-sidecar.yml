@@ -33,6 +33,7 @@ services:
       - journiv-internal    # internal network for sidecar ↔ app/db communication
     environment:
       SERVICE_ROLE: plus-service
+      PLUS_SERVICE_URL: ""
       DB_DRIVER: postgres
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

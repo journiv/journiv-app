@@ -7,6 +7,7 @@ Converts journal entries to PDF format using the Delta-to-HTML render engine.
 import html
 import logging
 import re
+from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from typing import Callable, Optional
@@ -98,6 +99,84 @@ class PDFService:
 
         return content_html
 
+    @staticmethod
+    def _is_uuid_identifier(value: str) -> bool:
+        try:
+            UUID(str(value))
+            return True
+        except (ValueError, TypeError):
+            return False
+
+    @staticmethod
+    def _is_trusted_internal_media_reference(value: str) -> bool:
+        if not isinstance(value, str):
+            return False
+        candidate = value.strip()
+        if not candidate:
+            return False
+        if PDFService._is_uuid_identifier(candidate):
+            return True
+        return candidate.startswith("/api/v1/media/") or candidate.startswith(
+            "/api/v1/integrations/immich/proxy/"
+        )
+
+    @classmethod
+    def _sanitize_delta_media_references_for_pdf(
+        cls,
+        delta_content: dict,
+        *,
+        media_url_resolver: Optional[Callable[[str, str], str]],
+    ) -> dict:
+        """
+        Strip untrusted media references when no resolver is provided.
+
+        Without a resolver, render_engine may treat image/video values as URLs.
+        To prevent SSRF, only trusted internal references are kept.
+        """
+        if media_url_resolver is not None:
+            return delta_content
+
+        delta = deepcopy(delta_content) if isinstance(delta_content, dict) else {"ops": []}
+        ops = delta.get("ops")
+        if not isinstance(ops, list):
+            return {"ops": []}
+
+        dropped = 0
+        sanitized_ops = []
+        for op in ops:
+            if not isinstance(op, dict):
+                continue
+            insert = op.get("insert")
+            if not isinstance(insert, dict):
+                sanitized_ops.append(op)
+                continue
+
+            embed_type = None
+            embed_value = None
+            if "image" in insert:
+                embed_type = "image"
+                embed_value = insert.get("image")
+            elif "video" in insert:
+                embed_type = "video"
+                embed_value = insert.get("video")
+
+            if embed_type is None:
+                sanitized_ops.append(op)
+                continue
+
+            if isinstance(embed_value, str) and cls._is_trusted_internal_media_reference(embed_value):
+                sanitized_ops.append(op)
+            else:
+                dropped += 1
+
+        if dropped:
+            logger.warning(
+                "Dropped %s untrusted media embed(s) from PDF delta without resolver.",
+                dropped,
+            )
+        delta["ops"] = sanitized_ops
+        return delta
+
     def generate_pdf(
         self,
         *,
@@ -131,9 +210,16 @@ class PDFService:
             # Import WeasyPrint here to avoid import errors if not installed
             from weasyprint import HTML
 
+            sanitized_delta = self._sanitize_delta_media_references_for_pdf(
+                delta_content,
+                media_url_resolver=media_url_resolver,
+            )
+
             # Render Delta to HTML fragment
             content_html = render_delta_to_html(
-                delta_content, media_url_resolver=media_url_resolver, print_mode=True
+                sanitized_delta,
+                media_url_resolver=media_url_resolver,
+                print_mode=True,
             )
             content_html = self._sanitize_html_for_template(content_html)
 
@@ -150,7 +236,11 @@ class PDFService:
             )
 
             # Generate PDF using WeasyPrint
-            logger.info(f"Generating PDF for entry: {title}")
+            logger.info(
+                "Generating PDF (title_length=%s, delta_ops=%s)",
+                len(title or ""),
+                len(sanitized_delta.get("ops", [])) if isinstance(sanitized_delta, dict) else 0,
+            )
             html = (
                 HTML(string=html_content, base_url=base_url)
                 if base_url
