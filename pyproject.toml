@@ -42,7 +42,9 @@ dependencies = [
     "typer==0.21.1",
     "rich==14.3.1",
     "gunicorn==23.0.0",
-    "ijson>=3.4.0.post0,<4.0.0",
+    "ijson==3.5.0",
+    "weasyprint==68.1",
+    "jinja2==3.1.6",
 ]
 
 

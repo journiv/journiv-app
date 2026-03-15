@@ -12,6 +12,15 @@ if [ "${SERVICE_ROLE}" = "celery-worker" ]; then
 elif [ "${SERVICE_ROLE}" = "celery-beat" ]; then
   echo "Starting Celery beat..."
   exec "$PYTHON" -m celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
+elif [ "${SERVICE_ROLE}" = "plus-service" ]; then
+  echo "Starting Journiv Plus standalone service on port ${APP_PORT:-8000}..."
+  # NOTE: No migrations — schema management is owned by the main 'app' role.
+  # Required env vars: DB_DRIVER/POSTGRES_PASSWORD (or DATABASE_URL), SECRET_KEY.
+  exec "$PYTHON" -m uvicorn app.plus.standalone:app \
+    --host 0.0.0.0 \
+    --port "${APP_PORT:-8000}" \
+    --workers "${UVICORN_WORKERS:-1}" \
+    --log-level info
 elif [ "${SERVICE_ROLE}" = "admin-cli" ]; then
   if [ $# -eq 0 ]; then
     echo "Starting admin-cli in idle mode (sleep infinity)..."

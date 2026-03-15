@@ -1,6 +1,8 @@
 """
 Entry service for managing journal entries.
 """
+import re
+import secrets
 import uuid
 from typing import Any, List, Optional, cast
 
@@ -41,6 +43,103 @@ class EntryService:
     @staticmethod
     def _entry_moment_relation() -> QueryableAttribute[Any]:
         return cast(QueryableAttribute[Any], Entry.moment)
+
+    @staticmethod
+    def _escape_like_pattern(query: str) -> str:
+        """Escape SQL LIKE wildcards (% and _) in user query."""
+        if not query:
+            return query
+        return query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    def generate_unique_slug(self, title: str) -> str:
+        """
+        Generate a unique URL slug from an entry title.
+
+        Aggressively cleans the title to only include:
+        - lowercase letters (a-z)
+        - numbers (0-9)
+        - hyphens (-)
+
+        If a collision is detected, appends -1, -2, etc. until unique.
+
+        Args:
+            title: Entry title to convert to slug
+
+        Returns:
+            Unique URL-safe slug (max 255 chars)
+
+        Raises:
+            ValidationError: If title cannot be converted to valid slug
+        """
+        if not title or not title.strip():
+            raise ValidationError("Title is required to generate slug")
+
+        # Convert to lowercase and replace whitespace with hyphens
+        slug = title.lower().strip()
+        slug = re.sub(r'\s+', '-', slug)
+
+        # Remove all characters except a-z, 0-9, and hyphens
+        slug = re.sub(r'[^a-z0-9-]', '', slug)
+
+        # Remove consecutive hyphens
+        slug = re.sub(r'-+', '-', slug)
+
+        # Remove leading/trailing hyphens
+        slug = slug.strip('-')
+
+        if not slug:
+            raise ValidationError("Title must contain at least one alphanumeric character")
+
+        # Truncate to 240 chars to leave room for collision suffix
+        base_slug = slug[:240]
+
+        # Check for uniqueness and append suffix if needed
+        final_slug = base_slug
+        counter = 1
+
+        while True:
+            # Check if slug already exists
+            existing = self.session.exec(
+                select(Entry).where(Entry.slug == final_slug)
+            ).first()
+
+            if not existing:
+                return final_slug
+
+            # Collision detected, try next suffix
+            final_slug = f"{base_slug}-{counter}"
+            counter += 1
+
+            # Safety limit to prevent infinite loops
+            if counter > 1000:
+                raise ValidationError("Unable to generate unique slug after 1000 attempts")
+
+    def generate_unique_public_id(self) -> str:
+        """
+        Generate a unique public_id for published entries.
+
+        Uses secrets.token_urlsafe(9) to generate a 12-character URL-safe identifier.
+
+        Returns:
+            Unique 12-character public ID
+
+        Raises:
+            ValidationError: If unable to generate unique ID after many attempts
+        """
+        max_attempts = 100
+        for _ in range(max_attempts):
+            # Generate 12-char URL-safe token
+            public_id = secrets.token_urlsafe(9)
+
+            # Check for collision
+            existing = self.session.exec(
+                select(Entry).where(Entry.public_id == public_id)
+            ).first()
+
+            if not existing:
+                return public_id
+
+        raise ValidationError("Unable to generate unique public_id after multiple attempts")
 
     def _get_owned_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
         statement = select(Entry).where(

@@ -3,6 +3,7 @@ Media service for file upload and processing.
 """
 import asyncio
 import logging
+import mimetypes
 import os
 import subprocess
 import tempfile
@@ -1797,6 +1798,103 @@ class MediaService:
         """
         self.delete_media_by_id_sync(media_id, user_id, session)
 
+    @staticmethod
+    def _parse_range_header(
+        range_header: Optional[str],
+        *,
+        file_size: int,
+    ) -> Optional[Dict[str, int]]:
+        """Parse HTTP Range header and return normalized byte range metadata."""
+        if not range_header:
+            return None
+
+        try:
+            if not range_header.strip().startswith("bytes="):
+                raise ValueError("Invalid range unit")
+
+            range_val = range_header.strip().split("=")[1]
+            start_str, end_str = range_val.split("-")
+
+            if not start_str:
+                suffix_len = int(end_str)
+                if suffix_len <= 0:
+                    raise ValueError("Invalid Range header")
+                start = max(file_size - suffix_len, 0)
+                end = file_size - 1
+            elif not end_str:
+                start = int(start_str)
+                end = file_size - 1
+            else:
+                start = int(start_str)
+                end = int(end_str)
+
+            if end >= file_size:
+                end = file_size - 1
+
+            if start >= file_size or start > end:
+                raise ValueError("Range not satisfiable")
+
+            return {
+                "start": start,
+                "end": end,
+                "length": end - start + 1,
+            }
+        except Exception:
+            raise ValueError("Invalid Range header") from None
+
+    def _resolve_servable_path_and_content_type(
+        self,
+        media: MomentMedia,
+        *,
+        allow_display_version: bool,
+    ) -> tuple[Path, str]:
+        """Resolve the file path and content type for serving media."""
+        full_path = self.get_media_file_path(media)
+        content_type: Optional[str] = None
+
+        if allow_display_version and media.display_path:
+            root = self.media_root.resolve()
+            display_full_path = (root / media.display_path).resolve()
+            try:
+                display_full_path.relative_to(root)
+            except ValueError:
+                raise MediaNotFoundError("Invalid display file path") from None
+            if display_full_path.exists():
+                full_path = display_full_path
+                content_type = "image/webp"
+
+        if not content_type:
+            content_type, _ = mimetypes.guess_type(str(full_path))
+            content_type = content_type or media.mime_type or "application/octet-stream"
+
+        return full_path, content_type
+
+    async def _build_media_file_info(
+        self,
+        media: MomentMedia,
+        *,
+        range_header: Optional[str],
+        allow_display_version: bool,
+    ) -> Dict[str, Any]:
+        full_path, content_type = self._resolve_servable_path_and_content_type(
+            media,
+            allow_display_version=allow_display_version,
+        )
+
+        try:
+            stat_result = await asyncio.to_thread(os.stat, full_path)
+            file_size = stat_result.st_size
+        except FileNotFoundError:
+            raise MediaNotFoundError("Media file not found on disk") from None
+
+        return {
+            "file_path": full_path,
+            "file_size": file_size,
+            "content_type": content_type,
+            "filename": media.original_filename or full_path.name,
+            "range_info": self._parse_range_header(range_header, file_size=file_size),
+        }
+
     async def get_media_file_for_serving(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session, range_header: Optional[str] = None) -> Dict[str, Any]:
         """Get media file information for serving with optional range support.
 
@@ -1812,78 +1910,12 @@ class MediaService:
         Raises:
             MediaNotFoundError: If media not found or user doesn't have access
         """
-        import mimetypes
-
         media = self.get_media_by_id(media_id, user_id, session)
-        full_path = self.get_media_file_path(media)
-
-        # Transparently serve display version for HEIC/HEIF files
-        content_type = None
-        if media.display_path:
-            root = self.media_root.resolve()
-            display_full_path = (root / media.display_path).resolve()
-            try:
-                display_full_path.relative_to(root)
-            except ValueError:
-                raise MediaNotFoundError("Invalid display file path") from None
-            if display_full_path.exists():
-                full_path = display_full_path
-                content_type = "image/webp"
-
-        # Use async stat to avoid blocking event loop for file system access
-        try:
-            stat_result = await asyncio.to_thread(os.stat, full_path)
-            file_size = stat_result.st_size
-        except FileNotFoundError:
-            raise MediaNotFoundError("Media file not found on disk") from None
-
-        # Determine content type if not already set (for display version)
-        if not content_type:
-            content_type, _ = mimetypes.guess_type(str(full_path))
-            content_type = content_type or media.mime_type or "application/octet-stream"
-
-        result = {
-            "file_path": full_path,
-            "file_size": file_size,
-            "content_type": content_type,
-            "filename": media.original_filename or full_path.name,
-            "range_info": None,
-        }
-
-        # Parse range header if provided
-        if range_header:
-            try:
-                if not range_header.strip().startswith("bytes="):
-                    raise ValueError("Invalid range unit")
-
-                range_val = range_header.strip().split("=")[1]
-                start_str, end_str = range_val.split("-")
-
-                if not start_str:
-                    suffix_len = int(end_str)
-                    if suffix_len <= 0:
-                        raise ValueError("Invalid Range header")
-                    start = max(file_size - suffix_len, 0)
-                    end = file_size - 1
-                elif not end_str:
-                    start = int(start_str)
-                    end = file_size - 1
-                else:
-                    start = int(start_str)
-                    end = int(end_str)
-
-                if start >= file_size or end >= file_size or start > end:
-                    raise ValueError("Range not satisfiable")
-
-                result["range_info"] = {
-                    "start": start,
-                    "end": end,
-                    "length": end - start + 1,
-                }
-            except Exception:
-                raise ValueError("Invalid Range header") from None
-
-        return result
+        return await self._build_media_file_info(
+            media,
+            range_header=range_header,
+            allow_display_version=False,
+        )
 
     async def process_moment_media(self, moment_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> int:
         """Process all media files for a moment, generating thumbnails."""

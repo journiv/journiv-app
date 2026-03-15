@@ -57,6 +57,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
   libheif1 \
   libde265-0 \
+  libpango-1.0-0 \
+  libpangoft2-1.0-0 \
+  libharfbuzz-subset0 \
   && rm -rf /var/lib/apt/lists/* \
   && echo "🔍 Checking FFmpeg license (runtime stage)..." \
   && ffmpeg -version | grep -E "enable-gpl|enable-nonfree" && (echo "❌ GPL/nonfree FFmpeg detected!" && exit 1) || echo "✅ LGPL FFmpeg build verified."
@@ -105,6 +108,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
   celery-worker) /opt/venv/bin/python -m celery -A app.core.celery_app inspect ping -d "celery@$(hostname)" --timeout=5 | grep -q "pong" ;; \
   celery-beat) test -f /tmp/celerybeat.pid && kill -0 "$(cat /tmp/celerybeat.pid)" ;; \
   admin-cli) exit 0 ;; \
+  plus-service) curl -f http://localhost:${APP_PORT:-8000}/health ;; \
   *) curl -f http://localhost:8000/api/v1/health ;; \
   esac'
 
