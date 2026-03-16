@@ -77,6 +77,49 @@ def test_reorder_moods_rejects_duplicate_ids():
             service.reorder_moods(user.id, [mood.id, mood.id])
 
 
+def test_create_user_mood_reactivates_matching_inactive_mood():
+    engine = _make_engine()
+    BaseModel.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        user = _create_user(session)
+        service = MoodService(session)
+
+        original = service.create_user_mood(
+            user.id,
+            {
+                "name": "Test",
+                "score": 2,
+                "icon": "cloud",
+                "color_value": 0x111111,
+            },
+        )
+        service.delete_user_mood(user.id, original)
+
+        recreated = service.create_user_mood(
+            user.id,
+            {
+                "name": "Test",
+                "score": 5,
+                "icon": "sun",
+                "color_value": 0x222222,
+            },
+        )
+
+        assert recreated.id == original.id
+        assert recreated.is_active is True
+        assert recreated.score == 5
+        assert recreated.icon == "sun"
+        assert recreated.color_value == 0x222222
+
+        persisted = session.exec(
+            select(Mood).where(Mood.user_id == user.id, Mood.name == "Test")
+        ).all()
+        assert len(persisted) == 1
+        assert persisted[0].id == original.id
+        assert persisted[0].is_active is True
+
+
 def test_reorder_groups_rejects_unknown_group_ids():
     engine = _make_engine()
     BaseModel.metadata.create_all(engine)

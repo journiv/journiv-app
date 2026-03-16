@@ -618,6 +618,7 @@ class GoalService:
             select(Activity.id).where(
                 col(Activity.id) == activity_id,
                 col(Activity.user_id) == user_id,
+                col(Activity.is_active).is_(True),
             )
         ).first()
         if not exists:
