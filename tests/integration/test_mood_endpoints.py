@@ -211,3 +211,43 @@ def test_reorder_mood_group_moods_rejects_non_member_moods(
         expected=(400,),
     )
     assert "do not belong" in response.json()["detail"].lower()
+
+
+def test_recreating_deleted_mood_reactivates_existing_row(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    name = f"Recreate Mood {uuid.uuid4().hex[:6]}"
+    original = api_client.create_mood(
+        api_user.access_token,
+        name=name,
+        score=2,
+        icon="cloud",
+        color_value=0x111111,
+    )
+
+    delete_response = api_client.request(
+        "DELETE",
+        f"/moods/{original['id']}",
+        token=api_user.access_token,
+        expected=(204,),
+    )
+    assert delete_response.status_code == 204
+
+    recreated = api_client.create_mood(
+        api_user.access_token,
+        name=name,
+        score=5,
+        icon="sun",
+        color_value=0x222222,
+    )
+
+    assert recreated["id"] == original["id"]
+    assert recreated["name"] == name
+    assert recreated["score"] == 5
+    assert recreated["icon"] == "sun"
+    assert recreated["color_value"] == 0x222222
+
+    moods = api_client.get_moods_by_name(api_user.access_token, name=name)
+    assert len(moods) == 1
+    assert moods[0]["id"] == original["id"]

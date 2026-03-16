@@ -96,7 +96,7 @@ async def get_activity_group(
 ):
     """Get a specific activity group."""
     service = ActivityGroupService(session)
-    group = service.get_group_by_id(group_id, current_user.id)
+    group = service.get_group_with_activities(group_id, current_user.id)
     if not group:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

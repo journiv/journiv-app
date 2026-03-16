@@ -157,15 +157,6 @@ class MoodService:
         if not name:
             raise ValidationError("Mood name cannot be empty")
 
-        existing = self.session.exec(
-            select(Mood).where(
-                Mood.user_id == user_id,
-                func.lower(Mood.name) == name.lower(),
-            )
-        ).first()
-        if existing:
-            raise MoodAlreadyExistsError("Mood name already exists")
-
         score_raw = data.get("score", 3)
         try:
             score = int(score_raw) if score_raw is not None else 3
@@ -189,6 +180,29 @@ class MoodService:
                 raise ValidationError("position must be an integer") from exc
             if position < 0:
                 raise ValidationError("position must be a non-negative integer")
+
+        existing = self.session.exec(
+            select(Mood).where(
+                Mood.user_id == user_id,
+                func.lower(Mood.name) == name.lower(),
+            )
+        ).first()
+        if existing:
+            if existing.is_active:
+                raise MoodAlreadyExistsError("Mood name already exists")
+
+            existing.icon = data.get("icon")
+            existing.color_value = data.get("color_value")
+            existing.score = score
+            existing.category = category
+            existing.position = position
+            existing.is_active = True
+            existing.updated_at = utc_now()
+            self.session.flush()
+            self._ensure_default_group_link(user_id, existing)
+            self._commit()
+            self.session.refresh(existing)
+            return existing
 
         key = self._generate_unique_key(user_id, name)
         mood = Mood(

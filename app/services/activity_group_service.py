@@ -5,10 +5,11 @@ import uuid
 from typing import List, Optional
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, with_loader_criteria
 from sqlmodel import Session, col, func, select
 
 from app.core.logging_config import log_error, log_info
+from app.models.activity import Activity
 from app.models.activity_group import ActivityGroup
 from app.schemas.activity_group import ActivityGroupCreate, ActivityGroupUpdate
 from app.services.reorder_utils import apply_position_updates
@@ -67,6 +68,13 @@ class ActivityGroupService:
             select(ActivityGroup)
             .where(ActivityGroup.user_id == user_id)
             .options(selectinload(ActivityGroup.activities))  # type: ignore[arg-type]
+            .options(
+                with_loader_criteria(
+                    Activity,
+                    col(Activity.is_active).is_(True),
+                    include_aliases=True,
+                )
+            )
             .order_by(col(ActivityGroup.position), col(ActivityGroup.name))
         )
 
@@ -152,5 +160,12 @@ class ActivityGroupService:
                 ActivityGroup.user_id == user_id,
             )
             .options(selectinload(ActivityGroup.activities))  # type: ignore[arg-type]
+            .options(
+                with_loader_criteria(
+                    Activity,
+                    col(Activity.is_active).is_(True),
+                    include_aliases=True,
+                )
+            )
         )
         return self.session.exec(statement).first()

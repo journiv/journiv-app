@@ -126,6 +126,7 @@ class MomentService:
                 select(Activity.id).where(
                     col(Activity.id).in_(normalize_uuid_list(activity_ids)),
                     col(Activity.user_id) == user_id,
+                    col(Activity.is_active).is_(True),
                 )
             ).all()
             if len(existing_activities) != len(activity_ids):
@@ -147,6 +148,7 @@ class MomentService:
             select(Activity.id).where(
                 col(Activity.id).in_(normalize_uuid_list(set(activity_ids))),
                 col(Activity.user_id) == user_id,
+                col(Activity.is_active).is_(True),
             )
         ).all()
         if len(existing_activities) != len(set(activity_ids)):

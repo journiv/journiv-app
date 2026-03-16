@@ -2033,6 +2033,17 @@ class ImportService:
                 existing = activities_by_name.get(normalized_activity_name.lower())
 
             if existing:
+                if not existing.is_active:
+                    existing.is_active = True
+                existing.icon = activity_dto.icon
+                existing.color = activity_dto.color
+                if activity_dto.group_external_id:
+                    existing.group_id = activity_group_id_map.get(activity_dto.group_external_id)
+                existing.position = (
+                    activity_dto.position if activity_dto.position is not None else existing.position
+                )
+                if activity_dto.updated_at:
+                    existing.updated_at = activity_dto.updated_at
                 if stable_key and not existing.stable_key:
                     backfill_sp = self.db.begin_nested()
                     try:
