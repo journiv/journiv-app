@@ -12,6 +12,7 @@ from app.core.database import get_session
 from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error
 from app.models.user import User
+from app.schemas.entry import EntryPreviewResponse
 from app.schemas.media_thumbnail import MomentMediaThumbnail
 from app.schemas.tag import (
     TagAnalyticsResponse,
@@ -501,6 +502,7 @@ async def get_moments_by_tag(
                 id=moment.id,
                 logged_at_utc=moment.logged_at_utc,
                 logged_date_tz=moment.logged_date_tz,
+                entry=EntryPreviewResponse.model_validate(moment.entry) if moment.entry else None,
                 note=moment.note,
                 primary_mood_id=moment.primary_mood_id,
                 media_count=media_counts.get(moment.id, moment.media_count),

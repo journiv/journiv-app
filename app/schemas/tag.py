@@ -8,6 +8,7 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, validator
 
 from app.schemas.base import TimestampMixin
+from app.schemas.entry import EntryPreviewResponse
 from app.schemas.media_thumbnail import MomentMediaThumbnail
 
 
@@ -70,6 +71,7 @@ class TaggedMomentSummary(BaseModel):
     id: uuid.UUID
     logged_at_utc: datetime
     logged_date_tz: date
+    entry: Optional[EntryPreviewResponse] = None
     note: Optional[str] = None
     primary_mood_id: Optional[uuid.UUID] = None
     media_count: int = 0
