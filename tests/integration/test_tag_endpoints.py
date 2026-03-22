@@ -59,7 +59,12 @@ def test_tag_crud_and_entry_associations(
     entries_for_tag = api_client.request(
         "GET", f"/tags/{base['id']}/moments", token=api_user.access_token
     ).json()
-    assert any(item["id"] == entry["moment_id"] for item in entries_for_tag)
+    tagged_item = next(item for item in entries_for_tag if item["id"] == entry["moment_id"])
+    assert tagged_item["entry"]["id"] == entry["id"]
+    assert tagged_item["entry"]["moment_id"] == entry["moment_id"]
+    assert tagged_item["entry"]["journal_id"] == entry["journal"]["id"]
+    assert tagged_item["entry"]["title"] == "Tagged entry"
+    assert tagged_item["entry"]["content_plain_text"] == entry["content_plain_text"]
 
     api_client.request(
         "DELETE",
