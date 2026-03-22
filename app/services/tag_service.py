@@ -7,16 +7,17 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from importlib import import_module
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union, cast
 
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import QueryableAttribute, selectinload
 from sqlmodel import Session, col, func, select
 
 from app.core.config import settings
 from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error, log_info
 from app.core.time_utils import utc_now
+from app.models.entry import Entry
 from app.models.moment import Moment
 from app.models.moment_tag_link import MomentTagLink
 from app.models.tag import Tag
@@ -34,6 +35,22 @@ from app.schemas.tag_plus import (
 
 DEFAULT_TAG_PAGE_LIMIT = 50
 MAX_TAG_PAGE_LIMIT = 100
+
+ENTRY_PREVIEW_COLUMNS: tuple[QueryableAttribute[Any], ...] = (
+    cast(QueryableAttribute[Any], Entry.id),
+    cast(QueryableAttribute[Any], Entry.title),
+    cast(QueryableAttribute[Any], Entry.content_plain_text),
+    cast(QueryableAttribute[Any], Entry.journal_id),
+    cast(QueryableAttribute[Any], Entry.moment_id),
+    cast(QueryableAttribute[Any], Entry.word_count),
+    cast(QueryableAttribute[Any], Entry.is_draft),
+    cast(QueryableAttribute[Any], Entry.public_id),
+    cast(QueryableAttribute[Any], Entry.slug),
+    cast(QueryableAttribute[Any], Entry.is_published),
+    cast(QueryableAttribute[Any], Entry.is_indexed),
+    cast(QueryableAttribute[Any], Entry.created_at),
+    cast(QueryableAttribute[Any], Entry.updated_at),
+)
 
 
 class TagService:
@@ -270,7 +287,9 @@ class TagService:
 
         statement = (
             select(Moment)
-            .options(selectinload(Moment.entry))  # type: ignore[arg-type]
+            .options(
+                selectinload(Moment.entry).load_only(*ENTRY_PREVIEW_COLUMNS)  # type: ignore[arg-type]
+            )
             .join(MomentTagLink)
             .where(
                 MomentTagLink.tag_id == tag_id,
