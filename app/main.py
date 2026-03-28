@@ -387,6 +387,10 @@ app.include_router(api_router, prefix=settings.api_v1_prefix)
 app.include_router(public.router)
 app.include_router(plus_public_router)
 
+static_path = Path(__file__).resolve().parent / "static"
+if static_path.exists():
+    app.mount("/static", StaticFiles(directory=str(static_path)), name="static")
+
 media_path = Path(settings.media_root)
 if media_path.exists():
     app.mount("/media", StaticFiles(directory=str(media_path)), name="media")
