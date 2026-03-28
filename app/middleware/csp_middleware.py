@@ -68,6 +68,22 @@ class CSPMiddleware(BaseHTTPMiddleware):
         for header_name, header_value in security_headers.items():
             response.headers[header_name] = header_value
 
+        # Published embed pages must be frameable by third-party sites.
+        if request.url.path.startswith("/pub/") and request.query_params.get("embed") == "1":
+            csp_value = response.headers.get("Content-Security-Policy")
+            if csp_value:
+                directives = []
+                for directive in csp_value.split(";"):
+                    normalized = directive.strip()
+                    if not normalized or normalized.startswith("frame-ancestors "):
+                        continue
+                    directives.append(normalized)
+                directives.append("frame-ancestors *")
+                response.headers["Content-Security-Policy"] = "; ".join(directives)
+
+            if "X-Frame-Options" in response.headers:
+                del response.headers["X-Frame-Options"]
+
         logger.debug(f"Added security headers for {request.url.path}")
 
 
@@ -103,4 +119,3 @@ def create_csp_middleware(
             )
 
     return ConfiguredCSPMiddleware
-
