@@ -245,8 +245,10 @@ def render_delta_to_html(
 
                 else:
                     # Regular paragraph
-                    flush_list()
-                    flush_code_block()
+                    # Only flush list/code if we have actual content or are transitioning block types
+                    if line or current_block_type not in (None, 'p'):
+                        flush_list()
+                        flush_code_block()
 
                     if current_block_type and current_block_type != 'p':
                         flush_block()

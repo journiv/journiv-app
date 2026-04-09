@@ -356,3 +356,172 @@ def test_render_multiple_paragraphs():
     assert "<p>" in result
     assert "First paragraph" in result
     assert "Second paragraph" in result
+
+
+def test_render_mixed_list_and_non_list_paragraphs():
+    """
+    Test the bug described in issue #362:
+    When multiple paragraphs are selected and list formatting is applied,
+    only the last paragraph should get the list attribute in a buggy frontend.
+    
+    This tests the backend's ability to handle a delta with mixed list and non-list items.
+    The expected behavior is that ONLY list items should appear in a list, while
+    non-list items should appear as plain paragraphs.
+    
+    Example scenario:
+    - User has: "Para 1", "Para 2", "Para 3"
+    - User selects all and clicks "Numbered List"
+    - Buggy frontend produces: Para1 (list), Para2 (no list), Para3 (list)
+    - Result: Two separate lists with Para2 in between
+    """
+    delta = {
+        "ops": [
+            {"insert": "Para 1", "attributes": {"list": "ordered"}},
+            {"insert": "\n"},
+            {"insert": "Para 2"},  # NO list attribute - should be plain paragraph
+            {"insert": "\n"},
+            {"insert": "Para 3", "attributes": {"list": "ordered"}},
+            {"insert": "\n"}
+        ]
+    }
+    result = render_delta_to_html(delta)
+    
+    # Should have TWO separate ordered lists (because Para 2 breaks them)
+    assert result.count("<ol>") == 2, f"Expected 2 ordered lists, got: {result}"
+    assert result.count("</ol>") == 2, f"Expected 2 closing </ol> tags, got: {result}"
+    
+    # Para 1 should be in a list
+    assert "<li>Para 1</li>" in result
+    
+    # Para 2 should be in a plain paragraph (not in a list)
+    assert "<p>Para 2<br></p>" in result
+    
+    # Para 3 should be in a list (second list)
+    assert "<li>Para 3</li>" in result
+    
+    # The HTML should have the structure: <ol><li>Para 1</li></ol><p>Para 2</p><ol><li>Para 3</li></ol>
+    expected_structure = "<ol><li>Para 1</li></ol><p>Para 2<br></p><ol><li>Para 3</li></ol>"
+    assert result == expected_structure, f"Expected: {expected_structure}\nGot: {result}"
+
+
+def test_render_all_paragraphs_with_list_formatting():
+    """
+    Test the correct scenario: when all paragraphs get list formatting,
+    they should all appear in a single list.
+    """
+    delta = {
+        "ops": [
+            {"insert": "Para 1", "attributes": {"list": "ordered"}},
+            {"insert": "\n"},
+            {"insert": "Para 2", "attributes": {"list": "ordered"}},
+            {"insert": "\n"},
+            {"insert": "Para 3", "attributes": {"list": "ordered"}},
+            {"insert": "\n"}
+        ]
+    }
+    result = render_delta_to_html(delta)
+    
+    # Should have ONE ordered list
+    assert result.count("<ol>") == 1
+    assert result.count("</ol>") == 1
+    
+    # All items should be list items
+    assert "<li>Para 1</li>" in result
+    assert "<li>Para 2</li>" in result
+    assert "<li>Para 3</li>" in result
+    
+    expected = "<ol><li>Para 1</li><li>Para 2</li><li>Para 3</li></ol>"
+    assert result == expected, f"Expected: {expected}\nGot: {result}"
+
+
+def test_render_mixed_bullet_and_ordered_lists():
+    """
+    Test switching between bullet and ordered lists.
+    Each list type change should create a new list.
+    """
+    delta = {
+        "ops": [
+            {"insert": "Item 1", "attributes": {"list": "bullet"}},
+            {"insert": "\n"},
+            {"insert": "Item 2", "attributes": {"list": "bullet"}},
+            {"insert": "\n"},
+            {"insert": "Item A", "attributes": {"list": "ordered"}},
+            {"insert": "\n"},
+            {"insert": "Item B", "attributes": {"list": "ordered"}},
+            {"insert": "\n"}
+        ]
+    }
+    result = render_delta_to_html(delta)
+    
+    # Should have one bullet list and one ordered list
+    assert result.count("<ul>") == 1
+    assert result.count("</ul>") == 1
+    assert result.count("<ol>") == 1
+    assert result.count("</ol>") == 1
+    
+    # Check content
+    assert "<li>Item 1</li>" in result
+    assert "<li>Item 2</li>" in result
+    assert "<li>Item A</li>" in result
+    assert "<li>Item B</li>" in result
+    
+    # Verify order
+    expected = "<ul><li>Item 1</li><li>Item 2</li></ul><ol><li>Item A</li><li>Item B</li></ol>"
+    assert result == expected, f"Expected: {expected}\nGot: {result}"
+
+
+def test_render_list_followed_by_paragraph_followed_by_list():
+    """
+    Test list, then paragraph, then list again.
+    This should create two separate lists.
+    """
+    delta = {
+        "ops": [
+            {"insert": "List item 1", "attributes": {"list": "ordered"}},
+            {"insert": "\n"},
+            {"insert": "Plain paragraph"},
+            {"insert": "\n"},
+            {"insert": "List item 2", "attributes": {"list": "ordered"}},
+            {"insert": "\n"}
+        ]
+    }
+    result = render_delta_to_html(delta)
+    
+    # Should have two ordered lists
+    assert result.count("<ol>") == 2
+    assert result.count("</ol>") == 2
+    
+    # Plain paragraph should be in <p> tags
+    assert "<p>Plain paragraph<br></p>" in result
+    
+    # Check list items
+    assert "<li>List item 1</li>" in result
+    assert "<li>List item 2</li>" in result
+    
+    expected = "<ol><li>List item 1</li></ol><p>Plain paragraph<br></p><ol><li>List item 2</li></ol>"
+    assert result == expected, f"Expected: {expected}\nGot: {result}"
+
+
+def test_render_list_with_formatting():
+    """
+    Test that inline formatting works with list items.
+    Note: In Quill Delta, each text segment that's part of a list item
+    should have the list attribute.
+    """
+    delta = {
+        "ops": [
+            {"insert": "Item with bold", "attributes": {"bold": True, "list": "ordered"}},
+            {"insert": "\n"},
+            {"insert": "Item with italic", "attributes": {"italic": True, "list": "ordered"}},
+            {"insert": "\n"}
+        ]
+    }
+    result = render_delta_to_html(delta)
+    
+    # Should have one ordered list
+    assert result.count("<ol>") == 1
+    assert result.count("</ol>") == 1
+    
+    # Check formatting is preserved in list items
+    assert "<strong>Item with bold</strong>" in result
+    assert "<em>Item with italic</em>" in result
