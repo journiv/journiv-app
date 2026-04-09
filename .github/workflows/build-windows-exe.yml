@@ -1,0 +1,83 @@
+name: Build Windows Executable
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    runs-on: windows-latest
+    name: Build Windows Executable
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build executable
+        run: |
+          python scripts/build_executable.py
+
+      - name: Create distribution archive
+        shell: pwsh
+        run: |
+          $DistPath = "dist"
+          $ZipName = "journiv-windows-${{ github.ref_name }}.zip"
+          Compress-Archive -Path $DistPath -DestinationPath $ZipName
+          Write-Host "Created $ZipName"
+
+      - name: Create release notes
+        run: |
+          echo "## Journiv Windows Executable - ${{ github.ref_name }}" > RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### Download" >> RELEASE_NOTES.md
+          echo "- **journiv-windows-${{ github.ref_name }}.zip** - Single-click Windows executable" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### Installation" >> RELEASE_NOTES.md
+          echo "1. Download and extract the zip file" >> RELEASE_NOTES.md
+          echo "2. Double-click `journiv.exe` or `journiv.bat`" >> RELEASE_NOTES.md
+          echo "3. Your browser will open automatically" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          echo "### Features" >> RELEASE_NOTES.md
+          echo "- No Python installation required" >> RELEASE_NOTES.md
+          echo "- No Docker required" >> RELEASE_NOTES.md
+          echo "- Automatic configuration on first run" >> RELEASE_NOTES.md
+          echo "- SQLite database included" >> RELEASE_NOTES.md
+          echo "- Auto-opens browser" >> RELEASE_NOTES.md
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: journiv-windows-*.zip
+          body_path: RELEASE_NOTES.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact (for workflow dispatch)
+        uses: actions/upload-artifact@v3
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          name: journiv-windows-executable
+          path: dist/
+          retention-days: 30

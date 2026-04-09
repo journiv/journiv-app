@@ -64,10 +64,18 @@ Journiv is a self-hosted private journal. It features comprehensive journaling c
 </p>
 
 ## Quick Start
-Give Journiv a quick try with one docker command.
 
-> [!NOTE]
-> This `docker run` command starts a **minimal** version of Journiv. It lack components needed for various features of Journiv like import/export etc. For a complete docker compose file use [this](https://github.com/journiv/journiv-app/blob/refs/tags/latest/docker-compose.yml).
+### Windows Users - One-Click Executable
+
+**New!** Journiv now offers a standalone Windows executable - no installation required!
+
+1. **Download** the latest Windows executable from [Releases](https://github.com/journiv/journiv-app/releases)
+2. **Extract** the ZIP file to any folder
+3. **Double-click** `journiv.exe` or `journiv.bat`
+4. **Wait** 10-30 seconds on first run (it will set up automatically)
+5. **Enjoy** - Your browser will open automatically!
+
+That's it! Your data is stored locally in the `data` folder.
 
 ### Docker Run
 

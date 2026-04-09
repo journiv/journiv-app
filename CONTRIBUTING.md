@@ -568,6 +568,40 @@ Coverage reports are generated in:
 - Test edge cases and boundary conditions
 - Mock external dependencies in unit tests
 
+## Building Windows Executable
+
+To build a standalone Windows executable that users can run without installing Python or Docker:
+
+```bash
+# Install build dependencies
+pip install pyinstaller
+
+# Build the executable
+python scripts/build_executable.py
+
+# Output will be in dist/journiv.exe
+```
+
+The build process:
+- Bundles all Python dependencies
+- Includes SQLite database
+- Generates automatic configuration on first run
+- Creates a batch launcher for easy execution
+
+For detailed Windows build instructions, see [WINDOWS_GUIDE.md](./WINDOWS_GUIDE.md).
+
+### GitHub Actions Automation
+
+The build is automatically triggered when you create a release tag:
+
+```bash
+# Create and push a tag
+git tag -a v0.1.0-beta.23 -m "Release with Windows executable"
+git push origin v0.1.0-beta.23
+```
+
+The `.github/workflows/build-windows-exe.yml` workflow will automatically build and release the executable.
+
 ## Database Migrations
 
 ### Creating Migrations
