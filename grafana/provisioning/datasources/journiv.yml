@@ -6,9 +6,9 @@ datasources:
   - name: Journiv
     type: postgres
     access: proxy
-    url: postgres:5432
-    database: journiv_prod
-    user: journiv
+    url: $JOURNIV_GRAFANA_DB_URL
+    database: $JOURNIV_GRAFANA_DB_NAME
+    user: $JOURNIV_GRAFANA_DB_USER
     isDefault: true
     editable: false
     jsonData:

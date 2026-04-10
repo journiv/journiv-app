@@ -28,12 +28,16 @@ services:
     container_name: journiv-grafana
     restart: unless-stopped
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
       # Allow embedding in iframes (useful if proxied alongside Journiv)
       - GF_SECURITY_ALLOW_EMBEDDING=true
       - GF_AUTH_ANONYMOUS_ENABLED=false
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - JOURNIV_GRAFANA_DB_URL=${POSTGRES_HOST:-postgres}:5432
+      - JOURNIV_GRAFANA_DB_NAME=${POSTGRES_DB:-journiv_prod}
+      - JOURNIV_GRAFANA_DB_USER=${POSTGRES_USER:-journiv}
     volumes:
       - grafana_data:/var/lib/grafana
       # Auto-provision datasource and dashboard on first boot

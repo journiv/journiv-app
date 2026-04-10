@@ -27,7 +27,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "continuous-BlYlRd" },
@@ -85,17 +85,17 @@
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  m.logged_at_utc AS time,\n  mo.score AS value,\n  mo.name AS metric\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nORDER BY m.logged_at_utc ASC",
+          "rawSql": "SELECT\n  m.logged_at_utc AS time,\n  mo.score AS value,\n  mo.name AS metric\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\n  AND m.user_id = '${USER_ID}'\nORDER BY m.logged_at_utc ASC",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -130,17 +130,17 @@
       "type": "piechart",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  mo.category AS category,\n  COUNT(*) AS count\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY mo.category\nORDER BY count DESC",
+          "rawSql": "SELECT\n  mo.category AS category,\n  COUNT(*) AS count\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\n  AND m.user_id = '${USER_ID}'\nGROUP BY mo.category\nORDER BY count DESC",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "continuous-BlYlRd" },
@@ -176,17 +176,17 @@
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  AVG(mo.score) AS \"avg_mood\"\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY 1\nORDER BY 1 ASC",
+          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  AVG(mo.score) AS \"avg_mood\"\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\n  AND m.user_id = '${USER_ID}'\nGROUP BY 1\nORDER BY 1 ASC",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -213,11 +213,11 @@
       "type": "bargauge",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  mo.name AS mood,\n  COUNT(*) AS count\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY mo.name\nORDER BY count DESC\nLIMIT 15",
+          "rawSql": "SELECT\n  mo.name AS mood,\n  COUNT(*) AS count\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\n  AND m.user_id = '${USER_ID}'\nGROUP BY mo.name\nORDER BY count DESC\nLIMIT 15",
           "refId": "A"
         }
       ]
@@ -230,7 +230,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "blue", "mode": "fixed" },
@@ -255,17 +255,17 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT current_streak AS \"Current Streak (days)\"\nFROM writing_streak\nORDER BY current_streak DESC\nLIMIT 1",
+          "rawSql": "WITH writing_days AS (\n  SELECT DISTINCT CAST(m.logged_date_tz AS TEXT) AS day\n  FROM entry e\n  JOIN moment m ON m.id = e.moment_id\n  WHERE e.is_draft = false\n    AND e.user_id = '${USER_ID}'\n), day_parts AS (\n  SELECT\n    day,\n    CAST(SUBSTR(day, 1, 4) AS INTEGER) AS year_num,\n    CAST(SUBSTR(day, 6, 2) AS INTEGER) AS month_num,\n    CAST(SUBSTR(day, 9, 2) AS INTEGER) AS day_num\n  FROM writing_days\n), day_numbers AS (\n  SELECT\n    day,\n    day_num\n      + CAST((153 * (month_num + 12 * leap_month_adj - 3) + 2) / 5 AS INTEGER)\n      + 365 * (year_num + 4800 - leap_month_adj)\n      + CAST((year_num + 4800 - leap_month_adj) / 4 AS INTEGER)\n      - CAST((year_num + 4800 - leap_month_adj) / 100 AS INTEGER)\n      + CAST((year_num + 4800 - leap_month_adj) / 400 AS INTEGER)\n      - 32045 AS day_serial\n  FROM (\n    SELECT\n      day,\n      year_num,\n      month_num,\n      day_num,\n      CAST((14 - month_num) / 12 AS INTEGER) AS leap_month_adj\n    FROM day_parts\n  ) p\n), ordered_days AS (\n  SELECT day_serial, ROW_NUMBER() OVER (ORDER BY day_serial DESC) AS seq\n  FROM day_numbers\n), streak_groups AS (\n  SELECT day_serial, seq, day_serial + seq AS streak_group\n  FROM ordered_days\n), streaks AS (\n  SELECT MAX(day_serial) AS streak_end_serial, COUNT(*) AS streak_len\n  FROM streak_groups\n  GROUP BY streak_group\n)\nSELECT COALESCE((\n  SELECT streak_len\n  FROM streaks\n  WHERE streak_end_serial = (SELECT MAX(day_serial) FROM day_numbers)\n  LIMIT 1\n), 0) AS \"Current Streak (days)\"",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "orange", "mode": "fixed" },
@@ -290,17 +290,17 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT longest_streak AS \"Longest Streak (days)\"\nFROM writing_streak\nORDER BY longest_streak DESC\nLIMIT 1",
+          "rawSql": "WITH writing_days AS (\n  SELECT DISTINCT CAST(m.logged_date_tz AS TEXT) AS day\n  FROM entry e\n  JOIN moment m ON m.id = e.moment_id\n  WHERE e.is_draft = false\n    AND e.user_id = '${USER_ID}'\n), day_parts AS (\n  SELECT\n    day,\n    CAST(SUBSTR(day, 1, 4) AS INTEGER) AS year_num,\n    CAST(SUBSTR(day, 6, 2) AS INTEGER) AS month_num,\n    CAST(SUBSTR(day, 9, 2) AS INTEGER) AS day_num\n  FROM writing_days\n), day_numbers AS (\n  SELECT\n    day,\n    day_num\n      + CAST((153 * (month_num + 12 * leap_month_adj - 3) + 2) / 5 AS INTEGER)\n      + 365 * (year_num + 4800 - leap_month_adj)\n      + CAST((year_num + 4800 - leap_month_adj) / 4 AS INTEGER)\n      - CAST((year_num + 4800 - leap_month_adj) / 100 AS INTEGER)\n      + CAST((year_num + 4800 - leap_month_adj) / 400 AS INTEGER)\n      - 32045 AS day_serial\n  FROM (\n    SELECT\n      day,\n      year_num,\n      month_num,\n      day_num,\n      CAST((14 - month_num) / 12 AS INTEGER) AS leap_month_adj\n    FROM day_parts\n  ) p\n), ordered_days AS (\n  SELECT day_serial, ROW_NUMBER() OVER (ORDER BY day_serial DESC) AS seq\n  FROM day_numbers\n), streak_groups AS (\n  SELECT day_serial, seq, day_serial + seq AS streak_group\n  FROM ordered_days\n), streaks AS (\n  SELECT COUNT(*) AS streak_len\n  FROM streak_groups\n  GROUP BY streak_group\n)\nSELECT COALESCE(MAX(streak_len), 0) AS \"Longest Streak (days)\"\nFROM streaks",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "purple", "mode": "fixed" },
@@ -325,17 +325,17 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(total_entries) AS \"Total Entries\"\nFROM writing_streak",
+          "rawSql": "SELECT COUNT(*) AS \"Total Entries\"\nFROM entry e\nWHERE e.is_draft = false\n  AND e.user_id = '${USER_ID}'",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "green", "mode": "fixed" },
@@ -360,17 +360,17 @@
       "type": "stat",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT SUM(total_words) AS \"Total Words\"\nFROM writing_streak",
+          "rawSql": "SELECT COALESCE(SUM(e.word_count), 0) AS \"Total Words\"\nFROM entry e\nWHERE e.is_draft = false\n  AND e.user_id = '${USER_ID}'",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "dark-blue", "mode": "fixed" },
@@ -403,17 +403,17 @@
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  COUNT(DISTINCT e.id) AS \"entries\"\nFROM moment m\nJOIN entry e ON e.moment_id = m.id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY 1\nORDER BY 1 ASC",
+          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  COUNT(e.id) AS \"entries\"\nFROM entry e\nJOIN moment m ON m.id = e.moment_id\nWHERE $__timeFilter(m.logged_at_utc)\n  AND e.is_draft = false\n  AND e.user_id = '${USER_ID}'\nGROUP BY 1\nORDER BY 1 ASC",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "fixedColor": "dark-purple", "mode": "fixed" },
@@ -447,17 +447,17 @@
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  SUM(e.word_count) AS \"words\"\nFROM moment m\nJOIN entry e ON e.moment_id = m.id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY 1\nORDER BY 1 ASC",
+          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  COALESCE(SUM(e.word_count), 0) AS \"words\"\nFROM entry e\nJOIN moment m ON m.id = e.moment_id\nWHERE $__timeFilter(m.logged_at_utc)\n  AND e.is_draft = false\n  AND e.user_id = '${USER_ID}'\nGROUP BY 1\nORDER BY 1 ASC",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -492,11 +492,11 @@
       "type": "table",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  j.title AS journal,\n  j.entry_count AS entries,\n  j.total_words AS total_words,\n  CASE WHEN j.entry_count > 0\n    THEN ROUND(j.total_words::numeric / j.entry_count, 1)\n    ELSE 0\n  END AS avg_words_per_entry,\n  j.last_entry_at AS last_entry\nFROM journal j\nORDER BY j.entry_count DESC",
+          "rawSql": "SELECT\n  j.title AS journal,\n  COUNT(e.id) AS entries,\n  COALESCE(SUM(e.word_count), 0) AS total_words,\n  CASE WHEN COUNT(e.id) > 0\n    THEN ROUND((1.0 * COALESCE(SUM(e.word_count), 0)) / COUNT(e.id), 1)\n    ELSE 0\n  END AS avg_words_per_entry,\n  MAX(m.logged_at_utc) AS last_entry\nFROM journal j\nLEFT JOIN entry e ON e.journal_id = j.id AND e.is_draft = false AND e.user_id = '${USER_ID}'\nLEFT JOIN moment m ON m.id = e.moment_id\nWHERE j.user_id = '${USER_ID}'\n  AND (m.id IS NULL OR $__timeFilter(m.logged_at_utc))\nGROUP BY j.id, j.title\nORDER BY entries DESC, j.title ASC",
           "refId": "A"
         }
       ]
@@ -509,7 +509,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -546,17 +546,17 @@
       "type": "barchart",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  a.name AS activity,\n  COUNT(*) AS times_logged\nFROM moment_mood_activity mma\nJOIN activity a ON a.id = mma.activity_id\nJOIN moment m ON m.id = mma.moment_id\nWHERE mma.activity_id IS NOT NULL\n  AND $__timeFilter(m.logged_at_utc)\nGROUP BY a.name\nORDER BY times_logged DESC\nLIMIT 20",
+          "rawSql": "SELECT\n  a.name AS activity,\n  COUNT(*) AS times_logged\nFROM moment_mood_activity mma\nJOIN activity a ON a.id = mma.activity_id\nJOIN moment m ON m.id = mma.moment_id\nWHERE mma.activity_id IS NOT NULL\n  AND $__timeFilter(m.logged_at_utc)\n  AND m.user_id = '${USER_ID}'\nGROUP BY a.name\nORDER BY times_logged DESC\nLIMIT 20",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "thresholds" },
@@ -592,17 +592,17 @@
       "type": "gauge",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  CASE WHEN COUNT(*) > 0\n    THEN ROUND(100.0 * SUM(CASE WHEN gl.status = 'success' THEN 1 ELSE 0 END) / COUNT(*), 1)\n    ELSE 0\n  END AS \"Completion %\"\nFROM goal_log gl\nWHERE $__timeFilter(gl.created_at)",
+          "rawSql": "SELECT\n  CASE WHEN COUNT(*) > 0\n    THEN ROUND(100.0 * SUM(CASE WHEN gl.status = 'success' THEN 1 ELSE 0 END) / COUNT(*), 1)\n    ELSE 0\n  END AS \"Completion %\"\nFROM goal_log gl\nWHERE $__timeFilter(gl.created_at)\n  AND gl.user_id = '${USER_ID}'",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -633,11 +633,11 @@
       "type": "timeseries",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  $__timeGroup(gl.created_at, '1d') AS time,\n  g.title AS metric,\n  SUM(CASE WHEN gl.status = 'success' THEN 1 ELSE 0 END) AS value\nFROM goal_log gl\nJOIN goal g ON g.id = gl.goal_id\nWHERE $__timeFilter(gl.created_at)\n  AND g.archived_at IS NULL\nGROUP BY 1, g.title\nORDER BY 1 ASC",
+          "rawSql": "SELECT\n  $__timeGroup(gl.created_at, '1d') AS time,\n  g.title AS metric,\n  SUM(CASE WHEN gl.status = 'success' THEN 1 ELSE 0 END) AS value\nFROM goal_log gl\nJOIN goal g ON g.id = gl.goal_id\nWHERE $__timeFilter(gl.created_at)\n  AND gl.user_id = '${USER_ID}'\n  AND g.user_id = '${USER_ID}'\n  AND g.archived_at IS NULL\nGROUP BY 1, g.title\nORDER BY 1 ASC",
           "refId": "A"
         }
       ]
@@ -650,7 +650,7 @@
       "type": "row"
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "continuous-BlYlRd" },
@@ -685,17 +685,17 @@
       "type": "barchart",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  a.name AS activity,\n  ROUND(AVG(mo.score)::numeric, 2) AS avg_mood_score\nFROM moment_mood_activity mma\nJOIN activity a ON a.id = mma.activity_id\nJOIN moment m ON m.id = mma.moment_id\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE mma.activity_id IS NOT NULL\n  AND $__timeFilter(m.logged_at_utc)\nGROUP BY a.name\nHAVING COUNT(*) >= 3\nORDER BY avg_mood_score DESC\nLIMIT 15",
+          "rawSql": "SELECT\n  a.name AS activity,\n  ROUND(AVG(mo.score), 2) AS avg_mood_score\nFROM moment_mood_activity mma\nJOIN activity a ON a.id = mma.activity_id\nJOIN moment m ON m.id = mma.moment_id\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE mma.activity_id IS NOT NULL\n  AND $__timeFilter(m.logged_at_utc)\n  AND m.user_id = '${USER_ID}'\nGROUP BY a.name\nHAVING COUNT(*) >= 3\nORDER BY avg_mood_score DESC\nLIMIT 15",
           "refId": "A"
         }
       ]
     },
     {
-      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "datasource": "Journiv",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -717,11 +717,11 @@
       "type": "piechart",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "datasource": "Journiv",
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  t.name AS tag,\n  COUNT(*) AS count\nFROM moment_tag_link mtl\nJOIN tag t ON t.id = mtl.tag_id\nJOIN moment m ON m.id = mtl.moment_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY t.name\nORDER BY count DESC\nLIMIT 10",
+          "rawSql": "SELECT\n  t.name AS tag,\n  COUNT(*) AS count\nFROM moment_tag_link mtl\nJOIN tag t ON t.id = mtl.tag_id\nJOIN moment m ON m.id = mtl.moment_id\nWHERE $__timeFilter(m.logged_at_utc)\n  AND m.user_id = '${USER_ID}'\n  AND t.user_id = '${USER_ID}'\nGROUP BY t.name\nORDER BY count DESC\nLIMIT 10",
           "refId": "A"
         }
       ]
@@ -733,19 +733,21 @@
   "templating": {
     "list": [
       {
-        "current": { "selected": false, "text": "Journiv", "value": "Journiv" },
+        "current": { "selected": false, "text": "", "value": "" },
+        "datasource": "Journiv",
+        "definition": "SELECT CAST(id AS TEXT) AS __value, COALESCE(NULLIF(TRIM(name), ''), email, CAST(id AS TEXT)) AS __text FROM \"user\" ORDER BY COALESCE(NULLIF(TRIM(name), ''), email, CAST(id AS TEXT))",
         "hide": 0,
         "includeAll": false,
-        "label": "Datasource",
+        "label": "User",
         "multi": false,
-        "name": "DS_JOURNIV",
+        "name": "USER_ID",
         "options": [],
-        "query": "postgres",
-        "queryValue": "",
+        "query": "SELECT CAST(id AS TEXT) AS __value, COALESCE(NULLIF(TRIM(name), ''), email, CAST(id AS TEXT)) AS __text FROM \"user\" ORDER BY COALESCE(NULLIF(TRIM(name), ''), email, CAST(id AS TEXT))",
         "refresh": 1,
         "regex": "",
         "skipUrlSync": false,
-        "type": "datasource"
+        "sort": 1,
+        "type": "query"
       }
     ]
   },

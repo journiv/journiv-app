@@ -2,7 +2,7 @@
 Analytics endpoints.
 """
 import logging
-from typing import Annotated, Any, Dict
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session
@@ -10,6 +10,13 @@ from sqlmodel import Session
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
 from app.models.user import User
+from app.schemas.analytics import (
+    AnalyticsDashboardResponse,
+    JournalAnalyticsResponse,
+    ProductivityMetricsResponse,
+    WritingPatternsResponse,
+    WritingStreakBase,
+)
 from app.services.analytics_service import AnalyticsService
 
 logger = logging.getLogger(__name__)
@@ -21,7 +28,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 # Writing Streak Analytics
 @router.get(
     "/writing-streak",
-    response_model=Dict[str, Any],
+    response_model=WritingStreakBase,
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
@@ -54,7 +61,7 @@ async def get_writing_streak(
 # Writing Patterns
 @router.get(
     "/writing-patterns",
-    response_model=Dict[str, Any],
+    response_model=WritingPatternsResponse,
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
@@ -86,7 +93,7 @@ async def get_writing_patterns(
 # Productivity Metrics
 @router.get(
     "/productivity",
-    response_model=Dict[str, Any],
+    response_model=ProductivityMetricsResponse,
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
@@ -117,7 +124,7 @@ async def get_productivity_metrics(
 # Journal Analytics
 @router.get(
     "/journals",
-    response_model=Dict[str, Any],
+    response_model=JournalAnalyticsResponse,
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
@@ -148,7 +155,7 @@ async def get_journal_analytics(
 # Comprehensive Dashboard
 @router.get(
     "/dashboard",
-    response_model=Dict[str, Any],
+    response_model=AnalyticsDashboardResponse,
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
