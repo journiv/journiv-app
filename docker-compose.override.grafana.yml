@@ -1,0 +1,67 @@
+# docker-compose.override.grafana.yml
+#
+# ============================================================================
+# Journiv Analytics — Grafana Sidecar (PostgreSQL)
+# ============================================================================
+#
+# Adds a Grafana instance that reads directly from the Journiv PostgreSQL
+# database.  The main Journiv container is NOT modified — this is a pure
+# additive overlay that can be dropped without any side effects.
+#
+# USAGE
+# ─────
+# docker compose -f docker-compose.yml \
+#                -f docker-compose.override.grafana.yml up -d
+#
+# Or rename to docker-compose.override.yml for automatic loading:
+#   cp docker-compose.override.grafana.yml docker-compose.override.yml
+#   docker compose up -d
+#
+# ACCESS
+# ──────
+# http://<host>:3000  (default login: admin / admin)
+# ============================================================================
+
+services:
+  grafana:
+    image: grafana/grafana:latest
+    container_name: journiv-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Allow embedding in iframes (useful if proxied alongside Journiv)
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Auto-provision datasource and dashboard on first boot
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    networks:
+      - backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+        reservations:
+          memory: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  grafana_data:

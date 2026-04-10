@@ -1,0 +1,15 @@
+# Grafana Dashboard Provisioning (SQLite variant)
+# Same as PG variant — just loads JSON from /etc/grafana/dashboards/
+apiVersion: 1
+
+providers:
+  - name: Journiv
+    orgId: 1
+    folder: Journiv
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

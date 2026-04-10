@@ -1,0 +1,759 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 100,
+      "title": "📊 Mood Analytics",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-BlYlRd" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Mood Score",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 20,
+            "gradientMode": "scheme",
+            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 6,
+            "scaleDistribution": { "type": "linear" },
+            "showPoints": "auto",
+            "spanNulls": 86400000,
+            "stacking": { "group": "A", "mode": "none" },
+            "thresholdsStyle": { "mode": "off" }
+          },
+          "mappings": [
+            { "options": { "1": { "text": "Awful" } }, "type": "value" },
+            { "options": { "2": { "text": "Bad" } }, "type": "value" },
+            { "options": { "3": { "text": "Okay" } }, "type": "value" },
+            { "options": { "4": { "text": "Good" } }, "type": "value" },
+            { "options": { "5": { "text": "Great" } }, "type": "value" }
+          ],
+          "min": 1,
+          "max": 5,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#d32f2f", "value": null },
+              { "color": "#f57c00", "value": 2 },
+              { "color": "#fbc02d", "value": 3 },
+              { "color": "#7cb342", "value": 4 },
+              { "color": "#2e7d32", "value": 5 }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 16, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["mean", "max", "min"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "Mood Score Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  m.logged_at_utc AS time,\n  mo.score AS value,\n  mo.name AS metric\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nORDER BY m.logged_at_utc ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": { "hideFrom": { "legend": false, "tooltip": false, "viz": false } },
+          "mappings": []
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "positive" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#4caf50", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "neutral" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#ffc107", "mode": "fixed" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "negative" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "#f44336", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 9, "w": 8, "x": 16, "y": 1 },
+      "id": 2,
+      "options": {
+        "displayLabels": ["percent", "name"],
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "tooltip": { "mode": "single", "sort": "none" }
+      },
+      "title": "Mood Category Distribution",
+      "type": "piechart",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  mo.category AS category,\n  COUNT(*) AS count\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY mo.category\nORDER BY count DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-BlYlRd" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Avg Score",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "lineInterpolation": "smooth",
+            "lineWidth": 3,
+            "pointSize": 5,
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "min": 1,
+          "max": 5,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "id": 3,
+      "options": {
+        "legend": { "calcs": ["mean"], "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Daily Average Mood Score",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  AVG(mo.score) AS \"avg_mood\"\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY 1\nORDER BY 1 ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "id": 4,
+      "options": {
+        "displayMode": "gradient",
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "title": "Top Moods (Frequency)",
+      "type": "bargauge",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  mo.name AS mood,\n  COUNT(*) AS count\nFROM moment m\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY mo.name\nORDER BY count DESC\nLIMIT 15",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "id": 200,
+      "title": "✍️ Writing Analytics",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "blue", "mode": "fixed" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 19 },
+      "id": 5,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "title": "🔥 Current Streak",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT current_streak AS \"Current Streak (days)\"\nFROM writing_streak\nORDER BY current_streak DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 19 },
+      "id": 6,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "title": "🏆 Longest Streak",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT longest_streak AS \"Longest Streak (days)\"\nFROM writing_streak\nORDER BY longest_streak DESC\nLIMIT 1",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "purple", "mode": "fixed" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 19 },
+      "id": 7,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "title": "📝 Total Entries",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(total_entries) AS \"Total Entries\"\nFROM writing_streak",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "green", "mode": "fixed" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 19 },
+      "id": 8,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "title": "📖 Total Words",
+      "type": "stat",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT SUM(total_words) AS \"Total Words\"\nFROM writing_streak",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "dark-blue", "mode": "fixed" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Entries",
+            "axisPlacement": "auto",
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "gradientMode": "hue",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
+      "id": 9,
+      "options": {
+        "legend": { "calcs": ["sum", "mean"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Entries Per Day",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  COUNT(DISTINCT e.id) AS \"entries\"\nFROM moment m\nJOIN entry e ON e.moment_id = m.id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY 1\nORDER BY 1 ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "dark-purple", "mode": "fixed" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Words",
+            "axisPlacement": "auto",
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "scheme",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "showPoints": "auto",
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
+      "id": 10,
+      "options": {
+        "legend": { "calcs": ["sum", "mean", "max"], "displayMode": "table", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Word Count Trend",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  $__timeGroup(m.logged_at_utc, '1d') AS time,\n  SUM(e.word_count) AS \"words\"\nFROM moment m\nJOIN entry e ON e.moment_id = m.id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY 1\nORDER BY 1 ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "entries" },
+            "properties": [{ "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "gauge" } }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "total_words" },
+            "properties": [{ "id": "custom.cellOptions", "value": { "mode": "gradient", "type": "gauge" } }]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 31 },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "footer": { "countRows": false, "fields": "", "reducer": ["sum"], "show": true },
+        "showHeader": true,
+        "sortBy": [{ "desc": true, "displayName": "entries" }]
+      },
+      "title": "Journal Breakdown",
+      "type": "table",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  j.title AS journal,\n  j.entry_count AS entries,\n  j.total_words AS total_words,\n  CASE WHEN j.entry_count > 0\n    THEN ROUND(j.total_words::numeric / j.entry_count, 1)\n    ELSE 0\n  END AS avg_words_per_entry,\n  j.last_entry_at AS last_entry\nFROM journal j\nORDER BY j.entry_count DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 39 },
+      "id": 300,
+      "title": "🏃 Activity & Goal Tracking",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisColorMode": "text",
+            "axisLabel": "Times Logged",
+            "axisPlacement": "auto",
+            "fillOpacity": 70,
+            "gradientMode": "hue",
+            "lineWidth": 1,
+            "scaleDistribution": { "type": "linear" }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 40 },
+      "id": 12,
+      "options": {
+        "barRadius": 0.1,
+        "barWidth": 0.7,
+        "fullHighlight": false,
+        "groupWidth": 0.7,
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "stacking": "none",
+        "tooltip": { "mode": "single" },
+        "xTickLabelRotation": 0
+      },
+      "title": "Top Activities",
+      "type": "barchart",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  a.name AS activity,\n  COUNT(*) AS times_logged\nFROM moment_mood_activity mma\nJOIN activity a ON a.id = mma.activity_id\nJOIN moment m ON m.id = mma.moment_id\nWHERE mma.activity_id IS NOT NULL\n  AND $__timeFilter(m.logged_at_utc)\nGROUP BY a.name\nORDER BY times_logged DESC\nLIMIT 20",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#d32f2f", "value": null },
+              { "color": "#f57c00", "value": 30 },
+              { "color": "#fbc02d", "value": 50 },
+              { "color": "#7cb342", "value": 70 },
+              { "color": "#2e7d32", "value": 90 }
+            ]
+          },
+          "unit": "percent",
+          "min": 0,
+          "max": 100
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 6, "x": 12, "y": 40 },
+      "id": 13,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "title": "Goal Completion Rate",
+      "type": "gauge",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  CASE WHEN COUNT(*) > 0\n    THEN ROUND(100.0 * SUM(CASE WHEN gl.status = 'success' THEN 1 ELSE 0 END) / COUNT(*), 1)\n    ELSE 0\n  END AS \"Completion %\"\nFROM goal_log gl\nWHERE $__timeFilter(gl.created_at)",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisColorMode": "text",
+            "axisLabel": "Completions",
+            "drawStyle": "bars",
+            "fillOpacity": 50,
+            "gradientMode": "hue",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "showPoints": "never",
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 6, "x": 18, "y": 40 },
+      "id": 14,
+      "options": {
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "title": "Goal Completions Over Time",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  $__timeGroup(gl.created_at, '1d') AS time,\n  g.title AS metric,\n  SUM(CASE WHEN gl.status = 'success' THEN 1 ELSE 0 END) AS value\nFROM goal_log gl\nJOIN goal g ON g.id = gl.goal_id\nWHERE $__timeFilter(gl.created_at)\n  AND g.archived_at IS NULL\nGROUP BY 1, g.title\nORDER BY 1 ASC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 49 },
+      "id": 400,
+      "title": "📍 Context & Tags",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-BlYlRd" },
+          "custom": {
+            "axisBorderShow": false,
+            "axisColorMode": "text",
+            "axisLabel": "Avg Mood",
+            "drawStyle": "bars",
+            "fillOpacity": 60,
+            "gradientMode": "scheme",
+            "lineWidth": 1,
+            "showPoints": "never",
+            "stacking": { "group": "A", "mode": "none" }
+          },
+          "min": 1,
+          "max": 5,
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 50 },
+      "id": 15,
+      "options": {
+        "barRadius": 0.1,
+        "barWidth": 0.7,
+        "orientation": "horizontal",
+        "showValue": "auto",
+        "legend": { "calcs": [], "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Activity ↔ Mood Correlation",
+      "type": "barchart",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  a.name AS activity,\n  ROUND(AVG(mo.score)::numeric, 2) AS avg_mood_score\nFROM moment_mood_activity mma\nJOIN activity a ON a.id = mma.activity_id\nJOIN moment m ON m.id = mma.moment_id\nJOIN mood mo ON mo.id = m.primary_mood_id\nWHERE mma.activity_id IS NOT NULL\n  AND $__timeFilter(m.logged_at_utc)\nGROUP BY a.name\nHAVING COUNT(*) >= 3\nORDER BY avg_mood_score DESC\nLIMIT 15",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "mappings": [],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }] }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 50 },
+      "id": 16,
+      "options": {
+        "displayLabels": ["percent", "name"],
+        "legend": { "displayMode": "table", "placement": "right" },
+        "pieType": "donut",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": true },
+        "tooltip": { "mode": "single" }
+      },
+      "title": "Top Tags",
+      "type": "piechart",
+      "targets": [
+        {
+          "datasource": { "type": "postgres", "uid": "${DS_JOURNIV}" },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  t.name AS tag,\n  COUNT(*) AS count\nFROM moment_tag_link mtl\nJOIN tag t ON t.id = mtl.tag_id\nJOIN moment m ON m.id = mtl.moment_id\nWHERE $__timeFilter(m.logged_at_utc)\nGROUP BY t.name\nORDER BY count DESC\nLIMIT 10",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 39,
+  "tags": ["journiv", "analytics", "mood"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "Journiv", "value": "Journiv" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Datasource",
+        "multi": false,
+        "name": "DS_JOURNIV",
+        "options": [],
+        "query": "postgres",
+        "queryValue": "",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-90d", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Journiv Analytics",
+  "uid": "journiv-analytics",
+  "version": 1,
+  "weekStart": ""
+}

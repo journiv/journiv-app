@@ -1,0 +1,22 @@
+# Grafana Datasource Provisioning — Journiv (PostgreSQL)
+# Auto-loaded on Grafana startup. No manual UI setup needed.
+apiVersion: 1
+
+datasources:
+  - name: Journiv
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    database: journiv_prod
+    user: journiv
+    isDefault: true
+    editable: false
+    jsonData:
+      sslmode: disable
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 14400
+      postgresVersion: 1800   # PostgreSQL 18.x
+      timescaledb: false
+    secureJsonData:
+      password: "$POSTGRES_PASSWORD"

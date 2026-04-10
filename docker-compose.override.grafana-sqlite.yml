@@ -1,0 +1,62 @@
+# docker-compose.override.grafana-sqlite.yml
+#
+# ============================================================================
+# Journiv Analytics — Grafana Sidecar (SQLite)
+# ============================================================================
+#
+# Adds a Grafana instance that reads directly from the Journiv SQLite
+# database.  The SQLite file is mounted read-only — no risk of corruption.
+#
+# USAGE
+# ─────
+# docker compose -f docker-compose.sqlite.yml \
+#                -f docker-compose.override.grafana-sqlite.yml up -d
+#
+# ACCESS
+# ──────
+# http://<host>:3000  (default login: admin / admin)
+# ============================================================================
+
+services:
+  grafana:
+    image: grafana/grafana:latest
+    container_name: journiv-grafana
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      # Mount Journiv's data directory read-only for SQLite access
+      - ./data:/journiv_data:ro
+      # Auto-provision datasource and dashboard on first boot
+      - ./grafana/provisioning-sqlite:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+    networks:
+      - backend
+    healthcheck:
+      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:3000/api/health || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      # Longer start period — plugin install happens on boot
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512m
+        reservations:
+          memory: 128m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+volumes:
+  grafana_data:

@@ -1,0 +1,12 @@
+# Grafana Datasource Provisioning — Journiv (SQLite)
+# Auto-loaded on Grafana startup. No manual UI setup needed.
+apiVersion: 1
+
+datasources:
+  - name: Journiv
+    type: frser-sqlite-datasource
+    access: proxy
+    isDefault: true
+    editable: false
+    jsonData:
+      path: /journiv_data/journiv.db
