@@ -203,6 +203,8 @@ async def get_tag_analytics(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Plus analytics temporarily unavailable",
         ) from None
+    except HTTPException:
+        raise
     except Exception as e:
         log_error(
             e,
@@ -293,6 +295,8 @@ async def get_tag_detail_analytics(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Plus analytics temporarily unavailable",
         ) from None
+    except HTTPException:
+        raise
     except Exception as e:
         log_error(
             e,
