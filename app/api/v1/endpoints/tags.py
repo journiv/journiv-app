@@ -2,10 +2,9 @@
 Tag endpoints.
 """
 import uuid
-from typing import Annotated, Any, List, Optional
+from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import Response
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user, get_plus_factory
