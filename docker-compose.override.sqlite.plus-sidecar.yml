@@ -1,0 +1,99 @@
+# docker-compose.override.sqlite.plus-sidecar.yml
+#
+# ============================================================================
+# Journiv Plus — Sidecar for SQLite Deployments
+# ============================================================================
+#
+# This file adds the Journiv Plus sidecar to the SQLite production stack.
+# Both the main app and the sidecar share the same SQLite database file from
+# ./data, and the main app proxies Plus requests to the sidecar over an
+# internal Docker network.
+#
+# USAGE
+# ─────
+#   docker compose -f docker-compose.sqlite.yml \
+#                  -f docker-compose.override.sqlite.plus-sidecar.yml up -d
+#
+# WHAT THIS DOES
+# ──────────────
+# 1. Starts journiv-plus (same image, SERVICE_ROLE=plus-service).
+# 2. Configures the sidecar to use the same SQLite database file at /data/journiv.db.
+# 3. Patches app/workers to proxy Plus requests to the sidecar.
+# 4. Adds an internal network so the sidecar can be isolated from public internet access.
+# ============================================================================
+
+services:
+  journiv-plus:
+    image: swalabtech/journiv-app:${APP_VERSION:-latest}
+    container_name: journiv-plus-sidecar
+    env_file: .env
+    volumes:
+      - ./data:/data
+    networks:
+      - backend
+      - journiv-internal
+    environment:
+      SERVICE_ROLE: plus-service
+      DB_DRIVER: sqlite
+      DATABASE_URL: sqlite:////data/journiv.db
+      PLUS_SERVICE_URL: ""
+    depends_on:
+      valkey:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3).read()\"",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 256m
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  app:
+    networks:
+      - backend
+      - frontend
+      - journiv-internal
+    environment:
+      PLUS_SERVICE_URL: http://journiv-plus:8000
+    depends_on:
+      journiv-plus:
+        condition: service_healthy
+
+  celery-worker:
+    networks:
+      - backend
+      - journiv-internal
+    environment:
+      PLUS_SERVICE_URL: http://journiv-plus:8000
+    depends_on:
+      journiv-plus:
+        condition: service_healthy
+
+  celery-beat:
+    networks:
+      - backend
+      - journiv-internal
+    environment:
+      PLUS_SERVICE_URL: http://journiv-plus:8000
+    depends_on:
+      journiv-plus:
+        condition: service_healthy
+
+networks:
+  journiv-internal:
+    internal: true
