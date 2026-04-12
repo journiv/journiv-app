@@ -1,4 +1,4 @@
-# docker-compose.override.sqlite.plus-sidecar.yml
+# docker-compose.sqlite.plus-sidecar.yml
 #
 # ============================================================================
 # Journiv Plus — Sidecar for SQLite Deployments
@@ -12,7 +12,7 @@
 # USAGE
 # ─────
 #   docker compose -f docker-compose.sqlite.yml \
-#                  -f docker-compose.override.sqlite.plus-sidecar.yml up -d
+#                  -f docker-compose.sqlite.plus-sidecar.yml up -d
 #
 # WHAT THIS DOES
 # ──────────────
