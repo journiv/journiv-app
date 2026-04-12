@@ -4,7 +4,8 @@ Tag endpoints.
 import uuid
 from typing import Annotated, Any, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi.responses import Response
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user, get_plus_factory
@@ -12,6 +13,8 @@ from app.core.database import get_session
 from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error
 from app.models.user import User
+from app.plus import PLUS_MODE, PLUS_SERVICE_URL
+from app.plus._proxy import _forward
 from app.schemas.entry import EntryPreviewResponse
 from app.schemas.media_thumbnail import MomentMediaThumbnail
 from app.schemas.tag import (
@@ -149,9 +152,9 @@ async def search_tags(
     }
 )
 async def get_tag_analytics(
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    license_data: Annotated[dict[str, Any], Depends(get_plus_factory)]
 ):
     """
     Get detailed tag analytics.
@@ -162,6 +165,13 @@ async def get_tag_analytics(
     **Requires:** Valid Journiv Plus license
     """
     try:
+        if PLUS_MODE == "proxy":
+            return await _forward(
+                request,
+                f"{PLUS_SERVICE_URL}/api/v1/plus/analytics/tags",
+            )
+
+        license_data = await get_plus_factory(current_user, session)
         tag_service = TagService(session)
         analytics = tag_service.get_tag_analytics(current_user.id, license_data)
         return analytics
@@ -221,9 +231,9 @@ async def get_tag_analytics(
 )
 async def get_tag_detail_analytics(
     tag_id: uuid.UUID,
+    request: Request,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-    license_data: Annotated[dict[str, Any], Depends(get_plus_factory)],
     days: Annotated[int, Query(ge=1, le=3650, description="Number of days to analyze")] = 365
 ):
     """
@@ -235,6 +245,13 @@ async def get_tag_detail_analytics(
     **Requires:** Valid Journiv Plus license
     """
     try:
+        if PLUS_MODE == "proxy":
+            return await _forward(
+                request,
+                f"{PLUS_SERVICE_URL}/api/v1/plus/analytics/tags/{tag_id}",
+            )
+
+        license_data = await get_plus_factory(current_user, session)
         tag_service = TagService(session)
         analytics = tag_service.get_tag_detail_analytics(
             tag_id=tag_id,
