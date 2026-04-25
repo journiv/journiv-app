@@ -373,13 +373,11 @@ async def get_integration_status(
             album_error=None
         )
 
-    # Determine status
-    if integration.last_error:
-        status = "error"
-    elif integration.is_active:
-        status = "connected"
-    else:
-        status = "disconnected"
+    # Determine status from the persisted connection state, not from the last
+    # sync result. Transient sync/provider failures are exposed through
+    # last_error, but they should not make the frontend hide a still-active
+    # stored integration or force the user to reconnect.
+    status = "connected" if integration.is_active else "disconnected"
 
     # Extract album metadata
     metadata = integration.get_metadata()
@@ -481,6 +479,13 @@ async def list_integration_assets(
             limit=limit,
             force_refresh=force_refresh
         )
+
+        if integration.last_error:
+            integration.last_error = None
+            integration.last_error_at = None
+            integration.updated_at = utc_now()
+            session.add(integration)
+            await _commit(session)
 
         # Handle if provider returns just list (backward compatibility or sloppy impl)
         if isinstance(result, tuple):

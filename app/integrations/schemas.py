@@ -118,7 +118,7 @@ class IntegrationStatusResponse(BaseModel):
 
     Fields:
         provider: Which service this is
-        status: "connected" | "disconnected" | "error"
+        status: "connected" | "disconnected"; provider issues are exposed via last_error
         external_user_id: User's ID in the external system (if connected)
         connected_at: When the integration was first connected (if connected)
         last_synced_at: When we last successfully synced data (if any)
@@ -139,7 +139,7 @@ class IntegrationStatusResponse(BaseModel):
     provider: IntegrationProvider
     status: str = Field(
         ...,
-        description="Connection status: 'connected', 'disconnected', or 'error'"
+        description="Connection status: 'connected' or 'disconnected'. Provider issues are exposed via last_error."
     )
     external_user_id: Optional[str] = Field(
         default=None,

@@ -8,6 +8,7 @@ These tests verify the core integration functionality including:
 """
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -185,6 +186,79 @@ class TestIntegrationService:
         assert response.provider == IntegrationProvider.IMMICH
         assert response.is_active is False
         assert response.external_user_id is None
+
+    @pytest.mark.asyncio
+    async def test_get_integration_status_stays_connected_with_last_error(self):
+        """Active integrations remain connected even when last sync has an error."""
+        from unittest.mock import MagicMock
+
+        from app.integrations.service import get_integration_status
+
+        mock_session = MagicMock()
+        mock_user = MagicMock()
+        mock_user.id = "user-123"
+        integration = MagicMock()
+        integration.provider = IntegrationProvider.IMMICH
+        integration.external_user_id = "immich-user-123"
+        integration.connected_at = datetime.now(timezone.utc)
+        integration.last_synced_at = None
+        integration.last_error = "temporary provider timeout"
+        integration.is_active = True
+        integration.import_mode = "link_only"
+        integration.get_metadata.return_value = {}
+
+        mock_session.exec.return_value.first.return_value = integration
+
+        response = await get_integration_status(
+            session=mock_session,
+            user=mock_user,
+            provider=IntegrationProvider.IMMICH,
+        )
+
+        assert response.status == "connected"
+        assert response.is_active is True
+        assert response.last_error == "temporary provider timeout"
+
+    @pytest.mark.asyncio
+    async def test_list_integration_assets_clears_stale_last_error_on_success(self):
+        """A successful asset list clears stale sync/list errors."""
+        from contextlib import contextmanager
+        from unittest.mock import MagicMock
+
+        from app.integrations.service import list_integration_assets
+
+        mock_session = MagicMock()
+        temp_session = MagicMock()
+        mock_user = SimpleNamespace(id="user-123")
+        integration = SimpleNamespace(
+            user_id=mock_user.id,
+            provider=IntegrationProvider.IMMICH,
+            is_active=True,
+            last_error="temporary provider timeout",
+            last_error_at=datetime.now(timezone.utc),
+            updated_at=None,
+        )
+        temp_session.exec.return_value.first.return_value = integration
+        mock_provider = SimpleNamespace(list_assets=AsyncMock(return_value=[]))
+
+        @contextmanager
+        def fake_session_context():
+            yield temp_session
+
+        with patch("app.core.database.get_session_context", fake_session_context), \
+             patch("app.integrations.service.get_provider_module", return_value=mock_provider):
+            assets, total = await list_integration_assets(
+                session=mock_session,
+                user=mock_user,
+                provider=IntegrationProvider.IMMICH,
+            )
+
+        assert assets == []
+        assert total == -1
+        assert integration.last_error is None
+        assert integration.last_error_at is None
+        mock_session.add.assert_called_once_with(integration)
+        mock_session.commit.assert_called_once()
 
 
 # ================================================================================
