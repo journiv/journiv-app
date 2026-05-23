@@ -14,6 +14,7 @@ from app.schemas.base import TimestampMixin
 from app.schemas.entry import EntryPreviewResponse, EntryUpdate, QuillDelta
 from app.schemas.media_thumbnail import MomentMediaThumbnail
 from app.schemas.mood import MoodResponse
+from app.schemas.person import PersonSummaryResponse
 from app.schemas.tag import TagResponse
 
 
@@ -109,6 +110,7 @@ class MomentResponse(TimestampMixin):
     is_pinned: bool = False
     mood_activity: List[MomentMoodActivityResponse] = Field(default_factory=list)
     tags: List[TagResponse] = Field(default_factory=list)
+    people: List[PersonSummaryResponse] = Field(default_factory=list)
     completed_goals: List[MomentCompletedGoalResponse] = Field(default_factory=list)
     media_count: int = 0
     media: List[MomentMediaThumbnail] = Field(default_factory=list)
@@ -139,6 +141,11 @@ class MemoriesAppliedFilter(str, Enum):
     last_year = "last_year"
     last_month = "last_month"
     last_week = "last_week"
+
+
+class PeopleMatch(str, Enum):
+    any = "any"
+    all = "all"
 
 
 class MomentMemoriesResponse(BaseModel):

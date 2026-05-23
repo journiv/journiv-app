@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     from .moment import Moment
     from .mood import Mood
     from .mood_group import MoodGroup
+    from .person import Person
+    from .person_group import PersonGroup
     from .prompt import Prompt
     from .tag import Tag
 
@@ -78,6 +80,14 @@ class User(BaseModel, table=True):
     tags: List["Tag"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    people: List["Person"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
+    person_groups: List["PersonGroup"] = Relationship(
+        back_populates="user",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
     writing_streak: Optional["WritingStreak"] = Relationship(
         back_populates="user",

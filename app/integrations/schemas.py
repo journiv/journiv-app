@@ -18,12 +18,15 @@ Design Principles:
 - Normalize provider-specific data to common formats
 - Include helpful metadata for the frontend (URLs, status, errors)
 """
+import uuid
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field, HttpUrl, TypeAdapter, field_validator
 
 from app.models.integration import AssetType, ImportMode, IntegrationProvider
+from app.schemas.person import PersonSummaryResponse
 
 # ================================================================================
 # REQUEST SCHEMAS
@@ -319,3 +322,93 @@ class IntegrationAssetsListResponse(BaseModel):
         ...,
         description="Whether there are more pages to fetch"
     )
+
+
+class ImmichPersonResponse(BaseModel):
+    """Immich person normalized for Journiv people import/link UI."""
+
+    external_person_id: str
+    name: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    is_hidden: bool = False
+    is_favorite: bool = False
+    feature_face_asset_id: Optional[str] = None
+    mapped_person: Optional[PersonSummaryResponse] = None
+    sync_enabled: bool = False
+
+
+class ImmichPeopleListResponse(BaseModel):
+    people: list[ImmichPersonResponse]
+    page: int
+    limit: int
+    total: int
+    has_more: bool
+
+
+class ImmichFaceResponse(BaseModel):
+    external_face_id: str
+    external_asset_id: str
+    external_person_id: Optional[str] = None
+    person: Optional[PersonSummaryResponse] = None
+    suggested: bool = False
+    thumbnail_url: Optional[str] = None
+    bounding_box_x1: Optional[int] = None
+    bounding_box_y1: Optional[int] = None
+    bounding_box_x2: Optional[int] = None
+    bounding_box_y2: Optional[int] = None
+    image_width: Optional[int] = None
+    image_height: Optional[int] = None
+    source_type: Optional[str] = None
+    is_hidden: bool = False
+    last_synced_at: datetime
+
+
+class ImmichAssetFacesResponse(BaseModel):
+    asset_id: str
+    faces: list[ImmichFaceResponse]
+
+
+class ImmichBatchFacesRequest(BaseModel):
+    asset_ids: list[str] = Field(..., min_length=1, max_length=50)
+    refresh: bool = False
+
+
+class ImmichBatchFacesResponse(BaseModel):
+    results: dict[str, list[ImmichFaceResponse]]
+    errors: dict[str, str] = Field(default_factory=dict)
+
+
+class ImmichImportMode(str, Enum):
+    create = "create"
+    link = "link"
+    ignore = "ignore"
+
+
+class ImmichPeopleImportItem(BaseModel):
+    external_person_id: str
+    mode: ImmichImportMode
+    person_id: Optional[uuid.UUID] = None
+    name: Optional[str] = None
+    nickname: Optional[str] = None
+    group_ids: list[uuid.UUID] = Field(default_factory=list)
+    sync_enabled: bool = True
+
+
+class ImmichPeopleImportRequest(BaseModel):
+    people: list[ImmichPeopleImportItem] = Field(..., min_length=1, max_length=100)
+
+
+class ImmichPeopleImportResult(BaseModel):
+    external_person_id: str
+    mode: ImmichImportMode
+    person: Optional[PersonSummaryResponse] = None
+    error: Optional[str] = None
+
+
+class ImmichPeopleImportResponse(BaseModel):
+    results: list[ImmichPeopleImportResult]
+
+
+class MomentImmichPeopleSuggestionsResponse(BaseModel):
+    people: list[PersonSummaryResponse]
+    source_asset_ids: dict[str, list[str]]

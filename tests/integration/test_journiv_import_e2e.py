@@ -15,6 +15,8 @@ import uuid
 import zipfile
 from datetime import date, datetime, timezone
 
+from PIL import Image
+
 from tests.integration.helpers import (
     download_export,
     sample_jpeg_bytes,
@@ -67,6 +69,13 @@ def _entry_export_payload(
         "created_at": created_at,
         "updated_at": updated_at,
     }
+
+
+def _valid_profile_jpeg_bytes() -> bytes:
+    image = Image.new("RGB", (1, 1), color=(255, 255, 255))
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG")
+    return buffer.getvalue()
 
 
 class TestJournivImportExportE2E:
@@ -158,6 +167,30 @@ class TestJournivImportExportE2E:
             f"/moments/{entry1['moment_id']}/tags",
             token=api_user.access_token,
             json=[tag1["name"], tag2["name"]],
+            expected=(200,),
+        )
+
+        person_name = f"Test Person {uuid.uuid4().hex[:6]}"
+        person = api_client.request(
+            "POST",
+            "/people/",
+            token=api_user.access_token,
+            json={"name": person_name},
+            expected=(201,),
+        ).json()
+        profile_image_person = api_client.request(
+            "POST",
+            f"/people/{person['id']}/profile-image",
+            token=api_user.access_token,
+            files={"file": ("profile.jpg", io.BytesIO(_valid_profile_jpeg_bytes()), "image/jpeg")},
+            expected=(200,),
+        ).json()
+        assert profile_image_person["profile_image_url"]
+        api_client.request(
+            "PUT",
+            f"/moments/{entry1['moment_id']}/people",
+            token=api_user.access_token,
+            json={"person_ids": [person["id"]]},
             expected=(200,),
         )
 
@@ -305,6 +338,7 @@ class TestJournivImportExportE2E:
                 assert "mood_group_links" in data
                 assert "mood_preferences" in data
                 assert "mood_group_preferences" in data
+                assert "people" in data
                 assert len(data["journals"]) == 2
 
                 assert any(g["name"] == "Health Group" for g in data["activity_groups"])
@@ -343,6 +377,15 @@ class TestJournivImportExportE2E:
                     and link["mood_external_id"] == exported_mood["external_id"]
                     for link in data["mood_group_links"]
                 )
+                exported_person = next((p for p in data["people"] if p["name"] == person_name), None)
+                assert exported_person is not None
+
+                exported_moment_one = next(
+                    (m for m in data["moments"] if m.get("external_id") == entry1["moment_id"]),
+                    None,
+                )
+                assert exported_moment_one is not None
+                assert exported_person["external_id"] in exported_moment_one.get("people_external_ids", [])
 
         # 4. Create a new user and import the export
         import_user = make_api_user(api_client)
@@ -480,6 +523,16 @@ class TestJournivImportExportE2E:
         assert "test-tag-1" in tag_names
         assert "test-tag-2" in tag_names
 
+        imported_people = api_client.request(
+            "GET",
+            "/people/",
+            token=import_user.access_token,
+            expected=(200,),
+        ).json()
+        assert any(p["name"] == person_name for p in imported_people)
+        imported_person = next(p for p in imported_people if p["name"] == person_name)
+        assert imported_person["profile_image_url"] is None
+
         # Verify tags are attached to the entry
         if imported_entry1 is not None:
             entry_tags_response = api_client.request(
@@ -492,6 +545,14 @@ class TestJournivImportExportE2E:
             entry_tag_names = [t["name"] for t in entry_tags]
             assert "test-tag-1" in entry_tag_names
             assert "test-tag-2" in entry_tag_names
+            entry_people_response = api_client.request(
+                "GET",
+                f"/moments/{imported_entry1['moment_id']}/people",
+                token=import_user.access_token,
+                expected=(200,),
+            )
+            entry_people = entry_people_response.json()
+            assert any(p["name"] == person_name for p in entry_people)
 
         # Verify activities and activity groups were imported
         imported_activity_groups = api_client.list_activity_groups(import_user.access_token)

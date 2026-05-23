@@ -18,6 +18,7 @@ from app.models.activity import Activity
 from app.models.entry import Entry
 from app.models.goal import GoalLog
 from app.models.moment import Moment, MomentMoodActivity
+from app.models.moment_person_link import MomentPersonLink
 from app.models.moment_tag_link import MomentTagLink
 from app.models.mood import Mood
 from app.models.user import UserSettings
@@ -27,6 +28,7 @@ from app.schemas.moment import (
     MomentCreate,
     MomentMoodActivityInput,
     MomentUpdate,
+    PeopleMatch,
 )
 from app.services.goal_service import GoalService
 from app.services.moment_lookup import get_owned_moment
@@ -68,6 +70,7 @@ class MomentService:
             options=[
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
+                selectinload(Moment.people),  # type: ignore[arg-type]
                 selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
                 .selectinload(MomentMoodActivity.mood),  # type: ignore[arg-type]
                 selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
@@ -246,6 +249,8 @@ class MomentService:
             return True
         if bool(moment.tags):
             return True
+        if bool(moment.people):
+            return True
         if bool(moment.mood_activity_links):
             return True
         if bool(moment.goal_logs):
@@ -266,6 +271,7 @@ class MomentService:
             .options(
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
+                selectinload(Moment.people),  # type: ignore[arg-type]
                 selectinload(Moment.mood_activity_links),  # type: ignore[arg-type]
                 selectinload(Moment.goal_logs),  # type: ignore[arg-type]
             )
@@ -616,6 +622,33 @@ class MomentService:
             )
         )
 
+    def _apply_people_filter(
+        self,
+        statement: Any,
+        person_ids: Optional[List[uuid.UUID]],
+        people_match: PeopleMatch,
+    ) -> Any:
+        """Apply filter for moments associated with specific people."""
+        if not person_ids:
+            return statement
+        normalized_person_ids = normalize_uuid_list(person_ids)
+        if people_match == PeopleMatch.all:
+            required_count = len(set(normalized_person_ids))
+            subquery = (
+                select(MomentPersonLink.moment_id)
+                .where(col(MomentPersonLink.person_id).in_(normalized_person_ids))
+                .group_by(col(MomentPersonLink.moment_id))
+                .having(func.count(func.distinct(MomentPersonLink.person_id)) == required_count)
+            )
+            return statement.where(col(Moment.id).in_(subquery))
+        return statement.where(
+            col(Moment.id).in_(
+                select(MomentPersonLink.moment_id).where(
+                    col(MomentPersonLink.person_id).in_(normalized_person_ids)
+                )
+            )
+        )
+
     def _apply_cursor_filter(
         self,
         statement: Any,
@@ -674,6 +707,7 @@ class MomentService:
                     func.trim(col(Moment.weather_summary)) != "",
                 ),
                 col(Moment.id).in_(select(MomentTagLink.moment_id)),
+                col(Moment.id).in_(select(MomentPersonLink.moment_id)),
                 col(Moment.id).in_(select(MomentMoodActivity.moment_id)),
                 col(Moment.id).in_(
                     select(GoalLog.moment_id).where(col(GoalLog.moment_id).is_not(None))
@@ -688,6 +722,7 @@ class MomentService:
             .options(
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
+                selectinload(Moment.people),  # type: ignore[arg-type]
                 selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
                 .selectinload(MomentMoodActivity.mood),  # type: ignore[arg-type]
                 selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
@@ -888,6 +923,8 @@ class MomentService:
         end_date: Optional[date] = None,
         journal_id: Optional[uuid.UUID] = None,
         mood_ids: Optional[List[uuid.UUID]] = None,
+        person_ids: Optional[List[uuid.UUID]] = None,
+        people_match: PeopleMatch = PeopleMatch.any,
         search: Optional[str] = None,
         include_drafts: bool = False,
         include_empty: bool = False,
@@ -899,6 +936,7 @@ class MomentService:
             .options(
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
+                selectinload(Moment.people),  # type: ignore[arg-type]
                 selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
                 .selectinload(MomentMoodActivity.mood),  # type: ignore[arg-type]
                 selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
@@ -909,6 +947,7 @@ class MomentService:
         statement = self._apply_journal_join(statement, journal_id)
         statement = self._apply_draft_filter(statement, include_drafts, None)
         statement = self._apply_mood_filter(statement, mood_ids)
+        statement = self._apply_people_filter(statement, person_ids, people_match)
         statement = self._apply_search_filter(statement, search)
         statement = self._apply_cursor_filter(statement, cursor_logged_at_utc, cursor_id)
         statement = self._apply_date_filter(statement, start_date, end_date)

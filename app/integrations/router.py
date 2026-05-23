@@ -32,6 +32,12 @@ from app.core.logging_config import log_error, log_info, log_warning
 from app.core.media_signing import is_signature_expired
 from app.core.signing import verify_media_signature
 from app.integrations.schemas import (
+    ImmichAssetFacesResponse,
+    ImmichBatchFacesRequest,
+    ImmichBatchFacesResponse,
+    ImmichPeopleImportRequest,
+    ImmichPeopleImportResponse,
+    ImmichPeopleListResponse,
     IntegrationAssetsListResponse,
     IntegrationConnectRequest,
     IntegrationConnectResponse,
@@ -51,6 +57,10 @@ from app.models.integration import (  # Needed for proxy queries below.
     IntegrationProvider,
 )
 from app.models.user import User
+from app.services.immich_face_service import (
+    ImmichFaceService,
+    fetch_immich_person_thumbnail,
+)
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -379,9 +389,217 @@ async def trigger_sync(
         ) from None
 
 
+@router.get(
+    "/immich/people",
+    response_model=ImmichPeopleListResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"description": "Immich integration not connected or invalid request"},
+        401: {"description": "Not authenticated"},
+        500: {"description": "Failed to retrieve Immich people"},
+    },
+)
+async def list_immich_people(
+    current_user: Annotated[User, Depends(get_current_user_detached)],
+    page: Annotated[int, Query(ge=1)] = 1,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+    search: Annotated[Optional[str], Query()] = None,
+    include_hidden: Annotated[bool, Query()] = False,
+    mapped: Annotated[str, Query(pattern="^(all|mapped|unmapped)$")] = "all",
+) -> ImmichPeopleListResponse:
+    """List Immich people with Journiv mapping status."""
+    try:
+        with get_session_context() as session:
+            return await ImmichFaceService(session).list_immich_people(
+                current_user.id,
+                page=page,
+                limit=limit,
+                search=search,
+                include_hidden=include_hidden,
+                mapped_filter=mapped,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail="Immich people request failed") from None
+    except Exception as e:
+        log_error(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve Immich people",
+        ) from None
+
+
+@router.post(
+    "/immich/people/import",
+    response_model=ImmichPeopleImportResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"description": "Immich integration not connected or invalid request"},
+        401: {"description": "Not authenticated"},
+        500: {"description": "Failed to import Immich people"},
+    },
+)
+async def import_immich_people(
+    request: ImmichPeopleImportRequest,
+    current_user: Annotated[User, Depends(get_current_user_detached)],
+) -> ImmichPeopleImportResponse:
+    """Create/link Journiv people from selected Immich people."""
+    try:
+        with get_session_context() as session:
+            return await ImmichFaceService(session).import_people(current_user.id, request.people)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+    except Exception as e:
+        log_error(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to import Immich people",
+        ) from None
+
+
+@router.get(
+    "/immich/assets/{asset_id}/faces",
+    response_model=ImmichAssetFacesResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"description": "Immich integration not connected or invalid request"},
+        401: {"description": "Not authenticated"},
+        500: {"description": "Failed to retrieve Immich faces"},
+    },
+)
+async def get_immich_asset_faces(
+    asset_id: str,
+    current_user: Annotated[User, Depends(get_current_user_detached)],
+    refresh: Annotated[bool, Query()] = False,
+) -> dict:
+    """Fetch or read cached Immich face detections for one asset."""
+    try:
+        with get_session_context() as session:
+            faces = await ImmichFaceService(session).get_asset_faces(
+                current_user.id,
+                asset_id,
+                refresh=refresh,
+            )
+        return {"asset_id": asset_id, "faces": faces}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+    except httpx.HTTPStatusError as e:
+        raise HTTPException(status_code=e.response.status_code, detail="Immich faces request failed") from None
+    except Exception as e:
+        log_error(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve Immich faces",
+        ) from None
+
+
+@router.post(
+    "/immich/assets/faces:batch",
+    response_model=ImmichBatchFacesResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        400: {"description": "Immich integration not connected or invalid request"},
+        401: {"description": "Not authenticated"},
+        500: {"description": "Failed to retrieve Immich faces"},
+    },
+)
+async def get_immich_asset_faces_batch(
+    request: ImmichBatchFacesRequest,
+    current_user: Annotated[User, Depends(get_current_user_detached)],
+) -> ImmichBatchFacesResponse:
+    """Fetch or read cached Immich face detections for several assets."""
+    try:
+        with get_session_context() as session:
+            return await ImmichFaceService(session).get_batch_faces(
+                current_user.id,
+                request.asset_ids,
+                refresh=request.refresh,
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+    except Exception as e:
+        log_error(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve Immich faces",
+        ) from None
+
+
 # ================================================================================
 # PROXY ENDPOINTS
 # ================================================================================
+
+@router.get(
+    "/immich/proxy/people/{external_person_id}/thumbnail",
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"description": "Invalid signature or provider authentication failed"},
+        404: {"description": "Person thumbnail not found"},
+        500: {"description": "Failed to fetch person thumbnail"},
+    },
+)
+async def proxy_immich_person_thumbnail(
+    external_person_id: str,
+    uid: Annotated[str, Query(alias="uid")],
+    exp: Annotated[int, Query(alias="exp")],
+    sig: Annotated[str, Query(alias="sig")],
+):
+    """Proxy an Immich person thumbnail through Journiv."""
+    from fastapi.responses import StreamingResponse
+
+    try:
+        user_id = uuid.UUID(uid)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature") from None
+    if is_signature_expired(exp, settings.media_signed_url_grace_seconds):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Signed URL expired")
+    if not verify_media_signature(
+        IntegrationProvider.IMMICH.value,
+        "person-thumbnail",
+        external_person_id,
+        str(user_id),
+        exp,
+        sig,
+        settings.secret_key,
+    ):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid signature")
+
+    try:
+        response = await fetch_immich_person_thumbnail(user_id, external_person_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
+    except Exception as e:
+        log_error(f"Immich person thumbnail proxy failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch person thumbnail",
+        ) from None
+
+    if response.status_code in (401, 403):
+        await _close_httpx_stream(response)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Immich authentication failed. Please reconnect your integration.",
+        )
+    if response.status_code == 404:
+        await _close_httpx_stream(response)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Person thumbnail not found")
+    try:
+        response.raise_for_status()
+    except httpx.HTTPStatusError as e:
+        await _close_httpx_stream(response)
+        raise HTTPException(status_code=e.response.status_code, detail="Immich provider error") from None
+
+    return StreamingResponse(
+        response.aiter_bytes(),
+        media_type=response.headers.get("content-type", "image/jpeg"),
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "X-Provider": IntegrationProvider.IMMICH.value,
+        },
+        background=BackgroundTask(_close_httpx_stream, response),
+    )
 
 @router.get(
     "/{provider}/proxy/{asset_id}/thumbnail",

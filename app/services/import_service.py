@@ -30,6 +30,7 @@ from app.models import (
     Mood,
     MoodGroup,
     MoodGroupLink,
+    Person,
     Tag,
     User,
 )
@@ -37,6 +38,7 @@ from app.models.enums import ImportSourceType, JournalColor, MediaType, UploadSt
 from app.models.goal import GoalManualLog
 from app.models.import_job import ImportJob
 from app.models.moment import Moment, MomentMoodActivity
+from app.models.moment_person_link import MomentPersonLink
 from app.schemas.dto import (
     ActivityDTO,
     ActivityGroupDTO,
@@ -54,6 +56,7 @@ from app.schemas.dto import (
     MoodGroupLinkDTO,
     MoodGroupPreferenceDTO,
     MoodPreferenceDTO,
+    PersonDTO,
 )
 from app.services.journal_service import JournalService
 from app.services.media_storage_service import MediaStorageService
@@ -419,6 +422,8 @@ class ImportService:
         precreated_tag_names: set[str] = set()
         activity_lookup: Dict[str, UUID] = {}
         newly_linked_precreated_tags: set[str] = set()
+        people_external_id_map: Dict[str, UUID] = {}
+        people_name_map: Dict[str, UUID] = {}
 
         # ID maps for new entities
         mood_id_map: Dict[str, UUID] = {}
@@ -531,6 +536,12 @@ class ImportService:
 
             # Persist entity/library imports before timeline processing.
             self.db.commit()
+            people_external_id_map, people_name_map = self._prepare_people_lookup(
+                user_id=user_id,
+                people=export_dto.people,
+                summary=summary,
+                record_mapping=record_mapping,
+            )
             # Pre-batch moment-level taxonomy entities once, after library imports.
             tag_lookup, precreated_tag_names = self._prepare_tag_lookup(
                 user_id,
@@ -607,6 +618,8 @@ class ImportService:
                                     precreated_tag_names=precreated_tag_names,
                                     newly_linked_precreated_tags=newly_linked_precreated_tags,
                                     activity_lookup=activity_lookup,
+                                    people_external_id_map=people_external_id_map,
+                                    people_name_map=people_name_map,
                                 )
                                 default_journal_id = entry_result["default_journal_id"]
                                 created_moment = entry_result["moment"]
@@ -626,6 +639,8 @@ class ImportService:
                                     precreated_tag_names=precreated_tag_names,
                                     newly_linked_precreated_tags=newly_linked_precreated_tags,
                                     activity_lookup=activity_lookup,
+                                    people_external_id_map=people_external_id_map,
+                                    people_name_map=people_name_map,
                                 )
                                 created_entry = False
 
@@ -743,6 +758,8 @@ class ImportService:
         precreated_tag_names: Optional[set[str]] = None,
         newly_linked_precreated_tags: Optional[set[str]] = None,
         activity_lookup: Optional[Dict[str, UUID]] = None,
+        people_external_id_map: Optional[Dict[str, UUID]] = None,
+        people_name_map: Optional[Dict[str, UUID]] = None,
     ) -> Dict[str, Any]:
         entry_dto = moment_dto.entry
         if entry_dto is None:
@@ -790,6 +807,8 @@ class ImportService:
             precreated_tag_names=precreated_tag_names,
             newly_linked_precreated_tags=newly_linked_precreated_tags,
             activity_lookup=activity_lookup,
+            people_external_id_map=people_external_id_map,
+            people_name_map=people_name_map,
         )
         if moment is None:
             raise ValueError("Failed to import moment for entry")
@@ -942,6 +961,8 @@ class ImportService:
         precreated_tag_names: Optional[set[str]] = None,
         newly_linked_precreated_tags: Optional[set[str]] = None,
         activity_lookup: Optional[Dict[str, UUID]] = None,
+        people_external_id_map: Optional[Dict[str, UUID]] = None,
+        people_name_map: Optional[Dict[str, UUID]] = None,
     ) -> Optional[Moment]:
         mood_id_map = mood_id_map or {}
         activity_id_map = activity_id_map or {}
@@ -1080,6 +1101,17 @@ class ImportService:
                 summary.tags_created += 1
             else:
                 summary.tags_reused += 1
+
+        linked_people = self._link_moment_people(
+            user_id=user_id,
+            moment=moment,
+            moment_dto=moment_dto,
+            people_external_id_map=people_external_id_map or {},
+            people_name_map=people_name_map or {},
+            summary=summary,
+        )
+        if linked_people:
+            summary.people_links_created += linked_people
 
         if record_mapping:
             external_id = moment_dto.external_id
@@ -1680,6 +1712,99 @@ class ImportService:
             select(Tag.name).where(Tag.user_id == user_id)
         ).all()
         return {t[0].lower() for t in tags}
+
+    @staticmethod
+    def _normalize_person_name(name: str) -> str:
+        return " ".join((name or "").strip().split()).lower()
+
+    def _prepare_people_lookup(
+        self,
+        user_id: UUID,
+        people: List[PersonDTO],
+        summary: ImportResultSummary,
+        record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
+    ) -> tuple[Dict[str, UUID], Dict[str, UUID]]:
+        """Create/fetch people from export catalog and return lookup maps."""
+        existing_people = (
+            self.db.execute(select(Person).where(col(Person.user_id) == user_id))
+            .scalars()
+            .all()
+        )
+        name_map: Dict[str, UUID] = {
+            self._normalize_person_name(person.name): person.id
+            for person in existing_people
+            if person.name
+        }
+        external_id_map: Dict[str, UUID] = {}
+
+        for person_dto in people:
+            normalized = self._normalize_person_name(person_dto.name)
+            if not normalized:
+                warning_msg = "Skipped person with empty name during import"
+                log_warning(warning_msg, user_id=str(user_id))
+                self._add_warning(summary, warning_msg, "Skipped (person error)")
+                continue
+
+            existing_id = name_map.get(normalized)
+            if existing_id is not None:
+                local_id = existing_id
+                summary.people_reused += 1
+            else:
+                person = Person(
+                    user_id=user_id,
+                    name=" ".join(person_dto.name.strip().split()),
+                    normalized_name=normalized,
+                    nickname=person_dto.nickname,
+                    note=person_dto.note,
+                    profile_image_path=None,
+                    archived_at=person_dto.archived_at,
+                    created_at=person_dto.created_at or utc_now(),
+                    updated_at=person_dto.updated_at or utc_now(),
+                )
+                self.db.add(person)
+                self.db.flush()
+                local_id = person.id
+                name_map[normalized] = local_id
+                summary.people_created += 1
+
+            if person_dto.external_id:
+                external_id_map[person_dto.external_id] = local_id
+                if record_mapping:
+                    record_mapping("people", person_dto.external_id, local_id)
+
+        return external_id_map, name_map
+
+    def _link_moment_people(
+        self,
+        *,
+        user_id: UUID,
+        moment: Moment,
+        moment_dto: MomentDTO,
+        people_external_id_map: Dict[str, UUID],
+        people_name_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+    ) -> int:
+        """Attach people to an imported moment using external-id references."""
+        linked_count = 0
+        target_person_ids: List[UUID] = []
+
+        for external_id in moment_dto.people_external_ids or []:
+            person_id = people_external_id_map.get(external_id)
+            if person_id is None:
+                warning_msg = f"Person reference '{external_id}' not found; skipping moment-person link"
+                log_warning(warning_msg, user_id=str(user_id), moment_id=str(moment.id))
+                self._add_warning(summary, warning_msg, "Skipped (person link error)")
+                continue
+            target_person_ids.append(person_id)
+
+        # Keep the name map available for backward-compatible extension paths.
+        _ = people_name_map
+
+        for person_id in set(target_person_ids):
+            self.db.add(MomentPersonLink(moment_id=moment.id, person_id=person_id))
+            linked_count += 1
+
+        return linked_count
 
     def _prepare_tag_lookup(
         self,

@@ -13,6 +13,8 @@ from app.models.base import BaseModel
 from app.models.entry import Entry
 from app.models.journal import Journal
 from app.models.moment import Moment, MomentMoodActivity
+from app.models.moment_person_link import MomentPersonLink
+from app.models.person import Person
 from app.models.user import User, UserSettings
 from app.schemas.entry import EntryUpdate
 from app.schemas.moment import (
@@ -21,6 +23,7 @@ from app.schemas.moment import (
     MomentCreate,
     MomentEntryCreate,
     MomentUpdate,
+    PeopleMatch,
 )
 from app.services.moment_service import MomentService
 
@@ -107,6 +110,97 @@ def test_get_moments_filter_by_mood_ids(test_db, test_user, test_moment_service)
         user_id=test_user.id, mood_ids=[mood1_id, mood2_id]
     )
     assert len(items) == 2
+
+
+def test_get_moments_filter_by_person_ids_any(test_db, test_user, test_moment_service):
+    person_one = Person(user_id=test_user.id, name="Alice", normalized_name="alice")
+    person_two = Person(user_id=test_user.id, name="Bob", normalized_name="bob")
+    test_db.add(person_one)
+    test_db.add(person_two)
+    test_db.commit()
+    test_db.refresh(person_one)
+    test_db.refresh(person_two)
+
+    m1 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        note="With Alice",
+    )
+    m2 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        note="With Bob",
+    )
+    m3 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        note="With Alice and Bob",
+    )
+    test_db.add(m1)
+    test_db.add(m2)
+    test_db.add(m3)
+    test_db.commit()
+
+    test_db.add(MomentPersonLink(moment_id=m1.id, person_id=person_one.id))
+    test_db.add(MomentPersonLink(moment_id=m2.id, person_id=person_two.id))
+    test_db.add(MomentPersonLink(moment_id=m3.id, person_id=person_one.id))
+    test_db.add(MomentPersonLink(moment_id=m3.id, person_id=person_two.id))
+    test_db.commit()
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id,
+        person_ids=[person_one.id, person_two.id],
+        people_match=PeopleMatch.any,
+    )
+    result_ids = {item.id for item in items}
+
+    assert m1.id in result_ids
+    assert m2.id in result_ids
+    assert m3.id in result_ids
+
+
+def test_get_moments_filter_by_person_ids_all(test_db, test_user, test_moment_service):
+    person_one = Person(user_id=test_user.id, name="Alice", normalized_name="alice")
+    person_two = Person(user_id=test_user.id, name="Bob", normalized_name="bob")
+    test_db.add(person_one)
+    test_db.add(person_two)
+    test_db.commit()
+    test_db.refresh(person_one)
+    test_db.refresh(person_two)
+
+    m1 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        note="Only Alice",
+    )
+    m2 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        note="Only Bob",
+    )
+    m3 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        note="Alice and Bob",
+    )
+    test_db.add(m1)
+    test_db.add(m2)
+    test_db.add(m3)
+    test_db.commit()
+
+    test_db.add(MomentPersonLink(moment_id=m1.id, person_id=person_one.id))
+    test_db.add(MomentPersonLink(moment_id=m2.id, person_id=person_two.id))
+    test_db.add(MomentPersonLink(moment_id=m3.id, person_id=person_one.id))
+    test_db.add(MomentPersonLink(moment_id=m3.id, person_id=person_two.id))
+    test_db.commit()
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id,
+        person_ids=[person_one.id, person_two.id],
+        people_match=PeopleMatch.all,
+    )
+    assert len(items) == 1
+    assert items[0].id == m3.id
 
 
 def test_get_moments_search_note(test_db, test_user, test_moment_service):
