@@ -173,6 +173,9 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file: Optional[str] = None
     log_dir: str = "/data/logs"
+    # Successful HTTP request lifecycle logs are noisy in self-hosted Docker logs.
+    # Error, client-error, and slow-request logs remain enabled regardless.
+    log_http_requests: bool = False
     # SQL query logging (WARNING: Never enable in production as it exposes bound parameters/sensitive data)
     log_sql_requests: bool = Field(
         default_factory=lambda: os.getenv("LOG_SQL_REQUESTS", "false").lower() == "true"
