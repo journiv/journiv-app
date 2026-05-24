@@ -3,10 +3,13 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 from uuid import uuid4
 
-from app.models.moment import MomentMedia
 from app.models.enums import MediaType, UploadStatus
+from app.models.moment import MomentMedia
+from app.models.person import Person
+from app.models.person_external_identity import PersonExternalIdentity
 from app.schemas.dto import MomentMediaDTO
 from app.services.export_service import ExportService
+from app.services.immich_face_service import ImmichFaceService
 from app.services.import_service import ImportService
 
 
@@ -54,6 +57,48 @@ def test_export_includes_external_fields():
         assert dto.external_url == "https://immich.example.com/asset-123"
         assert dto.external_created_at == datetime(2023, 1, 1, tzinfo=timezone.utc)
         assert dto.external_metadata == {"exif": "data"}
+
+
+def test_immich_face_response_does_not_suggest_archived_person():
+    """Archived mapped people should not be auto-suggested from Immich faces."""
+    service = ImmichFaceService(MagicMock())
+    person_id = uuid4()
+    user_id = uuid4()
+
+    person = MagicMock(spec=Person)
+    person.id = person_id
+    person.name = "Archived Person"
+    person.nickname = None
+    person.profile_image_path = None
+    person.archived_at = datetime.now(timezone.utc)
+
+    identity = MagicMock(spec=PersonExternalIdentity)
+    identity.sync_enabled = True
+
+    face = MagicMock()
+    face.person_id = person_id
+    face.external_person_id = "immich-person-1"
+    face.user_id = user_id
+    face.external_face_id = "face-1"
+    face.external_asset_id = "asset-1"
+    face.is_hidden = False
+    face.bounding_box_x1 = None
+    face.bounding_box_y1 = None
+    face.bounding_box_x2 = None
+    face.bounding_box_y2 = None
+    face.image_width = None
+    face.image_height = None
+    face.source_type = None
+    face.last_synced_at = datetime.now(timezone.utc)
+
+    response = service._face_response(
+        face,
+        people_by_id={person_id: person},
+        identities_by_external_id={"immich-person-1": identity},
+    )
+
+    assert response.person is not None
+    assert response.suggested is False
 
 def test_import_handles_external_media_link_only():
     """Verify that import service handles media with external_provider but no file_path."""
