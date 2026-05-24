@@ -406,7 +406,13 @@ class ImmichFaceService:
     ) -> ImmichFaceResponse:
         person = people_by_id.get(face.person_id) if face.person_id else None
         identity = identities_by_external_id.get(face.external_person_id or "")
-        suggested = bool(person and identity and identity.sync_enabled and not face.is_hidden)
+        suggested = bool(
+            person
+            and person.archived_at is None
+            and identity
+            and identity.sync_enabled
+            and not face.is_hidden
+        )
         thumbnail_url = (
             self._person_thumbnail_url(face.external_person_id, face.user_id)
             if face.external_person_id else None
