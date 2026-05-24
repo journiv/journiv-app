@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlmodel import Session, create_engine, select
 
+from app.core.config import settings
 from app.models.base import BaseModel
 from app.models.moment import Moment
 from app.models.moment_person_link import MomentPersonLink
@@ -119,6 +120,43 @@ def test_update_person_fields(person_service: PersonService, test_user: User):
     assert updated.note == "Friend"
     assert updated.profile_image_url is None
     assert {group.id for group in updated.groups} == {friends_group.id, family_group.id}
+
+
+def test_upload_profile_image_restores_existing_file_when_commit_fails(
+    person_service: PersonService,
+    test_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settings, "media_root", str(tmp_path))
+    created = person_service.create_person(test_user.id, PersonCreate(name="Carol Photo"))
+    person = person_service._get_owned_person(test_user.id, created.id)
+    original_path = PersonService._write_profile_image(
+        user_id=test_user.id,
+        person_id=created.id,
+        image_bytes=b"original-image",
+        extension=".jpg",
+    )
+    person.profile_image_path = original_path
+    person_service.session.add(person)
+    person_service.session.commit()
+
+    target_path = PersonService._profile_image_absolute_path(original_path)
+    monkeypatch.setattr(
+        PersonService,
+        "_validate_profile_image_bytes",
+        classmethod(lambda cls, _image_bytes: (".jpg", (1, 1))),
+    )
+    monkeypatch.setattr(
+        person_service,
+        "_commit",
+        lambda: (_ for _ in ()).throw(RuntimeError("commit failed")),
+    )
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        person_service.upload_profile_image(test_user.id, created.id, b"new-image")
+
+    assert target_path.read_bytes() == b"original-image"
 
 
 def test_create_and_replace_person_groups(person_service: PersonService, test_user: User):

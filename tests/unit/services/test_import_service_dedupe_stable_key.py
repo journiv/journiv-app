@@ -115,6 +115,52 @@ def test_prepare_people_lookup_drops_exported_profile_image_path():
         assert summary.people_created == 1
 
 
+def test_prepare_people_lookup_reactivates_archived_name_match_for_active_import():
+    engine = create_engine("sqlite:///:memory:")
+    from app.models.base import BaseModel
+
+    BaseModel.metadata.create_all(engine)
+    with Session(engine) as db:
+        user = _create_test_user(db)
+        now = datetime.now(timezone.utc)
+        archived_person = Person(
+            user_id=user.id,
+            name="Imported Person",
+            normalized_name="imported person",
+            archived_at=now,
+        )
+        db.add(archived_person)
+        db.commit()
+        db.refresh(archived_person)
+
+        service = ImportService(db)
+        summary = ImportResultSummary()
+        external_id_map, _name_map = service._prepare_people_lookup(
+            user_id=user.id,
+            people=[
+                PersonDTO(
+                    name="Imported Person",
+                    nickname="Imp",
+                    note="Active again",
+                    profile_image_path=None,
+                    archived_at=None,
+                    created_at=now,
+                    updated_at=now,
+                    external_id="source-person",
+                )
+            ],
+            summary=summary,
+        )
+
+        db.refresh(archived_person)
+        assert external_id_map["source-person"] == archived_person.id
+        assert archived_person.archived_at is None
+        assert archived_person.nickname == "Imp"
+        assert archived_person.note == "Active again"
+        assert summary.people_reused == 1
+        assert summary.people_created == 0
+
+
 def test_import_goals_reuses_same_title_when_external_ids_differ():
     engine = create_engine("sqlite:///:memory:")
     from app.models.base import BaseModel

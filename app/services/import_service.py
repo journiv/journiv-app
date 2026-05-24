@@ -1735,8 +1735,13 @@ class ImportService:
             for person in existing_people
             if person.name
         }
+        people_by_normalized_name: Dict[str, Person] = {
+            self._normalize_person_name(person.name): person
+            for person in existing_people
+            if person.name
+        }
         external_id_map: Dict[str, UUID] = {}
-        created_people = False
+        changed_people = False
 
         for person_dto in people:
             normalized = self._normalize_person_name(person_dto.name)
@@ -1749,6 +1754,18 @@ class ImportService:
             existing_id = name_map.get(normalized)
             if existing_id is not None:
                 local_id = existing_id
+                existing_person = people_by_normalized_name.get(normalized)
+                if (
+                    existing_person is not None
+                    and existing_person.archived_at is not None
+                    and person_dto.archived_at is None
+                ):
+                    existing_person.archived_at = None
+                    existing_person.nickname = person_dto.nickname
+                    existing_person.note = person_dto.note
+                    existing_person.updated_at = utc_now()
+                    self.db.add(existing_person)
+                    changed_people = True
                 summary.people_reused += 1
             else:
                 person = Person(
@@ -1766,15 +1783,16 @@ class ImportService:
                 self.db.flush()
                 local_id = person.id
                 name_map[normalized] = local_id
+                people_by_normalized_name[normalized] = person
                 summary.people_created += 1
-                created_people = True
+                changed_people = True
 
             if person_dto.external_id:
                 external_id_map[person_dto.external_id] = local_id
                 if record_mapping:
                     record_mapping("people", person_dto.external_id, local_id)
 
-        if created_people:
+        if changed_people:
             self.db.commit()
 
         return external_id_map, name_map

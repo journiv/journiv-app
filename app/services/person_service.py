@@ -2,6 +2,7 @@
 Person service for people and moment-people operations.
 """
 import os
+import shutil
 import uuid
 from datetime import datetime
 from io import BytesIO
@@ -96,6 +97,14 @@ class PersonService:
         return Path(settings.media_root).resolve()
 
     @classmethod
+    def _profile_image_absolute_path(cls, relative_path: str) -> Path:
+        media_root = cls._profile_image_root()
+        target_path = (media_root / relative_path).resolve()
+        if not target_path.is_relative_to(media_root):
+            raise ValueError("Profile image path escapes media root")
+        return target_path
+
+    @classmethod
     def build_profile_image_url(cls, person: Person) -> Optional[str]:
         if not person.profile_image_path:
             return None
@@ -147,9 +156,7 @@ class PersonService:
         if not relative_path:
             return
         media_root = cls._profile_image_root()
-        target_path = (media_root / relative_path).resolve()
-        if not target_path.is_relative_to(media_root):
-            raise ValueError("Profile image path escapes media root")
+        target_path = cls._profile_image_absolute_path(relative_path)
         target_path.unlink(missing_ok=True)
         for parent in target_path.parents:
             if parent == media_root:
@@ -160,6 +167,25 @@ class PersonService:
                 break
 
     @classmethod
+    def _backup_profile_image_file(cls, relative_path: Optional[str]) -> Optional[Path]:
+        if not relative_path:
+            return None
+        target_path = cls._profile_image_absolute_path(relative_path)
+        if not target_path.exists():
+            return None
+        backup_path = target_path.with_name(f"{target_path.name}.{uuid.uuid4().hex}.backup")
+        shutil.copy2(target_path, backup_path)
+        return backup_path
+
+    @classmethod
+    def _restore_profile_image_backup(cls, relative_path: str, backup_path: Optional[Path]) -> None:
+        if backup_path is None or not backup_path.exists():
+            return
+        target_path = cls._profile_image_absolute_path(relative_path)
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(backup_path, target_path)
+
+    @classmethod
     def _write_profile_image(
         cls,
         *,
@@ -168,11 +194,8 @@ class PersonService:
         image_bytes: bytes,
         extension: str,
     ) -> str:
-        media_root = cls._profile_image_root()
         relative_path = cls._profile_image_relative_path(user_id, person_id, extension)
-        target_path = (media_root / relative_path).resolve()
-        if not target_path.is_relative_to(media_root):
-            raise ValueError("Profile image path escapes media root")
+        target_path = cls._profile_image_absolute_path(relative_path.as_posix())
         target_path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = target_path.with_suffix(f"{target_path.suffix}.{uuid.uuid4().hex}.tmp")
         with open(tmp_path, "wb") as handle:
@@ -485,6 +508,16 @@ class PersonService:
         person = self._get_owned_person(user_id, person_id, include_archived=True)
         extension, _ = self._validate_profile_image_bytes(image_bytes)
         previous_path = person.profile_image_path
+        target_relative_path = self._profile_image_relative_path(
+            user_id, person.id, extension
+        ).as_posix()
+        backup_path = (
+            self._backup_profile_image_file(previous_path)
+            if previous_path == target_relative_path
+            else None
+        )
+        relative_path = target_relative_path
+        commit_succeeded = False
         relative_path = self._write_profile_image(
             user_id=user_id,
             person_id=person.id,
@@ -496,10 +529,18 @@ class PersonService:
         self.session.add(person)
         try:
             self._commit()
+            commit_succeeded = True
             self.session.refresh(person)
         except Exception:
-            self._delete_profile_image_file(relative_path)
+            if not commit_succeeded:
+                if backup_path is not None:
+                    self._restore_profile_image_backup(relative_path, backup_path)
+                else:
+                    self._delete_profile_image_file(relative_path)
             raise
+        finally:
+            if backup_path is not None:
+                backup_path.unlink(missing_ok=True)
         if previous_path and previous_path != relative_path:
             self._delete_profile_image_file(previous_path)
         return self.get_person(user_id, person.id, include_archived=True)

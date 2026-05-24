@@ -147,6 +147,7 @@ async def get_person_group(
     "/reorder",
     status_code=status.HTTP_204_NO_CONTENT,
     responses={
+        400: {"description": "Bad request - invalid reorder data"},
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Group not found"},
