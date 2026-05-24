@@ -78,7 +78,7 @@ Note: “Swalab Tech” refers to the creator and copyright holder of Journiv, i
 
   <script>
     // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = "674141978";
+    const serviceWorkerVersion = "2893257261" /* Flutter's service worker is deprecated and will be removed in a future Flutter release. */;
   </script>
   <!-- This script adds the flutter initialization JS code -->
   <script src="flutter.js" defer></script>
@@ -173,24 +173,47 @@ Note: “Swalab Tech” refers to the creator and copyright holder of Journiv, i
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
   </script>
   <script>
-    function showUpdateSnackbar() {
+    let refreshingForServiceWorker = false;
+
+    function showUpdateSnackbar(onRefresh) {
       const s = document.createElement('div');
       s.innerHTML = `<div id="update-snackbar"><span>New version of Journiv available</span><button id="refresh-btn">Refresh</button></div>`;
       document.body.appendChild(s);
-      document.getElementById('refresh-btn').addEventListener('click', () => window.location.reload());
+      document.getElementById('refresh-btn').addEventListener('click', onRefresh);
+    }
+
+    function activateUpdatedServiceWorker(registration) {
+      const worker = registration.waiting || registration.installing;
+      if (worker) {
+        worker.postMessage('skipWaiting');
+      } else {
+        window.location.reload();
+      }
     }
 
     if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshingForServiceWorker) {
+          return;
+        }
+        refreshingForServiceWorker = true;
+        window.location.reload();
+      });
+
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('flutter_service_worker.js?v=674141978')
+        navigator.serviceWorker.register('flutter_service_worker.js?v=2893257261') /* Flutter's service worker is deprecated and will be removed in a future Flutter release. */
           .then(r => {
             console.log('Journiv service worker registered:', r.scope);
+            if (r.waiting && navigator.serviceWorker.controller) {
+              showUpdateSnackbar(() => activateUpdatedServiceWorker(r));
+            }
             r.onupdatefound = () => {
               const n = r.installing;
               if (n) {
                 n.onstatechange = () => {
                   if (n.state === 'installed' && navigator.serviceWorker.controller) {
-                    console.log('🆕 New Journiv version detected'); showUpdateSnackbar();
+                    console.log('New Journiv version detected');
+                    showUpdateSnackbar(() => activateUpdatedServiceWorker(r));
                   }
                 }
               }
