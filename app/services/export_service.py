@@ -30,12 +30,14 @@ from app.models import (
     Mood,
     MoodGroup,
     MoodGroupLink,
+    Person,
     User,
 )
 from app.models.enums import ExportType
 from app.models.export_job import ExportJob
 from app.models.goal import GoalManualLog
 from app.models.moment import Moment, MomentMoodActivity
+from app.models.moment_person_link import MomentPersonLink
 from app.schemas.dto import (
     ActivityDTO,
     ActivityGroupDTO,
@@ -54,6 +56,7 @@ from app.schemas.dto import (
     MoodGroupLinkDTO,
     MoodGroupPreferenceDTO,
     MoodPreferenceDTO,
+    PersonDTO,
     UserSettingsDTO,
 )
 from app.utils.import_export import MediaHandler, ZipHandler, validate_export_data
@@ -186,6 +189,7 @@ class ExportService:
         # Get activity groups/activities
         activity_group_dtos = self._get_activity_groups(user_id)
         activity_dtos = self._get_activities(user_id)
+        person_dtos = self._get_people(user_id)
 
         # Get goals and categories/logs
         goal_category_dtos = self._get_goal_categories(user_id)
@@ -228,6 +232,7 @@ class ExportService:
             "mood_group_count": len(mood_group_dtos),
             "activity_count": len(activity_dtos),
             "activity_group_count": len(activity_group_dtos),
+            "people_count": len(person_dtos),
             "goal_count": len(goal_dtos),
             "goal_category_count": len(goal_category_dtos),
             "goal_log_count": len(goal_log_dtos),
@@ -250,6 +255,7 @@ class ExportService:
             mood_group_preferences=mood_group_preference_dtos,
             activities=activity_dtos,
             activity_groups=activity_group_dtos,
+            people=person_dtos,
             goal_categories=goal_category_dtos,
             goals=goal_dtos,
             goal_logs=goal_log_dtos,
@@ -448,6 +454,7 @@ class ExportService:
                 "activity_map": {},
                 "media_map": {},
                 "entry_map": {},
+                "people_links_by_moment": {},
             }
         moment_ids = [moment.id for moment in moments]
         links = (
@@ -524,6 +531,16 @@ class ExportService:
             for entry in entries
             if entry.moment_id is not None
         }
+        people_links_by_moment: dict[UUID, list[UUID]] = {moment_id: [] for moment_id in moment_ids}
+        people_links = (
+            self.db.execute(
+                select(MomentPersonLink).where(col(MomentPersonLink.moment_id).in_(moment_ids))
+            )
+            .scalars()
+            .all()
+        )
+        for link in people_links:
+            people_links_by_moment.setdefault(link.moment_id, []).append(link.person_id)
 
         return {
             "links_by_moment": links_by_moment,
@@ -531,6 +548,7 @@ class ExportService:
             "activity_map": activity_map,
             "media_map": media_map,
             "entry_map": entry_map,
+            "people_links_by_moment": people_links_by_moment,
         }
 
     def _convert_moment_to_dto(
@@ -546,6 +564,7 @@ class ExportService:
         links_by_moment: dict[UUID, list[MomentMoodActivity]] = prefetch.get("links_by_moment", {})
         media_map: dict[UUID, list[MomentMedia]] = prefetch.get("media_map", {})
         entry_map: dict[UUID, Entry] = prefetch.get("entry_map", {})
+        people_links_by_moment: dict[UUID, list[UUID]] = prefetch.get("people_links_by_moment", {})
 
         mood_name = None
         if moment.primary_mood_id:
@@ -659,6 +678,7 @@ class ExportService:
 
         # Collect tag names from MomentTagLink
         tags = [tag.name for tag in moment.tags] if moment.tags else []
+        people_external_ids = [str(person_id) for person_id in people_links_by_moment.get(moment.id, [])]
 
         # Get prompt text if moment was created from a prompt
         prompt_text = None
@@ -681,6 +701,7 @@ class ExportService:
             is_pinned=moment.is_pinned,
             prompt_text=prompt_text,
             tags=tags,
+            people_external_ids=people_external_ids,
             primary_mood_name=mood_name,
             primary_mood_external_id=str(moment.primary_mood_id) if moment.primary_mood_id else None,
             mood_activity=mood_activity,
@@ -744,6 +765,28 @@ class ExportService:
             external_metadata=media.external_metadata,
             external_id=str(media.id),
         )
+
+    def _get_people(self, user_id: UUID) -> List[PersonDTO]:
+        rows = (
+            self.db.execute(
+                select(Person).where(col(Person.user_id) == user_id).order_by(col(Person.created_at).asc())
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            PersonDTO(
+                name=person.name,
+                nickname=person.nickname,
+                note=person.note,
+                profile_image_path=person.profile_image_path,
+                archived_at=person.archived_at,
+                created_at=person.created_at,
+                updated_at=person.updated_at,
+                external_id=str(person.id),
+            )
+            for person in rows
+        ]
 
     def _get_mood_definitions(self, user_id: UUID) -> List[MoodDefinitionDTO]:
         """

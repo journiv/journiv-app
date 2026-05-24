@@ -12,6 +12,7 @@ from app.api.dependencies import get_current_user, get_session
 from app.core.db_utils import normalize_uuid_list
 from app.core.exceptions import TagNotFoundError, ValidationError
 from app.core.logging_config import log_error, log_warning
+from app.integrations.schemas import MomentImmichPeopleSuggestionsResponse
 from app.models.enums import GoalLogStatus
 from app.models.goal import Goal, GoalLog
 from app.models.moment import Moment, MomentMoodActivity
@@ -29,12 +30,20 @@ from app.schemas.moment import (
     MomentPageResponse,
     MomentResponse,
     MomentUpdate,
+    PeopleMatch,
 )
 from app.schemas.mood import MoodResponse
+from app.schemas.person import (
+    MomentPeopleReplaceRequest,
+    PersonResponse,
+    PersonSummaryResponse,
+)
 from app.schemas.tag import TagResponse
+from app.services.immich_face_service import ImmichFaceService
 from app.services.media_service import MediaService
 from app.services.moment_lookup import MomentNotFoundError
 from app.services.moment_service import MomentService
+from app.services.person_service import PersonService
 from app.services.tag_service import TagService
 
 router = APIRouter(prefix="/moments", tags=["moments"])
@@ -73,6 +82,16 @@ def _build_moment_response(
 
     mood_activity = [_build_mood_activity_response(link) for link in links]
     tags = [TagResponse.model_validate(tag) for tag in (moment.tags or []) if tag.user_id == current_user.id]
+    people = [
+        PersonSummaryResponse(
+            id=person.id,
+            name=person.name,
+            nickname=person.nickname,
+            profile_image_url=PersonService.build_profile_image_url(person),
+        )
+        for person in (moment.people or [])
+        if person.user_id == current_user.id and person.archived_at is None
+    ]
 
     logged_date_tz = _require_logged_date_tz(moment)
     return MomentResponse(
@@ -93,6 +112,7 @@ def _build_moment_response(
         is_pinned=moment.is_pinned,
         mood_activity=mood_activity,
         tags=tags,
+        people=people,
         completed_goals=completed_goals or [],
         media_count=moment.media_count,
         media=media or [],
@@ -193,6 +213,16 @@ def _build_moment_responses(
                     TagResponse.model_validate(tag)
                     for tag in (moment.tags or [])
                     if tag.user_id == current_user.id
+                ],
+                people=[
+                    PersonSummaryResponse(
+                        id=person.id,
+                        name=person.name,
+                        nickname=person.nickname,
+                        profile_image_url=PersonService.build_profile_image_url(person),
+                    )
+                    for person in (moment.people or [])
+                    if person.user_id == current_user.id and person.archived_at is None
                 ],
                 completed_goals=completed_goals_map.get(moment.id, []),
                 media_count=moment.media_count,
@@ -402,6 +432,127 @@ async def remove_tag_from_moment(
 
 
 @router.get(
+    "/{moment_id}/people",
+    response_model=List[PersonResponse],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Moment not found"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def get_moment_people(
+    moment_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    person_service = PersonService(session)
+    try:
+        return person_service.get_moment_people(moment_id, current_user.id)
+    except MomentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except Exception as exc:
+        log_error(exc)
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@router.put(
+    "/{moment_id}/people",
+    response_model=List[PersonResponse],
+    responses={
+        400: {"description": "Invalid people payload"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Moment not found"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def replace_moment_people(
+    moment_id: uuid.UUID,
+    payload: MomentPeopleReplaceRequest,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    person_service = PersonService(session)
+    try:
+        return person_service.replace_moment_people(
+            moment_id=moment_id,
+            person_ids=payload.person_ids,
+            user_id=current_user.id,
+        )
+    except MomentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
+    except Exception as exc:
+        log_error(exc)
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@router.delete(
+    "/{moment_id}/people/{person_id}",
+    status_code=204,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Moment or person not found"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def remove_person_from_moment(
+    moment_id: uuid.UUID,
+    person_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    person_service = PersonService(session)
+    try:
+        person_service.remove_person_from_moment(
+            moment_id=moment_id,
+            person_id=person_id,
+            user_id=current_user.id,
+        )
+    except MomentNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from None
+    except Exception as exc:
+        log_error(exc)
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@router.post(
+    "/{moment_id}/people/suggestions/immich",
+    response_model=MomentImmichPeopleSuggestionsResponse,
+    responses={
+        400: {"description": "Immich integration not connected or invalid request"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Moment not found"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def get_immich_people_suggestions(
+    moment_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    service = ImmichFaceService(session)
+    try:
+        return await service.get_moment_suggestions(current_user.id, moment_id)
+    except ValueError as exc:
+        message = str(exc)
+        if message == "Moment not found":
+            raise HTTPException(status_code=404, detail=message) from None
+        raise HTTPException(status_code=400, detail=message) from None
+    except Exception as exc:
+        log_error(exc)
+        raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@router.get(
     "/memories",
     response_model=MomentMemoriesResponse,
     responses={
@@ -577,6 +728,8 @@ async def get_moments(
     include_media: Annotated[str | None, Query()] = None,
     journal_id: Annotated[uuid.UUID | None, Query()] = None,
     mood_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    person_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    people_match: Annotated[PeopleMatch | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     include_drafts: Annotated[bool, Query()] = False,
     include_empty: Annotated[bool, Query()] = False,
@@ -598,6 +751,8 @@ async def get_moments(
         end_date=end_date,
         journal_id=journal_id,
         mood_ids=mood_ids if mood_ids else None,
+        person_ids=person_ids if person_ids else None,
+        people_match=people_match or PeopleMatch.any,
         search=search,
         include_drafts=include_drafts,
         include_empty=include_empty,

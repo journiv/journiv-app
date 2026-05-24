@@ -30,10 +30,15 @@ from app.models.user import User
 IMMICH_API_USER_ME = "/api/users/me"
 IMMICH_API_SEARCH_METADATA = "/api/search/metadata"  # Search assets with pagination
 IMMICH_API_ASSET_THUMBNAIL = "/api/assets/{asset_id}/thumbnail"
+IMMICH_API_PEOPLE = "/api/people"
+IMMICH_API_PERSON = "/api/people/{person_id}"
+IMMICH_API_PERSON_THUMBNAIL = "/api/people/{person_id}/thumbnail"
+IMMICH_API_FACES = "/api/faces"
 IMMICH_API_ALBUMS = "/api/albums"
 IMMICH_API_ALBUM_ASSETS = "/api/albums/{album_id}/assets"
 
 _client: Optional[httpx.AsyncClient] = None
+IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD = 1000
 
 def _get_client() -> httpx.AsyncClient:
     """Reuse a single client to avoid connection churn."""
@@ -583,6 +588,120 @@ async def get_asset_info(
         log_warning(e, f"Failed to fetch Immich asset info for {asset_id}")
 
     return {}
+
+
+async def list_people(
+    base_url: str,
+    api_key: str,
+    *,
+    page: int = 1,
+    limit: int = 100,
+    search: Optional[str] = None,
+    include_hidden: bool = False,
+) -> tuple[list[dict[str, Any]], int, bool]:
+    """
+    Fetch people from Immich.
+
+    Immich supports paginated people listing. Its person search endpoint returns
+    a full list on current releases, so search pagination is applied locally.
+    """
+    client = _get_client()
+    headers = {"x-api-key": api_key, "Accept": "application/json"}
+    limit = max(1, min(limit, 1000))
+    page = max(1, page)
+
+    if search and search.strip():
+        response = await client.get(
+            f"{base_url}{IMMICH_API_PEOPLE}/search",
+            headers=headers,
+            params={"name": search.strip(), "withHidden": include_hidden},
+        )
+        response.raise_for_status()
+        data = response.json()
+        people = data if isinstance(data, list) else data.get("people", [])
+        if len(people) > IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD:
+            log_warning(
+                "Immich people search returned "
+                f"{len(people)} results without server-side pagination support"
+            )
+        start = (page - 1) * limit
+        page_items = people[start:start + limit]
+        return page_items, len(people), start + limit < len(people)
+
+    response = await client.get(
+        f"{base_url}{IMMICH_API_PEOPLE}",
+        headers=headers,
+        params={"page": page, "size": limit, "withHidden": include_hidden},
+    )
+    response.raise_for_status()
+    data = response.json()
+    if isinstance(data, list):
+        return data, len(data), len(data) == limit
+    people = data.get("people", [])
+    total = int(data.get("total") or len(people))
+    has_more = bool(data.get("hasNextPage")) if "hasNextPage" in data else page * limit < total
+    return people, total, has_more
+
+
+async def get_person(
+    base_url: str,
+    api_key: str,
+    person_id: str,
+) -> dict[str, Any]:
+    """Fetch a single Immich person."""
+    client = _get_client()
+    response = await client.get(
+        f"{base_url}{IMMICH_API_PERSON.format(person_id=person_id)}",
+        headers={"x-api-key": api_key, "Accept": "application/json"},
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data if isinstance(data, dict) else {}
+
+
+async def get_asset_faces(
+    base_url: str,
+    api_key: str,
+    asset_id: str,
+) -> list[dict[str, Any]]:
+    """Fetch face detections for a single Immich asset."""
+    client = _get_client()
+    response = await client.get(
+        f"{base_url}{IMMICH_API_FACES}",
+        headers={"x-api-key": api_key, "Accept": "application/json"},
+        params={"id": asset_id},
+    )
+    response.raise_for_status()
+    data = response.json()
+    return data if isinstance(data, list) else []
+
+
+def get_person_thumbnail_url(base_url: str, person_id: str) -> str:
+    """Build Immich person thumbnail URL."""
+    return f"{base_url}{IMMICH_API_PERSON_THUMBNAIL.format(person_id=person_id)}"
+
+
+async def get_person_thumbnail_bytes(
+    base_url: str,
+    api_key: str,
+    person_id: str,
+    *,
+    max_bytes: int = 10 * 1024 * 1024,
+) -> bytes:
+    """Fetch an Immich person thumbnail for storage in Journiv."""
+    client = _get_client()
+    content = bytearray()
+    async with client.stream(
+        "GET",
+        get_person_thumbnail_url(base_url, person_id),
+        headers={"x-api-key": api_key, "Accept": "image/*"},
+    ) as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes():
+            content.extend(chunk)
+            if len(content) > max_bytes:
+                raise ValueError("Immich person thumbnail exceeds maximum profile image size")
+    return bytes(content)
 
 
 def get_cached_asset_type(user_id: str, asset_id: str) -> Optional[AssetType]:

@@ -842,11 +842,20 @@ async def import_from_immich_async(
 
         with database_module.get_session_context() as read_session:
             placeholder_media = read_session.exec(
-                 select(MomentMedia)
-                 .where(MomentMedia.moment_id == request.moment_id)
-                 .where(MomentMedia.external_provider == "immich")
-                 .where(col(MomentMedia.external_asset_id).in_(request.asset_ids))
+                select(MomentMedia)
+                .where(MomentMedia.moment_id == request.moment_id)
+                .where(MomentMedia.external_provider == "immich")
+                .where(col(MomentMedia.external_asset_id).in_(request.asset_ids))
             ).all()
+            signed_media = [
+                attach_signed_urls(
+                    MomentMediaResponse.model_validate(record),
+                    str(current_user.id),
+                    include_incomplete=True,
+                    external_base_url=immich_integration.base_url,
+                )
+                for record in placeholder_media
+            ]
         file_logger.debug(
             "[IMMICH_IMPORT] Placeholder fetch completed",
             extra={
@@ -918,17 +927,6 @@ async def import_from_immich_async(
             extra={"user_id": str(current_user.id), "job_id": str(job.id)}
         )
 
-        signed_media = [
-            MomentMediaResponse.model_validate(
-                attach_signed_urls(
-                    MomentMediaResponse.model_validate(record),
-                    str(current_user.id),
-                    include_incomplete=True,
-                    external_base_url=immich_integration.base_url,
-                )
-            )
-            for record in placeholder_media
-        ]
         file_logger.debug(
             "[IMMICH_IMPORT] Signed media build completed",
             extra={

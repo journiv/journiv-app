@@ -20,6 +20,8 @@ from app.api.v1.endpoints import (
     moments,
     moods,
     oidc,
+    people,
+    people_groups,
     prompts,
     security,
     tags,
@@ -50,6 +52,8 @@ api_router.include_router(goals.category_router)
 api_router.include_router(moods.router)
 api_router.include_router(prompts.router)
 api_router.include_router(tags.router)
+api_router.include_router(people.router)
+api_router.include_router(people_groups.router)
 api_router.include_router(analytics.router)
 api_router.include_router(media.router)
 api_router.include_router(export_router)

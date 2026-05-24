@@ -111,6 +111,10 @@ class MomentDTO(BaseModel):
     is_pinned: bool = Field(default=False, description="Whether moment is pinned")
     prompt_text: Optional[str] = Field(None, description="Original prompt text if moment used a prompt")
     tags: List[str] = Field(default_factory=list, description="List of tag names")
+    people_external_ids: List[str] = Field(
+        default_factory=list,
+        description="References to exported people records by external_id",
+    )
     primary_mood_name: Optional[str] = Field(None, description="Primary mood name")
     mood_activity: List[MomentMoodActivityDTO] = Field(default_factory=list, description="Mood/activity links")
     media: List["MomentMediaDTO"] = Field(default_factory=list, description="Media attached to moment")
@@ -233,6 +237,24 @@ class EntryDTO(BaseModel):
                     "Non-draft entry must have content (title, delta, or plain text)"
                 )
         return self
+
+
+class PersonDTO(BaseModel):
+    """
+    Person catalog entry for import/export.
+
+    Maps to: Person model (app/models/person.py)
+    """
+    name: str = Field(..., description="Display name")
+    nickname: Optional[str] = Field(None, description="Optional nickname")
+    note: Optional[str] = Field(None, description="Optional profile note")
+    profile_image_path: Optional[str] = Field(
+        None, description="Optional backend-managed profile image path"
+    )
+    archived_at: Optional[datetime] = Field(None, description="Archived timestamp in UTC")
+    created_at: datetime = Field(..., description="Person creation time in UTC")
+    updated_at: datetime = Field(..., description="Person last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
 
 
 class JournalDTO(BaseModel):
@@ -471,7 +493,7 @@ class JournivExportDTO(BaseModel):
     This is the top-level structure for full exports.
     """
     # Metadata
-    export_version: str = Field("1.4", description="Export format version")
+    export_version: str = Field("1.5", description="Export format version")
     export_date: datetime = Field(..., description="When export was created (UTC)")
     app_version: str = Field(..., description="Journiv version that created export")
 
@@ -489,6 +511,7 @@ class JournivExportDTO(BaseModel):
     mood_group_preferences: List[MoodGroupPreferenceDTO] = Field(default_factory=list, description="User mood group preferences")
     activities: List[ActivityDTO] = Field(default_factory=list, description="User activities")
     activity_groups: List[ActivityGroupDTO] = Field(default_factory=list, description="Activity groups")
+    people: List[PersonDTO] = Field(default_factory=list, description="User-defined people catalog")
     goal_categories: List[GoalCategoryDTO] = Field(default_factory=list, description="Goal categories")
     goals: List[GoalDTO] = Field(default_factory=list, description="Goals")
     goal_logs: List[GoalLogDTO] = Field(default_factory=list, description="Goal logs")
@@ -596,6 +619,9 @@ class ImportResultSummary(BaseModel):
     goals_created: int = Field(0, description="Number of goals created")
     goal_logs_created: int = Field(0, description="Number of goal logs created")
     goal_manual_logs_created: int = Field(0, description="Number of manual goal logs created")
+    people_created: int = Field(0, description="Number of people created")
+    people_reused: int = Field(0, description="Existing people reused by normalized name")
+    people_links_created: int = Field(0, description="Moment-person links created")
 
     # Deduplication stats
     media_files_deduplicated: int = Field(0, description="Media files deduplicated by checksum")

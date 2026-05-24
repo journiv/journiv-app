@@ -33,10 +33,12 @@ if TYPE_CHECKING:
     from .entry import Entry
     from .goal import GoalLog
     from .mood import Mood
+    from .person import Person
     from .prompt import Prompt
     from .tag import Tag
     from .user import User
 
+from .moment_person_link import MomentPersonLink
 from .moment_tag_link import MomentTagLink
 
 
@@ -137,6 +139,7 @@ class Moment(BaseModel, table=True):
     )
     prompt: Optional["Prompt"] = Relationship(back_populates="moments")
     tags: List["Tag"] = Relationship(back_populates="moments", link_model=MomentTagLink)
+    people: List["Person"] = Relationship(back_populates="moments", link_model=MomentPersonLink)
     mood_activity_links: List["MomentMoodActivity"] = Relationship(
         back_populates="moment",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
