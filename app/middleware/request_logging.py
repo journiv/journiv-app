@@ -8,6 +8,7 @@ import uuid
 from contextvars import ContextVar
 from typing import Optional
 
+from app.core.config import settings
 from app.core.logging_config import _sanitize_data
 
 logger = logging.getLogger(__name__)
@@ -61,6 +62,7 @@ class RequestLoggingMiddleware:
 
     def __init__(self, app):
         self.app = app
+        self.log_http_requests = settings.log_http_requests
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
@@ -79,17 +81,17 @@ class RequestLoggingMiddleware:
             client_host = scope.get("client", ["unknown", 0])[0] if scope.get("client") else "unknown"
             request_path_ctx.set(path)
 
-            # Structured logging for request start
-            logger.info(
-                "Request started",
-                extra={
-                    "request_id": request_id,
-                    "method": method,
-                    "path": path,
-                    "client_ip": client_host,
-                    "event": "request_start"
-                }
-            )
+            if self.log_http_requests:
+                logger.info(
+                    "Request started",
+                    extra={
+                        "request_id": request_id,
+                        "method": method,
+                        "path": path,
+                        "client_ip": client_host,
+                        "event": "request_start"
+                    }
+                )
 
             # Process request and capture response
             response_captured = None
@@ -190,7 +192,7 @@ class RequestLoggingMiddleware:
                             sanitized_body = _sanitize_response_body(response_body)
                             log_extra["response_body"] = sanitized_body
                         logger.warning("Request completed with client error", extra=log_extra)
-                    else:
+                    elif self.log_http_requests:
                         logger.info("Request completed successfully", extra=log_extra)
         else:
             # Non-HTTP scope (e.g., WebSocket, lifespan)

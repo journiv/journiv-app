@@ -2,15 +2,12 @@
 Content Security Policy (CSP) middleware for FastAPI.
 Provides comprehensive security headers for the Journiv web application.
 """
-import logging
 from typing import Optional
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.csp_config import get_csp_config
-
-logger = logging.getLogger(__name__)
 
 
 class CSPMiddleware(BaseHTTPMiddleware):
@@ -83,8 +80,6 @@ class CSPMiddleware(BaseHTTPMiddleware):
 
             if "X-Frame-Options" in response.headers:
                 del response.headers["X-Frame-Options"]
-
-        logger.debug(f"Added security headers for {request.url.path}")
 
 
 def create_csp_middleware(
