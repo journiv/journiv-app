@@ -144,6 +144,23 @@ def render_delta_to_html(
         current_block_type = None
         return content
 
+    def take_current_line_content() -> str:
+        """Consume only the current line, flushing earlier paragraph lines first."""
+        nonlocal current_block, current_block_type
+        if not current_block:
+            return ""
+        content = ''.join(current_block)
+        if '<br>' not in content:
+            return take_current_block_content()
+
+        previous_content, _, current_line = content.rpartition('<br>')
+        if previous_content.strip():
+            tag = current_block_type or 'p'
+            html_parts.append(f'<{tag}>{previous_content}<br></{tag}>')
+        current_block = []
+        current_block_type = None
+        return current_line.strip()
+
     for op in ops:
         if not isinstance(op, dict):
             continue
@@ -158,7 +175,9 @@ def render_delta_to_html(
             lines = insert.split('\n')
 
             for i, line in enumerate(lines):
-                is_newline = (i < len(lines) - 1) or (i == 0 and not line)
+                is_newline = i < len(lines) - 1
+                if not is_newline and not line:
+                    continue
 
                 # Check for block-level formatting
                 header = attributes.get("header")
@@ -181,7 +200,7 @@ def render_delta_to_html(
 
                     carried_content = ""
                     if is_newline and not line and current_block and (current_block_type in (None, 'p')):
-                        carried_content = take_current_block_content()
+                        carried_content = take_current_line_content()
                     else:
                         flush_block()
 
@@ -205,7 +224,7 @@ def render_delta_to_html(
 
                     carried_content = ""
                     if is_newline and not line and current_block and (current_block_type in (None, 'p')):
-                        carried_content = take_current_block_content()
+                        carried_content = take_current_line_content()
 
                     if current_block_type != 'blockquote':
                         flush_block()
@@ -228,7 +247,7 @@ def render_delta_to_html(
 
                     carried_content = ""
                     if is_newline and not line and current_block and (current_block_type in (None, 'p')):
-                        carried_content = take_current_block_content()
+                        carried_content = take_current_line_content()
 
                     header_tag = f'h{_normalize_header_level(header)}'
 
@@ -245,9 +264,6 @@ def render_delta_to_html(
 
                 else:
                     # Regular paragraph
-                    flush_list()
-                    flush_code_block()
-
                     if current_block_type and current_block_type != 'p':
                         flush_block()
 
@@ -256,6 +272,8 @@ def render_delta_to_html(
                         current_block.append(formatted_line)
 
                     if is_newline:
+                        flush_list()
+                        flush_code_block()
                         if current_block:
                             current_block.append('<br>')
 
@@ -367,9 +385,9 @@ def render_delta_to_html(
                         html_parts.append(f'<audio controls src="{safe_url}"></audio>')
 
     # Flush any remaining blocks
-    flush_block()
     flush_list()
     flush_code_block()
+    flush_block()
 
     # Join all HTML parts
     result = ''.join(html_parts)

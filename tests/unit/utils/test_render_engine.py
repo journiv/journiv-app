@@ -120,6 +120,42 @@ def test_render_ordered_list():
     assert "</ol>" in result
 
 
+def test_render_ordered_list_with_quill_newline_attributes():
+    """Test rendering standard Quill ordered lists with block attributes on newlines."""
+    delta = {
+        "ops": [
+            {"insert": "First"},
+            {"insert": "\n", "attributes": {"list": "ordered"}},
+            {"insert": "Second"},
+            {"insert": "\n", "attributes": {"list": "ordered"}},
+            {"insert": "Third"},
+            {"insert": "\n", "attributes": {"list": "ordered"}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == "<ol><li>First</li><li>Second</li><li>Third</li></ol>"
+
+
+def test_render_quill_list_separated_by_plain_paragraph():
+    """Test standard Quill list items split by a plain paragraph."""
+    delta = {
+        "ops": [
+            {"insert": "First"},
+            {"insert": "\n", "attributes": {"list": "ordered"}},
+            {"insert": "Plain paragraph"},
+            {"insert": "\n"},
+            {"insert": "Second"},
+            {"insert": "\n", "attributes": {"list": "ordered"}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == (
+        "<ol><li>First</li></ol>"
+        "<p>Plain paragraph<br></p>"
+        "<ol><li>Second</li></ol>"
+    )
+
+
 def test_render_blockquote():
     """Test rendering blockquotes."""
     delta = {
