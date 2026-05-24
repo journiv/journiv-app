@@ -1,6 +1,7 @@
 """
 People API integration tests.
 """
+import io
 
 from tests.integration.helpers import (
     UNKNOWN_UUID,
@@ -347,6 +348,12 @@ def test_people_endpoints_require_auth(api_client: JournivApiClient):
             EndpointCase("POST", "/people/", json={"name": "No Auth"}),
             EndpointCase("GET", f"/people/{UNKNOWN_UUID}"),
             EndpointCase("PUT", f"/people/{UNKNOWN_UUID}", json={"name": "No Auth"}),
+            EndpointCase(
+                "POST",
+                f"/people/{UNKNOWN_UUID}/profile-image",
+                files={"file": ("profile.jpg", io.BytesIO(b"not-authenticated"), "image/jpeg")},
+            ),
+            EndpointCase("DELETE", f"/people/{UNKNOWN_UUID}/profile-image"),
             EndpointCase("DELETE", f"/people/{UNKNOWN_UUID}"),
             EndpointCase("POST", f"/people/{UNKNOWN_UUID}/restore"),
             EndpointCase("POST", f"/people/{UNKNOWN_UUID}/merge/{UNKNOWN_UUID}"),

@@ -76,6 +76,24 @@ def test_person_group_crud_and_reorder():
         session.close()
 
 
+def test_reorder_rejects_duplicate_group_ids():
+    session = _create_session()
+    try:
+        user = _create_user(session)
+        service = PersonGroupService(session)
+        group = service.create_group(user.id, PersonGroupCreate(name="Family"))
+
+        with pytest.raises(ValueError, match="Duplicate group IDs"):
+            service.reorder_groups(user.id, [(group.id, 10), (group.id, 20)])
+    finally:
+        session.close()
+
+
+def test_person_group_model_rejects_whitespace_name():
+    with pytest.raises(ValueError, match="Group name cannot be empty"):
+        PersonGroup(user_id=uuid.uuid4(), name="   ")
+
+
 def test_update_nonexistent_group_raises():
     session = _create_session()
     try:

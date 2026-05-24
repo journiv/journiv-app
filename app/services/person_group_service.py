@@ -145,7 +145,11 @@ class PersonGroupService:
         if not updates:
             return
 
-        requested_ids = list({group_id for group_id, _ in updates})
+        requested_ids = [group_id for group_id, _ in updates]
+        if len(set(requested_ids)) != len(requested_ids):
+            raise ValueError("Duplicate group IDs are not allowed in reorder updates")
+
+        requested_ids = list(dict.fromkeys(requested_ids))
         existing_ids = set(
             self.session.exec(
                 select(PersonGroup.id).where(

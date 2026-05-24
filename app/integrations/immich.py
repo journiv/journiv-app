@@ -690,15 +690,18 @@ async def get_person_thumbnail_bytes(
 ) -> bytes:
     """Fetch an Immich person thumbnail for storage in Journiv."""
     client = _get_client()
-    response = await client.get(
+    content = bytearray()
+    async with client.stream(
+        "GET",
         get_person_thumbnail_url(base_url, person_id),
         headers={"x-api-key": api_key, "Accept": "image/*"},
-    )
-    response.raise_for_status()
-    content = response.content
-    if len(content) > max_bytes:
-        raise ValueError("Immich person thumbnail exceeds maximum profile image size")
-    return content
+    ) as response:
+        response.raise_for_status()
+        async for chunk in response.aiter_bytes():
+            content.extend(chunk)
+            if len(content) > max_bytes:
+                raise ValueError("Immich person thumbnail exceeds maximum profile image size")
+    return bytes(content)
 
 
 def get_cached_asset_type(user_id: str, asset_id: str) -> Optional[AssetType]:

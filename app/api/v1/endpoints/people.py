@@ -16,6 +16,8 @@ from app.services.person_service import PersonService
 
 router = APIRouter(prefix="/people", tags=["people"])
 
+PROFILE_IMAGE_READ_CHUNK_BYTES = 1024 * 1024
+
 
 def _raise_internal_server_error(exc: Exception, user_id: uuid.UUID) -> None:
     log_error(exc, request_id=None, user_id=user_id)
@@ -167,8 +169,19 @@ async def upload_person_profile_image(
 ):
     service = PersonService(session)
     try:
-        image_bytes = await file.read()
+        image_buffer = bytearray()
+        while chunk := await file.read(PROFILE_IMAGE_READ_CHUNK_BYTES):
+            image_buffer.extend(chunk)
+            if len(image_buffer) > PersonService.PROFILE_IMAGE_MAX_BYTES:
+                await file.close()
+                raise HTTPException(
+                    status_code=413,
+                    detail="Profile image must be 10 MB or smaller",
+                )
+        image_bytes = bytes(image_buffer)
         return service.upload_profile_image(current_user.id, person_id, image_bytes)
+    except HTTPException:
+        raise
     except ValueError as exc:
         message = str(exc)
         if message == "Person not found":

@@ -848,13 +848,11 @@ async def import_from_immich_async(
                 .where(col(MomentMedia.external_asset_id).in_(request.asset_ids))
             ).all()
             signed_media = [
-                MomentMediaResponse.model_validate(
-                    attach_signed_urls(
-                        MomentMediaResponse.model_validate(record),
-                        str(current_user.id),
-                        include_incomplete=True,
-                        external_base_url=immich_integration.base_url,
-                    )
+                attach_signed_urls(
+                    MomentMediaResponse.model_validate(record),
+                    str(current_user.id),
+                    include_incomplete=True,
+                    external_base_url=immich_integration.base_url,
                 )
                 for record in placeholder_media
             ]

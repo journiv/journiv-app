@@ -78,7 +78,7 @@ def upgrade() -> None:
         sa.UniqueConstraint(
             "user_id", "stable_key", name="uq_person_group_user_stable_key"
         ),
-        sa.CheckConstraint("length(name) > 0", name="ck_person_group_name_non_empty"),
+        sa.CheckConstraint("length(trim(name)) > 0", name="ck_person_group_name_non_empty"),
     )
     op.create_index(
         op.f("ix_person_group_stable_key"), "person_group", ["stable_key"], unique=False

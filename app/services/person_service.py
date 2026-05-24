@@ -494,8 +494,12 @@ class PersonService:
         person.profile_image_path = relative_path
         person.updated_at = utc_now()
         self.session.add(person)
-        self._commit()
-        self.session.refresh(person)
+        try:
+            self._commit()
+            self.session.refresh(person)
+        except Exception:
+            self._delete_profile_image_file(relative_path)
+            raise
         if previous_path and previous_path != relative_path:
             self._delete_profile_image_file(previous_path)
         return self.get_person(user_id, person.id, include_archived=True)

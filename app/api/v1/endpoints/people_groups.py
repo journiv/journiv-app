@@ -167,6 +167,11 @@ async def reorder_person_groups(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Person group not found or not owned by user",
         ) from None
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from None
     except Exception as exc:
         log_error(exc, request_id=None, user_id=current_user.id)
         raise HTTPException(

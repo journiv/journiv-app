@@ -1,7 +1,6 @@
 """
 Service for Immich person mappings and face suggestions.
 """
-import asyncio
 import re
 import time
 import uuid
@@ -9,7 +8,7 @@ from typing import Any, Iterable, Optional
 from urllib.parse import urlencode
 
 import httpx
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, delete, select
 
 from app.core.config import settings
 from app.core.encryption import decrypt_token
@@ -139,6 +138,50 @@ class ImmichFaceService:
     ) -> ImmichPeopleListResponse:
         integration = self._get_integration(user_id)
         api_key = self._api_key(integration)
+        if mapped_filter in {"mapped", "unmapped"}:
+            raw_page = 1
+            raw_limit = max(limit, 100)
+            filtered_total = 0
+            page_start = (page - 1) * limit
+            filtered_people: list[ImmichPersonResponse] = []
+            has_raw_more = True
+
+            while has_raw_more:
+                people, raw_total, has_raw_more = await immich.list_people(
+                    integration.base_url,
+                    api_key,
+                    page=raw_page,
+                    limit=raw_limit,
+                    search=search,
+                    include_hidden=include_hidden,
+                )
+                if raw_page * raw_limit >= raw_total:
+                    has_raw_more = False
+                if not people:
+                    break
+                external_ids = [str(person.get("id")) for person in people if person.get("id")]
+                mapped = self._identity_map(integration.id, external_ids)
+                for person in people:
+                    if not person.get("id"):
+                        continue
+                    response = self._build_immich_person_response(user_id, person, mapped)
+                    if mapped_filter == "mapped" and response.mapped_person is None:
+                        continue
+                    if mapped_filter == "unmapped" and response.mapped_person is not None:
+                        continue
+                    if filtered_total >= page_start and len(filtered_people) < limit:
+                        filtered_people.append(response)
+                    filtered_total += 1
+                raw_page += 1
+
+            return ImmichPeopleListResponse(
+                people=filtered_people,
+                page=page,
+                limit=limit,
+                total=filtered_total,
+                has_more=filtered_total > page_start + limit,
+            )
+
         people, total, has_more = await immich.list_people(
             integration.base_url,
             api_key,
@@ -154,10 +197,6 @@ class ImmichFaceService:
             for person in people
             if person.get("id")
         ]
-        if mapped_filter == "mapped":
-            responses = [person for person in responses if person.mapped_person is not None]
-        elif mapped_filter == "unmapped":
-            responses = [person for person in responses if person.mapped_person is None]
         return ImmichPeopleListResponse(
             people=responses,
             page=page,
@@ -434,11 +473,13 @@ class ImmichFaceService:
         identities = self._identity_map(integration.id, person_ids)
         now = utc_now()
         faces: list[ImmichAssetFace] = []
+        seen_face_ids: set[str] = set()
 
         for item in face_data:
             external_face_id = str(item.get("id") or "")
             if not external_face_id:
                 continue
+            seen_face_ids.add(external_face_id)
             person_value = item.get("person")
             person_data: dict[str, Any] = person_value if isinstance(person_value, dict) else {}
             external_person_id = str(person_data.get("id")) if person_data.get("id") else None
@@ -476,6 +517,15 @@ class ImmichFaceService:
             self.session.add(face)
             faces.append(face)
 
+        stale_statement = delete(ImmichAssetFace).where(
+            col(ImmichAssetFace.integration_id) == integration.id,
+            col(ImmichAssetFace.external_asset_id) == asset_id,
+        )
+        if seen_face_ids:
+            stale_statement = stale_statement.where(
+                ~col(ImmichAssetFace.external_face_id).in_(seen_face_ids)
+            )
+        self.session.exec(stale_statement)
         self.session.commit()
         return self._cached_faces(integration.id, asset_id)
 
@@ -506,19 +556,15 @@ class ImmichFaceService:
         *,
         refresh: bool = False,
     ) -> ImmichBatchFacesResponse:
-        semaphore = asyncio.Semaphore(self._batch_concurrency)
         results: dict[str, list[ImmichFaceResponse]] = {}
         errors: dict[str, str] = {}
 
-        async def fetch(asset_id: str) -> None:
-            async with semaphore:
-                try:
-                    results[asset_id] = await self.get_asset_faces(user_id, asset_id, refresh=refresh)
-                except Exception as exc:
-                    log_error(exc, user_id=user_id, asset_id=asset_id)
-                    errors[asset_id] = str(exc)
-
-        await asyncio.gather(*(fetch(asset_id) for asset_id in dict.fromkeys(asset_ids)))
+        for asset_id in dict.fromkeys(asset_ids):
+            try:
+                results[asset_id] = await self.get_asset_faces(user_id, asset_id, refresh=refresh)
+            except Exception as exc:
+                log_error(exc, user_id=user_id, asset_id=asset_id)
+                errors[asset_id] = str(exc)
         return ImmichBatchFacesResponse(results=results, errors=errors)
 
     async def get_moment_suggestions(

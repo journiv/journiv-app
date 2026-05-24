@@ -4,7 +4,9 @@ Person Group model for grouping people.
 import uuid
 from typing import TYPE_CHECKING, List, Optional
 
+from pydantic import field_validator
 from sqlalchemy import BigInteger, Column, ForeignKey
+from sqlalchemy.orm import validates
 from sqlmodel import CheckConstraint, Field, Index, Relationship, UniqueConstraint
 
 from .base import BaseModel
@@ -49,5 +51,21 @@ class PersonGroup(BaseModel, table=True):
     __table_args__ = (
         Index("idx_person_group_user_name", "user_id", "name", unique=True),
         UniqueConstraint("user_id", "stable_key", name="uq_person_group_user_stable_key"),
-        CheckConstraint("length(name) > 0", name="ck_person_group_name_non_empty"),
+        CheckConstraint("length(trim(name)) > 0", name="ck_person_group_name_non_empty"),
     )
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        return cls._clean_name(v)
+
+    @validates("name")
+    def validate_name_assignment(self, _key: str, value: str) -> str:
+        return self._clean_name(value)
+
+    @staticmethod
+    def _clean_name(v: str) -> str:
+        cleaned = (v or "").strip()
+        if not cleaned:
+            raise ValueError("Group name cannot be empty")
+        return cleaned

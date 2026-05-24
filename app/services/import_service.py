@@ -1736,6 +1736,7 @@ class ImportService:
             if person.name
         }
         external_id_map: Dict[str, UUID] = {}
+        created_people = False
 
         for person_dto in people:
             normalized = self._normalize_person_name(person_dto.name)
@@ -1766,11 +1767,15 @@ class ImportService:
                 local_id = person.id
                 name_map[normalized] = local_id
                 summary.people_created += 1
+                created_people = True
 
             if person_dto.external_id:
                 external_id_map[person_dto.external_id] = local_id
                 if record_mapping:
                     record_mapping("people", person_dto.external_id, local_id)
+
+        if created_people:
+            self.db.commit()
 
         return external_id_map, name_map
 
