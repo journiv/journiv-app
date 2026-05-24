@@ -1,6 +1,8 @@
 """
 Moment service for unified timeline operations.
 """
+
+import calendar
 import uuid
 from datetime import date, datetime, timedelta
 from typing import Any, List, Optional, Tuple
@@ -62,7 +64,9 @@ class MomentService:
     def _get_owned_moment(self, user_id: uuid.UUID, moment_id: uuid.UUID) -> Moment:
         return get_owned_moment(self.session, user_id, moment_id)
 
-    def _get_owned_moment_with_relations(self, user_id: uuid.UUID, moment_id: uuid.UUID) -> Moment:
+    def _get_owned_moment_with_relations(
+        self, user_id: uuid.UUID, moment_id: uuid.UUID
+    ) -> Moment:
         return get_owned_moment(
             self.session,
             user_id,
@@ -71,10 +75,12 @@ class MomentService:
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
                 selectinload(Moment.people),  # type: ignore[arg-type]
-                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
-                .selectinload(MomentMoodActivity.mood),  # type: ignore[arg-type]
-                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
-                .selectinload(MomentMoodActivity.activity),  # type: ignore[arg-type]
+                selectinload(Moment.mood_activity_links).selectinload(  # type: ignore[arg-type]
+                    MomentMoodActivity.mood  # type: ignore[arg-type]
+                ),
+                selectinload(Moment.mood_activity_links).selectinload(  # type: ignore[arg-type]
+                    MomentMoodActivity.activity  # type: ignore[arg-type]
+                ),
             ],
         )
 
@@ -99,7 +105,9 @@ class MomentService:
             normalized_dt = ensure_utc(logged_at_utc)
         else:
             normalized_dt = utc_now()
-        derived_date = logged_date_tz or local_date_for_user(normalized_dt, timezone_name)
+        derived_date = logged_date_tz or local_date_for_user(
+            normalized_dt, timezone_name
+        )
         return normalized_dt, derived_date, timezone_name
 
     def _validate_mood_activity_inputs(
@@ -109,17 +117,23 @@ class MomentService:
         primary_mood_id: Optional[uuid.UUID],
     ) -> None:
         mood_ids = {item.mood_id for item in items if item.mood_id is not None}
-        activity_ids = {item.activity_id for item in items if item.activity_id is not None}
+        activity_ids = {
+            item.activity_id for item in items if item.activity_id is not None
+        }
 
         if primary_mood_id and primary_mood_id not in mood_ids:
             raise ValidationError("primary_mood_id must be part of the moment mood set")
 
         if mood_ids:
             normalized_ids = normalize_uuid_list(mood_ids)
-            statement = select(Mood.id).where(
-                col(Mood.is_active).is_(True),
-                col(Mood.user_id) == user_id,
-            ).where(col(Mood.id).in_(normalized_ids))
+            statement = (
+                select(Mood.id)
+                .where(
+                    col(Mood.is_active).is_(True),
+                    col(Mood.user_id) == user_id,
+                )
+                .where(col(Mood.id).in_(normalized_ids))
+            )
             existing_moods = self.session.exec(statement).all()
             if len(existing_moods) != len(mood_ids):
                 raise ValidationError("One or more moods not found")
@@ -135,7 +149,9 @@ class MomentService:
             if len(existing_activities) != len(activity_ids):
                 raise ValidationError("One or more activities not found")
 
-    def _ensure_active_mood_exists(self, user_id: uuid.UUID, mood_id: uuid.UUID) -> bool:
+    def _ensure_active_mood_exists(
+        self, user_id: uuid.UUID, mood_id: uuid.UUID
+    ) -> bool:
         """Helper to check if a mood exists and is active for the user."""
         statement = select(Mood.id).where(
             col(Mood.is_active).is_(True),
@@ -144,7 +160,9 @@ class MomentService:
         )
         return self.session.exec(statement).first() is not None
 
-    def _validate_activity_ids(self, user_id: uuid.UUID, activity_ids: List[uuid.UUID]) -> None:
+    def _validate_activity_ids(
+        self, user_id: uuid.UUID, activity_ids: List[uuid.UUID]
+    ) -> None:
         if not activity_ids:
             return
         existing_activities = self.session.exec(
@@ -163,7 +181,9 @@ class MomentService:
         items: List[MomentMoodActivityInput],
     ) -> None:
         self.session.exec(
-            delete(MomentMoodActivity).where(col(MomentMoodActivity.moment_id) == moment_id)
+            delete(MomentMoodActivity).where(
+                col(MomentMoodActivity.moment_id) == moment_id
+            )
         )
         seen_pairs: set[tuple[Optional[uuid.UUID], Optional[uuid.UUID]]] = set()
         for item in items:
@@ -186,7 +206,9 @@ class MomentService:
     ) -> None:
         if not items:
             return
-        activity_ids = [item.activity_id for item in items if item.activity_id is not None]
+        activity_ids = [
+            item.activity_id for item in items if item.activity_id is not None
+        ]
         if not activity_ids:
             return
         reference_date = self._reference_date(moment)
@@ -277,9 +299,13 @@ class MomentService:
             )
         )
         if moment_ids:
-            filtered_ids = [moment_id for moment_id in moment_ids if moment_id is not None]
+            filtered_ids = [
+                moment_id for moment_id in moment_ids if moment_id is not None
+            ]
             if filtered_ids:
-                statement = statement.where(col(Moment.id).in_(normalize_uuid_list(set(filtered_ids))))
+                statement = statement.where(
+                    col(Moment.id).in_(normalize_uuid_list(set(filtered_ids)))
+                )
 
         candidates = list(self.session.exec(statement))
         deleted_count = 0
@@ -332,21 +358,30 @@ class MomentService:
         moment_data: MomentUpdate,
         entry_service: Any,
     ) -> Optional[Entry]:
-        if moment_data.entry_update is not None and moment_data.entry_create is not None:
+        if (
+            moment_data.entry_update is not None
+            and moment_data.entry_create is not None
+        ):
             raise ValidationError("Provide only one of entry_update or entry_create")
 
         if moment_data.entry_update is not None:
-            entry = self.session.exec(select(Entry).where(Entry.moment_id == moment.id)).first()
+            entry = self.session.exec(
+                select(Entry).where(Entry.moment_id == moment.id)
+            ).first()
             if not entry:
                 raise EntryNotFoundError("Moment has no entry to update")
             entry_service.update_entry(entry.id, user_id, moment_data.entry_update)
             return None
 
         if moment_data.entry_create is not None:
-            existing_entry = self.session.exec(select(Entry).where(Entry.moment_id == moment.id)).first()
+            existing_entry = self.session.exec(
+                select(Entry).where(Entry.moment_id == moment.id)
+            ).first()
             if existing_entry:
                 raise ValidationError("Moment already has an entry")
-            return self._create_associated_entry(user_id, moment.id, moment_data.entry_create)
+            return self._create_associated_entry(
+                user_id, moment.id, moment_data.entry_create
+            )
 
         return None
 
@@ -357,11 +392,13 @@ class MomentService:
         user_service = UserService(self.session)
         user_tz = user_service.get_user_timezone(user_id)
 
-        normalized_at, normalized_date, normalized_tz = self._normalize_moment_timestamp(
-            logged_at_utc=moment_data.logged_at_utc,
-            logged_date_tz=moment_data.logged_date_tz,
-            logged_timezone=moment_data.logged_timezone,
-            fallback_timezone=user_tz,
+        normalized_at, normalized_date, normalized_tz = (
+            self._normalize_moment_timestamp(
+                logged_at_utc=moment_data.logged_at_utc,
+                logged_date_tz=moment_data.logged_date_tz,
+                logged_timezone=moment_data.logged_timezone,
+                fallback_timezone=user_tz,
+            )
         )
 
         items = moment_data.mood_activity or []
@@ -421,7 +458,9 @@ class MomentService:
         log_info(f"Moment created for user {user_id}: {moment.id}")
         return moment
 
-    def update_moment(self, moment_id: uuid.UUID, user_id: uuid.UUID, moment_data: MomentUpdate) -> Moment:
+    def update_moment(
+        self, moment_id: uuid.UUID, user_id: uuid.UUID, moment_data: MomentUpdate
+    ) -> Moment:
         from app.services.entry_service import EntryService
 
         moment = self._get_owned_moment(user_id, moment_id)
@@ -456,7 +495,9 @@ class MomentService:
         if "logged_at_utc" in fields_set and moment_data.logged_at_utc is not None:
             moment.logged_at_utc = ensure_utc(moment_data.logged_at_utc)
         if "logged_timezone" in fields_set:
-            moment.logged_timezone = (moment_data.logged_timezone or "UTC").strip() or "UTC"
+            moment.logged_timezone = (
+                moment_data.logged_timezone or "UTC"
+            ).strip() or "UTC"
 
         # Update derived logged_date_tz
         if "logged_date_tz" in fields_set:
@@ -466,13 +507,21 @@ class MomentService:
                 else local_date_for_user(moment.logged_at_utc, moment.logged_timezone)
             )
         elif "logged_at_utc" in fields_set or "logged_timezone" in fields_set:
-            moment.logged_date_tz = local_date_for_user(moment.logged_at_utc, moment.logged_timezone)
+            moment.logged_date_tz = local_date_for_user(
+                moment.logged_at_utc, moment.logged_timezone
+            )
 
         # Update other scalar fields
         for field in [
-            "note", "location_json", "latitude", "longitude",
-            "weather_json", "weather_summary", "is_pinned",
-            "prompt_id", "primary_mood_id"
+            "note",
+            "location_json",
+            "latitude",
+            "longitude",
+            "weather_json",
+            "weather_summary",
+            "is_pinned",
+            "prompt_id",
+            "primary_mood_id",
         ]:
             if field in fields_set:
                 value = getattr(moment_data, field)
@@ -533,7 +582,9 @@ class MomentService:
     ) -> Moment:
         """Validate and sync the moment linked from `entry.moment_id`."""
         moment = self.session.exec(
-            select(Moment).where(Moment.id == entry.moment_id, Moment.user_id == user_id)
+            select(Moment).where(
+                Moment.id == entry.moment_id, Moment.user_id == user_id
+            )
         ).first()
         if moment is None:
             raise ValidationError("Moment not found for entry")
@@ -569,7 +620,9 @@ class MomentService:
         """Join Entry table based on journal_id or for general filtering."""
         if journal_id:
             # Filter by journal via entry relationship (Entry.moment_id → Moment.id)
-            return statement.join(Entry, Entry.moment_id == Moment.id).where(Entry.journal_id == journal_id)
+            return statement.join(Entry, Entry.moment_id == Moment.id).where(
+                Entry.journal_id == journal_id
+            )
         # Left outer join to include moments without entries (Quick Logs)
         return statement.outerjoin(Entry, Entry.moment_id == Moment.id)
 
@@ -638,7 +691,10 @@ class MomentService:
                 select(MomentPersonLink.moment_id)
                 .where(col(MomentPersonLink.person_id).in_(normalized_person_ids))
                 .group_by(col(MomentPersonLink.moment_id))
-                .having(func.count(func.distinct(MomentPersonLink.person_id)) == required_count)
+                .having(
+                    func.count(func.distinct(MomentPersonLink.person_id))
+                    == required_count
+                )
             )
             return statement.where(col(Moment.id).in_(subquery))
         return statement.where(
@@ -659,7 +715,10 @@ class MomentService:
         if cursor_logged_at_utc and cursor_id:
             return statement.where(
                 (Moment.logged_at_utc < cursor_logged_at_utc)
-                | ((Moment.logged_at_utc == cursor_logged_at_utc) & (Moment.id < cursor_id))
+                | (
+                    (Moment.logged_at_utc == cursor_logged_at_utc)
+                    & (Moment.id < cursor_id)
+                )
             )
         return statement
 
@@ -723,10 +782,12 @@ class MomentService:
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
                 selectinload(Moment.people),  # type: ignore[arg-type]
-                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
-                .selectinload(MomentMoodActivity.mood),  # type: ignore[arg-type]
-                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
-                .selectinload(MomentMoodActivity.activity),  # type: ignore[arg-type]
+                selectinload(Moment.mood_activity_links).selectinload(  # type: ignore[arg-type]
+                    MomentMoodActivity.mood  # type: ignore[arg-type]
+                ),
+                selectinload(Moment.mood_activity_links).selectinload(  # type: ignore[arg-type]
+                    MomentMoodActivity.activity  # type: ignore[arg-type]
+                ),
             )
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
             .where((col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False)))
@@ -734,9 +795,12 @@ class MomentService:
 
     def _resolve_user_local_today(self, user_id: uuid.UUID) -> date:
         now_utc = utc_now()
-        timezone_name = self.session.exec(
-            select(UserSettings.time_zone).where(UserSettings.user_id == user_id)
-        ).first() or "UTC"
+        timezone_name = (
+            self.session.exec(
+                select(UserSettings.time_zone).where(UserSettings.user_id == user_id)
+            ).first()
+            or "UTC"
+        )
         try:
             return local_date_for_user(now_utc, timezone_name)
         except Exception as exc:
@@ -771,6 +835,18 @@ class MomentService:
         return date(previous_year, 1, 1), date(previous_year, 12, 31)
 
     @staticmethod
+    def _last_year_anniversary_date(today_local: date) -> date:
+        previous_year = today_local.year - 1
+        previous_year_month_days = calendar.monthrange(
+            previous_year, today_local.month
+        )[1]
+        return date(
+            previous_year,
+            today_local.month,
+            min(today_local.day, previous_year_month_days),
+        )
+
+    @staticmethod
     def _last_week_window(today_local: date) -> tuple[date, date]:
         week_start = today_local - timedelta(days=7)
         week_end = today_local - timedelta(days=1)
@@ -785,31 +861,28 @@ class MomentService:
     ) -> Any:
         if memories_filter == MemoriesFilter.last_years:
             return (
-                statement
-                .where(extract("month", col(Moment.logged_date_tz)) == today_local.month)
+                statement.where(
+                    extract("month", col(Moment.logged_date_tz)) == today_local.month
+                )
                 .where(extract("day", col(Moment.logged_date_tz)) == today_local.day)
                 .where(extract("year", col(Moment.logged_date_tz)) < today_local.year)
             )
         if memories_filter == MemoriesFilter.last_year:
             previous_year_start, previous_year_end = self._last_year_window(today_local)
-            return (
-                statement
-                .where(col(Moment.logged_date_tz) >= previous_year_start)
-                .where(col(Moment.logged_date_tz) <= previous_year_end)
-            )
+            return statement.where(
+                col(Moment.logged_date_tz) >= previous_year_start
+            ).where(col(Moment.logged_date_tz) <= previous_year_end)
         if memories_filter == MemoriesFilter.last_month:
-            previous_month_start, previous_month_end = self._last_month_window(today_local)
-            return (
-                statement
-                .where(col(Moment.logged_date_tz) >= previous_month_start)
-                .where(col(Moment.logged_date_tz) <= previous_month_end)
+            previous_month_start, previous_month_end = self._last_month_window(
+                today_local
             )
+            return statement.where(
+                col(Moment.logged_date_tz) >= previous_month_start
+            ).where(col(Moment.logged_date_tz) <= previous_month_end)
 
         week_start, week_end = self._last_week_window(today_local)
-        return (
-            statement
-            .where(col(Moment.logged_date_tz) >= week_start)
-            .where(col(Moment.logged_date_tz) <= week_end)
+        return statement.where(col(Moment.logged_date_tz) >= week_start).where(
+            col(Moment.logged_date_tz) <= week_end
         )
 
     def _base_memories_probe_statement(self, user_id: uuid.UUID) -> Any:
@@ -842,6 +915,30 @@ class MomentService:
             .limit(limit)
         )
         return list(self.session.exec(statement))
+
+    def _fetch_last_year_auto_memories(
+        self,
+        user_id: uuid.UUID,
+        *,
+        today_local: date,
+        limit: int,
+    ) -> List[Moment]:
+        target_date = self._last_year_anniversary_date(today_local)
+        statement = self._apply_memories_filter(
+            self._base_moment_statement(user_id),
+            memories_filter=MemoriesFilter.last_year,
+            today_local=today_local,
+        )
+        memories = list(self.session.exec(statement))
+        memories.sort(
+            key=lambda moment: (
+                abs((moment.logged_date_tz - target_date).days),
+                -moment.logged_date_tz.toordinal(),
+                -ensure_utc(moment.logged_at_utc).timestamp(),
+                str(moment.id),
+            )
+        )
+        return memories[:limit]
 
     def _has_memories(
         self,
@@ -877,11 +974,10 @@ class MomentService:
                 self._to_applied_filter(memories_filter),
             )
 
-        # Auto fallback: same date in previous years -> up to 3 from last year -> last month -> last week.
+        # Auto fallback: exact anniversaries -> sliding recent history -> nearby dates in
+        # the previous year -> broader previous-month history.
         auto_candidates: List[Tuple[MemoriesFilter, int]] = [
             (MemoriesFilter.last_years, limit),
-            (MemoriesFilter.last_year, min(limit, 3)),
-            (MemoriesFilter.last_month, limit),
             (MemoriesFilter.last_week, limit),
         ]
         for candidate, candidate_limit in auto_candidates:
@@ -899,6 +995,36 @@ class MomentService:
                     ),
                     self._to_applied_filter(candidate),
                 )
+
+        last_year_limit = min(limit, 3)
+        if self._has_memories(
+            user_id,
+            today_local=today_local,
+            memories_filter=MemoriesFilter.last_year,
+        ):
+            return (
+                self._fetch_last_year_auto_memories(
+                    user_id,
+                    today_local=today_local,
+                    limit=last_year_limit,
+                ),
+                MemoriesAppliedFilter.last_year,
+            )
+
+        if self._has_memories(
+            user_id,
+            today_local=today_local,
+            memories_filter=MemoriesFilter.last_month,
+        ):
+            return (
+                self._fetch_memories(
+                    user_id,
+                    today_local=today_local,
+                    memories_filter=MemoriesFilter.last_month,
+                    limit=limit,
+                ),
+                MemoriesAppliedFilter.last_month,
+            )
 
         return [], MemoriesAppliedFilter.last_week
 
@@ -937,10 +1063,12 @@ class MomentService:
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
                 selectinload(Moment.people),  # type: ignore[arg-type]
-                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
-                .selectinload(MomentMoodActivity.mood),  # type: ignore[arg-type]
-                selectinload(Moment.mood_activity_links)  # type: ignore[arg-type]
-                .selectinload(MomentMoodActivity.activity),  # type: ignore[arg-type]
+                selectinload(Moment.mood_activity_links).selectinload(  # type: ignore[arg-type]
+                    MomentMoodActivity.mood  # type: ignore[arg-type]
+                ),
+                selectinload(Moment.mood_activity_links).selectinload(  # type: ignore[arg-type]
+                    MomentMoodActivity.activity  # type: ignore[arg-type]
+                ),
             )
         )
 
@@ -949,7 +1077,9 @@ class MomentService:
         statement = self._apply_mood_filter(statement, mood_ids)
         statement = self._apply_people_filter(statement, person_ids, people_match)
         statement = self._apply_search_filter(statement, search)
-        statement = self._apply_cursor_filter(statement, cursor_logged_at_utc, cursor_id)
+        statement = self._apply_cursor_filter(
+            statement, cursor_logged_at_utc, cursor_id
+        )
         statement = self._apply_date_filter(statement, start_date, end_date)
         statement = self._apply_non_empty_filter(statement, include_empty)
 
@@ -998,6 +1128,7 @@ class MomentService:
 
         from app.models.moment import MomentMedia
         from app.services.media_service import MediaService
+
         media_service = MediaService(self.session)
 
         # 1. Collect all media metadata BEFORE DB deletion (cascades will remove them from DB)
@@ -1031,10 +1162,17 @@ class MomentService:
                 "app.tasks.media.cleanup_moment_media_files",
                 args=[str(user_id), media_files_to_clean, cleaned_assets],
             )
-            return {"deleted": True, "cleanup_queued": True, "cleanup_failures": 0, "errors": []}
+            return {
+                "deleted": True,
+                "cleanup_queued": True,
+                "cleanup_failures": 0,
+                "errors": [],
+            }
         except Exception as exc:
             # Fallback to synchronous cleanup to avoid leaving orphaned files if task dispatch fails.
-            log_warning(f"Failed to enqueue moment media cleanup task; running sync fallback: {exc}")
+            log_warning(
+                f"Failed to enqueue moment media cleanup task; running sync fallback: {exc}"
+            )
             deletion_errors = []
             try:
                 media_service.delete_media_files_post_commit(
@@ -1043,23 +1181,35 @@ class MomentService:
                     cleaned_assets,
                 )
             except Exception as sync_exc:
-                log_error(sync_exc, message="Failed synchronous media cleanup after moment deletion")
+                log_error(
+                    sync_exc,
+                    message="Failed synchronous media cleanup after moment deletion",
+                )
                 deletion_errors.append(sync_exc)
 
             if deletion_errors:
                 error_summaries = [str(e) for e in deletion_errors]
                 log_error(
-                    Exception("Failed to delete orphaned media files after moment deletion"),
+                    Exception(
+                        "Failed to delete orphaned media files after moment deletion"
+                    ),
                     message=f"Failed to delete {len(deletion_errors)} orphaned media files after moment deletion",
                     moment_id=str(moment_id),
                     error_count=len(deletion_errors),
-                    errors=error_summaries
+                    errors=error_summaries,
                 )
                 return {
                     "deleted": True,
                     "cleanup_queued": False,
                     "cleanup_failures": len(deletion_errors),
-                    "errors": [f"Physical cleanup failed for {len(deletion_errors)} files"],
+                    "errors": [
+                        f"Physical cleanup failed for {len(deletion_errors)} files"
+                    ],
                 }
 
-            return {"deleted": True, "cleanup_queued": False, "cleanup_failures": 0, "errors": []}
+            return {
+                "deleted": True,
+                "cleanup_queued": False,
+                "cleanup_failures": 0,
+                "errors": [],
+            }

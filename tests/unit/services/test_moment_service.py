@@ -3,7 +3,7 @@ Unit tests for MomentService.
 """
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 from sqlmodel import Session, create_engine, select
@@ -205,7 +205,9 @@ def test_get_moments_filter_by_person_ids_all(test_db, test_user, test_moment_se
 
 def test_get_moments_search_note(test_db, test_user, test_moment_service):
     m1 = Moment(
-        user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="FoundMe in the note"
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        note="FoundMe in the note",
     )
     test_db.add(m1)
 
@@ -220,7 +222,9 @@ def test_get_moments_search_note(test_db, test_user, test_moment_service):
     assert items[0].id == m1.id
 
 
-def test_get_moments_search_entry_content(test_db, test_user, test_journal, test_moment_service):
+def test_get_moments_search_entry_content(
+    test_db, test_user, test_journal, test_moment_service
+):
     # Moment linked to entry
     m1 = Moment(
         user_id=test_user.id,
@@ -249,7 +253,9 @@ def test_get_moments_search_entry_content(test_db, test_user, test_journal, test
     assert items[0].id == m1.id
 
 
-def test_get_moments_search_entry_title(test_db, test_user, test_journal, test_moment_service):
+def test_get_moments_search_entry_title(
+    test_db, test_user, test_journal, test_moment_service
+):
     m1 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow())
     test_db.add(m1)
     test_db.commit()
@@ -326,7 +332,9 @@ def test_get_moments_filter_by_date_range(test_db, test_user, test_moment_servic
     assert items[0].id == m1.id
 
 
-def test_get_moments_exclude_drafts_by_default(test_db, test_user, test_journal, test_moment_service):
+def test_get_moments_exclude_drafts_by_default(
+    test_db, test_user, test_journal, test_moment_service
+):
     # Published entry
     m1 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow())
     test_db.add(m1)
@@ -365,7 +373,9 @@ def test_get_moments_exclude_drafts_by_default(test_db, test_user, test_journal,
     assert items[0].id == m1.id
 
 
-def test_get_moments_include_drafts(test_db, test_user, test_journal, test_moment_service):
+def test_get_moments_include_drafts(
+    test_db, test_user, test_journal, test_moment_service
+):
     m1 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow())
     test_db.add(m1)
     test_db.commit()
@@ -389,9 +399,13 @@ def test_get_moments_include_drafts(test_db, test_user, test_journal, test_momen
     assert items[0].id == m1.id
 
 
-def test_get_moments_standalone_always_included(test_db, test_user, test_moment_service):
+def test_get_moments_standalone_always_included(
+    test_db, test_user, test_moment_service
+):
     # Standalone moment (no entry)
-    m1 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Standalone")
+    m1 = Moment(
+        user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Standalone"
+    )
     test_db.add(m1)
     test_db.commit()
 
@@ -418,7 +432,9 @@ def test_create_moment_with_invalid_inline_entry_rolls_back(
         test_moment_service.create_moment(test_user.id, payload)
 
     remaining = test_db.exec(
-        select(Moment).where(Moment.user_id == test_user.id, Moment.note == "Should rollback")
+        select(Moment).where(
+            Moment.user_id == test_user.id, Moment.note == "Should rollback"
+        )
     ).all()
     assert remaining == []
 
@@ -465,7 +481,10 @@ def test_update_moment_allows_clearing_nullable_metadata(
 
 
 def test_create_moment_creates_entry(
-    test_db: Session, test_user: User, test_journal: Journal, test_moment_service: MomentService
+    test_db: Session,
+    test_user: User,
+    test_journal: Journal,
+    test_moment_service: MomentService,
 ):
     """Creating a moment with 'entry' payload creates an associated Entry."""
     payload = MomentCreate(
@@ -473,8 +492,8 @@ def test_create_moment_creates_entry(
         entry=MomentEntryCreate(
             title="My Entry",
             content_delta={"ops": [{"insert": "Hello world"}]},
-            journal_id=test_journal.id
-        )
+            journal_id=test_journal.id,
+        ),
     )
 
     moment = test_moment_service.create_moment(test_user.id, payload)
@@ -490,11 +509,16 @@ def test_create_moment_creates_entry(
 
 
 def test_update_moment_creates_entry_if_missing(
-    test_db: Session, test_user: User, test_journal: Journal, test_moment_service: MomentService
+    test_db: Session,
+    test_user: User,
+    test_journal: Journal,
+    test_moment_service: MomentService,
 ):
     """Updating a moment to add an entry creates it if it didn't exist."""
     # Create standalone moment
-    moment = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Standalone")
+    moment = Moment(
+        user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Standalone"
+    )
     test_db.add(moment)
     test_db.commit()
 
@@ -502,11 +526,13 @@ def test_update_moment_creates_entry_if_missing(
         entry_create=MomentEntryCreate(
             title="New Entry",
             content_delta={"ops": [{"insert": "New content"}]},
-            journal_id=test_journal.id
+            journal_id=test_journal.id,
         )
     )
 
-    updated_moment = test_moment_service.update_moment(moment.id, test_user.id, update_payload)
+    updated_moment = test_moment_service.update_moment(
+        moment.id, test_user.id, update_payload
+    )
 
     assert updated_moment.entry is not None
     assert updated_moment.entry.title == "New Entry"
@@ -514,11 +540,16 @@ def test_update_moment_creates_entry_if_missing(
 
 
 def test_update_moment_updates_existing_entry(
-    test_db: Session, test_user: User, test_journal: Journal, test_moment_service: MomentService
+    test_db: Session,
+    test_user: User,
+    test_journal: Journal,
+    test_moment_service: MomentService,
 ):
     """Updating a moment with existing entry updates the entry content."""
     # Create moment with entry
-    moment = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Original")
+    moment = Moment(
+        user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Original"
+    )
     test_db.add(moment)
     test_db.commit()
     test_db.refresh(moment)
@@ -533,13 +564,11 @@ def test_update_moment_updates_existing_entry(
     test_db.add(entry)
     test_db.commit()
 
-    update_payload = MomentUpdate(
-        entry_update=EntryUpdate(
-            title="Updated Title"
-        )
-    )
+    update_payload = MomentUpdate(entry_update=EntryUpdate(title="Updated Title"))
 
-    updated_moment = test_moment_service.update_moment(moment.id, test_user.id, update_payload)
+    updated_moment = test_moment_service.update_moment(
+        moment.id, test_user.id, update_payload
+    )
 
     # Refresh to ensure latest state loaded
     test_db.refresh(updated_moment)
@@ -567,6 +596,30 @@ def test_get_memories_auto_prefers_last_years(
         note="Last year memory",
     )
     test_db.add(memory)
+    test_db.add(
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2026, 2, 20, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2026, 2, 20),
+            note="Last week memory",
+        )
+    )
+    test_db.add(
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2026, 1, 31, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2026, 1, 31),
+            note="Last month memory",
+        )
+    )
+    test_db.add(
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2025, 2, 20, 8, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2025, 2, 20),
+            note="Nearby last year memory",
+        )
+    )
     test_db.commit()
 
     items, applied_filter = test_moment_service.get_memories(
@@ -577,7 +630,7 @@ def test_get_memories_auto_prefers_last_years(
     assert [item.id for item in items] == [memory.id]
 
 
-def test_get_memories_auto_falls_back_to_last_month(
+def test_get_memories_auto_prefers_last_week_before_last_month(
     test_db: Session,
     test_user: User,
     test_moment_service: MomentService,
@@ -588,22 +641,73 @@ def test_get_memories_auto_falls_back_to_last_month(
 
     memory = Moment(
         user_id=test_user.id,
-        logged_at_utc=datetime(2026, 2, 20, 10, 0, 0, tzinfo=timezone.utc),
-        logged_date_tz=date(2026, 2, 20),
-        note="Last month memory",
+        logged_at_utc=datetime(2026, 3, 5, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2026, 3, 5),
+        note="Last week memory",
     )
     test_db.add(memory)
+    test_db.add(
+        Moment(
+            user_id=test_user.id,
+            logged_at_utc=datetime(2026, 2, 28, 10, 0, 0, tzinfo=timezone.utc),
+            logged_date_tz=date(2026, 2, 28),
+            note="Last month memory",
+        )
+    )
     test_db.commit()
 
     items, applied_filter = test_moment_service.get_memories(
         test_user.id,
         memories_filter=MemoriesFilter.auto,
     )
-    assert applied_filter == MemoriesAppliedFilter.last_month
+    assert applied_filter == MemoriesAppliedFilter.last_week
     assert [item.id for item in items] == [memory.id]
 
 
-def test_get_memories_auto_falls_back_to_last_year_and_caps_to_three(
+def test_get_memories_auto_prefers_recent_history_before_broad_last_year(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 4, 13, 10, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    stuck_dates = [date(2025, 12, 29), date(2025, 12, 30), date(2025, 12, 31)]
+    for stuck_date in stuck_dates:
+        test_db.add(
+            Moment(
+                user_id=test_user.id,
+                logged_at_utc=datetime.combine(
+                    stuck_date, datetime.min.time(), tzinfo=timezone.utc
+                ),
+                logged_date_tz=stuck_date,
+                note=f"Previous year {stuck_date.isoformat()}",
+            )
+        )
+
+    recent_date = fake_now.date() - timedelta(days=3)
+    recent_memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.combine(
+            recent_date, datetime.min.time(), tzinfo=timezone.utc
+        ),
+        logged_date_tz=recent_date,
+        note="Recent history",
+    )
+    test_db.add(recent_memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+        limit=20,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_week
+    assert [item.id for item in items] == [recent_memory.id]
+
+
+def test_get_memories_auto_falls_back_to_nearby_last_year_dates_and_caps_to_three(
     test_db: Session,
     test_user: User,
     test_moment_service: MomentService,
@@ -640,6 +744,14 @@ def test_get_memories_auto_falls_back_to_last_year_and_caps_to_three(
     ]
     for memory in moments:
         test_db.add(memory)
+
+    previous_month_memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2026, 2, 28, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2026, 2, 28),
+        note="Previous month fallback",
+    )
+    test_db.add(previous_month_memory)
     test_db.commit()
 
     items, applied_filter = test_moment_service.get_memories(
@@ -649,7 +761,37 @@ def test_get_memories_auto_falls_back_to_last_year_and_caps_to_three(
     )
     assert applied_filter == MemoriesAppliedFilter.last_year
     assert len(items) == 3
-    assert [item.logged_date_tz for item in items] == [date(2025, 12, 31), date(2025, 9, 12), date(2025, 6, 1)]
+    assert [item.logged_date_tz for item in items] == [
+        date(2025, 1, 1),
+        date(2025, 6, 1),
+        date(2025, 9, 12),
+    ]
+
+
+def test_get_memories_auto_falls_back_to_last_month_after_last_year(
+    test_db: Session,
+    test_user: User,
+    test_moment_service: MomentService,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    fake_now = datetime(2026, 3, 10, 10, 0, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
+
+    memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2026, 2, 20, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2026, 2, 20),
+        note="Last month memory",
+    )
+    test_db.add(memory)
+    test_db.commit()
+
+    items, applied_filter = test_moment_service.get_memories(
+        test_user.id,
+        memories_filter=MemoriesFilter.auto,
+    )
+    assert applied_filter == MemoriesAppliedFilter.last_month
+    assert [item.id for item in items] == [memory.id]
 
 
 def test_get_memories_explicit_last_year_uses_requested_limit(
@@ -706,7 +848,7 @@ def test_get_memories_explicit_last_year_uses_requested_limit(
     ]
 
 
-def test_get_memories_auto_falls_back_to_last_week(
+def test_get_memories_explicit_last_month_uses_requested_filter_even_with_last_week(
     test_db: Session,
     test_user: User,
     test_moment_service: MomentService,
@@ -715,21 +857,28 @@ def test_get_memories_auto_falls_back_to_last_week(
     fake_now = datetime(2026, 3, 10, 10, 0, 0, tzinfo=timezone.utc)
     monkeypatch.setattr("app.services.moment_service.utc_now", lambda: fake_now)
 
-    memory = Moment(
+    last_week_memory = Moment(
         user_id=test_user.id,
         logged_at_utc=datetime(2026, 3, 5, 10, 0, 0, tzinfo=timezone.utc),
         logged_date_tz=date(2026, 3, 5),
         note="Last week memory",
     )
-    test_db.add(memory)
+    last_month_memory = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime(2026, 2, 20, 10, 0, 0, tzinfo=timezone.utc),
+        logged_date_tz=date(2026, 2, 20),
+        note="Last month memory",
+    )
+    test_db.add(last_week_memory)
+    test_db.add(last_month_memory)
     test_db.commit()
 
     items, applied_filter = test_moment_service.get_memories(
         test_user.id,
-        memories_filter=MemoriesFilter.auto,
+        memories_filter=MemoriesFilter.last_month,
     )
-    assert applied_filter == MemoriesAppliedFilter.last_week
-    assert [item.id for item in items] == [memory.id]
+    assert applied_filter == MemoriesAppliedFilter.last_month
+    assert [item.id for item in items] == [last_month_memory.id]
 
 
 def test_get_memories_excludes_draft_entries(
