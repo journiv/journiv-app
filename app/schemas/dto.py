@@ -251,9 +251,28 @@ class PersonDTO(BaseModel):
     profile_image_path: Optional[str] = Field(
         None, description="Optional backend-managed profile image path"
     )
+    person_group_external_ids: List[str] = Field(
+        default_factory=list,
+        description="References to exported person group records by external_id",
+    )
     archived_at: Optional[datetime] = Field(None, description="Archived timestamp in UTC")
     created_at: datetime = Field(..., description="Person creation time in UTC")
     updated_at: datetime = Field(..., description="Person last update time in UTC")
+    external_id: Optional[str] = Field(None, description="Original ID from source system")
+
+
+class PersonGroupDTO(BaseModel):
+    """
+    Person group catalog entry for import/export.
+
+    Maps to: PersonGroup model (app/models/person_group.py)
+    """
+    name: str = Field(..., description="Person group name")
+    color_value: Optional[int] = Field(None, description="Person group color value")
+    icon: Optional[str] = Field(None, description="Person group icon")
+    position: int = Field(default=0, description="Person group sort position")
+    created_at: datetime = Field(..., description="Person group creation time in UTC")
+    updated_at: datetime = Field(..., description="Person group last update time in UTC")
     external_id: Optional[str] = Field(None, description="Original ID from source system")
 
 
@@ -512,6 +531,7 @@ class JournivExportDTO(BaseModel):
     activities: List[ActivityDTO] = Field(default_factory=list, description="User activities")
     activity_groups: List[ActivityGroupDTO] = Field(default_factory=list, description="Activity groups")
     people: List[PersonDTO] = Field(default_factory=list, description="User-defined people catalog")
+    person_groups: List[PersonGroupDTO] = Field(default_factory=list, description="Person groups")
     goal_categories: List[GoalCategoryDTO] = Field(default_factory=list, description="Goal categories")
     goals: List[GoalDTO] = Field(default_factory=list, description="Goals")
     goal_logs: List[GoalLogDTO] = Field(default_factory=list, description="Goal logs")
@@ -622,6 +642,8 @@ class ImportResultSummary(BaseModel):
     people_created: int = Field(0, description="Number of people created")
     people_reused: int = Field(0, description="Existing people reused by normalized name")
     people_links_created: int = Field(0, description="Moment-person links created")
+    person_groups_created: int = Field(0, description="Number of person groups created")
+    person_groups_reused: int = Field(0, description="Existing person groups reused by name")
 
     # Deduplication stats
     media_files_deduplicated: int = Field(0, description="Media files deduplicated by checksum")

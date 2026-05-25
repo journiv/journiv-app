@@ -6,7 +6,7 @@ Handles the business logic for importing data from various sources.
 import re
 import shutil
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, cast
+from typing import Any, Callable, Dict, List, Optional, Sequence, cast
 from uuid import UUID
 
 from sqlalchemy import func
@@ -31,6 +31,8 @@ from app.models import (
     MoodGroup,
     MoodGroupLink,
     Person,
+    PersonGroup,
+    PersonGroupLink,
     Tag,
     User,
 )
@@ -57,9 +59,11 @@ from app.schemas.dto import (
     MoodGroupPreferenceDTO,
     MoodPreferenceDTO,
     PersonDTO,
+    PersonGroupDTO,
 )
 from app.services.journal_service import JournalService
 from app.services.media_storage_service import MediaStorageService
+from app.services.person_service import PersonService
 from app.utils.import_export import (
     MediaHandler,
     ZipHandler,
@@ -430,6 +434,7 @@ class ImportService:
         mood_group_id_map: Dict[str, UUID] = {}
         activity_group_id_map: Dict[str, UUID] = {}
         activity_id_map: Dict[str, UUID] = {}
+        person_group_id_map: Dict[str, UUID] = {}
         goal_category_id_map: Dict[str, UUID] = {}
         goal_id_map: Dict[str, UUID] = {}
         moment_id_map: Dict[str, UUID] = {}
@@ -516,6 +521,14 @@ class ImportService:
                     record_mapping=record_mapping,
                 )
 
+            if export_dto.person_groups:
+                person_group_id_map = self._import_person_groups(
+                    user_id=user_id,
+                    person_groups=export_dto.person_groups,
+                    summary=summary,
+                    record_mapping=record_mapping,
+                )
+
             # Import goal categories/goals
             if export_dto.goal_categories:
                 goal_category_id_map = self._import_goal_categories(
@@ -539,6 +552,8 @@ class ImportService:
             people_external_id_map, people_name_map = self._prepare_people_lookup(
                 user_id=user_id,
                 people=export_dto.people,
+                media_dir=media_dir,
+                person_group_id_map=person_group_id_map,
                 summary=summary,
                 record_mapping=record_mapping,
             )
@@ -1721,10 +1736,13 @@ class ImportService:
         self,
         user_id: UUID,
         people: List[PersonDTO],
+        media_dir: Optional[Path],
+        person_group_id_map: Optional[Dict[str, UUID]],
         summary: ImportResultSummary,
         record_mapping: Optional[Callable[[str, Optional[str], UUID], None]] = None,
     ) -> tuple[Dict[str, UUID], Dict[str, UUID]]:
         """Create/fetch people from export catalog and return lookup maps."""
+        person_group_id_map = person_group_id_map or {}
         existing_people = (
             self.db.execute(select(Person).where(col(Person.user_id) == user_id))
             .scalars()
@@ -1766,6 +1784,23 @@ class ImportService:
                     existing_person.updated_at = utc_now()
                     self.db.add(existing_person)
                     changed_people = True
+                if (
+                    existing_person is not None
+                    and not existing_person.profile_image_path
+                    and person_dto.profile_image_path
+                ):
+                    imported_profile_path = self._import_person_profile_image(
+                        user_id=user_id,
+                        person_id=existing_person.id,
+                        profile_image_path=person_dto.profile_image_path,
+                        media_dir=media_dir,
+                        summary=summary,
+                    )
+                    if imported_profile_path:
+                        existing_person.profile_image_path = imported_profile_path
+                        existing_person.updated_at = utc_now()
+                        self.db.add(existing_person)
+                        changed_people = True
                 summary.people_reused += 1
             else:
                 person = Person(
@@ -1781,6 +1816,16 @@ class ImportService:
                 )
                 self.db.add(person)
                 self.db.flush()
+                if person_dto.profile_image_path:
+                    imported_profile_path = self._import_person_profile_image(
+                        user_id=user_id,
+                        person_id=person.id,
+                        profile_image_path=person_dto.profile_image_path,
+                        media_dir=media_dir,
+                        summary=summary,
+                    )
+                    if imported_profile_path:
+                        person.profile_image_path = imported_profile_path
                 local_id = person.id
                 name_map[normalized] = local_id
                 people_by_normalized_name[normalized] = person
@@ -1792,10 +1837,196 @@ class ImportService:
                 if record_mapping:
                     record_mapping("people", person_dto.external_id, local_id)
 
+            if person_dto.person_group_external_ids:
+                created_links = self._link_person_groups(
+                    user_id=user_id,
+                    person_id=local_id,
+                    group_external_ids=person_dto.person_group_external_ids,
+                    person_group_id_map=person_group_id_map,
+                    summary=summary,
+                )
+                if created_links:
+                    changed_people = True
+
         if changed_people:
             self.db.commit()
 
         return external_id_map, name_map
+
+    def _import_person_groups(
+        self,
+        user_id: UUID,
+        person_groups: list[PersonGroupDTO],
+        summary: ImportResultSummary,
+        record_mapping: Callable[[str, Optional[str], UUID], None],
+    ) -> Dict[str, UUID]:
+        """Import person groups and return external_id -> group_id map."""
+        existing_groups = (
+            self.db.execute(
+                select(PersonGroup).where(col(PersonGroup.user_id) == user_id)
+            )
+            .scalars()
+            .all()
+        )
+        groups_by_name: Dict[str, PersonGroup] = {
+            group.name.strip().lower(): group for group in existing_groups
+        }
+        group_id_map: Dict[str, UUID] = {}
+
+        for group_dto in person_groups:
+            normalized_name = " ".join((group_dto.name or "").strip().split())
+            if not normalized_name:
+                warning_msg = "Skipped person group with empty name during import"
+                log_warning(warning_msg, user_id=str(user_id))
+                self._add_warning(summary, warning_msg, "Skipped (person group error)")
+                continue
+
+            lookup_name = normalized_name.lower()
+            existing = groups_by_name.get(lookup_name)
+            if existing:
+                existing.color_value = group_dto.color_value
+                existing.icon = group_dto.icon
+                existing.position = group_dto.position
+                if group_dto.updated_at:
+                    existing.updated_at = group_dto.updated_at
+                group_id = existing.id
+                summary.person_groups_reused += 1
+            else:
+                group = PersonGroup(
+                    user_id=user_id,
+                    name=normalized_name,
+                    color_value=group_dto.color_value,
+                    icon=group_dto.icon,
+                    position=group_dto.position,
+                    created_at=group_dto.created_at or utc_now(),
+                    updated_at=group_dto.updated_at or utc_now(),
+                )
+                self.db.add(group)
+                self.db.flush()
+                groups_by_name[lookup_name] = group
+                group_id = group.id
+                summary.person_groups_created += 1
+
+            if group_dto.external_id:
+                group_id_map[group_dto.external_id] = group_id
+                record_mapping("person_groups", group_dto.external_id, group_id)
+
+        self.db.flush()
+        return group_id_map
+
+    def _link_person_groups(
+        self,
+        *,
+        user_id: UUID,
+        person_id: UUID,
+        group_external_ids: Sequence[str],
+        person_group_id_map: Dict[str, UUID],
+        summary: ImportResultSummary,
+    ) -> int:
+        """Attach imported person group memberships."""
+        target_group_ids: List[UUID] = []
+        for external_id in group_external_ids:
+            group_id = person_group_id_map.get(external_id)
+            if group_id is None:
+                warning_msg = f"Person group reference '{external_id}' not found; skipping person-group link"
+                log_warning(warning_msg, user_id=str(user_id), person_id=str(person_id))
+                self._add_warning(summary, warning_msg, "Skipped (person group link error)")
+                continue
+            target_group_ids.append(group_id)
+
+        if not target_group_ids:
+            return 0
+
+        unique_group_ids = list(dict.fromkeys(target_group_ids))
+        existing_group_ids = set(
+            self.db.execute(
+                select(PersonGroupLink.person_group_id).where(
+                    col(PersonGroupLink.person_id) == person_id,
+                    col(PersonGroupLink.person_group_id).in_(unique_group_ids),
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        created = 0
+        for group_id in unique_group_ids:
+            if group_id in existing_group_ids:
+                continue
+            self.db.add(PersonGroupLink(person_group_id=group_id, person_id=person_id))
+            created += 1
+        return created
+
+    def _import_person_profile_image(
+        self,
+        *,
+        user_id: UUID,
+        person_id: UUID,
+        profile_image_path: str,
+        media_dir: Optional[Path],
+        summary: ImportResultSummary,
+    ) -> Optional[str]:
+        """Import a profile image referenced by the people catalog."""
+        if media_dir is None:
+            warning_msg = f"No media directory, skipping person profile image: {profile_image_path}"
+            log_warning(warning_msg, user_id=str(user_id), person_id=str(person_id))
+            self._add_warning(summary, warning_msg, "Skipped (person profile image)")
+            return None
+
+        source_path = Path(profile_image_path)
+        if source_path.is_absolute():
+            warning_msg = f"Person profile image path must be relative: {profile_image_path}"
+            log_warning(warning_msg, user_id=str(user_id), person_id=str(person_id))
+            self._add_warning(summary, warning_msg, "Security warning")
+            return None
+
+        resolved_source = (media_dir / source_path).resolve()
+        media_root = media_dir.resolve()
+        try:
+            resolved_source.relative_to(media_root)
+        except ValueError:
+            warning_msg = f"Person profile image outside expected directory: {resolved_source}"
+            log_warning(warning_msg, user_id=str(user_id), person_id=str(person_id))
+            self._add_warning(summary, warning_msg, "Security warning")
+            return None
+
+        if not resolved_source.exists():
+            warning_msg = f"Person profile image file not found: {resolved_source}"
+            log_warning(warning_msg, user_id=str(user_id), person_id=str(person_id))
+            self._add_warning(summary, warning_msg, "Skipped (missing person profile image)")
+            return None
+        if not resolved_source.is_file():
+            warning_msg = f"Person profile image path is not a file: {resolved_source}"
+            log_warning(warning_msg, user_id=str(user_id), person_id=str(person_id))
+            self._add_warning(summary, warning_msg, "Skipped (person profile image)")
+            return None
+        file_size = resolved_source.stat().st_size
+        if file_size > PersonService.PROFILE_IMAGE_MAX_BYTES:
+            warning_msg = "Person profile image must be 10 MB or smaller"
+            log_warning(
+                warning_msg,
+                user_id=str(user_id),
+                person_id=str(person_id),
+                profile_image_path=profile_image_path,
+                size=file_size,
+            )
+            self._add_warning(summary, warning_msg, "Skipped (person profile image)")
+            return None
+
+        try:
+            image_bytes = resolved_source.read_bytes()
+            extension, _size = PersonService.validate_profile_image_bytes(image_bytes)
+            return PersonService._write_profile_image(
+                user_id=user_id,
+                person_id=person_id,
+                image_bytes=image_bytes,
+                extension=extension,
+            )
+        except Exception as exc:
+            warning_msg = f"Failed to import person profile image '{profile_image_path}': {exc}"
+            log_warning(warning_msg, user_id=str(user_id), person_id=str(person_id))
+            self._add_warning(summary, warning_msg, "Skipped (person profile image)")
+            return None
 
     def _link_moment_people(
         self,

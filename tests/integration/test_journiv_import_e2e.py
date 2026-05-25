@@ -171,11 +171,24 @@ class TestJournivImportExportE2E:
         )
 
         person_name = f"Test Person {uuid.uuid4().hex[:6]}"
+        person_group_name = f"Test People Group {uuid.uuid4().hex[:6]}"
+        person_group = api_client.request(
+            "POST",
+            "/people-groups/",
+            token=api_user.access_token,
+            json={
+                "name": person_group_name,
+                "color_value": 0x0EA5E9,
+                "icon": "users",
+                "position": 10,
+            },
+            expected=(201,),
+        ).json()
         person = api_client.request(
             "POST",
             "/people/",
             token=api_user.access_token,
-            json={"name": person_name},
+            json={"name": person_name, "group_ids": [person_group["id"]]},
             expected=(201,),
         ).json()
         profile_image_person = api_client.request(
@@ -339,6 +352,7 @@ class TestJournivImportExportE2E:
                 assert "mood_preferences" in data
                 assert "mood_group_preferences" in data
                 assert "people" in data
+                assert "person_groups" in data
                 assert len(data["journals"]) == 2
 
                 assert any(g["name"] == "Health Group" for g in data["activity_groups"])
@@ -379,6 +393,14 @@ class TestJournivImportExportE2E:
                 )
                 exported_person = next((p for p in data["people"] if p["name"] == person_name), None)
                 assert exported_person is not None
+                assert exported_person["profile_image_path"]
+                assert f"media/{exported_person['profile_image_path']}" in namelist
+                exported_person_group = next(
+                    (g for g in data["person_groups"] if g["name"] == person_group_name),
+                    None,
+                )
+                assert exported_person_group is not None
+                assert exported_person_group["external_id"] in exported_person["person_group_external_ids"]
 
                 exported_moment_one = next(
                     (m for m in data["moments"] if m.get("external_id") == entry1["moment_id"]),
@@ -531,7 +553,8 @@ class TestJournivImportExportE2E:
         ).json()
         assert any(p["name"] == person_name for p in imported_people)
         imported_person = next(p for p in imported_people if p["name"] == person_name)
-        assert imported_person["profile_image_url"] is None
+        assert imported_person["profile_image_url"]
+        assert {group["name"] for group in imported_person["groups"]} == {person_group_name}
 
         # Verify tags are attached to the entry
         if imported_entry1 is not None:
