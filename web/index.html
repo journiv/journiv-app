@@ -10,233 +10,231 @@ By downloading, using, deploying, or otherwise accessing the Web Client, you ack
 Note: “Swalab Tech” refers to the creator and copyright holder of Journiv, identified by the GitHub handle swalabtech.
  -->
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+  <head>
+    <base href="/" />
 
-<head>
-  <base href="/">
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
 
-  <meta charset="UTF-8">
-  <meta http-equiv="X-UA-Compatible" content="IE=Edge">
+    <meta
+      http-equiv="Cache-Control"
+      content="no-cache, no-store, must-revalidate"
+    />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
 
-  <!-- SEO & Social -->
-  <meta name="description"
-    content="Journiv - A beautiful, private journaling application with mood tracking, prompts, and analytics. Secure, self-hosted, and designed for personal reflection.">
-  <meta name="keywords"
-    content="journal, diary, mood tracking, personal reflection, private journaling, self-hosted, journaling app, day one alternative, journiv">
-  <meta name="author" content="Journiv">
-  <meta name="robots" content="index, follow">
-  <link rel="canonical" href="https://journiv.com/">
+    <meta
+      name="description"
+      content="Journiv - A beautiful, private journaling application with mood tracking, prompts, and analytics. Secure, self-hosted, and designed for personal reflection."
+    />
+    <meta
+      name="keywords"
+      content="journal, diary, mood tracking, personal reflection, private journaling, self-hosted, journaling app, day one alternative, journiv"
+    />
+    <meta name="author" content="Journiv" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://journiv.com/" />
 
-  <meta property="og:title" content="Journiv - Private Journaling App">
-  <meta property="og:description"
-    content="A beautiful, private journaling application with mood tracking, prompts, and analytics.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://journiv.com/">
-  <meta property="og:image" content="icons/Icon-512.png">
-  <meta property="og:site_name" content="Journiv">
+    <meta property="og:title" content="Journiv - Private Journaling App" />
+    <meta
+      property="og:description"
+      content="A beautiful, private journaling application with mood tracking, prompts, and analytics."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://journiv.com/" />
+    <meta property="og:image" content="icons/Icon-512.png" />
+    <meta property="og:site_name" content="Journiv" />
 
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Journiv - Private Journaling App">
-  <meta name="twitter:description"
-    content="A beautiful, private journaling application with mood tracking, prompts, and analytics.">
-  <meta name="twitter:image" content="icons/Icon-512.png">
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Journiv - Private Journaling App" />
+    <meta
+      name="twitter:description"
+      content="A beautiful, private journaling application with mood tracking, prompts, and analytics."
+    />
+    <meta name="twitter:image" content="icons/Icon-512.png" />
 
-  <!-- Viewport & PWA -->
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <!-- iOS does not support dynamic status bar style, so we use black-translucent for
-   immersive notch blending -->
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Journiv">
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+    <meta name="apple-mobile-web-app-title" content="Journiv" />
 
-  <!-- Dynamic theme-color (affects Android + desktop browsers only) -->
-  <meta name="theme-color" content="#16181D" id="theme-color-meta">
+    <meta name="theme-color" content="#16181D" id="theme-color-meta" />
 
-  <!-- Icons & Manifest -->
-  <link rel="apple-touch-icon" sizes="1024x1024" href="icons/AppIcon~ios-marketing.png">
-  <link rel="apple-touch-icon" sizes="180x180" href="icons/AppIcon@3x.png">
-  <link rel="apple-touch-icon" sizes="167x167" href="icons/AppIcon@2x~ipad.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="icons/AppIcon~ipad.png">
-  <link rel="icon" type="image/png" href="favicon.png">
-  <link rel="manifest" href="manifest.json">
+    <link
+      rel="apple-touch-icon"
+      sizes="1024x1024"
+      href="icons/AppIcon~ios-marketing.png"
+    />
+    <link rel="apple-touch-icon" sizes="180x180" href="icons/AppIcon@3x.png" />
+    <link
+      rel="apple-touch-icon"
+      sizes="167x167"
+      href="icons/AppIcon@2x~ipad.png"
+    />
+    <link
+      rel="apple-touch-icon"
+      sizes="152x152"
+      href="icons/AppIcon~ipad.png"
+    />
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="manifest" href="manifest.json?v=1779699068" />
 
-  <!-- Resource Hints -->
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="dns-prefetch" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
 
-  <!-- ✨ Material Icons for Flutter Web -->
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Material+Icons" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Material+Icons+Outlined" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Material+Icons+Round" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Material+Icons+Sharp" />
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Material+Icons+Two+Tone" />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Material+Icons"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Material+Icons+Outlined"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Material+Icons+Round"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Material+Icons+Sharp"
+    />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css?family=Material+Icons+Two+Tone"
+    />
 
+    <title>Journiv - Private Journal</title>
 
-  <title>Journiv - Private Journal</title>
+    <script src="flutter_bootstrap.js?v=1779699068" defer></script>
 
-  <script>
-    // The value below is injected by flutter build, do not touch.
-    const serviceWorkerVersion = "1802823155" /* Flutter's service worker is deprecated and will be removed in a future Flutter release. */;
-  </script>
-  <!-- This script adds the flutter initialization JS code -->
-  <script src="flutter.js" defer></script>
-  <style>
-    html,
-    body {
-      background-color: #16181D;
-      /* match dark app surface */
-      height: 100%;
-      margin: 0;
-    }
-
-    @media (prefers-color-scheme: light) {
-
+    <style>
       html,
       body {
-        background-color: #FFFFFF;
-      }
-    }
-
-    @keyframes spin {
-      0% {
-        transform: rotate(0)
+        background-color: #16181d;
+        height: 100%;
+        margin: 0;
       }
 
-      100% {
-        transform: rotate(360deg)
-      }
-    }
-
-    @media (prefers-color-scheme: dark) {
-      #loading {
-        background: #121212
+      @media (prefers-color-scheme: light) {
+        html,
+        body {
+          background-color: #ffffff;
+        }
       }
 
-      #loading div {
-        color: #eee
+      @keyframes spin {
+        0% {
+          transform: rotate(0);
+        }
+        100% {
+          transform: rotate(360deg);
+        }
       }
-    }
-  </style>
-</head>
 
-<body>
-  <!-- Loading Indicator -->
-  <div id="loading"
-    style="position:fixed;top:0;left:0;width:100%;height:100%;background:#f5f5f5;display:flex;align-items:center;justify-content:center;z-index:9999;">
+      @media (prefers-color-scheme: dark) {
+        #loading {
+          background: #121212;
+        }
+        #loading div {
+          color: #eee;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
     <div
-      style="text-align:center;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#333;">
+      id="loading"
+      style="
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #f5f5f5;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      "
+    >
       <div
-        style="width:40px;height:40px;border:4px solid #e0e0e0;border-top:4px solid #0175C2;border-radius:50%;animation:spin 1s linear infinite;margin:0 auto 20px;">
+        style="
+          text-align: center;
+          font-family:
+            -apple-system, BlinkMacSystemFont, &quot;Segoe UI&quot;, Roboto,
+            sans-serif;
+          color: #333;
+        "
+      >
+        <div
+          style="
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e0e0e0;
+            border-top: 4px solid #0175c2;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+          "
+        ></div>
+        <div id="loading-text">Loading Journiv...</div>
       </div>
-      <div id="loading-text">Loading Journiv...</div>
     </div>
-  </div>
 
-  <noscript>
-    <p style="text-align:center;margin-top:20px;">Journiv requires JavaScript to run. Please enable it to continue.</p>
-  </noscript>
+    <noscript>
+      <p style="text-align: center; margin-top: 20px">
+        Journiv requires JavaScript to run. Please enable it to continue.
+      </p>
+    </noscript>
 
-  <script>
-    window.addEventListener('load', function (ev) {
-      // Download main.dart.js
-      _flutter.loader.loadEntrypoint({
-        serviceWorker: {
-          serviceWorkerVersion: serviceWorkerVersion,
-        },
-        onEntrypointLoaded: async function (engineInitializer) {
-          const appRunner = await engineInitializer.initializeEngine();
-          await appRunner.runApp();
-        }
+    <script>
+      // Loading Text Animation
+      window.addEventListener("flutter-first-frame", () => {
+        const l = document.getElementById("loading");
+        if (l) l.style.display = "none";
       });
-    });
-  </script>
-  <script>
-    window.addEventListener('flutter-first-frame', () => { const l = document.getElementById('loading'); if (l) l.style.display = 'none'; });
-    const text = document.getElementById('loading-text'); let dots = 0;
-    const loadingInterval = setInterval(() => { if (text) { dots = (dots + 1) % 4; text.textContent = 'Loading Journiv' + '.'.repeat(dots); } else { clearInterval(loadingInterval); } }, 500);
 
-    // Update theme color dynamically for Android / desktop (not iOS)
-    const metaTheme = document.querySelector('#theme-color-meta');
-    const light = '#FFFFFF';
-    const dark = '#16181D';
+      const text = document.getElementById("loading-text");
+      let dots = 0;
+      const loadingInterval = setInterval(() => {
+        if (text) {
+          dots = (dots + 1) % 4;
+          text.textContent = "Loading Journiv" + ".".repeat(dots);
+        } else {
+          clearInterval(loadingInterval);
+        }
+      }, 500);
 
-    function updateThemeColor() {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      metaTheme.setAttribute('content', prefersDark ? dark : light);
-      document.documentElement.style.backgroundColor = prefersDark ? dark : light;
-      document.body.style.backgroundColor = prefersDark ? dark : light;
-    }
+      // Update theme color dynamically for Android / desktop
+      const metaTheme = document.querySelector("#theme-color-meta");
+      const light = "#FFFFFF";
+      const dark = "#16181D";
 
-    updateThemeColor();
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
-  </script>
-  <script>
-    let refreshingForServiceWorker = false;
-
-    function showUpdateSnackbar(onRefresh) {
-      const s = document.createElement('div');
-      s.innerHTML = `<div id="update-snackbar"><span>New version of Journiv available</span><button id="refresh-btn">Refresh</button></div>`;
-      document.body.appendChild(s);
-      document.getElementById('refresh-btn').addEventListener('click', onRefresh);
-    }
-
-    function activateUpdatedServiceWorker(registration) {
-      const worker = registration.waiting || registration.installing;
-      if (worker) {
-        worker.postMessage('skipWaiting');
-      } else {
-        window.location.reload();
+      function updateThemeColor() {
+        const prefersDark = window.matchMedia(
+          "(prefers-color-scheme: dark)",
+        ).matches;
+        metaTheme.setAttribute("content", prefersDark ? dark : light);
+        document.documentElement.style.backgroundColor = prefersDark
+          ? dark
+          : light;
+        document.body.style.backgroundColor = prefersDark ? dark : light;
       }
-    }
 
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (refreshingForServiceWorker) {
-          return;
-        }
-        refreshingForServiceWorker = true;
-        window.location.reload();
-      });
-
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('flutter_service_worker.js?v=1802823155') /* Flutter's service worker is deprecated and will be removed in a future Flutter release. */
-          .then(r => {
-            console.log('Journiv service worker registered:', r.scope);
-            if (r.waiting && navigator.serviceWorker.controller) {
-              showUpdateSnackbar(() => activateUpdatedServiceWorker(r));
-            }
-            r.onupdatefound = () => {
-              const n = r.installing;
-              if (n) {
-                n.onstatechange = () => {
-                  if (n.state === 'installed' && navigator.serviceWorker.controller) {
-                    console.log('New Journiv version detected');
-                    showUpdateSnackbar(() => activateUpdatedServiceWorker(r));
-                  }
-                }
-              }
-            };
-          })
-          .catch(e => console.warn('SW registration failed:', e));
-      });
-    } else {
-      console.log('Service workers not supported.');
-    }
-
-    const style = document.createElement('style');
-    style.textContent = `@keyframes fadeIn{from{opacity:0;transform:translate(-50%,20px);}to{opacity:1;transform:translate(-50%,0);}}
-      #update-snackbar{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
-      padding:14px 20px;border-radius:14px;display:flex;align-items:center;gap:12px;z-index:10000;
-      font-family:'Manrope',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;font-weight:500;font-size:14px;
-      box-shadow:0 2px 10px rgba(0,0,0,.2);animation:fadeIn .4s ease;transition:opacity .3s ease;}
-      #update-snackbar button{all:unset;background:#405DE6;color:#fff;padding:6px 14px;border-radius:8px;font-weight:600;cursor:pointer;transition:background .2s;}
-      #update-snackbar button:hover{background:#3248c2;}
-      @media (prefers-color-scheme:light){#update-snackbar{background:#fff;color:#222;border:1px solid rgba(0,0,0,.1);}}
-      @media (prefers-color-scheme:dark){#update-snackbar{background:#1e1e1e;color:#eee;border:1px solid rgba(255,255,255,.1);}}`;
-    document.head.appendChild(style);
-  </script>
-</body>
-
+      updateThemeColor();
+      window
+        .matchMedia("(prefers-color-scheme: dark)")
+        .addEventListener("change", updateThemeColor);
+    </script>
+  </body>
 </html>
