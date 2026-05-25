@@ -400,7 +400,7 @@ else:
     )
 
 # -----------------------------------------------------------------------------
-# Flutter Web PWA Mount (with 1-week caching)
+# Flutter Web SPA Mount (with smart cache-busting and security checks)
 # -----------------------------------------------------------------------------
 
 log = logging.getLogger("uvicorn")
@@ -414,9 +414,9 @@ if WEB_BUILD_PATH.exists():
         if not file_path.exists():
             raise HTTPException(status_code=404)
 
-        # index.html and manifest.json are always fetched fresh
+        # Entry points, manifests, and orchestrators are ALWAYS fetched fresh
         if not cache:
-            cache_header = "no-cache, no-store, must-revalidate"
+            cache_header = "no-cache, no-store, must-revalidate, max-age=0"
         else:
             cache_header = f"public, max-age={ONE_WEEK}"
 
@@ -435,6 +435,11 @@ if WEB_BUILD_PATH.exists():
             WEB_BUILD_PATH / "flutter_service_worker.js", cache=False
         )
 
+    @app.get("/flutter_bootstrap.js", include_in_schema=False)
+    async def bootstrap_script():
+        """Ensure the main Flutter bootstrapper is never cached by the browser."""
+        return serve_static_file(WEB_BUILD_PATH / "flutter_bootstrap.js", cache=False)
+
     @app.get("/icons/{icon_name}", include_in_schema=False)
     async def icons(icon_name: str):
         return serve_static_file(WEB_BUILD_PATH / "icons" / icon_name)
@@ -446,14 +451,25 @@ if WEB_BUILD_PATH.exists():
         if full_path.startswith(("api/", "media/")):
             raise HTTPException(status_code=404)
 
+        # Prevent Path Traversal: Resolve absolute paths and enforce containment
+        resolved_web_build_path = WEB_BUILD_PATH.resolve()
+        file_path = (WEB_BUILD_PATH / full_path).resolve()
+
+        # Enforce that file_path is strictly inside resolved_web_build_path before processing
+        if not file_path.is_relative_to(resolved_web_build_path):
+            raise HTTPException(status_code=404)
+
         # Try to serve the requested file (for static assets like JS, CSS, images)
-        file_path = WEB_BUILD_PATH / full_path
         if file_path.is_file():
-            # Static assets get long cache, except service worker
-            cache = not full_path.endswith(
-                ("service_worker.js", "flutter_service_worker.js")
+            # Double check that no hidden bootstrapper variations escape caching rules
+            is_bootstrapper = full_path.endswith(
+                (
+                    "service_worker.js",
+                    "flutter_service_worker.js",
+                    "flutter_bootstrap.js",
+                )
             )
-            return serve_static_file(file_path, cache=cache)
+            return serve_static_file(file_path, cache=not is_bootstrapper)
 
         # For all other routes (including /oidc-finish, /login, etc.), serve index.html
         # This enables Flutter Web's path-based routing
