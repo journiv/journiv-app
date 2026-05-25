@@ -31,6 +31,8 @@ from app.models import (
     MoodGroup,
     MoodGroupLink,
     Person,
+    PersonGroup,
+    PersonGroupLink,
     User,
 )
 from app.models.enums import ExportType
@@ -57,6 +59,7 @@ from app.schemas.dto import (
     MoodGroupPreferenceDTO,
     MoodPreferenceDTO,
     PersonDTO,
+    PersonGroupDTO,
     UserSettingsDTO,
 )
 from app.utils.import_export import MediaHandler, ZipHandler, validate_export_data
@@ -77,6 +80,7 @@ class ExportService:
         self.zip_handler = ZipHandler()
         self.media_handler = MediaHandler()
         self._media_export_map: Dict[str, Path] = {}
+        self._person_profile_export_map: Dict[str, Path] = {}
         self._missing_media_files: List[str] = []
 
     def create_export(
@@ -122,6 +126,7 @@ class ExportService:
         self.db.refresh(export_job)
 
         log_info(f"Created export job {export_job.id} for user {user_id}", user_id=str(user_id), export_job_id=str(export_job.id))
+        self._person_profile_export_map.clear()
         return export_job
 
     def build_export_data(
@@ -153,6 +158,8 @@ class ExportService:
         ).unique().scalar_one_or_none()
         if not user:
             raise ValueError(f"User not found: {user_id}")
+        self._media_export_map.clear()
+        self._person_profile_export_map.clear()
 
         journals_statement = select(Journal).where(col(Journal.user_id) == user_id)
 
@@ -189,7 +196,8 @@ class ExportService:
         # Get activity groups/activities
         activity_group_dtos = self._get_activity_groups(user_id)
         activity_dtos = self._get_activities(user_id)
-        person_dtos = self._get_people(user_id)
+        person_group_dtos = self._get_person_groups(user_id)
+        person_dtos = self._get_people(user_id, include_media=include_media)
 
         # Get goals and categories/logs
         goal_category_dtos = self._get_goal_categories(user_id)
@@ -233,6 +241,7 @@ class ExportService:
             "activity_count": len(activity_dtos),
             "activity_group_count": len(activity_group_dtos),
             "people_count": len(person_dtos),
+            "person_group_count": len(person_group_dtos),
             "goal_count": len(goal_dtos),
             "goal_category_count": len(goal_category_dtos),
             "goal_log_count": len(goal_log_dtos),
@@ -256,6 +265,7 @@ class ExportService:
             activities=activity_dtos,
             activity_groups=activity_group_dtos,
             people=person_dtos,
+            person_groups=person_group_dtos,
             goal_categories=goal_category_dtos,
             goals=goal_dtos,
             goal_logs=goal_log_dtos,
@@ -337,6 +347,7 @@ class ExportService:
             "journal_count": len(export_data.journals),
             "entry_count": sum(1 for m in export_data.moments if m.entry is not None),
             "media_count": len(media_files),
+            "person_group_count": len(export_data.person_groups),
             "missing_media_count": len(self._missing_media_files),
             "missing_media_files": list(self._missing_media_files),
             "file_size": file_size,
@@ -766,7 +777,7 @@ class ExportService:
             external_id=str(media.id),
         )
 
-    def _get_people(self, user_id: UUID) -> List[PersonDTO]:
+    def _get_people(self, user_id: UUID, *, include_media: bool = True) -> List[PersonDTO]:
         rows = (
             self.db.execute(
                 select(Person).where(col(Person.user_id) == user_id).order_by(col(Person.created_at).asc())
@@ -774,18 +785,79 @@ class ExportService:
             .scalars()
             .all()
         )
-        return [
-            PersonDTO(
-                name=person.name,
-                nickname=person.nickname,
-                note=person.note,
-                profile_image_path=person.profile_image_path,
-                archived_at=person.archived_at,
-                created_at=person.created_at,
-                updated_at=person.updated_at,
-                external_id=str(person.id),
+        person_ids = [person.id for person in rows]
+        group_links_by_person: Dict[UUID, List[str]] = {person_id: [] for person_id in person_ids}
+        if person_ids:
+            links = (
+                self.db.execute(
+                    select(PersonGroupLink).where(
+                        col(PersonGroupLink.person_id).in_(person_ids)
+                    )
+                )
+                .scalars()
+                .all()
             )
-            for person in rows
+            for link in links:
+                group_links_by_person.setdefault(link.person_id, []).append(
+                    str(link.person_group_id)
+                )
+
+        people: List[PersonDTO] = []
+        for person in rows:
+            profile_image_path = None
+            if include_media and person.profile_image_path:
+                profile_image_path = self._build_person_profile_export_path(person)
+                try:
+                    self._person_profile_export_map[
+                        profile_image_path
+                    ] = self._resolve_media_root_path(person.profile_image_path)
+                except ValueError as exc:
+                    log_warning(
+                        "Person profile image path escaped media root during export",
+                        user_id=str(user_id),
+                        person_id=str(person.id),
+                        profile_image_path=person.profile_image_path,
+                        error=str(exc),
+                    )
+                    profile_image_path = None
+
+            people.append(
+                PersonDTO(
+                    name=person.name,
+                    nickname=person.nickname,
+                    note=person.note,
+                    profile_image_path=profile_image_path,
+                    person_group_external_ids=group_links_by_person.get(person.id, []),
+                    archived_at=person.archived_at,
+                    created_at=person.created_at,
+                    updated_at=person.updated_at,
+                    external_id=str(person.id),
+                )
+            )
+        return people
+
+    def _get_person_groups(self, user_id: UUID) -> List[PersonGroupDTO]:
+        """Get person groups for export."""
+        groups = (
+            self.db.execute(
+                select(PersonGroup)
+                .where(col(PersonGroup.user_id) == user_id)
+                .order_by(col(PersonGroup.position), col(PersonGroup.name))
+            )
+            .scalars()
+            .all()
+        )
+        return [
+            PersonGroupDTO(
+                name=group.name,
+                color_value=group.color_value,
+                icon=group.icon,
+                position=group.position,
+                created_at=group.created_at,
+                updated_at=group.updated_at,
+                external_id=str(group.id),
+            )
+            for group in groups
         ]
 
     def _get_mood_definitions(self, user_id: UUID) -> List[MoodDefinitionDTO]:
@@ -1089,6 +1161,24 @@ class ExportService:
             Dictionary of {relative_path: absolute_path}
         """
         media_files: Dict[str, Path] = {}
+        for person in export_data.people:
+            if not person.profile_image_path:
+                continue
+
+            source_path = self._resolve_person_profile_source_path(person, user_id)
+            if source_path and source_path.exists():
+                media_files[person.profile_image_path] = source_path
+            else:
+                if person.profile_image_path not in self._missing_media_files:
+                    self._missing_media_files.append(person.profile_image_path)
+                log_warning(
+                    "Person profile image file not found during export",
+                    user_id=str(user_id),
+                    person_external_id=person.external_id,
+                    profile_image_path=person.profile_image_path,
+                    source_path=str(source_path) if source_path else None,
+                )
+
         for moment in export_data.moments:
             for media in moment.media:
                 if not media.file_path:
@@ -1116,6 +1206,61 @@ class ExportService:
                     )
 
         return media_files
+
+    def _resolve_person_profile_source_path(
+        self, person: PersonDTO, user_id: UUID
+    ) -> Optional[Path]:
+        """Resolve exported profile-image source path from cache or the database."""
+        if not person.profile_image_path:
+            return None
+
+        cached_path = self._person_profile_export_map.get(person.profile_image_path)
+        if cached_path:
+            return cached_path
+
+        if not person.external_id:
+            return None
+        try:
+            person_id = UUID(person.external_id)
+        except ValueError:
+            return None
+
+        source_person = self.db.get(Person, person_id)
+        if (
+            source_person is None
+            or source_person.user_id != user_id
+            or not source_person.profile_image_path
+        ):
+            return None
+
+        try:
+            source_path = self._resolve_media_root_path(source_person.profile_image_path)
+        except ValueError as exc:
+            log_warning(
+                "Person profile image path escaped media root during export",
+                user_id=str(user_id),
+                person_id=str(source_person.id),
+                profile_image_path=source_person.profile_image_path,
+                error=str(exc),
+            )
+            return None
+
+        self._person_profile_export_map[person.profile_image_path] = source_path
+        return source_path
+
+    def _resolve_media_root_path(self, relative_path: str) -> Path:
+        """Resolve a stored media path while preventing media-root escapes."""
+        media_root = Path(settings.media_root).resolve()
+        resolved_path = (media_root / relative_path).resolve()
+        resolved_path.relative_to(media_root)
+        return resolved_path
+
+    def _build_person_profile_export_path(self, person: Person) -> str:
+        """Build a sanitized relative path for a person's profile image in export ZIP."""
+        suffix = Path(person.profile_image_path or "").suffix.lower()
+        if suffix not in {".jpg", ".jpeg", ".png", ".webp"}:
+            suffix = ".jpg"
+        return f"people/{person.id}/profile{suffix}"
 
     def _build_media_export_path(self, media: MomentMedia) -> str:
         """Build a sanitized relative path for media inside the export ZIP."""
