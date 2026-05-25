@@ -974,7 +974,7 @@ wheels = [
 
 [[package]]
 name = "journiv"
-version = "0.1.0b23"
+version = "0.1.0b24"
 source = { virtual = "." }
 dependencies = [
     { name = "aiofiles" },
