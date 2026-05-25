@@ -400,7 +400,7 @@ else:
     )
 
 # -----------------------------------------------------------------------------
-# Flutter Web SPA Mount (with smart cache-busting)
+# Flutter Web SPA Mount (with smart cache-busting and security checks)
 # -----------------------------------------------------------------------------
 
 log = logging.getLogger("uvicorn")
@@ -451,8 +451,15 @@ if WEB_BUILD_PATH.exists():
         if full_path.startswith(("api/", "media/")):
             raise HTTPException(status_code=404)
 
+        # Prevent Path Traversal: Resolve absolute paths and enforce containment
+        resolved_web_build_path = WEB_BUILD_PATH.resolve()
+        file_path = (WEB_BUILD_PATH / full_path).resolve()
+
+        # Enforce that file_path is strictly inside resolved_web_build_path before processing
+        if not file_path.is_relative_to(resolved_web_build_path):
+            raise HTTPException(status_code=404)
+
         # Try to serve the requested file (for static assets like JS, CSS, images)
-        file_path = WEB_BUILD_PATH / full_path
         if file_path.is_file():
             # Double check that no hidden bootstrapper variations escape caching rules
             is_bootstrapper = full_path.endswith(
