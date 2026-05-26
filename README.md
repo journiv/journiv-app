@@ -118,7 +118,7 @@ Need help or want to report an issue?
 
 ---
 
-**Made with care for privacy-conscious journaling**
+## Disclaimer
+**AI/LLM Usage**
 
-Disclaimer:
 This repository contains portions of code, documentation, or text generated with the assistance of AI/LLM tools. All outputs have been reviewed and adapted by the author to the best of their ability before inclusion.
