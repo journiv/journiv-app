@@ -1,5 +1,13 @@
 # 📘 Journiv - Private Journal
 
+> [!NOTE]
+> Active development on this project is currently paused during June–August due to summer travel and family commitments.
+>
+> Development will resume in August.
+>
+> For any urgent issues, please contact: contact@journiv.com.
+
+
 > ⚠️ **Beta Software**
 >
 > Journiv is currently in **beta** and under **active development**.
