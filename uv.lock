@@ -1176,7 +1176,7 @@ wheels = [
 
 [[package]]
 name = "immichpy"
-version = "5.0.1"
+version = "2.0.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -1185,12 +1185,11 @@ dependencies = [
     { name = "pystatx" },
     { name = "python-dateutil" },
     { name = "rich" },
-    { name = "tenacity" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/39/a4/167ebf7e2d57de23b33fb844c3c8493223d514e1f8e476caf525a53bc942/immichpy-5.0.1.tar.gz", hash = "sha256:8202b1984f899e00c6a35788fa89fc8dfe2d93a27ed3a5614b1e2e3d5e130947", size = 317197, upload-time = "2026-07-03T08:41:56.571Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/85/57/0efb77bdcec44213f1c79a49c919b5e70f7710553c68ffa82780b0ff92a3/immichpy-2.0.1.tar.gz", hash = "sha256:b1bdefd228d92285b478c9354a3e54e8c6698b4ba3e258fc8e222399bfa719cc", size = 261671, upload-time = "2026-02-04T11:16:28.663Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/be/7b/5fdb9ac773b217feb2d20ad88477cc8d43016fbc3cb2e32e801ddb4ff526/immichpy-5.0.1-py3-none-any.whl", hash = "sha256:cf0ee43771e2ff0aa70efaa706efae5d22d0070d4e1db4a42e3171d7c71c10aa", size = 806351, upload-time = "2026-07-03T08:41:54.908Z" },
+    { url = "https://files.pythonhosted.org/packages/56/81/947fe139fd73aa44f615518d8306fef838d9ca0c8b6a324ce660bb1f5066/immichpy-2.0.1-py3-none-any.whl", hash = "sha256:4d757db64d6d006c00f26f737225aa3773f2636672a458d17d9aba1c58ce18bc", size = 729042, upload-time = "2026-02-04T11:16:26.549Z" },
 ]
 
 [[package]]
@@ -1314,7 +1313,7 @@ requires-dist = [
     { name = "gunicorn", specifier = "==23.0.0" },
     { name = "httpx", specifier = "==0.28.1" },
     { name = "ijson", specifier = "==3.5.0" },
-    { name = "immichpy", specifier = "==5.0.1" },
+    { name = "immichpy", specifier = "==2.0.1" },
     { name = "itsdangerous", specifier = "==2.2.0" },
     { name = "jinja2", specifier = "==3.1.6" },
     { name = "passlib", extras = ["argon2"], specifier = "==1.7.4" },
