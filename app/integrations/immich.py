@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Optional, Protocol, Union
 from urllib.parse import urlencode
 from uuid import UUID
+from weakref import WeakKeyDictionary
 
 import aiofiles
 import aiohttp
@@ -55,16 +56,37 @@ IMMICH_API_PERSON_THUMBNAIL = "/api/people/{person_id}/thumbnail"
 IMMICH_MAX_PAGE_SIZE = 1000
 IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD = 1000
 
-_session: Optional[aiohttp.ClientSession] = None
+# An aiohttp.ClientSession is permanently bound to the event loop that created
+# it. Immich calls run on several loops (the uvicorn loop plus fresh per-task
+# loops spun up by asyncio.run() in Celery workers), so a single module-global
+# session would be reused from a dead loop and raise. Key sessions by their loop
+# instead; the WeakKeyDictionary drops a session once its loop is collected.
+_sessions: "WeakKeyDictionary[asyncio.AbstractEventLoop, aiohttp.ClientSession]" = (
+    WeakKeyDictionary()
+)
 
 
 def _get_session() -> aiohttp.ClientSession:
-    """Reuse a single aiohttp session to avoid connection churn across requests."""
-    global _session
-    if _session is None or _session.closed:
-        timeout = aiohttp.ClientTimeout(connect=5.0, sock_read=60.0, total=120.0)
-        _session = aiohttp.ClientSession(timeout=timeout)
-    return _session
+    """Reuse one aiohttp session per event loop to avoid connection churn."""
+    loop = asyncio.get_running_loop()
+    session = _sessions.get(loop)
+    if session is None or session.closed:
+        # No overall ``total`` deadline: streamed original/video downloads can
+        # legitimately run longer than any per-read gap. ``sock_read`` still
+        # bounds a stalled connection.
+        timeout = aiohttp.ClientTimeout(connect=5.0, sock_read=60.0)
+        connector = aiohttp.TCPConnector(limit=20, limit_per_host=10)
+        session = aiohttp.ClientSession(timeout=timeout, connector=connector)
+        _sessions[loop] = session
+    return session
+
+
+async def close_sessions() -> None:
+    """Close any open aiohttp sessions. Called from the app shutdown hook."""
+    for session in list(_sessions.values()):
+        if not session.closed:
+            await session.close()
+    _sessions.clear()
 
 
 def _client(base_url: str, api_key: str) -> AsyncClient:
@@ -645,11 +667,19 @@ async def get_person_thumbnail_bytes(
     max_bytes: int = 10 * 1024 * 1024,
 ) -> bytes:
     """Fetch an Immich person thumbnail for storage in Journiv."""
-    content = await _client(base_url, api_key).people.get_person_thumbnail(
-        UUID(person_id)
-    )
-    if len(content) > max_bytes:
-        raise ValueError("Immich person thumbnail exceeds maximum profile image size")
+    resp = await _client(
+        base_url, api_key
+    ).people.get_person_thumbnail_without_preload_content(UUID(person_id))
+    async with resp:
+        await _raise_for_status(resp)
+        content = bytearray()
+        async for chunk in resp.content.iter_chunked(1024 * 1024):
+            content.extend(chunk)
+            if len(content) > max_bytes:
+                # Abort early instead of buffering an unbounded body into memory.
+                raise ValueError(
+                    "Immich person thumbnail exceeds maximum profile image size"
+                )
     return bytes(content)
 
 
@@ -685,12 +715,12 @@ async def download_media_bytes(
     size: AssetMediaSize,
 ) -> bytes:
     """Download an asset's thumbnail/preview and return its bytes in memory."""
-    resp = await _client(base_url, api_key).assets.view_asset_without_preload_content(
+    # ``view_asset`` reads the whole (small) body and raises immichpy's typed
+    # exceptions on non-2xx, so no hand-rolled status handling is needed here.
+    content = await _client(base_url, api_key).assets.view_asset(
         UUID(asset_id), size=size
     )
-    async with resp:
-        await _raise_for_status(resp)
-        return await resp.read()
+    return bytes(content)
 
 
 def get_cached_asset_type(user_id: str, asset_id: str) -> Optional[AssetType]:

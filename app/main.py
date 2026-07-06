@@ -95,6 +95,14 @@ async def lifespan(app: FastAPI):
         log_warning(f"Failed to close HTTP client: {exc}")
 
     try:
+        from app.integrations import immich
+
+        await immich.close_sessions()
+        log_info("Immich aiohttp sessions closed")
+    except Exception as exc:
+        log_warning(f"Failed to close Immich sessions: {exc}")
+
+    try:
         from app.plus import PLUS_MODE
 
         if PLUS_MODE == "proxy":

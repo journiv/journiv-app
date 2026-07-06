@@ -266,9 +266,7 @@ class TestImmichDownloadHelpers:
     @pytest.mark.asyncio
     async def test_download_media_bytes_returns_body(self):
         client = MagicMock()
-        client.assets.view_asset_without_preload_content = AsyncMock(
-            return_value=_FakeAioResp(b"IMG")
-        )
+        client.assets.view_asset = AsyncMock(return_value=bytearray(b"IMG"))
 
         with _patch_client(client):
             data = await immich.download_media_bytes(
@@ -276,7 +274,7 @@ class TestImmichDownloadHelpers:
             )
 
         assert data == b"IMG"
-        call = client.assets.view_asset_without_preload_content.call_args
+        call = client.assets.view_asset.call_args
         assert call.args[0] == UUID(ASSET_ID)
         assert call.kwargs["size"] == AssetMediaSize.THUMBNAIL
 
