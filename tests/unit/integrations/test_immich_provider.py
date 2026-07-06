@@ -24,8 +24,12 @@ def _dto(payload: dict) -> MagicMock:
 
 
 def _patch_client(client: MagicMock):
-    """Patch the immichpy client factory to return the given mock client."""
-    return patch("app.integrations.immich._client", return_value=client)
+    """Patch the immichpy client factory (an async context manager) to yield the
+    given mock client."""
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=client)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return patch("app.integrations.immich._client", return_value=cm)
 
 
 class TestImmichProvider:

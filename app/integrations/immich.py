@@ -10,13 +10,13 @@ API Documentation: https://api.immich.app/introduction
 import asyncio
 import json
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from inspect import isawaitable
 from pathlib import Path
-from typing import Any, Optional, Protocol, Union
+from typing import Any, AsyncIterator, Optional, Protocol, Union
 from urllib.parse import urlencode
 from uuid import UUID
-from weakref import WeakKeyDictionary
 
 import aiofiles
 import aiohttp
@@ -56,46 +56,16 @@ IMMICH_API_PERSON_THUMBNAIL = "/api/people/{person_id}/thumbnail"
 IMMICH_MAX_PAGE_SIZE = 1000
 IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD = 1000
 
-# An aiohttp.ClientSession is permanently bound to the event loop that created
-# it. Immich calls run on several loops (the uvicorn loop plus fresh per-task
-# loops spun up by asyncio.run() in Celery workers), so a single module-global
-# session would be reused from a dead loop and raise. Key sessions by their loop
-# instead; the WeakKeyDictionary drops a session once its loop is collected.
-_sessions: "WeakKeyDictionary[asyncio.AbstractEventLoop, aiohttp.ClientSession]" = (
-    WeakKeyDictionary()
-)
 
-
-def _get_session() -> aiohttp.ClientSession:
-    """Reuse one aiohttp session per event loop to avoid connection churn."""
-    loop = asyncio.get_running_loop()
-    session = _sessions.get(loop)
-    if session is None or session.closed:
-        # No overall ``total`` deadline: streamed original/video downloads can
-        # legitimately run longer than any per-read gap. ``sock_read`` still
-        # bounds a stalled connection.
-        timeout = aiohttp.ClientTimeout(connect=5.0, sock_read=60.0)
-        connector = aiohttp.TCPConnector(limit=20, limit_per_host=10)
-        session = aiohttp.ClientSession(timeout=timeout, connector=connector)
-        _sessions[loop] = session
-    return session
-
-
-async def close_sessions() -> None:
-    """Close any open aiohttp sessions. Called from the app shutdown hook."""
-    for session in list(_sessions.values()):
-        if not session.closed:
-            await session.close()
-    _sessions.clear()
-
-
-def _client(base_url: str, api_key: str) -> AsyncClient:
-    """Build an immichpy client bound to a server + key over the shared session.
-
-    The session is injected, so the returned client never owns (or closes) it;
-    the shared session is reused for connection pooling.
-    """
-    return AsyncClient(api_key=api_key, base_url=base_url, http_client=_get_session())
+@asynccontextmanager
+async def _client(base_url: str, api_key: str) -> AsyncIterator[AsyncClient]:
+    session = aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(connect=5.0, sock_read=60.0)
+    )
+    try:
+        yield AsyncClient(api_key=api_key, base_url=base_url, http_client=session)
+    finally:
+        await session.close()
 
 
 class _JsonSerializable(Protocol):
@@ -138,7 +108,8 @@ async def connect(
 
     # Validate API key by calling Immich's /api/users/me endpoint
     try:
-        me = await _client(base_url, api_key).users.get_my_user()
+        async with _client(base_url, api_key) as client:
+            me = await client.users.get_my_user()
 
         # Extract user ID from response
         external_user_id = str(me.id) if me and me.id else None
@@ -219,15 +190,14 @@ async def list_assets(
     api_key = decrypt_token(integration.access_token_encrypted)
 
     try:
-        search_response = await _client(
-            integration.base_url, api_key
-        ).search.search_assets(
-            MetadataSearchDto(
-                page=page,
-                size=min(limit, IMMICH_MAX_PAGE_SIZE),
-                order=AssetOrder.DESC,
+        async with _client(integration.base_url, api_key) as client:
+            search_response = await client.search.search_assets(
+                MetadataSearchDto(
+                    page=page,
+                    size=min(limit, IMMICH_MAX_PAGE_SIZE),
+                    order=AssetOrder.DESC,
+                )
             )
-        )
 
         # Extract assets from search response
         assets_result = search_response.assets
@@ -293,15 +263,14 @@ async def sync(
         cache_limit = settings.integration_cache_limit
 
         # Fetch recent assets from Immich using search metadata endpoint
-        search_response = await _client(
-            integration.base_url, api_key
-        ).search.search_assets(
-            MetadataSearchDto(
-                page=1,
-                size=min(cache_limit, IMMICH_MAX_PAGE_SIZE),
-                order=AssetOrder.DESC,
+        async with _client(integration.base_url, api_key) as client:
+            search_response = await client.search.search_assets(
+                MetadataSearchDto(
+                    page=1,
+                    size=min(cache_limit, IMMICH_MAX_PAGE_SIZE),
+                    order=AssetOrder.DESC,
+                )
             )
-        )
 
         # Extract assets from search response
         assets_result = search_response.assets
@@ -366,7 +335,8 @@ async def get_album_id_by_name(
 ) -> Optional[str]:
     """Find an album ID by name."""
     try:
-        albums = await _client(base_url, api_key).albums.get_all_albums()
+        async with _client(base_url, api_key) as client:
+            albums = await client.albums.get_all_albums()
 
         # Find album with matching name
         for album in albums:
@@ -382,12 +352,13 @@ async def get_album_id_by_name(
 async def create_album(base_url: str, api_key: str, album_name: str) -> str:
     """Create a new album with description."""
     try:
-        album = await _client(base_url, api_key).albums.create_album(
-            CreateAlbumDto(
-                albumName=album_name,
-                description="Photos and Videos linked to Journiv journal entries",
+        async with _client(base_url, api_key) as client:
+            album = await client.albums.create_album(
+                CreateAlbumDto(
+                    albumName=album_name,
+                    description="Photos and Videos linked to Journiv journal entries",
+                )
             )
-        )
         return str(album.id)
     except Exception as e:
         log_error(e, message=f"Failed to create album: {e}")
@@ -402,10 +373,11 @@ async def add_assets_to_album(
         return
 
     try:
-        await _client(base_url, api_key).albums.add_assets_to_album(
-            UUID(album_id),
-            BulkIdsDto(ids=[UUID(asset_id) for asset_id in asset_ids]),
-        )
+        async with _client(base_url, api_key) as client:
+            await client.albums.add_assets_to_album(
+                UUID(album_id),
+                BulkIdsDto(ids=[UUID(asset_id) for asset_id in asset_ids]),
+            )
         log_info(f"Added {len(asset_ids)} assets to Immich album {album_id}")
 
     except Exception as e:
@@ -421,10 +393,11 @@ async def remove_assets_from_album(
         return
 
     try:
-        await _client(base_url, api_key).albums.remove_asset_from_album(
-            UUID(album_id),
-            BulkIdsDto(ids=[UUID(asset_id) for asset_id in asset_ids]),
-        )
+        async with _client(base_url, api_key) as client:
+            await client.albums.remove_asset_from_album(
+                UUID(album_id),
+                BulkIdsDto(ids=[UUID(asset_id) for asset_id in asset_ids]),
+            )
         log_info(f"Removed {len(asset_ids)} assets from Immich album {album_id}")
 
     except Exception as e:
@@ -565,22 +538,21 @@ async def get_asset_info(base_url: str, api_key: str, asset_id: str) -> dict[str
     Fetch details for a single asset from Immich.
     Falls back to search endpoint if direct lookup fails (e.g. 404).
     """
-    client = _client(base_url, api_key)
-
     try:
-        # 1. Try direct endpoint
-        try:
-            asset = await client.assets.get_asset_info(UUID(asset_id))
-            return _dump(asset)
-        except NotFoundException:
-            # 2. Fallback to search endpoint
-            # Some versions of Immich or some asset states might require search lookup
-            search_response = await client.search.search_assets(
-                MetadataSearchDto(id=UUID(asset_id))
-            )
-            items = search_response.assets.items if search_response.assets else []
-            if items:
-                return _dump(items[0])
+        async with _client(base_url, api_key) as client:
+            # 1. Try direct endpoint
+            try:
+                asset = await client.assets.get_asset_info(UUID(asset_id))
+                return _dump(asset)
+            except NotFoundException:
+                # 2. Fallback to search endpoint
+                # Some versions of Immich or some asset states might require search lookup
+                search_response = await client.search.search_assets(
+                    MetadataSearchDto(id=UUID(asset_id))
+                )
+                items = search_response.assets.items if search_response.assets else []
+                if items:
+                    return _dump(items[0])
 
     except Exception as e:
         log_warning(e, f"Failed to fetch Immich asset info for {asset_id}")
@@ -603,14 +575,14 @@ async def list_people(
     Immich supports paginated people listing. Its person search endpoint returns
     a full list on current releases, so search pagination is applied locally.
     """
-    client = _client(base_url, api_key)
     limit = max(1, min(limit, IMMICH_MAX_PAGE_SIZE))
     page = max(1, page)
 
     if search and search.strip():
-        results = await client.search.search_person(
-            name=search.strip(), with_hidden=include_hidden
-        )
+        async with _client(base_url, api_key) as client:
+            results = await client.search.search_person(
+                name=search.strip(), with_hidden=include_hidden
+            )
         people = [_dump(person) for person in (results or [])]
         if len(people) > IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD:
             log_warning(
@@ -621,9 +593,10 @@ async def list_people(
         page_items = people[start : start + limit]
         return page_items, len(people), start + limit < len(people)
 
-    response = await client.people.get_all_people(
-        page=page, size=limit, with_hidden=include_hidden
-    )
+    async with _client(base_url, api_key) as client:
+        response = await client.people.get_all_people(
+            page=page, size=limit, with_hidden=include_hidden
+        )
     people = [_dump(person) for person in (response.people or [])]
     total = int(response.total or len(people))
     has_more = (
@@ -640,7 +613,8 @@ async def get_person(
     person_id: str,
 ) -> dict[str, Any]:
     """Fetch a single Immich person."""
-    person = await _client(base_url, api_key).people.get_person(UUID(person_id))
+    async with _client(base_url, api_key) as client:
+        person = await client.people.get_person(UUID(person_id))
     return _dump(person) if person else {}
 
 
@@ -650,7 +624,8 @@ async def get_asset_faces(
     asset_id: str,
 ) -> list[dict[str, Any]]:
     """Fetch face detections for a single Immich asset."""
-    faces = await _client(base_url, api_key).faces.get_faces(UUID(asset_id))
+    async with _client(base_url, api_key) as client:
+        faces = await client.faces.get_faces(UUID(asset_id))
     return [_dump(face) for face in (faces or [])]
 
 
@@ -667,19 +642,20 @@ async def get_person_thumbnail_bytes(
     max_bytes: int = 10 * 1024 * 1024,
 ) -> bytes:
     """Fetch an Immich person thumbnail for storage in Journiv."""
-    resp = await _client(
-        base_url, api_key
-    ).people.get_person_thumbnail_without_preload_content(UUID(person_id))
-    async with resp:
-        await _raise_for_status(resp)
-        content = bytearray()
-        async for chunk in resp.content.iter_chunked(1024 * 1024):
-            content.extend(chunk)
-            if len(content) > max_bytes:
-                # Abort early instead of buffering an unbounded body into memory.
-                raise ValueError(
-                    "Immich person thumbnail exceeds maximum profile image size"
-                )
+    async with _client(base_url, api_key) as client:
+        resp = await client.people.get_person_thumbnail_without_preload_content(
+            UUID(person_id)
+        )
+        async with resp:
+            await _raise_for_status(resp)
+            content = bytearray()
+            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                content.extend(chunk)
+                if len(content) > max_bytes:
+                    # Abort early instead of buffering an unbounded body into memory.
+                    raise ValueError(
+                        "Immich person thumbnail exceeds maximum profile image size"
+                    )
     return bytes(content)
 
 
@@ -698,14 +674,15 @@ async def download_original_to_file(
     dest_path: Path,
 ) -> None:
     """Stream an asset's original file to ``dest_path``."""
-    resp = await _client(
-        base_url, api_key
-    ).assets.download_asset_without_preload_content(UUID(asset_id))
-    async with resp:
-        await _raise_for_status(resp)
-        async with aiofiles.open(dest_path, "wb") as f:
-            async for chunk in resp.content.iter_chunked(1024 * 1024):
-                await f.write(chunk)
+    async with _client(base_url, api_key) as client:
+        resp = await client.assets.download_asset_without_preload_content(
+            UUID(asset_id)
+        )
+        async with resp:
+            await _raise_for_status(resp)
+            async with aiofiles.open(dest_path, "wb") as f:
+                async for chunk in resp.content.iter_chunked(1024 * 1024):
+                    await f.write(chunk)
 
 
 async def download_media_bytes(
@@ -717,9 +694,8 @@ async def download_media_bytes(
     """Download an asset's thumbnail/preview and return its bytes in memory."""
     # ``view_asset`` reads the whole (small) body and raises immichpy's typed
     # exceptions on non-2xx, so no hand-rolled status handling is needed here.
-    content = await _client(base_url, api_key).assets.view_asset(
-        UUID(asset_id), size=size
-    )
+    async with _client(base_url, api_key) as client:
+        content = await client.assets.view_asset(UUID(asset_id), size=size)
     return bytes(content)
 
 

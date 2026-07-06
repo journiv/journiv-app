@@ -12,7 +12,10 @@ ASSET_ID2 = "22222222-2222-2222-2222-222222222222"
 
 
 def _patch_client(client: MagicMock):
-    return patch("app.integrations.immich._client", return_value=client)
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=client)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return patch("app.integrations.immich._client", return_value=cm)
 
 
 class TestImmichAlbum:
