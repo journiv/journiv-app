@@ -12,13 +12,16 @@ import json
 import time
 from datetime import datetime, timezone
 from inspect import isawaitable
+from pathlib import Path
 from typing import Any, Optional, Protocol, Union
 from urllib.parse import urlencode
 from uuid import UUID
 
+import aiofiles
 import aiohttp
 from immichpy import AsyncClient
 from immichpy.client.generated import (
+    AssetMediaSize,
     AssetOrder,
     BulkIdsDto,
     CreateAlbumDto,
@@ -648,6 +651,46 @@ async def get_person_thumbnail_bytes(
     if len(content) > max_bytes:
         raise ValueError("Immich person thumbnail exceeds maximum profile image size")
     return bytes(content)
+
+
+async def _raise_for_status(resp: aiohttp.ClientResponse) -> None:
+    """Raise the same typed exception immichpy would for a non-2xx response."""
+    if 200 <= resp.status <= 299:
+        return
+    body = (await resp.read()).decode("utf-8", "replace")
+    raise ApiException.from_response(http_resp=resp, body=body, data=None)
+
+
+async def download_original_to_file(
+    base_url: str,
+    api_key: str,
+    asset_id: str,
+    dest_path: Path,
+) -> None:
+    """Stream an asset's original file to ``dest_path``."""
+    resp = await _client(
+        base_url, api_key
+    ).assets.download_asset_without_preload_content(UUID(asset_id))
+    async with resp:
+        await _raise_for_status(resp)
+        async with aiofiles.open(dest_path, "wb") as f:
+            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                await f.write(chunk)
+
+
+async def download_media_bytes(
+    base_url: str,
+    api_key: str,
+    asset_id: str,
+    size: AssetMediaSize,
+) -> bytes:
+    """Download an asset's thumbnail/preview and return its bytes in memory."""
+    resp = await _client(base_url, api_key).assets.view_asset_without_preload_content(
+        UUID(asset_id), size=size
+    )
+    async with resp:
+        await _raise_for_status(resp)
+        return await resp.read()
 
 
 def get_cached_asset_type(user_id: str, asset_id: str) -> Optional[AssetType]:

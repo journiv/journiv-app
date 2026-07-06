@@ -7,16 +7,22 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, Optional, Tuple, TypeVar
 
 import aiofiles
 import aiofiles.os
-import httpx
+import aiohttp
+from immichpy.client.generated import AssetMediaSize
+from immichpy.client.generated.exceptions import (
+    ApiException,
+    ForbiddenException,
+    NotFoundException,
+    UnauthorizedException,
+)
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, select
 
 from app.core.encryption import decrypt_token
-from app.core.http_client import get_http_client
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.media_signing import normalize_delta_media_ids
 from app.core.scoped_cache import ScopedCache
@@ -29,6 +35,8 @@ from app.models.moment import Moment, MomentMedia
 from app.models.user import User
 from app.services.media_service import MediaService
 from app.utils.quill_delta import extract_plain_text
+
+T = TypeVar("T")
 
 # Batch size for parallel downloads (configurable in future)
 COPY_MODE_BATCH_SIZE = 3
@@ -469,58 +477,41 @@ class ImportJobService:
 
 
 
-    async def _fetch_with_retry(
+    async def _with_retry(
         self,
-        url: str,
-        headers: Dict[str, str],
-        method: str = "GET",
-        json_data: Optional[Dict[str, Any]] = None,
+        operation: Callable[[], Awaitable[T]],
+        *,
+        what: str,
         max_retries: int = 2,
-        timeout: float = 30.0
-    ) -> Optional[httpx.Response]:
+    ) -> T:
         """
-        Generic HTTP request helper with exponential backoff retry logic.
+        Run an async operation with exponential backoff on transient failures.
+
+        Retries on Immich 5xx responses, timeouts, and network errors; client
+        errors (auth / not found) are raised immediately without retry.
         """
         for attempt in range(max_retries + 1):
             try:
-                client = await get_http_client()
-                if method == "GET":
-                    response = await client.get(url, headers=headers, timeout=timeout)
-                elif method == "POST":
-                    response = await client.post(url, headers=headers, json=json_data, timeout=timeout)
-                else:
-                    raise ValueError(f"Unsupported method: {method}")
-
-                if response.status_code in (401, 403):
-                    log_error(f"Authentication failed for {url}: {response.status_code}")
-                    return response
-
-                if response.status_code == 404:
-                    return response
-
-                # Retry on transient errors (5xx)
-                if response.status_code >= 500 and attempt < max_retries:
+                return await operation()
+            except (UnauthorizedException, ForbiddenException, NotFoundException):
+                # Client errors won't succeed on retry.
+                raise
+            except ApiException as e:
+                if (e.status or 0) >= 500 and attempt < max_retries:
                     wait_time = 2 ** attempt
-                    log_warning(f"Retry {attempt + 1}/{max_retries} for {url} after {wait_time}s (server error {response.status_code})")
+                    log_warning(f"Retry {attempt + 1}/{max_retries} for {what} after {wait_time}s (server error {e.status})")
                     await asyncio.sleep(wait_time)
                     continue
-
-                response.raise_for_status()
-                return response
-
-            except (httpx.TimeoutException, httpx.HTTPStatusError) as e:
+                raise
+            except (asyncio.TimeoutError, aiohttp.ClientError) as e:
                 if attempt < max_retries:
                     wait_time = 2 ** attempt
-                    log_warning(f"Retry {attempt + 1}/{max_retries} for {url} after {wait_time}s ({type(e).__name__})")
+                    log_warning(f"Retry {attempt + 1}/{max_retries} for {what} after {wait_time}s ({type(e).__name__})")
                     await asyncio.sleep(wait_time)
                     continue
-                log_error(f"Final failure for {url} after {max_retries + 1} attempts: {e}")
-            except Exception as e:
-                log_error(f"Unexpected error for {url}: {e}")
-                if attempt < max_retries:
-                    continue
-                break
-        return None
+                raise
+        # Unreachable: the loop either returns or raises on the final attempt.
+        raise RuntimeError(f"Retry loop exhausted for {what}")
 
     @staticmethod
     async def _save_bytes_to_path(content: bytes, target_path: Path) -> None:
@@ -995,17 +986,12 @@ class ImportJobService:
                 return None, None
 
             # Download thumbnail
-            response = await self._fetch_with_retry(
-                f"{base_url}/api/assets/{asset_id}/thumbnail",
-                headers={"x-api-key": api_key},
-                timeout=30.0
+            thumbnail_content = await self._with_retry(
+                lambda: immich.download_media_bytes(
+                    base_url, api_key, asset_id, AssetMediaSize.THUMBNAIL
+                ),
+                what=f"thumbnail {asset_id}",
             )
-
-            if not response or response.status_code != 200:
-                log_warning(f"Failed to download thumbnail for asset {asset_id}")
-                return None, asset_metadata
-
-            thumbnail_content = response.content
             log_info(f"Downloaded thumbnail for asset {asset_id}")
             return thumbnail_content, asset_metadata
 
@@ -1043,48 +1029,30 @@ class ImportJobService:
             filename = metadata["original_filename"]
 
             # Stream download to temp file to avoid OOM on large videos
-            import os
             import tempfile
-            temp_file_path = None
 
             try:
-                client = await get_http_client()
-                async with client.stream(
-                    "GET",
-                    f"{base_url}/api/assets/{asset_id}/original",
-                    headers={"x-api-key": api_key},
-                    timeout=120.0,
-                ) as response:
-                        if response.status_code != 200:
-                            log_warning(f"Failed to download original for asset {asset_id}: {response.status_code}")
-                            return None
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    temp_file_path = Path(tmp_dir) / "original"
+                    await self._with_retry(
+                        lambda: immich.download_original_to_file(
+                            base_url, api_key, asset_id, temp_file_path
+                        ),
+                        what=f"original {asset_id}",
+                    )
 
-                        with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                            temp_file_path = tmp.name
-
-                        async with aiofiles.open(temp_file_path, 'wb') as f:
-                            async for chunk in response.aiter_bytes():
-                                await f.write(chunk)
-
-                # Save using streaming-support method
-                # Note: Validation happens during save/processing
-                saved_info = await self.media_service.save_uploaded_file(
-                    original_filename=filename,
-                    user_id=user_id,
-                    media_type=metadata["media_type"],
-                    file_path=temp_file_path
-                )
+                    # Save using streaming-support method
+                    # Note: Validation happens during save/processing
+                    saved_info = await self.media_service.save_uploaded_file(
+                        original_filename=filename,
+                        user_id=user_id,
+                        media_type=metadata["media_type"],
+                        file_path=str(temp_file_path),
+                    )
 
             except Exception as e:
                 log_warning(f"Failed to process original for asset {asset_id}: {e}")
                 return None
-            finally:
-                # Cleanup temp file
-                if temp_file_path and Path(temp_file_path).exists():
-                    try:
-                        os.unlink(temp_file_path)
-                    except Exception as e:
-                        log_warning(f"Failed to remove temp file {temp_file_path}: {e}")
 
             # Save thumbnail with Journiv naming convention if available
             if thumbnail_info and thumbnail_info[0]:
@@ -1124,27 +1092,25 @@ class ImportJobService:
                     # Continue without thumbnail - not critical
 
             # Download web-compatible preview from Immich for HEIC/HEIF files.
-            # get_asset_url("original") returns thumbnail?size=preview (JPEG/WebP),
-            # avoiding the need for local pillow-heif transcoding.
+            # The PREVIEW variant returns JPEG/WebP, avoiding the need for local
+            # pillow-heif transcoding.
             try:
                 mime_type = metadata.get("mime_type", "")
                 file_ext = Path(filename).suffix.lower()
 
                 if file_ext in MediaService.HEIC_EXTENSIONS or mime_type in MediaService.HEIC_MIME_TYPES:
-                    preview_url = immich.get_asset_url(base_url, asset_id, "original")
-                    response = await self._fetch_with_retry(
-                        preview_url, headers={"x-api-key": api_key}, timeout=30.0,
+                    preview_content = await self._with_retry(
+                        lambda: immich.download_media_bytes(
+                            base_url, api_key, asset_id, AssetMediaSize.PREVIEW
+                        ),
+                        what=f"preview {asset_id}",
                     )
+                    stored_path = self.media_service.media_root / saved_info["file_path"]
+                    display_path_obj = MediaService._build_display_path(stored_path)
+                    await self._save_bytes_to_path(preview_content, display_path_obj)
 
-                    if response and response.status_code == 200:
-                        stored_path = self.media_service.media_root / saved_info["file_path"]
-                        display_path_obj = MediaService._build_display_path(stored_path)
-                        await self._save_bytes_to_path(response.content, display_path_obj)
-
-                        saved_info["display_path"] = str(display_path_obj.relative_to(self.media_service.media_root))
-                        log_info(f"Saved display version for HEIC asset {asset_id}: {saved_info['display_path']}")
-                    else:
-                        log_warning(f"Failed to download preview for HEIC asset {asset_id}")
+                    saved_info["display_path"] = str(display_path_obj.relative_to(self.media_service.media_root))
+                    log_info(f"Saved display version for HEIC asset {asset_id}: {saved_info['display_path']}")
             except Exception as e:
                 log_warning(f"Failed to save display version for HEIC asset {asset_id}: {e}")
 
