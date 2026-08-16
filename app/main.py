@@ -25,6 +25,7 @@ from app.api.v1.api import api_router
 from app.api.v1.endpoints import public
 from app.core.cache import create_cache
 from app.core.config import settings
+from app.core.cors import CORS_ALLOW_HEADERS, CORS_EXPOSE_HEADERS
 from app.core.database import init_db
 from app.core.exceptions import (
     EntryNotFoundError,
@@ -148,13 +149,8 @@ if cors_enabled:
         allow_origins=cors_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=[
-            "Authorization",
-            "Content-Type",
-            "Accept",
-            "Origin",
-            "X-Requested-With",
-        ],
+        allow_headers=CORS_ALLOW_HEADERS,
+        expose_headers=CORS_EXPOSE_HEADERS,
         max_age=3600,
     )
     log_info(f"CORS enabled for origins: {cors_origins}")
