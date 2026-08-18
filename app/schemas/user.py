@@ -84,6 +84,7 @@ class UserSettingsBase(BaseModel):
     reminder_time: Optional[str] = None
     writing_goal_daily: Optional[int] = None
     start_of_week_day: int = Field(0, ge=0, le=6)  # 0=Monday ... 6=Sunday
+    time_format: str = "system"
     theme: str = "light"
 
 
@@ -100,6 +101,7 @@ class UserSettingsUpdate(BaseModel):
     reminder_time: Optional[str] = None
     writing_goal_daily: Optional[int] = None
     start_of_week_day: Optional[int] = Field(None, ge=0, le=6)
+    time_format: Optional[str] = None
     theme: Optional[str] = None
 
     @validator('time_zone')
@@ -115,6 +117,12 @@ class UserSettingsUpdate(BaseModel):
     def validate_start_of_week_day(cls, v):
         if v is not None and (v < 0 or v > 6):
             raise ValueError("start_of_week_day must be between 0 and 6")
+        return v
+
+    @validator('time_format')
+    def validate_time_format(cls, v):
+        if v is not None and v not in {'system', 'twelve_hour', 'twenty_four_hour'}:
+            raise ValueError('time_format must be system, twelve_hour, or twenty_four_hour')
         return v
 
 
