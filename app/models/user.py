@@ -202,6 +202,7 @@ class UserSettings(TimestampMixin, table=True):
     reminder_time: Optional[str] = Field(None, max_length=5)  # HH:MM format
     writing_goal_daily: int = Field(default=500, ge=1, le=10000)  # Words per day (default: 500)
     start_of_week_day: int = Field(default=0, ge=0, le=6)  # 0=Monday ... 6=Sunday
+    time_format: str = Field(default="system", max_length=20)  # system, twelve_hour, twenty_four_hour
     theme: str = Field(default="light", max_length=20)  # light, dark, auto
 
     # Relations
@@ -212,6 +213,7 @@ class UserSettings(TimestampMixin, table=True):
         # Constraints
         CheckConstraint('writing_goal_daily > 0', name='check_goal_positive'),
         CheckConstraint('start_of_week_day >= 0 AND start_of_week_day <= 6', name='check_start_of_week_day_valid'),
+        CheckConstraint("time_format IN ('system', 'twelve_hour', 'twenty_four_hour')", name='check_time_format_valid'),
         CheckConstraint("theme IN ('light', 'dark', 'auto')", name='check_theme_valid'),
     )
 
@@ -222,6 +224,14 @@ class UserSettings(TimestampMixin, table=True):
         allowed_themes = {theme.value for theme in Theme}
         if v not in allowed_themes:
             raise ValueError(f'Invalid theme: {v}. Must be one of {sorted(allowed_themes)}')
+        return v
+
+    @field_validator('time_format')
+    @classmethod
+    def validate_time_format(cls, v):
+        allowed_formats = {'system', 'twelve_hour', 'twenty_four_hour'}
+        if v not in allowed_formats:
+            raise ValueError(f'time_format must be one of {sorted(allowed_formats)}')
         return v
 
     @field_validator('time_zone')

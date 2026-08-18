@@ -26,13 +26,40 @@ def test_settings_round_trip(api_client: JournivApiClient, api_user: ApiUser):
     desired = {
         "time_zone": "America/New_York",
         "daily_prompt_enabled": False,
+        "time_format": "twenty_four_hour",
         "theme": "dark",
     }
     updated = api_client.update_user_settings(api_user.access_token, desired)
 
     assert updated["time_zone"] == desired["time_zone"]
     assert updated["daily_prompt_enabled"] is False
+    assert updated["time_format"] == desired["time_format"]
     assert updated["theme"] == "dark"
+
+
+def test_settings_reject_invalid_time_format(api_client: JournivApiClient, api_user: ApiUser):
+    response = api_client.request(
+        "PUT",
+        "/users/me/settings",
+        token=api_user.access_token,
+        json={"time_format": "invalid"},
+    )
+    assert response.status_code == 422
+
+
+def test_settings_does_not_echo_invalid_timezone(
+    api_client: JournivApiClient, api_user: ApiUser
+):
+    invalid_timezone = "Invalid/Timezone-should-not-appear-in-response"
+    response = api_client.request(
+        "PUT",
+        "/users/me/settings",
+        token=api_user.access_token,
+        json={"time_zone": invalid_timezone},
+    )
+
+    assert response.status_code == 422
+    assert invalid_timezone not in response.text
 
 
 def test_account_deletion_revokes_access(api_client: JournivApiClient):
