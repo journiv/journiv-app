@@ -47,6 +47,21 @@ def test_settings_reject_invalid_time_format(api_client: JournivApiClient, api_u
     assert response.status_code == 422
 
 
+def test_settings_does_not_echo_invalid_timezone(
+    api_client: JournivApiClient, api_user: ApiUser
+):
+    invalid_timezone = "Invalid/Timezone-should-not-appear-in-response"
+    response = api_client.request(
+        "PUT",
+        "/users/me/settings",
+        token=api_user.access_token,
+        json={"time_zone": invalid_timezone},
+    )
+
+    assert response.status_code == 422
+    assert invalid_timezone not in response.text
+
+
 def test_account_deletion_revokes_access(api_client: JournivApiClient):
     """Deleting the account immediately revokes existing tokens."""
     user = make_api_user(api_client)

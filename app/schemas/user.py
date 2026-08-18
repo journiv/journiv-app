@@ -110,7 +110,9 @@ class UserSettingsUpdate(BaseModel):
         if v is not None:
             from app.core.time_utils import validate_timezone
             if not validate_timezone(v):
-                raise ValueError(f'Invalid timezone: "{v}". Must be a valid IANA timezone name (e.g., "America/New_York", "Europe/London", "Asia/Tokyo")')
+                raise ValueError(
+                    "Invalid timezone. Provide a valid IANA timezone name."
+                )
         return v
 
     @validator('start_of_week_day')
