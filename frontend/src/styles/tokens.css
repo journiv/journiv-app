@@ -1,0 +1,164 @@
+/* Design tokens.
+ *
+ * The colour system is stock shadcn "base-vega" (neutral base colour). Only a
+ * few values are Journiv's own: the brand `--primary`, and layout / motion
+ * constants that shadcn has no notion of. A user theme
+ * (`src/features/theme/`) overrides the colour custom properties at runtime via
+ * a `<style id="journiv-user-theme">` layer — so nothing here is sacred except
+ * the variable NAMES.
+ *
+ * Dark mode is the `.dark` class on <html> (set by `src/app/theme.ts`), matched
+ * by `@custom-variant dark` in index.css.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---- stock shadcn neutral (light) --------------------------------- */
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
+
+  --radius: 0.625rem;
+
+  /* ---- Journiv brand — the one identity colour --------------------- */
+  /* Hue 269, the same blue the Flutter client ships (#405DE6). A user theme
+     may replace these; that is the point. */
+  --primary: oklch(0.545 0.192 269);
+  --primary-foreground: oklch(0.985 0.003 269);
+  --ring: var(--primary);
+
+  /* ---- Journiv derived tokens ------------------------------------- */
+  /* Product CSS (reader, editor, timeline, shell) needs a few roles the stock
+     shadcn set does not name. They are DERIVED from the themeable tokens
+     above, so an imported user theme flows through them automatically. */
+  --accent-hover: color-mix(in oklab, var(--primary) 88%, var(--foreground));
+  --accent-pressed: color-mix(in oklab, var(--primary) 78%, var(--foreground));
+  --accent-surface: color-mix(in oklab, var(--primary) 12%, var(--background));
+  --accent-border: color-mix(in oklab, var(--primary) 40%, var(--border));
+  --focus-ring: var(--ring);
+  --line-strong: color-mix(in oklab, var(--border), var(--foreground) 22%);
+  --state-hover: color-mix(in oklab, transparent, var(--foreground) 6%);
+  --state-pressed: color-mix(in oklab, transparent, var(--foreground) 11%);
+  --state-selected: var(--accent-surface);
+  --state-selected-rail: var(--primary);
+  --danger-surface: color-mix(
+    in oklab,
+    var(--destructive) 12%,
+    var(--background)
+  );
+  --danger-border: color-mix(in oklab, var(--destructive) 40%, var(--border));
+
+  --success: oklch(0.55 0.14 150);
+
+  /* ---- on-media overlays --------------------------------------------- */
+  /* Deliberately theme-independent: these sit on a photograph, not a Journiv
+     surface, so they must not follow light/dark. */
+  --overlay-scrim: oklch(0 0 0 / 0.6);
+  --text-on-overlay: oklch(1 0 0);
+  --surface-overlay: oklch(0.25 0.007 85 / 0.4);
+
+  /* ---- depth (overlays only) ------------------------------------------ */
+  --shadow-overlay:
+    0 12px 32px oklch(0.25 0.007 85 / 0.1),
+    0 2px 6px oklch(0.25 0.007 85 / 0.06);
+  --shadow-dialog:
+    0 24px 60px oklch(0.25 0.007 85 / 0.18),
+    0 4px 12px oklch(0.25 0.007 85 / 0.08);
+
+  /* ---- spacing rhythm --------------------------------------------------- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---- layout ----------------------------------------------------------- */
+  --nav-width: 244px;
+  --list-width-min: 340px;
+  --list-width-max: 400px;
+  --bar-height: 52px;
+  --reader-measure: 68ch;
+  --reader-gutter: clamp(24px, 5vw, 64px);
+  --tap-target: 44px;
+
+  /* ---- motion --------------------------------------------------------- */
+  --ease: cubic-bezier(0.2, 0, 0.15, 1);
+  --duration-fast: 110ms;
+  --duration-base: 180ms;
+}
+
+.dark {
+  color-scheme: dark;
+
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --destructive-foreground: oklch(0.985 0 0);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.556 0 0);
+
+  --primary: oklch(0.66 0.17 269);
+  --primary-foreground: oklch(0.15 0.01 269);
+  --ring: var(--primary);
+
+  --success: oklch(0.72 0.14 150);
+  --surface-overlay: oklch(0.12 0.004 85 / 0.62);
+
+  --shadow-overlay:
+    0 12px 32px oklch(0 0 0 / 0.44), 0 2px 6px oklch(0 0 0 / 0.3);
+  --shadow-dialog:
+    0 24px 60px oklch(0 0 0 / 0.55), 0 4px 12px oklch(0 0 0 / 0.35);
+}

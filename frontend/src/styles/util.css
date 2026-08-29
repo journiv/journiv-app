@@ -1,0 +1,57 @@
+/* Small shared utilities that are not components: a native-control field skin,
+ * a dialog action row, full-pane status centring, and the loading spinner.
+ * All driven by stock shadcn tokens. */
+
+/* Native <select>/<input>/<textarea> that cannot use the shadcn primitives
+ * (e.g. a 400-option list) but should still match them. */
+.jv-field {
+  width: 100%;
+  min-height: 2.25rem;
+  padding: 0 0.75rem;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 1rem;
+  transition: border-color var(--duration-fast, 110ms) ease;
+}
+
+.jv-field:focus-visible {
+  border-color: var(--ring);
+  outline: 3px solid color-mix(in oklab, var(--ring) 50%, transparent);
+  outline-offset: 0;
+}
+
+@media (min-width: 768px) {
+  .jv-field {
+    font-size: 0.875rem;
+  }
+}
+
+/* Right-aligned button row inside a Dialog body (forms that nest their own
+ * actions rather than using DialogFooter). */
+.jv-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+/* Fills a whole pane with a centred status view or 404. */
+.jv-pane-status,
+.jv-route-not-found {
+  display: grid;
+  place-content: center;
+  min-height: 100%;
+  padding: var(--space-6);
+}
+
+.jv-spin {
+  animation: jv-spin 900ms linear infinite;
+}
+
+@keyframes jv-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

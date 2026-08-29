@@ -1,0 +1,182 @@
+/* Element defaults and the typographic role scale.
+   Roles are classes so that they are greppable and enforceable. Do not invent
+   ad-hoc font-size/weight pairs in components; use or extend a role. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--sidebar);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* One focus treatment for the whole product. */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-xs);
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
+
+/* ---- typographic roles ------------------------------------------------- */
+
+.jv-display {
+  font-size: 1.75rem; /* 28px */
+  font-weight: 680;
+  line-height: 1.2;
+  letter-spacing: -0.021em;
+  margin: 0;
+}
+
+/* The reader and the editor MUST both use this role for the entry title. */
+.jv-entry-title {
+  font-size: clamp(1.85rem, 1.35rem + 1.6vw, 2.45rem); /* 30 -> 39px */
+  font-weight: 650;
+  line-height: 1.14;
+  letter-spacing: -0.022em;
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.jv-section-title {
+  font-size: 0.9375rem; /* 15px */
+  font-weight: 620;
+  line-height: 1.4;
+  letter-spacing: -0.006em;
+  margin: 0;
+}
+
+.jv-body {
+  font-size: 0.9375rem; /* 15px */
+  font-weight: 400;
+  line-height: 1.55;
+}
+
+.jv-moment-title {
+  font-size: 0.9375rem; /* 15px */
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.004em;
+}
+
+.jv-excerpt {
+  font-size: 0.875rem; /* 14px */
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.jv-label {
+  font-size: 0.8125rem; /* 13px */
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+/* Metadata is sentence case. Journiv has no uppercase letterspaced eyebrows. */
+.jv-meta {
+  font-size: 0.78125rem; /* 12.5px */
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.jv-caption {
+  font-size: 0.75rem; /* 12px */
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+/* ---- small shared utilities -------------------------------------------- */
+
+.jv-truncate {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Excerpts clamp to two lines. They are never `white-space: nowrap`. */
+.jv-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Visibility helpers tied to the product's one layout breakpoint.
+   Prefer these over JS breakpoint state. */
+.jv-compact-only {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  /* Doubled for specificity so a component's own display rule cannot win. */
+  .jv-desktop-only.jv-desktop-only {
+    display: none;
+  }
+  .jv-compact-only {
+    display: revert;
+  }
+}
+
+.jv-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A reduced-motion reset has to beat every component-level animation, which is
+   exactly what !important is for. This is the only sanctioned use of it in the
+   product; do not copy the pattern elsewhere. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override */
+    animation-duration: 0.01ms !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override */
+    animation-iteration-count: 1 !important;
+    /* biome-ignore lint/complexity/noImportantStyles: reduced-motion override */
+    transition-duration: 0.01ms !important;
+  }
+}
