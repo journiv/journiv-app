@@ -13,9 +13,9 @@
     "lint:design": "node scripts/check-design-system.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
-    "test": "vitest run",
+    "test": "node scripts/check-design-system.mjs && vitest run",
     "test:watch": "vitest",
-    "verify": "npm run format:check && npm run lint && npm run typecheck && npm test && npm run build && npm run api:check",
+    "verify": "npm run format:check && npm run lint && npm run lint:design && npm run typecheck && npm test && npm run build && npm run api:check",
     "api:pull": "node scripts/pull-openapi.mjs",
     "api:generate": "openapi-ts",
     "api:check": "node scripts/check-generated.mjs"

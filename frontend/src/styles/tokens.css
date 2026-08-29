@@ -24,7 +24,10 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  /* Darkened from stock base-vega's oklch(0.556 0 0), which measured 4.53:1 on
+     --sidebar — clears AA (4.5:1) but with almost no margin. This lands ~5.2:1
+     on --sidebar / ~5.4:1 on --background. See §3 "Measured contrast". */
+  --muted-foreground: oklch(0.52 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -45,7 +48,13 @@
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
 
-  --radius: 0.625rem;
+  /* ---- shape scale (DESIGN.md §3) ------------------------------------ */
+  /* Four literal steps, never calc(). Not user-configurable — there is no
+     corner-radius personalization control. */
+  --radius-xs: 6px; /* chips, inputs, toolbar buttons */
+  --radius-sm: 10px; /* buttons, list rows */
+  --radius-md: 14px; /* cards, popovers, media */
+  --radius-lg: 20px; /* sheets, drawers, dialogs */
 
   /* ---- Journiv brand — the one identity colour --------------------- */
   /* Hue 269, the same blue the Flutter client ships (#405DE6). A user theme
@@ -58,14 +67,11 @@
   /* Product CSS (reader, editor, timeline, shell) needs a few roles the stock
      shadcn set does not name. They are DERIVED from the themeable tokens
      above, so an imported user theme flows through them automatically. */
-  --accent-hover: color-mix(in oklab, var(--primary) 88%, var(--foreground));
-  --accent-pressed: color-mix(in oklab, var(--primary) 78%, var(--foreground));
   --accent-surface: color-mix(in oklab, var(--primary) 12%, var(--background));
   --accent-border: color-mix(in oklab, var(--primary) 40%, var(--border));
   --focus-ring: var(--ring);
   --line-strong: color-mix(in oklab, var(--border), var(--foreground) 22%);
   --state-hover: color-mix(in oklab, transparent, var(--foreground) 6%);
-  --state-pressed: color-mix(in oklab, transparent, var(--foreground) 11%);
   --state-selected: var(--accent-surface);
   --state-selected-rail: var(--primary);
   --danger-surface: color-mix(
@@ -114,7 +120,6 @@
   /* ---- motion --------------------------------------------------------- */
   --ease: cubic-bezier(0.2, 0, 0.15, 1);
   --duration-fast: 110ms;
-  --duration-base: 180ms;
 }
 
 .dark {

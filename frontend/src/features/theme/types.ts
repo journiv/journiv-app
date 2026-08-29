@@ -9,9 +9,11 @@
  * redesign.
  */
 
-/** The stock shadcn colour / radius / shadow variables a user (or an imported
- *  tweakcn theme) may set. Font variables are deliberately NOT here — fonts come
- *  only from the bundled-font pickers. */
+/** The stock shadcn colour / shadow variables a user (or an imported tweakcn
+ *  theme) may set. Font variables are deliberately NOT here — fonts come only
+ *  from the bundled-font pickers. `radius` is deliberately NOT here either —
+ *  there is no corner-radius personalization control; the shape scale in
+ *  tokens.css is four literal values (DESIGN.md §3), not user-configurable. */
 export const COLOR_VARS = [
   "background",
   "foreground",
@@ -32,7 +34,6 @@ export const COLOR_VARS = [
   "border",
   "input",
   "ring",
-  "radius",
   "sidebar",
   "sidebar-foreground",
   "sidebar-primary",

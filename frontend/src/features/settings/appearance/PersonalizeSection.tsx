@@ -20,13 +20,6 @@ const ACCENT_PRESETS = [
   { label: "Slate", value: "oklch(0.45 0.03 260)" },
 ];
 
-const RADIUS_STEPS = [
-  { label: "Square", value: "0rem" },
-  { label: "Slight", value: "0.375rem" },
-  { label: "Default", value: "0.625rem" },
-  { label: "Round", value: "1rem" },
-];
-
 const SIZE_STEPS = [0.92, 0.96, 1, 1.08, 1.18];
 
 export function PersonalizeSection() {
@@ -42,7 +35,6 @@ export function PersonalizeSection() {
   }, [p.theme.light.primary]);
 
   const currentScale = p.theme.editorFontScale ?? 1;
-  const currentRadius = p.theme.light.radius ?? "0.625rem";
 
   const applyImport = () => {
     setImportError(null);
@@ -151,22 +143,6 @@ export function PersonalizeSection() {
               onClick={() => p.setEditorFontScale(scale)}
             >
               {Math.round(scale * 100)}%
-            </button>
-          ))}
-        </div>
-      </SettingsRow>
-
-      <SettingsRow label="Corner radius">
-        <div className="jv-personalize__steps">
-          {RADIUS_STEPS.map((step) => (
-            <button
-              key={step.value}
-              type="button"
-              className="jv-personalize__step"
-              aria-pressed={currentRadius === step.value}
-              onClick={() => p.setRadius(step.value)}
-            >
-              {step.label}
             </button>
           ))}
         </div>
