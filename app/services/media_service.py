@@ -31,18 +31,18 @@ from app.core.exceptions import (
 )
 from app.core.logging_config import log_error, log_file_upload, log_info, log_warning
 from app.core.media_signing import attach_signed_urls, signed_url_for_journiv
+from app.models.entry import Entry
 from app.models.enums import MediaType, UploadStatus
 from app.models.integration import Integration, IntegrationProvider
-from app.models.entry import Entry
 from app.models.moment import Moment, MomentMedia
 from app.schemas.entry import MomentMediaResponse
-from app.schemas.media_library import MediaLibraryItem
 from app.schemas.media import (
     MediaBatchSignError,
     MediaBatchSignRequest,
     MediaBatchSignResponse,
     MediaBatchSignResult,
 )
+from app.schemas.media_library import MediaLibraryItem
 from app.schemas.moment import MomentMediaThumbnail
 from app.services.media_storage_service import MediaStorageService
 from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
@@ -284,9 +284,9 @@ class MediaService:
         statement = (
             select(
                 MomentMedia,
-                Moment.logged_date_tz,
-                Moment.logged_at_utc,
-                Moment.logged_timezone,
+                col(Moment.logged_date_tz),
+                col(Moment.logged_at_utc),
+                col(Moment.logged_timezone),
             )
             .join(Moment, col(MomentMedia.moment_id) == Moment.id)
             .where(

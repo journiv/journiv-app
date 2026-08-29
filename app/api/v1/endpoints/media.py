@@ -45,7 +45,6 @@ from app.integrations.service import fetch_proxy_asset
 from app.models.enums import MediaType
 from app.models.user import User
 from app.schemas.entry import MomentMediaResponse
-from app.schemas.media_library import MediaLibraryPageResponse
 from app.schemas.media import (
     ImmichImportJobResponse,
     ImmichImportRequest,
@@ -55,6 +54,7 @@ from app.schemas.media import (
     MediaBatchSignResponse,
     MediaSignedUrlResponse,
 )
+from app.schemas.media_library import MediaLibraryPageResponse
 from app.services import media_service as media_service_module
 from app.services.import_job_service import ImportJobService
 from app.services.media_service import (

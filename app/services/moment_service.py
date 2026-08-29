@@ -1108,8 +1108,10 @@ class MomentService:
     ) -> List[Moment]:
         statement = select(Moment).where(Moment.user_id == user_id)
         if journal_id:
-            statement = statement.join(Entry, Entry.moment_id == Moment.id).where(
-                Entry.journal_id == journal_id
+            statement = statement.join(
+                Entry, col(Entry.moment_id) == col(Moment.id)
+            ).where(
+                col(Entry.journal_id) == journal_id
             )
         if start_date:
             statement = statement.where(col(Moment.logged_date_tz) >= start_date)
