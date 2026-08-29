@@ -4,6 +4,10 @@ import type { ReactNode } from "react";
 import { cx } from "../../lib/cx";
 
 type ViewMode = "list" | "calendar" | "media";
+type ListViewSearch = Record<string, unknown> & {
+  date?: string;
+  view?: "calendar" | "media";
+};
 
 const OPTIONS: Array<{ mode: ViewMode; label: string; icon: ReactNode }> = [
   {
@@ -45,7 +49,7 @@ export function ListViewSwitch({ className }: { className?: string }) {
           <Link
             key={option.mode}
             to="."
-            search={(prev) => ({
+            search={(prev: ListViewSearch) => ({
               ...prev,
               view: option.mode === "list" ? undefined : option.mode,
               // The selected day only makes sense inside the calendar.
