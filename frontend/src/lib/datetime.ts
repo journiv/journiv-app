@@ -158,12 +158,12 @@ export function dayGroupLabel(
   now = new Date(),
 ) {
   const viewer = viewerTimezone();
+  const today = todayInTimezone(viewer, now);
   if (loggedTimezone === viewer) {
-    const today = todayInTimezone(viewer, now);
     if (loggedDateTz === today) return "Today";
     if (loggedDateTz === shiftIsoDate(today, -1)) return "Yesterday";
   }
-  const thisYear = new Date(now).getUTCFullYear();
+  const thisYear = Number(today.slice(0, 4));
   const momentYear = Number(loggedDateTz.slice(0, 4));
   return momentYear === thisYear
     ? formatDayMedium(loggedAtUtc, loggedTimezone)

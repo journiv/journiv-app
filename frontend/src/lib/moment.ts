@@ -77,6 +77,7 @@ export function momentKindLabel(
 }
 
 export function truncate(value: string, max = 220) {
+  if (max <= 0) return "";
   const text = value.trim();
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }

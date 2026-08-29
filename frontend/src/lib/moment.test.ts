@@ -6,6 +6,7 @@ import {
   momentKindLabel,
   momentLeadText,
   momentTitle,
+  truncate,
 } from "./moment";
 
 const base = {
@@ -83,5 +84,11 @@ describe("Moment rendering semantics", () => {
       "4 items",
     );
     expect(mediaCountLabel(base)).toBeNull();
+  });
+
+  it("returns no text for a non-positive truncation limit", () => {
+    expect(truncate("Some writing.", 0)).toBe("");
+    expect(truncate("Some writing.", -1)).toBe("");
+    expect(truncate("Some writing.", 5)).toBe("Some…");
   });
 });

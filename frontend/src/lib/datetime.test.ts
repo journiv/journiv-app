@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
+  dayGroupLabel,
+  formatDayMedium,
   wallTimePartsInZone,
   zonedWallTimeToUtcIso,
   type WallTimeParts,
@@ -64,5 +66,29 @@ describe("wallTimePartsInZone", () => {
     expect(
       wallTimePartsInZone("2026-02-15T23:30:00.000Z", "Asia/Kolkata"),
     ).toEqual({ year: 2026, month: 2, day: 16, hour: 5, minute: 0 });
+  });
+});
+
+describe("dayGroupLabel", () => {
+  it("uses the viewer's local year at the New Year boundary", () => {
+    const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
+    const spy = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockImplementation(function (this: Intl.DateTimeFormat) {
+        return {
+          ...resolvedOptions.call(this),
+          timeZone: "America/Los_Angeles",
+        };
+      });
+
+    try {
+      const now = new Date("2027-01-01T00:30:00.000Z");
+      const utc = "2026-12-30T17:00:00.000Z";
+      expect(dayGroupLabel("2026-12-30", "America/New_York", utc, now)).toBe(
+        formatDayMedium(utc, "America/New_York"),
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
