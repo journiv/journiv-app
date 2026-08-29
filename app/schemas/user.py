@@ -148,6 +148,17 @@ class AdminUserCreate(UserBase):
             raise ValueError('Name cannot be empty')
         return v.strip()
 
+    @validator('password')
+    def validate_password(cls, v):
+        """Validate password strength (matches AdminUserUpdate and signup)."""
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        has_letter = any(c.isalpha() for c in v)
+        has_digit = any(c.isdigit() for c in v)
+        if not (has_letter and has_digit):
+            raise ValueError('Password must contain at least one letter and one number')
+        return v
+
 
 class AdminUserUpdate(BaseModel):
     """Admin user update schema (can change role, active status)."""

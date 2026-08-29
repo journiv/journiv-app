@@ -1,6 +1,7 @@
 """
 User service for handling users and user settings.
 """
+
 import secrets
 import time
 import uuid
@@ -76,7 +77,7 @@ class UserService:
                 bind_url = bind.url
             elif isinstance(bind, Connection):
                 bind_url = bind.engine.url
-            if bind_url and 'sqlite' in str(bind_url).lower():
+            if bind_url and "sqlite" in str(bind_url).lower():
                 count = self.session.exec(select(func.count(User.id))).one() or 0
                 return count == 0
             else:
@@ -87,12 +88,20 @@ class UserService:
             log_error(exc, context="is_first_user check")
             return False
 
-    def count_admin_users(self) -> int:
-        """Count the number of admin users."""
+    def count_admin_users(self, active_only: bool = False) -> int:
+        """Count admin users.
+
+        Args:
+            active_only: When True, exclude deactivated admins. A disabled
+                admin cannot sign in, so it must not satisfy the "at least one
+                admin must exist" guards.
+        """
         from sqlalchemy import func
-        return self.session.exec(
-            select(func.count(User.id)).where(User.role == UserRole.ADMIN)
-        ).one() or 0
+
+        statement = select(func.count(User.id)).where(User.role == UserRole.ADMIN)
+        if active_only:
+            statement = statement.where(User.is_active)
+        return self.session.exec(statement).one() or 0
 
     def can_delete_user(self, user_id: str) -> tuple[bool, Optional[str]]:
         """
@@ -108,15 +117,19 @@ class UserService:
         if not user:
             return False, "User not found"
 
-        # Cannot delete the last admin
-        if user.role == UserRole.ADMIN:
-            admin_count = self.count_admin_users()
-            if admin_count <= 1:
-                return False, "Cannot delete the last admin user. At least one admin must exist."
+        # Cannot delete the last admin who can still sign in
+        if user.role == UserRole.ADMIN and user.is_active:
+            if self.count_admin_users(active_only=True) <= 1:
+                return (
+                    False,
+                    "Cannot delete the last admin user. At least one active admin must exist.",
+                )
 
         return True, None
 
-    def can_update_user_role(self, user_id: str, new_role: UserRole) -> tuple[bool, Optional[str]]:
+    def can_update_user_role(
+        self, user_id: str, new_role: UserRole
+    ) -> tuple[bool, Optional[str]]:
         """
         Check if a user's role can be updated.
 
@@ -131,11 +144,50 @@ class UserService:
         if not user:
             return False, "User not found"
 
-        # If demoting from admin to user, check if this is the last admin
-        if user.role == UserRole.ADMIN and new_role != UserRole.ADMIN:
-            admin_count = self.count_admin_users()
-            if admin_count <= 1:
-                return False, "Cannot demote the last admin user. At least one admin must exist."
+        # If demoting from admin to user, check this is not the last active admin
+        if (
+            user.role == UserRole.ADMIN
+            and new_role != UserRole.ADMIN
+            and user.is_active
+        ):
+            if self.count_admin_users(active_only=True) <= 1:
+                return (
+                    False,
+                    "Cannot demote the last admin user. At least one active admin must exist.",
+                )
+
+        return True, None
+
+    def can_change_active_status(
+        self, user_id: str, is_active: bool
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Check if a user's active status can be changed.
+
+        Deactivating the last admin who can still sign in would lock every
+        administrator out of the instance, so it is refused.
+
+        Args:
+            user_id: User ID to check
+            is_active: The requested active status
+
+        Returns:
+            tuple: (can_change: bool, error_message: Optional[str])
+        """
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False, "User not found"
+
+        if (
+            user.role == UserRole.ADMIN
+            and user.is_active
+            and not is_active
+            and self.count_admin_users(active_only=True) <= 1
+        ):
+            return (
+                False,
+                "Cannot deactivate the last admin user. At least one active admin must exist.",
+            )
 
         return True, None
 
@@ -157,7 +209,9 @@ class UserService:
         """Check if user is an OIDC user by checking for ExternalIdentity."""
         try:
             user_uuid = uuid.UUID(user_id)
-            statement = select(ExternalIdentity).where(ExternalIdentity.user_id == user_uuid)
+            statement = select(ExternalIdentity).where(
+                ExternalIdentity.user_id == user_uuid
+            )
             external_identity = self.session.exec(statement).first()
             return external_identity is not None
         except ValueError:
@@ -170,7 +224,9 @@ class UserService:
         """
         return settings.disable_signup
 
-    def create_user(self, user_data: UserCreate, role: Optional[UserRole] = None) -> User:
+    def create_user(
+        self, user_data: UserCreate, role: Optional[UserRole] = None
+    ) -> User:
         """Create a new user.
 
         Args:
@@ -199,7 +255,7 @@ class UserService:
             email=user_data.email,
             password=hashed_password,
             name=user_data.name,
-            role=user_role
+            role=user_role,
         )
 
         self.session.add(user)
@@ -231,13 +287,16 @@ class UserService:
             raise UserNotFoundError("User not found")
 
         # Handle password change if provided
-        if user_data.current_password is not None and user_data.new_password is not None:
+        if (
+            user_data.current_password is not None
+            and user_data.new_password is not None
+        ):
             # Check if user is OIDC user - OIDC users cannot change password
             if self.is_oidc_user(user_id):
-                log_warning(
-                    f"Password change rejected for OIDC user: {user.email}"
+                log_warning(f"Password change rejected for OIDC user: {user.email}")
+                raise ValueError(
+                    "Password cannot be changed for OIDC users. Please change your password through your OIDC provider."
                 )
-                raise ValueError("Password cannot be changed for OIDC users. Please change your password through your OIDC provider.")
 
             # Verify current password
             if not verify_password(user_data.current_password, user.password):
@@ -328,13 +387,10 @@ class UserService:
         user_id: uuid.UUID,
         settings_data: UserSettingsCreate,
         *,
-        commit: bool = True
+        commit: bool = True,
     ) -> UserSettings:
         """Create user settings."""
-        settings = UserSettings(
-            user_id=user_id,
-            **_schema_dump(settings_data)
-        )
+        settings = UserSettings(user_id=user_id, **_schema_dump(settings_data))
 
         self.session.add(settings)
         if commit:
@@ -362,7 +418,9 @@ class UserService:
         except ValueError:
             raise UserNotFoundError("Invalid user ID format") from None
 
-    def update_user_settings(self, user_id: str, settings_data: UserSettingsUpdate) -> UserSettings:
+    def update_user_settings(
+        self, user_id: str, settings_data: UserSettingsUpdate
+    ) -> UserSettings:
         """Update user settings."""
         settings = self.get_user_settings(user_id)
 
@@ -409,7 +467,7 @@ class UserService:
         email: Optional[str],
         name: Optional[str],
         picture: Optional[str],
-        auto_provision: bool
+        auto_provision: bool,
     ) -> User:
         """
         Get or create user from OIDC authentication.
@@ -432,8 +490,7 @@ class UserService:
         """
         # Find existing ExternalIdentity by (issuer, subject)
         statement = select(ExternalIdentity).where(
-            ExternalIdentity.issuer == issuer,
-            ExternalIdentity.subject == subject
+            ExternalIdentity.issuer == issuer, ExternalIdentity.subject == subject
         )
         external_identity = self.session.exec(statement).first()
 
@@ -459,7 +516,9 @@ class UserService:
             # Load and return the associated user
             user = self.get_user_by_id(str(external_identity.user_id))
             if not user:
-                raise UserNotFoundError(f"User {external_identity.user_id} not found for external identity")
+                raise UserNotFoundError(
+                    f"User {external_identity.user_id} not found for external identity"
+                )
 
             if not user.is_active:
                 log_warning(f"OIDC login rejected for inactive user: {user.email}")
@@ -470,7 +529,9 @@ class UserService:
 
         # External identity not found - check if auto-provisioning is enabled
         if not auto_provision:
-            log_warning(f"OIDC auto-provisioning disabled, rejecting new user from {issuer}")
+            log_warning(
+                f"OIDC auto-provisioning disabled, rejecting new user from {issuer}"
+            )
             raise UnauthorizedError(
                 "Your account is not registered. Please contact the administrator or "
                 "register with email/password first."
@@ -502,7 +563,7 @@ class UserService:
                 password=get_password_hash(random_password),
                 name=name or email.split("@")[0],  # Use email prefix as default name
                 is_active=True,
-                role=user_role
+                role=user_role,
             )
 
             self.session.add(user)
@@ -513,14 +574,18 @@ class UserService:
 
                 # Create default user settings
                 self.create_user_settings(user.id, UserSettingsCreate(), commit=False)
-                StarterDataService(self.session).ensure_user_seeded(user.id, commit=False)
+                StarterDataService(self.session).ensure_user_seeded(
+                    user.id, commit=False
+                )
 
                 # Commit user creation
                 self.session.commit()
                 self.session.refresh(user)
 
                 if is_first:
-                    log_info(f"First user auto-provisioned from OIDC as admin: {user.email}")
+                    log_info(
+                        f"First user auto-provisioned from OIDC as admin: {user.email}"
+                    )
                 else:
                     log_info(f"Auto-provisioned new user from OIDC: {user.email}")
             except IntegrityError as exc:
@@ -529,7 +594,9 @@ class UserService:
                 user = self.get_user_by_email(email)
                 if not user:
                     raise UserAlreadyExistsError("Failed to create user") from exc
-                log_info(f"User {email} created by another request, using existing user")
+                log_info(
+                    f"User {email} created by another request, using existing user"
+                )
             except SQLAlchemyError as exc:
                 self.session.rollback()
                 log_error(exc, email=email)
@@ -543,7 +610,7 @@ class UserService:
             email=email,
             name=name,
             picture=picture,
-            last_login_at=datetime.now(timezone.utc)
+            last_login_at=datetime.now(timezone.utc),
         )
 
         self.session.add(external_identity)
@@ -556,12 +623,13 @@ class UserService:
             self.session.rollback()
             # External identity already exists (race)
             statement = select(ExternalIdentity).where(
-                ExternalIdentity.issuer == issuer,
-                ExternalIdentity.subject == subject
+                ExternalIdentity.issuer == issuer, ExternalIdentity.subject == subject
             )
             existing = self.session.exec(statement).first()
             if existing:
-                log_info(f"External identity for {issuer}/{subject} created by another request")
+                log_info(
+                    f"External identity for {issuer}/{subject} created by another request"
+                )
                 # Update last login
                 existing.last_login_at = datetime.now(timezone.utc)
                 self.session.add(existing)
@@ -616,7 +684,7 @@ class UserService:
             email=user_data.email,
             password=hashed_password,
             name=user_data.name,
-            role=user_data.role
+            role=user_data.role,
         )
 
         self.session.add(user)
@@ -660,22 +728,30 @@ class UserService:
             if not can_update:
                 raise ValueError(error_msg)
 
+        # Check active-status change protection (never strand the last admin)
+        if user_data.is_active is not None and user_data.is_active != user.is_active:
+            can_change, error_msg = self.can_change_active_status(
+                user_id, user_data.is_active
+            )
+            if not can_change:
+                raise ValueError(error_msg)
+
         # Update fields
         update_data = _schema_dump(user_data, exclude_unset=True)
 
         # Handle password separately
-        if 'password' in update_data and update_data['password']:
-            user.password = get_password_hash(update_data['password'])
-            del update_data['password']
+        if "password" in update_data and update_data["password"]:
+            user.password = get_password_hash(update_data["password"])
+            del update_data["password"]
 
         # Handle role separately - ensure it's an enum instance, not a string
-        if 'role' in update_data:
-            role_value = update_data['role']
+        if "role" in update_data:
+            role_value = update_data["role"]
             if isinstance(role_value, str):
                 user.role = UserRole(role_value)
             else:
                 user.role = role_value
-            del update_data['role']
+            del update_data["role"]
 
         # Update other fields
         for field, value in update_data.items():
@@ -689,7 +765,7 @@ class UserService:
             log_info(f"Admin updated user: {user.email}")
         except IntegrityError as exc:
             self.session.rollback()
-            if 'email' in str(exc).lower():
+            if "email" in str(exc).lower():
                 raise UserAlreadyExistsError("Email already registered") from exc
             raise
         except SQLAlchemyError as exc:
