@@ -22,6 +22,18 @@ export type WallTimeParts = {
   minute: number;
 };
 
+function wallTimeValue({ year, month, day, hour, minute }: WallTimeParts) {
+  return Date.UTC(year, month - 1, day, hour, minute);
+}
+
+function wallTimeIso({ year, month, day, hour, minute }: WallTimeParts) {
+  return `${year.toString().padStart(4, "0")}-${month
+    .toString()
+    .padStart(2, "0")}-${day.toString().padStart(2, "0")}T${hour
+    .toString()
+    .padStart(2, "0")}:${minute.toString().padStart(2, "0")}:00`;
+}
+
 /**
  * The wall-clock a UTC instant shows as in `timeZone`. Use this to seed a date
  * picker so the highlighted day is the day *in the entry's own zone*, not the
@@ -53,8 +65,21 @@ export function zonedWallTimeToUtcIso(
   { year, month, day, hour, minute }: WallTimeParts,
   timeZone: string,
 ): string {
-  const floating = new Date(year, month - 1, day, hour, minute, 0, 0);
-  return fromZonedTime(floating, timeZone).toISOString();
+  const parts = { year, month, day, hour, minute };
+  // Passing a string avoids `new Date(y, m, …)` normalizing a nonexistent
+  // time in the browser's own timezone before it reaches `date-fns-tz`.
+  const utc = fromZonedTime(wallTimeIso(parts), timeZone);
+
+  // For a nonexistent time, date-fns-tz's result round-trips to a wall-clock
+  // time before the requested one. Add that difference to preserve the
+  // position in the gap: 02:30 becomes 03:30.
+  const rendered = wallTimePartsInZone(utc.toISOString(), timeZone);
+  const gapMilliseconds = wallTimeValue(parts) - wallTimeValue(rendered);
+  if (gapMilliseconds > 0) {
+    return new Date(utc.getTime() + gapMilliseconds).toISOString();
+  }
+
+  return utc.toISOString();
 }
 
 function format(
