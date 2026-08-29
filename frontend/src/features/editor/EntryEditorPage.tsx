@@ -29,6 +29,7 @@ import {
   momentQuery,
 } from "../../api/query/options";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
+import { MomentChips } from "../../components/journiv/MomentChips";
 import { PageBar } from "../../components/journiv/PageBar";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -174,7 +175,19 @@ function EntryEditorForm({
   const [title, setTitle] = useState(initialTitle);
   const [journalId, setJournalId] = useState(initialJournalId);
   const [bodyDirty, setBodyDirty] = useState(false);
+  const [metaDirty, setMetaDirty] = useState(false);
   const [error, setError] = useState("");
+
+  // The Moment that owns this entry's metadata. For an existing Moment that is
+  // `moment` (the parent refetches it on invalidation, so it stays current). A
+  // new entry has none until the Details popover — or media — creates the draft;
+  // then we query that draft so the header meta and foot chips can update.
+  const draftMomentId = moment ? null : (draft.draft?.momentId ?? null);
+  const liveDraftMoment = useQuery({
+    ...momentQuery(draftMomentId ?? ""),
+    enabled: Boolean(draftMomentId),
+  });
+  const momentForDisplay = moment ?? liveDraftMoment.data;
   const [editorState, setEditorState] = useState<EditorState>({
     formats: {},
     focused: false,
@@ -184,7 +197,7 @@ function EntryEditorForm({
   });
   const titleDirty = title !== initialTitle;
   const journalDirty = journalId !== initialJournalId;
-  const dirty = titleDirty || journalDirty || bodyDirty;
+  const dirty = titleDirty || journalDirty || bodyDirty || metaDirty;
   const activeJournals = journals.filter((journal) => !journal.is_archived);
   const needsJournalSelector =
     !moment ||
@@ -213,6 +226,37 @@ function EntryEditorForm({
     setError("");
     fileInputRef.current?.click();
   }, []);
+
+  // Metadata editing needs a server Moment id. Reuse the lazy-draft path so a
+  // new entry only creates a row once the user actually sets something.
+  const ensureMomentId = useCallback(async (): Promise<string | null> => {
+    if (moment) return moment.id;
+    if (!journalId) {
+      setError("Choose a Journal before adding details");
+      return null;
+    }
+    try {
+      const identity = await draft.ensure(journalId);
+      return identity.momentId;
+    } catch {
+      setError("Could not prepare this entry for details. Try again.");
+      return null;
+    }
+  }, [moment, draft, journalId]);
+
+  const onDetailsSaved = useCallback(
+    (savedMomentId: string) => {
+      setError("");
+      // Only a draft we created this session is at risk on Cancel; an existing
+      // Moment's metadata is already persisted and must not look "unsaved".
+      if (!moment) setMetaDirty(true);
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.moment(savedMomentId),
+      });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
+    },
+    [moment, queryClient],
+  );
 
   /**
    * Removes the media under the cursor from the writing. The file is not
@@ -440,7 +484,7 @@ function EntryEditorForm({
           <EntryHeader
             loggedAtUtc={moment?.logged_at_utc ?? draftLoggedAt}
             loggedTimezone={moment?.logged_timezone ?? draftTimezone}
-            moment={moment}
+            moment={momentForDisplay}
             journal={activeJournals.find((item) => item.id === journalId)}
             title={
               <>
@@ -475,6 +519,13 @@ function EntryEditorForm({
             disabled={mutation.isPending}
             onAddMedia={openMediaPicker}
             onRemoveMedia={removeSelectedMedia}
+            details={{
+              moment: momentForDisplay,
+              ensureMomentId,
+              onSaved: onDetailsSaved,
+              loggedAtUtc: moment?.logged_at_utc ?? draftLoggedAt,
+              loggedTimezone: moment?.logged_timezone ?? draftTimezone,
+            }}
           />
           <input
             ref={fileInputRef}
@@ -522,6 +573,7 @@ function EntryEditorForm({
             editorId={moment?.entry?.id ?? moment?.id ?? "new-entry"}
             initialContent={initialContent}
             formats={EDITOR_FORMATS}
+            onFiles={(files, index) => void media.attach(files, index)}
             onUserChange={() => setBodyDirty(true)}
             onStateChange={setEditorState}
             placeholder="Write about this moment…"
@@ -532,6 +584,9 @@ function EntryEditorForm({
               {error}
             </p>
           )}
+
+          {/* Same metadata, same rendering as the reader (DESIGN.md §11). */}
+          <MomentChips moment={momentForDisplay} />
         </div>
       </div>
     </div>
