@@ -1,0 +1,23 @@
+{
+  "ops": [
+    { "insert": "A complete Journiv document" },
+    { "insert": "\n", "attributes": { "header": 1 } },
+    { "insert": "Unicode 😊 and " },
+    { "insert": "bold", "attributes": { "bold": true } },
+    { "insert": ", " },
+    { "insert": "italic", "attributes": { "italic": true } },
+    { "insert": ", " },
+    { "insert": "underlined", "attributes": { "underline": true } },
+    { "insert": ", and " },
+    { "insert": "struck", "attributes": { "strike": true } },
+    { "insert": " text with a " },
+    { "insert": "safe link", "attributes": { "link": "https://journiv.com" } },
+    { "insert": ".\n" },
+    { "insert": "A bullet" },
+    { "insert": "\n", "attributes": { "list": "bullet" } },
+    { "insert": "An ordered item" },
+    { "insert": "\n", "attributes": { "list": "ordered" } },
+    { "insert": "A closing quotation." },
+    { "insert": "\n", "attributes": { "blockquote": true } }
+  ]
+}

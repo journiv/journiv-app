@@ -1,0 +1,9 @@
+{
+  "ops": [
+    {
+      "insert": "A recording of the water, because writing it down was not enough.\n"
+    },
+    { "insert": { "audio": "c07b2e88-9a41-4d35-b6f2-88e5c1a70d93" } },
+    { "insert": "It sounds smaller than it was.\n" }
+  ]
+}

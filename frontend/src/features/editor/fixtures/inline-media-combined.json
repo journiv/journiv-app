@@ -1,0 +1,19 @@
+{
+  "ops": [
+    { "insert": "The lake" },
+    { "insert": "\n", "attributes": { "header": 2 } },
+    { "insert": "We reached it " },
+    { "insert": "just", "attributes": { "italic": true } },
+    { "insert": " before sunset.\n" },
+    { "insert": { "image": "6f1c9a52-2b7d-4c1e-9f83-0a5d7e4b1c20" } },
+    { "insert": "What we brought" },
+    { "insert": "\n", "attributes": { "header": 3 } },
+    { "insert": "Thermos" },
+    { "insert": "\n", "attributes": { "list": "bullet" } },
+    { "insert": "The good blanket" },
+    { "insert": "\n", "attributes": { "list": "bullet" } },
+    { "insert": { "audio": "c07b2e88-9a41-4d35-b6f2-88e5c1a70d93" } },
+    { "insert": "It was a good day." },
+    { "insert": "\n", "attributes": { "blockquote": true } }
+  ]
+}

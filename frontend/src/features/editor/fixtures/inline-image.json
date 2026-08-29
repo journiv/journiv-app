@@ -1,0 +1,7 @@
+{
+  "ops": [
+    { "insert": "We reached the lake just before sunset.\n" },
+    { "insert": { "image": "6f1c9a52-2b7d-4c1e-9f83-0a5d7e4b1c20" } },
+    { "insert": "The sky turned orange a few minutes later.\n" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "ops": [
+    { "insert": "Bold", "attributes": { "bold": true } },
+    { "insert": " and " },
+    { "insert": "italic", "attributes": { "italic": true } },
+    { "insert": ", " },
+    { "insert": "underlined", "attributes": { "underline": true } },
+    { "insert": ", and " },
+    { "insert": "struck", "attributes": { "strike": true } },
+    { "insert": ".\n" }
+  ]
+}

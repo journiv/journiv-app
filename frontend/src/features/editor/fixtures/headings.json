@@ -1,0 +1,10 @@
+{
+  "ops": [
+    { "insert": "Heading one" },
+    { "insert": "\n", "attributes": { "header": 1 } },
+    { "insert": "Heading two" },
+    { "insert": "\n", "attributes": { "header": 2 } },
+    { "insert": "Heading three" },
+    { "insert": "\n", "attributes": { "header": 3 } }
+  ]
+}

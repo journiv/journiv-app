@@ -1,0 +1,12 @@
+{
+  "ops": [
+    { "insert": "Bullet one" },
+    { "insert": "\n", "attributes": { "list": "bullet" } },
+    { "insert": "Bullet two" },
+    { "insert": "\n", "attributes": { "list": "bullet" } },
+    { "insert": "First" },
+    { "insert": "\n", "attributes": { "list": "ordered" } },
+    { "insert": "Second" },
+    { "insert": "\n", "attributes": { "list": "ordered" } }
+  ]
+}
