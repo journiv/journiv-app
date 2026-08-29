@@ -1,0 +1,59 @@
+.jv-auth {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: var(--space-6);
+  background: var(--sidebar);
+}
+
+@supports (height: 100dvh) {
+  .jv-auth {
+    min-height: 100dvh;
+  }
+}
+
+.jv-auth__card {
+  width: 100%;
+  max-width: 22rem;
+  padding: var(--space-8);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-overlay);
+}
+
+.jv-auth__brand {
+  margin: 0 0 var(--space-6);
+  font-size: 0.875rem;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+  color: var(--muted-foreground);
+}
+
+.jv-auth__lede {
+  margin: var(--space-2) 0 var(--space-6);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.jv-auth__form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.jv-auth__label {
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.jv-auth__error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-surface);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+}
