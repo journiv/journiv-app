@@ -1,9 +1,14 @@
 """
 Instance configuration endpoints.
 """
-from fastapi import APIRouter
+from typing import Annotated
+
+from fastapi import APIRouter, Depends
+from sqlmodel import Session
 
 from app.core.config import settings
+from app.core.database import get_session
+from app.core.plus_capability import get_plus_capability
 from app.schemas.instance import InstanceConfigResponse
 
 router = APIRouter(prefix="/instance", tags=["instance"])
@@ -18,12 +23,15 @@ router = APIRouter(prefix="/instance", tags=["instance"])
         500: {"description": "Internal server error"},
     }
 )
-async def get_instance_config() -> InstanceConfigResponse:
+async def get_instance_config(
+    session: Annotated[Session, Depends(get_session)],
+) -> InstanceConfigResponse:
     """
     Get public instance configuration.
 
     Returns non-sensitive instance configuration settings for the frontend,
-    including import/export file size limits and signup status.
+    including import/export file size limits, signup status, and this
+    instance's Journiv Plus capability (see ``PlusCapability``).
     """
     return InstanceConfigResponse(
         import_export_max_file_size_mb=settings.import_export_max_file_size_mb,
@@ -34,4 +42,5 @@ async def get_instance_config() -> InstanceConfigResponse:
         immich_base_url=settings.immich_base_url,
         oidc_enabled=settings.oidc_enabled,
         oidc_only=settings.oidc_only,
+        plus=get_plus_capability(session),
     )

@@ -316,6 +316,34 @@ async def get_plus_factory(
         ) from None
 
 
+# Paid Plus tiers. "member" is the free / unlicensed state. A registered
+# license is always "supporter" or "believer" today; asserting the tier (rather
+# than mere signature validity) keeps a future free-tier license from unlocking
+# tier-gated features.
+PLUS_SUPPORTER_TIERS = frozenset({"supporter", "believer"})
+
+
+def require_supporter_tier(license_data: Dict[str, Any]) -> None:
+    """
+    Assert a verified license is at least the "supporter" tier.
+
+    Call directly after :func:`get_plus_factory` on endpoints that need a paid
+    tier. Raises 403 with a human message otherwise.
+    """
+    from app.core.config import JOURNIV_PLUS_DOC_URL
+
+    tier = license_data.get("tier")
+    if tier not in PLUS_SUPPORTER_TIERS:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "error": "plus_tier_required",
+                "message": "This feature requires a Journiv Plus Supporter licence or higher.",
+                "upgrade_url": JOURNIV_PLUS_DOC_URL,
+            },
+        )
+
+
 async def get_current_admin_user(
     current_user: Annotated[User, Depends(get_current_user)]
 ) -> User:
