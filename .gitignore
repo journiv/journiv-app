@@ -151,6 +151,9 @@ generated/
 public/uploads/
 static/uploads/
 
+# ...but not the frontend source feature directory that shares the name.
+!frontend/src/**/media/
+
 # Backups / exports / imports
 backups/
 exports/
@@ -226,6 +229,9 @@ app/plus/*.so
 
 # pytest
 pytest-results-*.xml
+
+# frontend
+frontend/.claude/
 
 # ===============================================================
 # END OF FILE
