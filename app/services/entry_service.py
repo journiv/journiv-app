@@ -12,13 +12,14 @@ from sqlalchemy.orm.attributes import QueryableAttribute
 from sqlmodel import Session, col, select
 
 from app.core.exceptions import (
+    ConcurrentModificationError,
     EntryNotFoundError,
     JournalNotFoundError,
     MediaNotFoundError,
     ValidationError,
 )
 from app.core.logging_config import log_debug, log_error, log_info, log_warning
-from app.core.time_utils import utc_now
+from app.core.time_utils import ensure_utc, utc_now
 from app.models.entry import Entry
 from app.models.journal import Journal
 from app.models.moment import MomentMedia
@@ -414,9 +415,32 @@ class EntryService:
 
         return list(self.session.exec(statement))
 
+    @staticmethod
+    def _check_expected_version(entry: Entry, expected_updated_at) -> None:
+        """Refuse an update built on a version the entry has moved past.
+
+        Compared as instants rather than as strings: the client sends back what
+        it was given, but a timezone-naive column and an offset-bearing payload
+        are the same moment and must compare equal.
+        """
+        if expected_updated_at is None:
+            return
+        current = ensure_utc(entry.updated_at)
+        if ensure_utc(expected_updated_at) == current:
+            return
+        log_info(
+            f"Refused concurrent update of entry {entry.id}: "
+            f"expected {expected_updated_at}, current {current}"
+        )
+        raise ConcurrentModificationError(
+            "This entry changed somewhere else since it was opened",
+            current_updated_at=current,
+        )
+
     def update_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, entry_data: EntryUpdate) -> Entry:
         """Update an entry — content fields only. Metadata lives on Moment."""
         entry = self._get_owned_entry(entry_id, user_id)
+        self._check_expected_version(entry, entry_data.expected_updated_at)
         was_draft = entry.is_draft
         media_service = MediaService(self.session)
 

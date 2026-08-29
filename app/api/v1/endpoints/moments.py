@@ -10,7 +10,11 @@ from sqlmodel import Session, col, select
 
 from app.api.dependencies import get_current_user, get_session
 from app.core.db_utils import normalize_uuid_list
-from app.core.exceptions import TagNotFoundError, ValidationError
+from app.core.exceptions import (
+    ConcurrentModificationError,
+    TagNotFoundError,
+    ValidationError,
+)
 from app.core.logging_config import log_error, log_warning
 from app.integrations.schemas import MomentImmichPeopleSuggestionsResponse
 from app.models.enums import GoalLogStatus
@@ -655,6 +659,12 @@ async def get_moment(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Moment not found"},
+        409: {
+            "description": (
+                "The entry changed since `entry_update.expected_updated_at`; "
+                "saving would discard that other edit"
+            )
+        },
         500: {"description": "Internal server error"},
     },
 )
@@ -675,6 +685,8 @@ async def update_moment(
         )
     except MomentNotFoundError:
         raise HTTPException(status_code=404, detail="Moment not found") from None
+    except ConcurrentModificationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
     except (ValueError, ValidationError) as exc:
         log_error(exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc

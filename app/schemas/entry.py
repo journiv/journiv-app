@@ -108,6 +108,15 @@ class EntryUpdate(BaseModel):
     content_delta: Optional[QuillDelta] = None
     journal_id: Optional[uuid.UUID] = None
     is_draft: Optional[bool] = None
+    expected_updated_at: Optional[datetime] = Field(
+        default=None,
+        description=(
+            "The entry's `updated_at` as the client last saw it. When given, the "
+            "update is refused with 409 if the entry has changed since, so a save "
+            "cannot silently discard an edit made on another device. Omit it for "
+            "last-write-wins."
+        ),
+    )
 
 
 class EntryResponse(EntryBase, TimestampMixin):
