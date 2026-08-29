@@ -31,6 +31,7 @@ from app.core.exceptions import (
 )
 from app.core.logging_config import log_error, log_file_upload, log_info, log_warning
 from app.core.media_signing import attach_signed_urls, signed_url_for_journiv
+from app.models.entry import Entry
 from app.models.enums import MediaType, UploadStatus
 from app.models.integration import Integration, IntegrationProvider
 from app.models.moment import Moment, MomentMedia
@@ -41,6 +42,7 @@ from app.schemas.media import (
     MediaBatchSignResponse,
     MediaBatchSignResult,
 )
+from app.schemas.media_library import MediaLibraryItem
 from app.schemas.moment import MomentMediaThumbnail
 from app.services.media_storage_service import MediaStorageService
 from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
@@ -258,6 +260,123 @@ class MediaService:
                     media_id=str(getattr(media_item, "id", "")),
                 )
         return signed_media
+
+    def get_media_library(
+        self,
+        session: Session,
+        user_id: uuid.UUID,
+        *,
+        limit: int = 60,
+        cursor_logged_at_utc: Optional[datetime] = None,
+        cursor_id: Optional[uuid.UUID] = None,
+        journal_id: Optional[uuid.UUID] = None,
+        media_type: Optional[MediaType] = None,
+    ) -> Tuple[list[MediaLibraryItem], Optional[datetime], Optional[uuid.UUID]]:
+        """
+        A flat, paginated view of the user's completed media across all moments.
+
+        Ordered newest-first by the owning moment's timestamp so a moment's
+        photos stay together and the grid reads like the Timeline. Draft moments
+        are excluded, exactly as the Timeline excludes them. Only ``completed``
+        media appears — pending/failed items are still visible in the reader but
+        would be noise in a browse wall.
+        """
+        statement = (
+            select(
+                MomentMedia,
+                col(Moment.logged_date_tz),
+                col(Moment.logged_at_utc),
+                col(Moment.logged_timezone),
+            )
+            .join(Moment, col(MomentMedia.moment_id) == Moment.id)
+            .where(
+                Moment.user_id == user_id,
+                col(MomentMedia.upload_status) == UploadStatus.COMPLETED,
+            )
+        )
+
+        if journal_id:
+            statement = statement.join(
+                Entry, col(Entry.moment_id) == Moment.id
+            ).where(col(Entry.journal_id) == journal_id)
+        else:
+            # Exclude draft moments the same way the Timeline does: a moment with
+            # no entry is a quick log and stays; a moment whose entry is a draft
+            # is hidden.
+            statement = statement.outerjoin(
+                Entry, col(Entry.moment_id) == Moment.id
+            ).where(
+                (col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False))
+            )
+
+        if media_type is not None:
+            statement = statement.where(
+                col(MomentMedia.media_type) == media_type
+            )
+
+        if cursor_logged_at_utc is not None and cursor_id is not None:
+            statement = statement.where(
+                (col(Moment.logged_at_utc) < cursor_logged_at_utc)
+                | (
+                    (col(Moment.logged_at_utc) == cursor_logged_at_utc)
+                    & (col(MomentMedia.id) < cursor_id)
+                )
+            )
+
+        statement = statement.order_by(
+            col(Moment.logged_at_utc).desc(),
+            col(MomentMedia.id).desc(),
+        ).limit(limit + 1)
+
+        rows = list(session.exec(statement))
+        next_cursor_logged_at_utc: Optional[datetime] = None
+        next_cursor_id: Optional[uuid.UUID] = None
+        if len(rows) > limit:
+            _, last_logged_at, _, _ = rows[limit - 1]
+            last_media = rows[limit - 1][0]
+            next_cursor_logged_at_utc = last_logged_at
+            next_cursor_id = last_media.id
+            rows = rows[:limit]
+
+        immich_base_url = self._get_immich_base_url(session, user_id)
+        items: list[MediaLibraryItem] = []
+        for media_item, logged_date_tz, logged_at_utc, logged_timezone in rows:
+            try:
+                signed = MomentMediaResponse.model_validate(media_item)
+                signed = attach_signed_urls(
+                    signed,
+                    str(user_id),
+                    external_base_url=immich_base_url,
+                )
+                items.append(
+                    MediaLibraryItem(
+                        id=signed.id,
+                        moment_id=media_item.moment_id,
+                        media_type=signed.media_type,
+                        mime_type=signed.mime_type,
+                        width=signed.width,
+                        height=signed.height,
+                        duration=signed.duration,
+                        alt_text=signed.alt_text,
+                        upload_status=signed.upload_status,
+                        signed_url=signed.signed_url,
+                        signed_thumbnail_url=signed.signed_thumbnail_url,
+                        signed_url_expires_at=signed.signed_url_expires_at,
+                        signed_thumbnail_expires_at=signed.signed_thumbnail_expires_at,
+                        created_at=signed.created_at,
+                        logged_date_tz=logged_date_tz,
+                        logged_at_utc=logged_at_utc,
+                        logged_timezone=logged_timezone,
+                    )
+                )
+            except Exception as exc:
+                log_warning(
+                    exc,
+                    message="Failed to sign media library item",
+                    user_id=str(user_id),
+                    media_id=str(getattr(media_item, "id", "")),
+                )
+        return items, next_cursor_logged_at_utc, next_cursor_id
 
     def get_moment_media_thumbnails(
         self,

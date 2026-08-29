@@ -120,6 +120,10 @@ class MomentCalendarItem(BaseModel):
     logged_date_tz: date
     primary_mood_id: Optional[uuid.UUID] = None
     moment_count: int = 0
+    # Signed thumbnail URL of the day's most recent media, when any moment that
+    # day has media. Lets the calendar grid preview a photo without a second
+    # request. Short-lived signature — do not cache.
+    thumbnail_url: Optional[str] = None
 
 
 class MomentPageResponse(BaseModel):
