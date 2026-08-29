@@ -148,8 +148,14 @@ user_media/
 entry_media/
 thumbnails/
 generated/
+# Keep the generated frontend API client committed.
+!frontend/src/api/generated/
+!frontend/src/api/generated/**
 public/uploads/
 static/uploads/
+
+# ...but not the frontend source feature directory that shares the name.
+!frontend/src/**/media/
 
 # Backups / exports / imports
 backups/
@@ -226,6 +232,9 @@ app/plus/*.so
 
 # pytest
 pytest-results-*.xml
+
+# frontend
+frontend/.claude/
 
 # ===============================================================
 # END OF FILE
