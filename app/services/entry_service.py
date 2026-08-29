@@ -197,7 +197,10 @@ class EntryService:
             log_warning(f"Moment not found for user {user_id}: {entry_data.moment_id}")
             raise ValidationError("Moment not found") from None
 
+        normalized_delta: Optional[dict] = None
         if entry_data.content_delta is not None:
+            from app.core.media_signing import normalize_delta_media_ids
+
             delta_payload = entry_data.content_delta.model_dump()
             sources = extract_media_sources(delta_payload)
             log_debug(
@@ -208,14 +211,30 @@ class EntryService:
                 redacted_media_ids=[f"{s[:8]}..." for s in sources[:5]],
             )
 
-        plain_text = extract_plain_text(
-            entry_data.content_delta.model_dump() if entry_data.content_delta else None
-        )
+            # Normalize media references to bare media IDs before persistence,
+            # exactly as update_entry does. Without this a client that sends a
+            # hydrated signed URL (uid/exp/sig) would have it stored verbatim as
+            # permanent journal content, and import_service.replace_media_ids
+            # only remaps exact IDs — so the reference would not survive an
+            # export/import round trip.
+            media_items = self.session.exec(
+                select(MomentMedia).where(MomentMedia.moment_id == entry_data.moment_id)
+            ).all()
+            for media in media_items:
+                self.session.expunge(media)
+            normalized_delta = normalize_delta_media_ids(delta_payload, list(media_items))
+            log_debug(
+                "Entry create: normalized delta media sources",
+                user_id=user_id,
+                media_source_count=len(extract_media_sources(normalized_delta or {})),
+            )
+
+        plain_text = extract_plain_text(normalized_delta)
         word_count = len(plain_text.split()) if plain_text else 0
 
         entry = Entry(
             title=entry_data.title,
-            content_delta=entry_data.content_delta.model_dump() if entry_data.content_delta else None,
+            content_delta=normalized_delta,
             content_plain_text=plain_text or None,
             journal_id=entry_data.journal_id,
             moment_id=entry_data.moment_id,
