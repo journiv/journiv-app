@@ -23,11 +23,14 @@ import type {
 } from "../../api/generated/types.gen";
 import { queryKeys } from "../../api/query/keys";
 import {
+  currentUserQuery,
   entryQuery,
   journalsQuery,
   mediaFormatsQuery,
   momentQuery,
 } from "../../api/query/options";
+import { defaultJournalId } from "../../lib/journalOrder";
+import { uuid } from "../../lib/uuid";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import { MomentChips } from "../../components/journiv/MomentChips";
 import { PageBar } from "../../components/journiv/PageBar";
@@ -40,9 +43,17 @@ import {
   isEditableDocumentDelta,
   JOURNIV_DELTA_FORMATS,
 } from "./deltaProfile";
+import {
+  DraftMediaUnreachable,
+  DraftRecoveryPrompt,
+  LocalDraftStatus,
+} from "./DraftRecovery";
+import { draftKeyFor } from "./draftRepository";
 import { parseSupportedFormats } from "./mediaUpload";
 import { UPLOAD_BLOT_NAME } from "./uploadPlaceholder";
-import { useEntryDraft } from "./useEntryDraft";
+import { useDraftRecovery } from "./useDraftRecovery";
+import { type DraftIdentity, useEntryDraft } from "./useEntryDraft";
+import { useLocalDraft } from "./useLocalDraft";
 import { useMediaAttachments } from "./useMediaAttachments";
 import { EditorToolbar } from "./EditorToolbar";
 import {
@@ -75,6 +86,17 @@ export function acceptAttribute(value: unknown): string {
   return [...extensions, "image/*", "video/*", "audio/*"].join(",");
 }
 
+/**
+ * Leaving the editor with writing that never reached the server.
+ *
+ * The old wording — "Discard your unsaved changes?" — is no longer true: the
+ * writing is kept on this device and offered back next time. Say so, so nobody
+ * abandons work they think is about to vanish. (This is the in-app prompt only;
+ * the browser writes its own text for a reload or a closed tab.)
+ */
+const LEAVE_CONFIRMATION =
+  "Leave without saving to your journal? Your writing is kept on this device.";
+
 export const EDITOR_FORMATS = [
   ...JOURNIV_DELTA_FORMATS,
   // Every media kind the guard admits must be here too, or Quill throws
@@ -88,6 +110,11 @@ export function EntryEditorPage() {
     momentId?: string;
     journalId?: string;
   };
+  const { draft: draftParam, q = "" } = useSearch({ strict: false }) as {
+    draft?: string;
+    q?: string;
+  };
+  const navigate = useNavigate();
   const moment = useQuery({
     ...momentQuery(momentId ?? ""),
     enabled: Boolean(momentId),
@@ -98,19 +125,107 @@ export function EntryEditorPage() {
   });
   const journals = useQuery(journalsQuery());
   const formats = useQuery(mediaFormatsQuery());
+  // Drafts are scoped to the signed-in account. Without an id there is nothing
+  // safe to key a record on, so nothing is stored at all.
+  const currentUser = useQuery(currentUserQuery());
 
+  /**
+   * The id a NEW entry's draft is filed under, held steady for this editing
+   * session and carried in `?draft=` so a reload finds the same record. An
+   * existing entry keys on its own id and needs none of this.
+   */
+  const localDraftIdRef = useRef(draftParam ?? uuid());
+  const localDraftId = momentId ? undefined : localDraftIdRef.current;
+
+  const draftKey = draftKeyFor({
+    userId: currentUser.data?.id,
+    entryId: moment.data?.entry?.id,
+    momentId,
+    localDraftId,
+  });
+
+  const serverContent = entry.data?.content_delta ?? undefined;
+  const recovery = useDraftRecovery({
+    key: draftKey,
+    momentId,
+    serverContent,
+    serverTitle: entry.data?.title ?? "",
+    serverJournalId: entry.data?.journal_id,
+    serverUpdatedAt: entry.data?.updated_at,
+    serverLoaded: !momentId || Boolean(moment.data),
+    // A document the editor cannot represent is never opened, so it can never
+    // have produced a draft either.
+    enabled: !serverContent || isEditableDocumentDelta(serverContent),
+  });
+
+  /** Which document the editor will open with, once the reader has chosen. */
+  const [choice, setChoice] = useState<"server" | "draft" | null>(null);
+
+  /**
+   * Puts the local draft id in the URL, once something has actually been
+   * stored. Replace, not push: recovering a draft is not a step in the reader's
+   * history. The blocker ignores this navigation (see `shouldBlock`).
+   */
+  const rememberDraftInUrl = useCallback(() => {
+    if (!localDraftId || draftParam === localDraftId) return;
+    // Named routes, because only the two "new" routes carry `draft` in their
+    // search schema — the type system enforces that the parameter cannot be
+    // pushed onto a route that would silently drop it.
+    void (journalId
+      ? navigate({
+          to: "/journals/$journalId/new",
+          params: { journalId },
+          search: { q, draft: localDraftId },
+          replace: true,
+        })
+      : navigate({
+          to: "/timeline/new",
+          search: { q, draft: localDraftId },
+          replace: true,
+        }));
+  }, [draftParam, journalId, localDraftId, navigate, q]);
+
+  /**
+   * Once the editor is open it stays open.
+   *
+   * The draft decision resolves asynchronously — the signed-in user, the local
+   * record, the Moment's media — and any of those settling later must not
+   * replace a mounted editor with a gate. That would tear down `QuillSurface`
+   * and take the reader's typing with it.
+   */
+  const opened = useRef(false);
+
+  // Drafts are scoped to the signed-in user, so the decision cannot even be
+  // framed until that id is known. Waiting here costs a moment; deciding twice
+  // would cost the editor's state.
+  if (currentUser.isLoading && !opened.current) return <EditorSkeleton />;
   if (momentId && moment.isLoading) return <EditorSkeleton />;
   if (momentId && (moment.isError || !moment.data))
-    return <EditorLoadError retry={() => moment.refetch()} />;
+    return (
+      <EditorLoadError
+        retry={() => moment.refetch()}
+        draftIsSafe={recovery.state.phase !== "clear"}
+      />
+    );
   if (moment.data?.entry && entry.isLoading) return <EditorSkeleton />;
   if (moment.data?.entry && (entry.isError || !entry.data))
-    return <EditorLoadError retry={() => entry.refetch()} />;
+    return (
+      <EditorLoadError
+        retry={() => entry.refetch()}
+        draftIsSafe={recovery.state.phase !== "clear"}
+      />
+    );
   if (journals.isLoading) return <EditorSkeleton />;
   if (journals.isError || !journals.data)
-    return <EditorLoadError retry={() => journals.refetch()} />;
+    return (
+      <EditorLoadError
+        retry={() => journals.refetch()}
+        draftIsSafe={recovery.state.phase !== "clear"}
+      />
+    );
 
-  const initialContent = entry.data?.content_delta ?? EMPTY_DELTA;
-  if (!isEditableDocumentDelta(initialContent)) {
+  const serverInitialContent = serverContent ?? EMPTY_DELTA;
+  if (!isEditableDocumentDelta(serverInitialContent)) {
     return (
       <UnsupportedEditor
         momentId={moment.data?.id ?? momentId ?? ""}
@@ -119,16 +234,93 @@ export function EntryEditorPage() {
     );
   }
 
+  // Everything about the local draft is settled BEFORE the form mounts:
+  // `QuillSurface` takes its document once and cannot be reseeded.
+  if (choice === null && !opened.current) {
+    if (
+      recovery.state.phase === "checking" ||
+      recovery.state.phase === "resolving"
+    ) {
+      return <EditorSkeleton />;
+    }
+    if (recovery.state.phase === "unreachable-media") {
+      const unreachable = recovery.state;
+      return (
+        <DraftMediaUnreachable
+          draft={unreachable.draft}
+          onRetry={unreachable.retry}
+          onDiscard={() => {
+            void recovery.discard();
+            setChoice("server");
+          }}
+        />
+      );
+    }
+    if (recovery.state.phase === "offer") {
+      const offer = recovery.state;
+      return (
+        <DraftRecoveryPrompt
+          draft={offer.draft}
+          serverChanged={offer.serverChanged}
+          unresolvedMediaCount={offer.unresolvedMediaCount}
+          isNewEntry={!momentId}
+          onRecover={() => setChoice("draft")}
+          onDiscard={() => {
+            void recovery.discard();
+            setChoice("server");
+          }}
+        />
+      );
+    }
+  }
+
+  const recovered =
+    choice === "draft" && recovery.state.phase === "offer"
+      ? recovery.state
+      : null;
+  opened.current = true;
+
   return (
     <EntryEditorForm
       key={momentId ?? `new-${journalId ?? "timeline"}`}
-      initialContent={initialContent}
-      initialJournalId={entry.data?.journal_id ?? journalId ?? ""}
-      initialTitle={entry.data?.title ?? ""}
+      initialContent={recovered?.content ?? serverInitialContent}
+      initialJournalId={
+        recovered?.draft.journalId ??
+        entry.data?.journal_id ??
+        journalId ??
+        defaultJournalId(journals.data) ??
+        ""
+      }
+      initialTitle={recovered?.draft.title ?? entry.data?.title ?? ""}
       journals={journals.data}
       acceptedMedia={formats.data}
       moment={moment.data}
       routeJournalId={journalId}
+      draftKey={draftKey}
+      draftUserId={currentUser.data?.id}
+      localDraftId={localDraftId}
+      serverUpdatedAt={entry.data?.updated_at}
+      // A recovered draft brings its server Moment back with it, so Done
+      // finalises the Moment that already owns the recovered media instead of
+      // creating a second one. Only for a NEW entry: on an existing one the
+      // recorded Moment is the reader's own saved entry, not a draft.
+      recoveredIdentity={
+        !momentId && recovered?.draft.momentId
+          ? {
+              momentId: recovered.draft.momentId,
+              entryId: recovered.draft.entryId ?? null,
+            }
+          : null
+      }
+      // Attachments the recovered draft still has. They belong to the draft
+      // Moment, so cancelling must keep them — the same thing it does for a
+      // session that never reloaded.
+      recoveredMediaIds={
+        (!momentId && recovered?.resolvedMediaIds) || undefined
+      }
+      // Content the reader chose to bring back is unsaved by definition.
+      startsDirty={choice === "draft"}
+      onDraftStored={rememberDraftInUrl}
     />
   );
 }
@@ -141,6 +333,14 @@ function EntryEditorForm({
   acceptedMedia,
   moment,
   routeJournalId,
+  draftKey,
+  draftUserId,
+  localDraftId,
+  serverUpdatedAt,
+  recoveredIdentity,
+  recoveredMediaIds,
+  startsDirty,
+  onDraftStored,
 }: {
   initialContent: QuillDelta;
   initialJournalId: string;
@@ -149,6 +349,15 @@ function EntryEditorForm({
   acceptedMedia?: unknown;
   moment?: MomentResponse;
   routeJournalId?: string;
+  /** Where this session's local draft lives; null when none can be kept. */
+  draftKey: string | null;
+  draftUserId?: string;
+  localDraftId?: string;
+  serverUpdatedAt?: string;
+  recoveredIdentity: DraftIdentity | null;
+  recoveredMediaIds?: string[];
+  startsDirty: boolean;
+  onDraftStored: () => void;
 }) {
   const { q = "" } = useSearch({ strict: false }) as { q?: string };
   const navigate = useNavigate();
@@ -157,8 +366,11 @@ function EntryEditorForm({
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Media uploaded during THIS session, so cancel can clean up only what it
-  // introduced and never pre-existing Moment media.
-  const sessionMediaRef = useRef<string[]>([]);
+  // introduced and never pre-existing Moment media. A recovered draft's
+  // attachments start here too: they were uploaded by an earlier run of this
+  // same unfinished entry, and a reload must not turn Cancel from "keep the
+  // photographs" into "delete them".
+  const sessionMediaRef = useRef<string[]>([...(recoveredMediaIds ?? [])]);
   const allowNavigationRef = useRef(false);
   // A new entry has no Moment yet; it will be logged now, in this timezone.
   const draftAtRef = useRef({
@@ -171,10 +383,11 @@ function EntryEditorForm({
     moment,
     loggedAtUtc: draftLoggedAt,
     loggedTimezone: draftTimezone,
+    initialIdentity: recoveredIdentity,
   });
   const [title, setTitle] = useState(initialTitle);
   const [journalId, setJournalId] = useState(initialJournalId);
-  const [bodyDirty, setBodyDirty] = useState(false);
+  const [bodyDirty, setBodyDirty] = useState(startsDirty);
   const [metaDirty, setMetaDirty] = useState(false);
   const [error, setError] = useState("");
 
@@ -198,6 +411,47 @@ function EntryEditorForm({
   const titleDirty = title !== initialTitle;
   const journalDirty = journalId !== initialJournalId;
   const dirty = titleDirty || journalDirty || bodyDirty || metaDirty;
+
+  /**
+   * The local safety net. Not autosave: Done is still the only thing that puts
+   * writing in a journal. This only means a reload does not take it away.
+   */
+  const localDraft = useLocalDraft({
+    key: draftKey,
+    identity: draftUserId
+      ? {
+          userId: draftUserId,
+          ...((moment?.entry?.id ?? draft.draft?.entryId)
+            ? {
+                entryId: moment?.entry?.id ?? draft.draft?.entryId ?? undefined,
+              }
+            : {}),
+          ...((moment?.id ?? draft.draft?.momentId)
+            ? { momentId: moment?.id ?? draft.draft?.momentId }
+            : {}),
+          ...(localDraftId ? { localDraftId } : {}),
+        }
+      : null,
+    journalId,
+    title,
+    baseUpdatedAt: serverUpdatedAt,
+    dirty,
+    // `getContents()` strips in-flight upload placeholders, so a document that
+    // is mid-upload still yields something safe to keep.
+    getDocument: useCallback(
+      () => surfaceRef.current?.getContents() ?? null,
+      [],
+    ),
+    onFirstStore: onDraftStored,
+  });
+
+  /**
+   * Restarts the local debounce. Called from every handler that changes
+   * something worth keeping — deliberately explicit rather than an effect
+   * watching state, so it is obvious at each call site what is being protected.
+   * The server is never called from this path.
+   */
+  const keepLocally = localDraft.schedule;
   const activeJournals = journals.filter((journal) => !journal.is_archived);
   const needsJournalSelector =
     !moment ||
@@ -218,7 +472,10 @@ function EntryEditorForm({
         return null;
       }
     }, [draft, journalId]),
-    onDirty: () => setBodyDirty(true),
+    onDirty: () => {
+      setBodyDirty(true);
+      keepLocally();
+    },
     onMediaAdded: (mediaId) => sessionMediaRef.current.push(mediaId),
   });
 
@@ -249,13 +506,16 @@ function EntryEditorForm({
       setError("");
       // Only a draft we created this session is at risk on Cancel; an existing
       // Moment's metadata is already persisted and must not look "unsaved".
-      if (!moment) setMetaDirty(true);
+      if (!moment) {
+        setMetaDirty(true);
+        keepLocally();
+      }
       void queryClient.invalidateQueries({
         queryKey: queryKeys.moment(savedMomentId),
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
     },
-    [moment, queryClient],
+    [keepLocally, moment, queryClient],
   );
 
   /**
@@ -264,14 +524,29 @@ function EntryEditorForm({
    * (`delete_orphaned_media_for_delta`), so until Done this is undoable.
    */
   const removeSelectedMedia = useCallback(() => {
-    if (surfaceRef.current?.removeSelectedMedia()) setBodyDirty(true);
-  }, []);
+    if (!surfaceRef.current?.removeSelectedMedia()) return;
+    setBodyDirty(true);
+    keepLocally();
+  }, [keepLocally]);
 
   const shouldBlock = useCallback(
-    () =>
-      !allowNavigationRef.current &&
-      dirty &&
-      !window.confirm("Discard your unsaved changes?"),
+    ({
+      current,
+      next,
+    }: {
+      current: { pathname: string };
+      next: { pathname: string };
+    }) => {
+      // The editor navigates to ITSELF to record the local draft id in
+      // `?draft=`. Prompting there would pop a discard dialog on the first
+      // keystroke of every new entry.
+      if (next.pathname === current.pathname) return false;
+      return (
+        !allowNavigationRef.current &&
+        dirty &&
+        !window.confirm(LEAVE_CONFIRMATION)
+      );
+    },
     [dirty],
   );
   useBlocker({
@@ -324,6 +599,9 @@ function EntryEditorForm({
     },
     onSuccess: async (savedMoment) => {
       allowNavigationRef.current = true;
+      // The writing is on the server now, so the local copy has done its job.
+      // This is the ONLY place a save removes it — every failure below keeps it.
+      await localDraft.remove();
       // The draft is now a real entry; cancel must not delete it.
       draft.adopt();
       sessionMediaRef.current = [];
@@ -393,10 +671,13 @@ function EntryEditorForm({
   const cancel = () => {
     const keptMedia = sessionMediaRef.current.length;
     const question = keptMedia
-      ? `Discard your unsaved changes? The ${keptMedia === 1 ? "file" : `${keptMedia} files`} you added will stay on this moment.`
-      : "Discard your unsaved changes?";
+      ? `${LEAVE_CONFIRMATION} The ${keptMedia === 1 ? "file" : `${keptMedia} files`} you added will stay on this moment.`
+      : LEAVE_CONFIRMATION;
     if (dirty && !window.confirm(question)) return;
     allowNavigationRef.current = true;
+    // An explicit discard is one of only two things that may remove the local
+    // copy. The other is a confirmed server save.
+    void localDraft.remove();
     // Abort anything still uploading before leaving.
     for (const item of media.attachments) media.cancel(item.uploadId);
     // A draft created for this session is cleaned up. Media the user actually
@@ -428,7 +709,10 @@ function EntryEditorForm({
               <select
                 id="entry-journal"
                 value={journalId}
-                onChange={(event) => setJournalId(event.target.value)}
+                onChange={(event) => {
+                  setJournalId(event.target.value);
+                  keepLocally();
+                }}
                 disabled={mutation.isPending}
                 required
               >
@@ -500,6 +784,7 @@ function EntryEditorForm({
                   onChange={(event) => {
                     setTitle(event.target.value);
                     resizeTitle();
+                    keepLocally();
                   }}
                   placeholder="Give this a title (optional)"
                   disabled={mutation.isPending}
@@ -509,9 +794,10 @@ function EntryEditorForm({
             }
           />
 
-          <p className="jv-caption jv-editor__notice" role="note">
-            Journiv does not autosave yet — press Done before leaving this page.
-          </p>
+          <LocalDraftStatus
+            status={localDraft.status}
+            omittedTransientUploads={localDraft.omittedTransientUploads}
+          />
 
           <EditorToolbar
             editor={surfaceRef.current}
@@ -574,7 +860,10 @@ function EntryEditorForm({
             initialContent={initialContent}
             formats={EDITOR_FORMATS}
             onFiles={(files, index) => void media.attach(files, index)}
-            onUserChange={() => setBodyDirty(true)}
+            onUserChange={() => {
+              setBodyDirty(true);
+              keepLocally();
+            }}
             onStateChange={setEditorState}
             placeholder="Write about this moment…"
             readOnly={mutation.isPending}
@@ -610,7 +899,14 @@ function EditorSkeleton() {
   );
 }
 
-function EditorLoadError({ retry }: { retry: () => unknown }) {
+function EditorLoadError({
+  retry,
+  draftIsSafe,
+}: {
+  retry: () => unknown;
+  /** There is unsaved writing on this device for this entry. */
+  draftIsSafe?: boolean;
+}) {
   return (
     <div className="jv-pane-status">
       <StatusView
@@ -618,6 +914,14 @@ function EditorLoadError({ retry }: { retry: () => unknown }) {
         tone="danger"
         icon={<TriangleAlert size={20} />}
         title="The editor could not be loaded"
+        // The editor needs the server's own copy before it can offer a local
+        // draft against it, so it stays closed. Saying the writing is still
+        // here is the difference between a wait and a loss.
+        description={
+          draftIsSafe
+            ? "Your unsaved writing for this entry is still stored on this device and will be offered back once Journiv can be reached."
+            : undefined
+        }
         action={
           <Button variant="secondary" onClick={() => retry()}>
             Try again
