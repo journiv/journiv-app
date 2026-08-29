@@ -30,6 +30,7 @@ import {
   mediaFormatsQuery,
   momentQuery,
 } from "../../api/query/options";
+import { browserTimeZone } from "../../lib/datetime";
 import { defaultJournalId } from "../../lib/journalOrder";
 import { uuid } from "../../lib/uuid";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
@@ -50,6 +51,7 @@ import {
   LocalDraftStatus,
 } from "./DraftRecovery";
 import { draftKeyFor } from "./draftRepository";
+import { EntryDateControl } from "./EntryDateControl";
 import { parseSupportedFormats } from "./mediaUpload";
 import { UPLOAD_BLOT_NAME } from "./uploadPlaceholder";
 import { useDraftRecovery } from "./useDraftRecovery";
@@ -319,6 +321,14 @@ export function EntryEditorPage() {
       recoveredMediaIds={
         (!momentId && recovered?.resolvedMediaIds) || undefined
       }
+      // A backdated logged date the recovered draft carried, so a reload before
+      // the server Moment exists does not silently reset it to "now".
+      recoveredLoggedAtUtc={
+        (!momentId && recovered?.draft.loggedAtUtc) || undefined
+      }
+      recoveredLoggedTimezone={
+        (!momentId && recovered?.draft.loggedTimezone) || undefined
+      }
       // Content the reader chose to bring back is unsaved by definition.
       startsDirty={choice === "draft"}
       onDraftStored={rememberDraftInUrl}
@@ -340,6 +350,8 @@ function EntryEditorForm({
   serverUpdatedAt,
   recoveredIdentity,
   recoveredMediaIds,
+  recoveredLoggedAtUtc,
+  recoveredLoggedTimezone,
   startsDirty,
   onDraftStored,
 }: {
@@ -357,6 +369,9 @@ function EntryEditorForm({
   serverUpdatedAt?: string;
   recoveredIdentity: DraftIdentity | null;
   recoveredMediaIds?: string[];
+  /** A backdated logged date a recovered new-entry draft carried. */
+  recoveredLoggedAtUtc?: string;
+  recoveredLoggedTimezone?: string;
   startsDirty: boolean;
   onDraftStored: () => void;
 }) {
@@ -373,17 +388,25 @@ function EntryEditorForm({
   // photographs" into "delete them".
   const sessionMediaRef = useRef<string[]>([...(recoveredMediaIds ?? [])]);
   const allowNavigationRef = useRef(false);
-  // A new entry has no Moment yet; it will be logged now, in this timezone.
-  const draftAtRef = useRef({
-    utc: new Date().toISOString(),
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
-  });
-  const draftLoggedAt = draftAtRef.current.utc;
-  const draftTimezone = draftAtRef.current.timezone;
+  // A new entry has no Moment yet. It defaults to now in the browser's zone,
+  // but the header date control can move it (backdating, correcting a time);
+  // a recovered draft brings its own chosen value back.
+  const [draftAt, setDraftAt] = useState(() => ({
+    utc: recoveredLoggedAtUtc ?? new Date().toISOString(),
+    timezone: recoveredLoggedTimezone ?? browserTimeZone(),
+  }));
+  /** True once the writer has picked a date, so an unchanged draft is not pinned. */
+  const dateChosen = useRef(Boolean(recoveredLoggedAtUtc));
+  // What the header, weather lookup and draft creation read. An existing Moment
+  // is its own source of truth and keeps its own timezone; a new entry uses the
+  // picked (or default) value.
+  const effectiveLoggedAtUtc = moment?.logged_at_utc ?? draftAt.utc;
+  const effectiveTimezone =
+    moment?.logged_timezone || (moment ? "UTC" : draftAt.timezone);
   const draft = useEntryDraft({
     moment,
-    loggedAtUtc: draftLoggedAt,
-    loggedTimezone: draftTimezone,
+    loggedAtUtc: draftAt.utc,
+    loggedTimezone: draftAt.timezone,
     initialIdentity: recoveredIdentity,
   });
   const [title, setTitle] = useState(initialTitle);
@@ -441,6 +464,11 @@ function EntryEditorForm({
       : null,
     journalId,
     title,
+    // Only a NEW entry's picked date needs keeping locally — an existing
+    // Moment already holds the real value on the server.
+    loggedAtUtc: !moment && dateChosen.current ? draftAt.utc : undefined,
+    loggedTimezone:
+      !moment && dateChosen.current ? draftAt.timezone : undefined,
     baseUpdatedAt: serverUpdatedAt,
     dirty,
     // `getContents()` strips in-flight upload placeholders, so a document that
@@ -601,8 +629,8 @@ function EntryEditorForm({
       if (!moment && !draft.draft) {
         const body: MomentCreate = {
           entry: entryPayload,
-          logged_at_utc: draftLoggedAt,
-          logged_timezone: draftTimezone,
+          logged_at_utc: draftAt.utc,
+          logged_timezone: draftAt.timezone,
         };
         return api.createMoment(body);
       }
@@ -664,6 +692,54 @@ function EntryEditorForm({
       );
     },
   });
+
+  const [dateError, setDateError] = useState("");
+  /**
+   * Persisting a date/time change. For an existing Moment this is an immediate
+   * write — the same model the Details popover uses for metadata (DESIGN.md
+   * §14), so it does not mark the form dirty. For a new entry that already has
+   * a draft Moment (media / details were added) the draft Moment is updated in
+   * place; a new entry with no Moment yet only updates local state and the
+   * eventual `createMoment` carries the value.
+   */
+  const dateMutation = useMutation({
+    mutationFn: (next: { utc: string; timezone: string }) => {
+      const targetId = moment?.id ?? draft.draft?.momentId;
+      if (!targetId) throw new Error("no-moment");
+      return api.updateMoment(targetId, {
+        logged_at_utc: next.utc,
+        logged_timezone: next.timezone,
+      });
+    },
+    onSuccess: (updated) => {
+      setDateError("");
+      queryClient.setQueryData(queryKeys.moment(updated.id), updated);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.journals });
+      void queryClient.invalidateQueries({
+        queryKey: queryKeys.moment(updated.id),
+      });
+    },
+    onError: () => {
+      setDateError("That date couldn’t be saved. Try again.");
+    },
+  });
+
+  const handleDateChange = useCallback(
+    (next: { utc: string; timezone: string }) => {
+      setDateError("");
+      if (moment) {
+        dateMutation.mutate(next);
+        return;
+      }
+      dateChosen.current = true;
+      setDraftAt(next);
+      setMetaDirty(true);
+      keepLocally();
+      if (draft.draft?.momentId) dateMutation.mutate(next);
+    },
+    [moment, dateMutation, draft.draft?.momentId, keepLocally],
+  );
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -794,10 +870,20 @@ function EntryEditorForm({
       <div className="jv-editor__scroll">
         <div className="jv-editor__column">
           <EntryHeader
-            loggedAtUtc={moment?.logged_at_utc ?? draftLoggedAt}
-            loggedTimezone={moment?.logged_timezone ?? draftTimezone}
+            loggedAtUtc={effectiveLoggedAtUtc}
+            loggedTimezone={effectiveTimezone}
             moment={momentForDisplay}
             journal={activeJournals.find((item) => item.id === journalId)}
+            dateControl={
+              <EntryDateControl
+                loggedAtUtc={effectiveLoggedAtUtc}
+                loggedTimezone={effectiveTimezone}
+                onChange={handleDateChange}
+                busy={dateMutation.isPending}
+                disabled={mutation.isPending}
+                error={dateError || undefined}
+              />
+            }
             title={
               <>
                 <label className="sr-only" htmlFor="entry-title">
@@ -837,8 +923,8 @@ function EntryEditorForm({
               moment: momentForDisplay,
               ensureMomentId,
               onSaved: onDetailsSaved,
-              loggedAtUtc: moment?.logged_at_utc ?? draftLoggedAt,
-              loggedTimezone: moment?.logged_timezone ?? draftTimezone,
+              loggedAtUtc: effectiveLoggedAtUtc,
+              loggedTimezone: effectiveTimezone,
             }}
           />
           <input
