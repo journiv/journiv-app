@@ -1,0 +1,467 @@
+/* Product-level patterns shared by more than one feature. */
+
+/* ---- page bar ---------------------------------------------------------- */
+/* A pane header that is a real sibling of the scroll container, not a sticky
+   overlay. Content can never scroll through it. */
+
+.jv-page-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-height: var(--bar-height);
+  padding: 0 var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: inherit;
+}
+
+/* Rendered only in compact layouts, so desktop relies on the persistent panes
+   while phone and tablet always have navigation available. */
+.jv-page-bar__leading {
+  display: none;
+  flex: 0 0 auto;
+  margin-left: calc(var(--space-1) * -1);
+}
+
+.jv-page-bar__title {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-page-bar__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.jv-page-bar--compact-only {
+  display: none;
+}
+
+/* ---- journal identity -------------------------------------------------- */
+
+.jv-journal-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--journal-accent, var(--line-strong));
+}
+
+/* The journal's icon, drawn in the journal's own hue in place of the dot. */
+.jv-journal-glyph {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--journal-accent, var(--line-strong));
+}
+
+.jv-journal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* ---- metadata ---------------------------------------------------------- */
+
+.jv-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-4);
+  min-width: 0;
+}
+
+.jv-meta-cell {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* No separator characters. Every metadata item already carries its own leading
+   glyph (a journal dot, a mood dot, a location pin, a weather icon), so dots
+   between them are redundant — and they orphan badly when the row wraps. */
+
+.jv-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.jv-mood-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--mood-accent, var(--line-strong));
+}
+
+/* ---- tags and people --------------------------------------------------- */
+
+.jv-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.78125rem;
+  font-weight: 500;
+}
+
+.jv-tag--quiet {
+  padding: 1px 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  text-transform: none;
+}
+
+/* People and tags at the foot of a document, shared by reader and editor. */
+.jv-moment-chips {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-12);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+.jv-moment-chips__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.jv-person {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 3px var(--space-3) 3px 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.jv-person__avatar {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: var(--muted);
+}
+
+.jv-person__avatar--initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+/* A chip that navigates to its entity's scoped Timeline (DESIGN.md §24). */
+.jv-person--link,
+.jv-tag--link {
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.jv-person--link:hover {
+  background: var(--state-hover);
+}
+
+.jv-tag--link:hover {
+  background: var(--accent-surface);
+  color: var(--foreground);
+}
+
+/* ---- entry header ------------------------------------------------------ */
+/* Shared by the reader and the editor so that reading and writing cannot
+   drift apart. Do not restyle it in only one of them. */
+
+.jv-entry-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+}
+
+.jv-entry-header__date {
+  margin: 0;
+}
+
+.jv-entry-header .jv-entry-title,
+.jv-entry-header__date + .jv-entry-title {
+  margin: calc(var(--space-1) * -1) 0 0;
+}
+
+/* When a Moment has no title the date becomes the heading, at a size that
+   suits a date rather than a headline. */
+.jv-entry-title--date {
+  font-size: clamp(1.5rem, 1.2rem + 1vw, 1.9rem);
+  font-weight: 620;
+}
+
+.jv-entry-header__meta {
+  margin-top: calc(var(--space-1) * -1);
+}
+
+@media (max-width: 1100px) {
+  .jv-page-bar__leading {
+    display: flex;
+  }
+  .jv-page-bar--compact-only {
+    display: flex;
+  }
+}
+
+/* ---- list view switch (Timeline / Calendar / Media) ------------------- */
+/* Segmented control: the raised surface alone carries the selected option
+   (DESIGN.md §5 — shadows are for overlays), plus a rail and aria-current. */
+
+.jv-view-switch {
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
+.jv-view-switch__option {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  min-height: 28px;
+  border-radius: var(--radius-xs);
+  color: var(--muted-foreground);
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
+}
+
+.jv-view-switch__option:hover {
+  color: var(--foreground);
+}
+
+.jv-view-switch__option.is-selected {
+  color: var(--foreground);
+  background: var(--popover);
+}
+
+.jv-view-switch__option.is-selected::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -3px;
+  transform: translateX(-50%);
+  width: 16px;
+  height: 3px;
+  border-radius: 2px 2px 0 0;
+  background: var(--state-selected-rail);
+}
+
+/* ---- Library entity identity ---------------------------------------------
+   `--entity-accent` is set inline from API data by `EntityGlyph` (and by the
+   group's left rail), exactly like `--journal-accent` / `--mood-accent`. It is
+   never given a value in a stylesheet; the fallback is the neutral line. */
+
+.jv-entity-dot {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--entity-accent, var(--line-strong));
+}
+
+.jv-entity-glyph {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--entity-accent, var(--line-strong));
+}
+
+/* ---- Library row -------------------------------------------------------
+   The shared unit for People / Tags / Moods / Activities lists. It is a grid
+   cell in a directory section, not a divided list row: it carries a radius so
+   its hover reads as a discrete target, and no divider (§5 — never both). */
+
+.jv-lib-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.25rem;
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+}
+
+.jv-lib-row:hover {
+  background: var(--state-hover);
+}
+
+/* `rowLink` variant: the leading + text are one stretched link, the `⋯` sits
+   on top of it. The hover/focus treatment moves onto the link itself so the
+   whole card reads as the target (DESIGN.md §6, §24). */
+.jv-lib-row--link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0;
+}
+
+.jv-lib-row--link:hover {
+  background: transparent;
+}
+
+.jv-lib-row__hit {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+}
+
+.jv-lib-row__hit:hover {
+  background: var(--state-hover);
+}
+
+.jv-lib-row__leading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.jv-lib-row__text {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.jv-lib-row__title {
+  color: var(--foreground);
+  font-size: 0.9375rem;
+  font-weight: 560;
+}
+
+.jv-lib-row__meta {
+  color: var(--muted-foreground);
+}
+
+.jv-lib-row__actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.jv-lib-row--link .jv-lib-row__actions {
+  padding-right: var(--space-1);
+}
+
+/* The `⋯` rests hidden and appears on hover / keyboard focus, so a resting
+   list is just people (DESIGN.md §1). Pointer-less devices always show it. */
+@media (hover: hover) {
+  .jv-lib-row__actions,
+  .jv-lib-section__head [data-slot="button"] {
+    opacity: 0;
+    transition: opacity var(--duration-fast) var(--ease);
+  }
+
+  .jv-lib-row:hover .jv-lib-row__actions,
+  .jv-lib-row:focus-within .jv-lib-row__actions,
+  .jv-lib-row__actions:has([aria-expanded="true"]),
+  .jv-lib-section__head:hover [data-slot="button"],
+  .jv-lib-section__head:focus-within [data-slot="button"],
+  .jv-lib-section__head [data-slot="button"][aria-expanded="true"] {
+    opacity: 1;
+  }
+}
+
+/* ---- overflow menu ---------------------------------------------------
+   One overlay treatment for every `⋯` menu in the product (Journals, Library,
+   and the next surface that needs one). base-ui Menu drives the markup. */
+
+.jv-menu-positioner {
+  z-index: 41;
+}
+
+.jv-menu {
+  min-width: 12rem;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-overlay);
+}
+
+.jv-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-xs);
+  color: var(--muted-foreground);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jv-menu__item[data-highlighted],
+.jv-menu__item:hover {
+  color: var(--foreground);
+  background: var(--state-hover);
+}
+
+.jv-menu__item[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.jv-menu__item--destructive {
+  color: var(--destructive);
+}
+
+.jv-menu__item--destructive[data-highlighted],
+.jv-menu__item--destructive:hover {
+  color: var(--destructive);
+  background: var(--danger-surface);
+}
+
+.jv-menu__separator {
+  height: 1px;
+  margin: var(--space-1) 0;
+  background: var(--border);
+}
