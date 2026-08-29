@@ -284,13 +284,28 @@ async def get_moment_calendar(
     session: Annotated[Session, Depends(get_session)],
     start_date: Annotated[date | None, Query()] = None,
     end_date: Annotated[date | None, Query()] = None,
+    journal_id: Annotated[uuid.UUID | None, Query()] = None,
 ):
     moment_service = MomentService(session)
     try:
-        moments = moment_service.get_calendar_summary(current_user.id, start_date, end_date)
+        moments = moment_service.get_calendar_summary(
+            current_user.id, start_date, end_date, journal_id=journal_id
+        )
     except Exception as exc:
         log_error(exc, message="Error fetching moment calendar summary", user_id=str(current_user.id))
         raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+    # One bounded extra query: thumbnails for every moment in range, so each day
+    # can preview a photo without the client making a second request per day.
+    media_map: dict[uuid.UUID, list] = {}
+    if moments:
+        try:
+            _, media_map = MediaService(session).get_moment_media_thumbnails(
+                session, current_user.id, [moment.id for moment in moments]
+            )
+        except Exception as exc:  # noqa: BLE001 - thumbnails are best-effort
+            log_warning(exc, message="Failed to load calendar thumbnails", user_id=str(current_user.id))
+
     summary: dict[date, MomentCalendarItem] = {}
     for moment in moments:
         try:
@@ -302,16 +317,26 @@ async def get_moment_calendar(
                 moment_id=str(moment.id),
             )
             continue
+        # Moments arrive most-recent-first, so the first thumbnail seen for a day
+        # is that day's most recent media.
+        thumbnails = media_map.get(moment.id) or []
+        thumbnail_url = next(
+            (thumb.signed_thumbnail_url for thumb in thumbnails if thumb.signed_thumbnail_url),
+            None,
+        )
         item = summary.get(logged_date_tz)
         if item:
             item.moment_count += 1
             if item.primary_mood_id is None and moment.primary_mood_id is not None:
                 item.primary_mood_id = moment.primary_mood_id
+            if item.thumbnail_url is None and thumbnail_url is not None:
+                item.thumbnail_url = thumbnail_url
         else:
             summary[logged_date_tz] = MomentCalendarItem(
                 logged_date_tz=logged_date_tz,
                 primary_mood_id=moment.primary_mood_id,
                 moment_count=1,
+                thumbnail_url=thumbnail_url,
             )
     return list(summary.values())
 

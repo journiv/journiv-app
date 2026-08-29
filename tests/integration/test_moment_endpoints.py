@@ -368,3 +368,62 @@ def test_moment_memories_endpoint_supports_explicit_last_year_filter(
     returned_ids = {item["id"] for item in response["items"]}
     assert previous_year_memory["id"] in returned_ids
     assert noise_memory["id"] not in returned_ids
+
+
+def test_moment_calendar_filters_by_journal_and_reports_counts(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    journal_factory,
+):
+    """The calendar summary can be scoped to one journal and counts per day."""
+    journal_a = journal_factory(title="Journal A")
+    journal_b = journal_factory(title="Journal B")
+
+    # Two moments on the same day in journal A, one on another day in journal B.
+    api_client.create_entry_with_moment(
+        api_user.access_token,
+        journal_id=journal_a["id"],
+        title="A morning",
+        content="first",
+        logged_date_tz="2026-03-10",
+        logged_timezone="UTC",
+    )
+    api_client.create_entry_with_moment(
+        api_user.access_token,
+        journal_id=journal_a["id"],
+        title="A evening",
+        content="second",
+        logged_date_tz="2026-03-10",
+        logged_timezone="UTC",
+    )
+    api_client.create_entry_with_moment(
+        api_user.access_token,
+        journal_id=journal_b["id"],
+        title="B day",
+        content="third",
+        logged_date_tz="2026-03-12",
+        logged_timezone="UTC",
+    )
+
+    params = {"start_date": "2026-03-01", "end_date": "2026-03-31"}
+
+    unscoped = api_client.request(
+        "GET", "/moments/calendar", token=api_user.access_token,
+        params=params, expected=(200,),
+    ).json()
+    by_day = {item["logged_date_tz"]: item for item in unscoped}
+    assert by_day["2026-03-10"]["moment_count"] == 2
+    assert by_day["2026-03-12"]["moment_count"] == 1
+    # No media attached, so every day reports a null thumbnail.
+    assert by_day["2026-03-10"]["thumbnail_url"] is None
+
+    scoped = api_client.request(
+        "GET", "/moments/calendar", token=api_user.access_token,
+        params={**params, "journal_id": journal_a["id"]}, expected=(200,),
+    ).json()
+    scoped_days = {item["logged_date_tz"]: item["moment_count"] for item in scoped}
+    assert scoped_days == {"2026-03-10": 2}
+
+
+def test_moment_calendar_requires_auth(api_client: JournivApiClient):
+    api_client.request("GET", "/moments/calendar", expected=(401,))

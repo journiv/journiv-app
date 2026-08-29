@@ -4,6 +4,7 @@ Media upload and management endpoints.
 import inspect
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated, AsyncGenerator, Optional
 
@@ -41,8 +42,10 @@ from app.core.media_signing import (
 )
 from app.core.signing import verify_media_signature
 from app.integrations.service import fetch_proxy_asset
+from app.models.enums import MediaType
 from app.models.user import User
 from app.schemas.entry import MomentMediaResponse
+from app.schemas.media_library import MediaLibraryPageResponse
 from app.schemas.media import (
     ImmichImportJobResponse,
     ImmichImportRequest,
@@ -764,6 +767,56 @@ async def get_supported_formats(
             detail="Failed to get supported formats"
         ) from None
 
+
+@router.get(
+    "",
+    response_model=MediaLibraryPageResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def get_media_library(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(_get_db_session)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 60,
+    cursor_logged_at_utc: Annotated[datetime | None, Query()] = None,
+    cursor_id: Annotated[uuid.UUID | None, Query()] = None,
+    journal_id: Annotated[uuid.UUID | None, Query()] = None,
+    media_type: Annotated[MediaType | None, Query()] = None,
+):
+    """A flat, paginated view of the user's completed media across all moments."""
+    if (cursor_logged_at_utc is None) ^ (cursor_id is None):
+        raise HTTPException(
+            status_code=400,
+            detail="cursor_logged_at_utc and cursor_id must be provided together",
+        )
+    media_service = _get_media_service()
+    try:
+        items, next_cursor_logged_at_utc, next_cursor_id = media_service.get_media_library(
+            session,
+            current_user.id,
+            limit=limit,
+            cursor_logged_at_utc=cursor_logged_at_utc,
+            cursor_id=cursor_id,
+            journal_id=journal_id,
+            media_type=media_type,
+        )
+    except Exception as exc:
+        error_logger.error(
+            "Error listing media library",
+            extra={"user_id": str(current_user.id), "error": str(exc)},
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to list media",
+        ) from None
+    return MediaLibraryPageResponse(
+        items=items,
+        next_cursor_logged_at_utc=next_cursor_logged_at_utc,
+        next_cursor_id=next_cursor_id,
+    )
 
 
 
