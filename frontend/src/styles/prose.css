@@ -1,0 +1,145 @@
+/* Long-form journal typography.
+   This layer is deliberately EDITOR-INDEPENDENT: it styles semantic elements
+   only. Nothing here may reference Quill. If Journiv ever swaps its editor,
+   only features/editor/quill-adapter.css should need to change.
+
+   The `.jv-prose.jv-prose` doubling is intentional. It raises specificity to
+   (0,2,1) so these rules beat vendor editor resets such as `.ql-editor p`
+   regardless of stylesheet import order. Do not remove the doubling. */
+
+/* Doubled here too: an editor may add its own class to this very element
+   (Quill adds `ql-container`, which ships a 13px font-size), so the base rule
+   must out-specify a single vendor class on the same node. */
+.jv-prose.jv-prose {
+  /* 17.5px, scaled by the reader "Text size" control (--prose-font-scale,
+     set by the personalization layer). Never scale :root font-size — that
+     would resize Tailwind's whole rem-based spacing/radius system. */
+  font-size: calc(1.09375rem * var(--prose-font-scale, 1));
+  font-family: var(--font-reader, var(--font-sans));
+  line-height: 1.7;
+  color: var(--foreground);
+  max-width: var(--reader-measure);
+  text-wrap: pretty;
+}
+
+.jv-prose.jv-prose p {
+  margin: 0 0 0.85em;
+  padding: 0;
+}
+
+.jv-prose.jv-prose > :first-child {
+  margin-top: 0;
+}
+
+.jv-prose.jv-prose > :last-child {
+  margin-bottom: 0;
+}
+
+/* In-body headings must stay subordinate to the entry title. */
+.jv-prose.jv-prose h1,
+.jv-prose.jv-prose h2,
+.jv-prose.jv-prose h3 {
+  margin: 1.5em 0 0.5em;
+  padding: 0;
+  line-height: 1.25;
+  letter-spacing: -0.014em;
+  color: var(--foreground);
+}
+
+.jv-prose.jv-prose h1 {
+  font-size: 1.4em;
+  font-weight: 640;
+}
+
+.jv-prose.jv-prose h2 {
+  font-size: 1.2em;
+  font-weight: 620;
+}
+
+.jv-prose.jv-prose h3 {
+  font-size: 1.05em;
+  font-weight: 600;
+}
+
+.jv-prose.jv-prose ul,
+.jv-prose.jv-prose ol {
+  margin: 0 0 0.85em;
+  padding-left: 1.35em;
+}
+
+.jv-prose.jv-prose li {
+  margin: 0 0 0.3em;
+  padding-left: 0;
+}
+
+.jv-prose.jv-prose blockquote {
+  margin: 1.15em 0;
+  padding: 0.1em 0 0.1em 1.1em;
+  border-left: 2px solid var(--line-strong);
+  color: var(--muted-foreground);
+  font-style: normal;
+}
+
+.jv-prose.jv-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.18em;
+  text-decoration-color: color-mix(in oklab, var(--primary) 45%, transparent);
+}
+
+.jv-prose.jv-prose a:hover {
+  text-decoration-color: var(--primary);
+}
+
+/* Inline media. Never cropped, for the same reason as the gallery: there is no
+   full-image viewer yet. See DESIGN.md §13. */
+.jv-prose.jv-prose video,
+.jv-prose.jv-prose .jv-prose__video {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 78svh;
+  margin: 1.4em 0;
+  border-radius: var(--radius-md);
+  background: oklch(0 0 0);
+}
+
+/* Audio stays quiet and compact: it is a note, not a feature. */
+.jv-prose.jv-prose audio,
+.jv-prose.jv-prose .jv-prose__audio {
+  display: block;
+  width: 100%;
+  margin: 1.2em 0;
+}
+
+.jv-prose.jv-prose img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 78svh;
+  object-fit: contain;
+  margin: 1.4em 0;
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.jv-prose.jv-prose strong,
+.jv-prose.jv-prose b {
+  font-weight: 640;
+}
+
+.jv-prose.jv-prose s {
+  text-decoration-color: var(--muted-foreground);
+}
+
+/* Compact variant: same type system, tighter rhythm. For previews and
+   any surface that shows prose inside a dense layout. */
+.jv-prose-compact.jv-prose-compact {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+}
+
+.jv-prose-compact.jv-prose-compact p {
+  margin-bottom: 0.6em;
+}

@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --pretty false",
     "lint": "biome lint .",
+    "lint:design": "node scripts/check-design-system.mjs",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "test": "vitest run",
