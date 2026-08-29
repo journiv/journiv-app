@@ -107,6 +107,23 @@ class ValidationError(JournivAppException):
     pass
 
 
+class ConcurrentModificationError(JournivAppException):
+    """Raised when an update is based on a version that is no longer current.
+
+    A client that sends ``expected_updated_at`` is saying "I edited the version
+    that looked like this". If the row has moved on since — another device, a
+    second tab — writing anyway would silently discard whatever that other write
+    said. The update is refused instead, and the caller is told, so the person
+    doing the writing gets to decide.
+
+    Clients that send nothing keep the previous last-write-wins behaviour.
+    """
+
+    def __init__(self, message: str, current_updated_at=None):
+        super().__init__(message)
+        self.current_updated_at = current_updated_at
+
+
 class LicenseResetInstallIdMismatchError(JournivAppException):
     """Raised when license reset install_id does not match this instance."""
     pass
