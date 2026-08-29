@@ -85,6 +85,11 @@ class TagSummary(BaseModel):
     usage_count: int
 
 
+class UnusedTagsCleanupResponse(BaseModel):
+    """Result of deleting every tag not attached to any moment."""
+    deleted: int
+
+
 class TagStatisticsResponse(BaseModel):
     """Tag usage statistics response schema."""
     total_tags: int

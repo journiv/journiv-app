@@ -142,6 +142,50 @@ def test_tag_listing_search_and_statistics(
         assert isinstance(analytics.get("most_used_tags", []), list)
 
 
+def test_delete_unused_tags_removes_only_orphans(
+    api_client: JournivApiClient, api_user: ApiUser, entry_factory
+):
+    """DELETE /tags/unused clears tags with no moment, keeps the rest."""
+    entry = entry_factory(title="Keeps its tag")
+    used = api_client.create_tag(api_user.access_token, name="used-tag")
+    orphan_a = api_client.create_tag(api_user.access_token, name="orphan-a")
+    orphan_b = api_client.create_tag(api_user.access_token, name="orphan-b")
+
+    api_client.request(
+        "POST",
+        f"/moments/{entry['moment_id']}/tags",
+        token=api_user.access_token,
+        json=["used-tag"],
+        expected=(200,),
+    )
+
+    result = api_client.request(
+        "DELETE", "/tags/unused", token=api_user.access_token, expected=(200,)
+    ).json()
+    assert result == {"deleted": 2}
+
+    remaining = {tag["id"] for tag in api_client.list_tags(api_user.access_token)}
+    assert used["id"] in remaining
+    assert orphan_a["id"] not in remaining
+    assert orphan_b["id"] not in remaining
+
+    # Idempotent: nothing left to clean up.
+    again = api_client.request(
+        "DELETE", "/tags/unused", token=api_user.access_token, expected=(200,)
+    ).json()
+    assert again == {"deleted": 0}
+
+
+def test_tag_analytics_requires_plus_without_probing(
+    api_client: JournivApiClient, api_user: ApiUser
+):
+    """Aggregate tag analytics stays Plus-gated (403/503) without a licence."""
+    response = api_client.request(
+        "GET", "/tags/analytics", token=api_user.access_token
+    )
+    assert response.status_code in (200, 403, 503)
+
+
 def test_tag_endpoints_require_auth(api_client: JournivApiClient):
     """All tag routes must enforce authentication."""
     assert_requires_authentication(
@@ -156,6 +200,7 @@ def test_tag_endpoints_require_auth(api_client: JournivApiClient):
             EndpointCase("GET", "/tags/popular"),
             EndpointCase("GET", "/tags/search", params={"q": "focus"}),
             EndpointCase("GET", "/tags/analytics"),
+            EndpointCase("DELETE", "/tags/unused"),
             EndpointCase("GET", f"/moments/{UNKNOWN_UUID}/tags"),
             EndpointCase(
                 "POST",

@@ -7,7 +7,11 @@ from typing import Annotated, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlmodel import Session
 
-from app.api.dependencies import get_current_user, get_plus_factory
+from app.api.dependencies import (
+    get_current_user,
+    get_plus_factory,
+    require_supporter_tier,
+)
 from app.core.database import get_session
 from app.core.exceptions import TagNotFoundError
 from app.core.logging_config import log_error
@@ -23,6 +27,7 @@ from app.schemas.tag import (
     TaggedMomentSummary,
     TagResponse,
     TagUpdate,
+    UnusedTagsCleanupResponse,
 )
 from app.services.media_service import MediaService
 from app.services.tag_service import TagService
@@ -138,6 +143,37 @@ async def search_tags(
     return tags
 
 
+@router.delete(
+    "/unused",
+    response_model=UnusedTagsCleanupResponse,
+    status_code=status.HTTP_200_OK,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        500: {"description": "Internal server error"},
+    },
+)
+async def delete_unused_tags(
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    """
+    Delete every tag that is not attached to any moment.
+
+    Hard delete, like deleting a single tag. Returns the number removed.
+    """
+    tag_service = TagService(session)
+    try:
+        deleted = tag_service.delete_unused_tags(current_user.id)
+        return UnusedTagsCleanupResponse(deleted=deleted)
+    except Exception as e:
+        log_error(e, request_id="", user_email=current_user.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while cleaning up unused tags",
+        ) from None
+
+
 # Tag Analytics
 @router.get(
     "/analytics",
@@ -171,6 +207,7 @@ async def get_tag_analytics(
             )
 
         license_data = await get_plus_factory(current_user, session)
+        require_supporter_tier(license_data)
         tag_service = TagService(session)
         analytics = tag_service.get_tag_analytics(current_user.id, license_data)
         return analytics
@@ -253,6 +290,7 @@ async def get_tag_detail_analytics(
             )
 
         license_data = await get_plus_factory(current_user, session)
+        require_supporter_tier(license_data)
         tag_service = TagService(session)
         analytics = tag_service.get_tag_detail_analytics(
             tag_id=tag_id,
