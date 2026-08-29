@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../../api/client/api";
 import type { MomentMediaResponse } from "../../api/generated/types.gen";
+import { uuid } from "../../lib/uuid";
 import type { InlineMediaKind } from "./deltaProfile";
 import {
   MediaUploadError,
@@ -10,7 +11,6 @@ import {
   type UploadHandle,
 } from "./mediaUpload";
 import type { QuillSurfaceHandle } from "./QuillSurface";
-import { uuid } from "../../lib/uuid";
 import { registerPlaceholder } from "./uploadPlaceholder";
 
 /** How long to keep asking whether the worker has finished a file. */
@@ -35,6 +35,7 @@ export type Attachment = {
   kind: InlineMediaKind;
   state: "uploading" | "processing" | "done" | "failed";
   message?: string;
+  mediaId?: string;
 };
 
 function kindForFile(file: File): InlineMediaKind {
@@ -109,10 +110,17 @@ export function useMediaAttachments({
   const pollUntilProcessed = useCallback(
     (uploadId: string, momentId: string, mediaId: string) => {
       const startedAt = Date.now();
+      const scheduleTick = () => {
+        const timer = window.setTimeout(() => {
+          timers.current.delete(timer);
+          void tick();
+        }, PROCESS_POLL_INTERVAL_MS);
+        timers.current.add(timer);
+      };
       const tick = async () => {
         if (!mounted.current) return;
         if (document.visibilityState === "hidden") {
-          timers.current.add(window.setTimeout(tick, PROCESS_POLL_INTERVAL_MS));
+          scheduleTick();
           return;
         }
         try {
@@ -143,9 +151,9 @@ export function useMediaAttachments({
           });
           return;
         }
-        timers.current.add(window.setTimeout(tick, PROCESS_POLL_INTERVAL_MS));
+        scheduleTick();
       };
-      timers.current.add(window.setTimeout(tick, PROCESS_POLL_INTERVAL_MS));
+      scheduleTick();
     },
     [patch],
   );
@@ -185,6 +193,7 @@ export function useMediaAttachments({
         return;
       }
       handles.current.delete(uploadId);
+      patch(uploadId, { mediaId: media.id });
 
       // THE RACE CHECK. If the placeholder is gone the user does not want this
       // media, so remove what we just uploaded rather than forcing it back in.
@@ -300,10 +309,25 @@ export function useMediaAttachments({
       });
       if (!reprocessing) {
         surfaceRef.current?.setPlaceholderState(uploadId, "uploading");
+        await runUpload(attachment, draft.momentId);
+        return;
       }
-      await runUpload(attachment, draft.momentId);
+      if (attachment.mediaId) {
+        pollUntilProcessed(uploadId, draft.momentId, attachment.mediaId);
+      } else {
+        // A durable embed should always have a media id. Fall back to upload
+        // only if state from an older session lacks it.
+        await runUpload(attachment, draft.momentId);
+      }
     },
-    [attachments, ensureDraft, patch, runUpload, surfaceRef],
+    [
+      attachments,
+      ensureDraft,
+      patch,
+      pollUntilProcessed,
+      runUpload,
+      surfaceRef,
+    ],
   );
 
   const cancel = useCallback(

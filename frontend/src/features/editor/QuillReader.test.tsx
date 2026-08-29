@@ -64,6 +64,21 @@ describe("QuillReader", () => {
     expect(screen.getByText("A safe server-derived description")).toBeTruthy();
   });
 
+  it("refuses a backslash path that the browser would resolve off-origin", () => {
+    render(
+      <QuillReader
+        content={{
+          ops: [
+            { insert: { image: "/\\\\tracker.example.com/pixel.jpg" } },
+            { insert: "\n" },
+          ],
+        }}
+        entryId="network-path"
+      />,
+    );
+    expect(screen.queryByLabelText("Entry content")).toBeNull();
+  });
+
   it("renders inline video as a real video element, never an iframe", () => {
     render(
       <QuillReader

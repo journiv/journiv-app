@@ -491,8 +491,11 @@ function EntryEditorForm({
               if (files.length) void media.attach(files);
             }}
           />
-          {media.failed.length > 0 && (
+          {(media.error || media.failed.length > 0) && (
             <div className="jv-editor__upload-errors" role="alert">
+              {media.error && (
+                <p className="jv-editor__upload-error">{media.error}</p>
+              )}
               {media.failed.map((item) => (
                 <p key={item.uploadId} className="jv-editor__upload-error">
                   <span>{item.message}</span>

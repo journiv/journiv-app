@@ -113,12 +113,17 @@ export function isQuillDocumentDelta(value: unknown): value is QuillDelta {
  * reader instead, which is visible rather than silent.
  */
 export function isSafeInlineMediaSource(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.startsWith("/") &&
-    !value.startsWith("//") &&
-    value.length > 1
-  );
+  if (typeof value !== "string" || value.length <= 1) return false;
+  try {
+    const url = new URL(value, window.location.origin);
+    const isRootRelative = value.startsWith("/");
+    const isAbsolute = /^[a-z][a-z\d+.-]*:/iu.test(value);
+    return (
+      url.origin === window.location.origin && (isRootRelative || isAbsolute)
+    );
+  } catch {
+    return false;
+  }
 }
 
 /** Media kinds Journiv renders inline. `formula` and `divider` are not. */

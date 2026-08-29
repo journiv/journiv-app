@@ -95,6 +95,7 @@ export function EditorToolbar({
       return;
     }
     if (editor?.setLink(safeUrl)) setLinkOpen(false);
+    else setLinkError("Select text before applying a link.");
   };
 
   const removeLink = () => {
@@ -199,7 +200,7 @@ export function EditorToolbar({
         >
           <Redo2 aria-hidden="true" size={16} />
         </ToolbarButton>
-        {onAddMedia && (
+        {(onAddMedia || details || (state.selectedMedia && onRemoveMedia)) && (
           <>
             <span className="jv-toolbar__divider" aria-hidden="true" />
             {/* Insert group. Weather, people and tags will join this group
@@ -210,13 +211,15 @@ export function EditorToolbar({
               role="group"
               aria-label="Insert"
             >
-              <ToolbarButton
-                label="Add photo, video or audio"
-                disabled={disabled}
-                onClick={onAddMedia}
-              >
-                <ImagePlus aria-hidden="true" size={16} />
-              </ToolbarButton>
+              {onAddMedia && (
+                <ToolbarButton
+                  label="Add photo, video or audio"
+                  disabled={disabled}
+                  onClick={onAddMedia}
+                >
+                  <ImagePlus aria-hidden="true" size={16} />
+                </ToolbarButton>
+              )}
               {details && (
                 <MomentDetailsPopover {...details} disabled={disabled} />
               )}

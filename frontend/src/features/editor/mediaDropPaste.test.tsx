@@ -83,9 +83,8 @@ describe("dropping files onto the writing", () => {
   it("does nothing when the host does not accept files", () => {
     // A surface with no file handler must not try to attach anything. Quill
     // still handles the event itself, so defaultPrevented is not the signal.
-    const { ref } = mount(undefined);
+    const { ref, root } = mount(undefined);
     const before = JSON.stringify(ref.current?.getContents());
-    const { root } = mount(undefined);
     root.dispatchEvent(fileEvent("drop", [photo()]));
     expect(JSON.stringify(ref.current?.getContents())).toBe(before);
   });

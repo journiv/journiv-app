@@ -23,6 +23,8 @@ type PlaceholderPreview = {
   fileName: string;
   /** Local object URL for image previews; undefined for video and audio. */
   objectUrl?: string;
+  state?: PlaceholderState;
+  progress?: number;
 };
 
 const previews = new Map<string, PlaceholderPreview>();
@@ -74,15 +76,39 @@ function build(node: HTMLElement, uploadId: string) {
 
   const status = document.createElement("span");
   status.className = "jv-upload__status";
-  const noun = preview ? NOUNS[preview.kind] : "file";
-  status.textContent = `Uploading ${noun}…`;
   node.appendChild(status);
 
   // Announced politely so a long upload does not chatter at a screen reader.
   node.setAttribute("role", "status");
   node.setAttribute("aria-live", "polite");
-  node.setAttribute("aria-label", `Uploading ${noun}`);
+  applyState(node, status, preview?.state ?? "uploading", preview?.progress);
   return node;
+}
+
+function applyState(
+  node: HTMLElement,
+  status: HTMLElement,
+  state: PlaceholderState,
+  progress?: number,
+) {
+  const preview = previews.get(node.dataset.uploadId ?? "");
+  const noun = preview ? NOUNS[preview.kind] : "file";
+  node.dataset.state = state;
+  if (state === "failed") {
+    status.textContent = `Couldn’t upload this ${noun}`;
+    node.setAttribute("aria-label", `Upload failed for ${noun}`);
+    return;
+  }
+  if (state === "processing") {
+    status.textContent = "Processing…";
+    node.setAttribute("aria-label", `Processing ${noun}`);
+    return;
+  }
+  status.textContent =
+    typeof progress === "number"
+      ? `Uploading ${noun}… ${Math.round(progress * 100)}%`
+      : `Uploading ${noun}…`;
+  node.setAttribute("aria-label", `Uploading ${noun}`);
 }
 
 // biome-ignore lint/suspicious/noExplicitAny: Quill's blot registry is untyped.
@@ -129,24 +155,12 @@ export function setPlaceholderState(
   );
   const status = node?.querySelector<HTMLElement>(".jv-upload__status");
   if (!node || !status) return;
-  const noun = NOUNS[previews.get(uploadId)?.kind ?? "image"];
-
-  node.dataset.state = state;
-  if (state === "failed") {
-    status.textContent = `Couldn’t upload this ${noun}`;
-    node.setAttribute("aria-label", `Upload failed for ${noun}`);
-    return;
+  const preview = previews.get(uploadId);
+  if (preview) {
+    preview.state = state;
+    preview.progress = progress;
   }
-  if (state === "processing") {
-    status.textContent = "Processing…";
-    node.setAttribute("aria-label", `Processing ${noun}`);
-    return;
-  }
-  // Only show a percentage when the browser actually reported one.
-  status.textContent =
-    typeof progress === "number"
-      ? `Uploading ${noun}… ${Math.round(progress * 100)}%`
-      : `Uploading ${noun}…`;
+  applyState(node, status, state, progress);
 }
 
 /**

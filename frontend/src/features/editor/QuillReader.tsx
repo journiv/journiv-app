@@ -57,6 +57,11 @@ export function QuillReader({
   const hostRef = useRef<HTMLDivElement>(null);
   const reported = useRef(false);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: entryId intentionally resets this ref for each entry.
+  useEffect(() => {
+    reported.current = false;
+  }, [entryId]);
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !onMediaError) return;

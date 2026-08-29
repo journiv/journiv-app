@@ -43,7 +43,7 @@ def test_gate1_delta_create_update_fetch_and_derivations(
     api_user: ApiUser,
     journal_factory,
 ):
-    fixture = json.loads(fixture_path.read_text())
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
     journal = journal_factory(title=f"Gate 1 {fixture_path.stem}")
     moment = api_client.request(
         "POST",
@@ -60,6 +60,12 @@ def test_gate1_delta_create_update_fetch_and_derivations(
         expected=(200,),
     ).json()
     entry_id = moment["entry"]["id"]
+    updated_fixture = {
+        "ops": [
+            {"insert": f"Updated {fixture_path.stem}"},
+            {"insert": "\n"},
+        ]
+    }
 
     created = api_client.get_entry(api_user.access_token, entry_id)
     assert _without_null_attributes(created["content_delta"]) == fixture
@@ -71,14 +77,14 @@ def test_gate1_delta_create_update_fetch_and_derivations(
         json={
             "entry_update": {
                 "title": fixture_path.stem,
-                "content_delta": fixture,
+                "content_delta": updated_fixture,
             }
         },
         expected=(200,),
     )
     fetched = api_client.get_entry(api_user.access_token, entry_id)
-    assert _without_null_attributes(fetched["content_delta"]) == fixture
+    assert _without_null_attributes(fetched["content_delta"]) == updated_fixture
 
-    expected_plain_text = _plain_text(fixture)
+    expected_plain_text = _plain_text(updated_fixture)
     assert fetched["content_plain_text"] == expected_plain_text
     assert fetched["word_count"] == len(expected_plain_text.split())

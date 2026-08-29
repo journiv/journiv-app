@@ -146,6 +146,15 @@ describe("uploadMedia", () => {
       "Upload cancelled.",
     );
   });
+
+  it("settles a stalled upload as a network failure", async () => {
+    const handle = uploadMedia({
+      file: new File(["x"], "a.jpg"),
+      momentId: "m",
+    });
+    FakeXhr.instances[0].emit("timeout");
+    await expect(handle.promise).rejects.toMatchObject({ kind: "network" });
+  });
 });
 
 describe("runWithConcurrency", () => {
@@ -164,6 +173,17 @@ describe("runWithConcurrency", () => {
     await runWithConcurrency(tasks, 2);
     expect(peak).toBeLessThanOrEqual(2);
     expect(order).toHaveLength(7);
+  });
+
+  it("continues after a task rejects", async () => {
+    const attempted: number[] = [];
+    const tasks = [0, 1, 2].map((index) => async () => {
+      attempted.push(index);
+      if (index === 1) throw new Error("upload failed");
+    });
+
+    await expect(runWithConcurrency(tasks, 1)).resolves.toBeUndefined();
+    expect(attempted).toEqual([0, 1, 2]);
   });
 });
 

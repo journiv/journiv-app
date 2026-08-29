@@ -56,6 +56,30 @@ describe("useEntryDraft", () => {
     expect(api.createMoment).toHaveBeenCalledTimes(1);
   });
 
+  it("cleans up a draft cancelled while creation is in flight", async () => {
+    let resolveMoment: (moment: MomentResponse) => void;
+    vi.mocked(api.createMoment).mockImplementationOnce(
+      () =>
+        new Promise<MomentResponse>((resolve) => {
+          resolveMoment = resolve;
+        }),
+    );
+    const { result } = renderHook(() => useEntryDraft(options));
+    const creating = result.current.ensure("journal-1");
+
+    await act(async () => {
+      await result.current.discard(false);
+    });
+    await act(async () => {
+      if (!resolveMoment) throw new Error("Moment creation was not started");
+      resolveMoment({ id: "moment-new" } as MomentResponse);
+      await creating;
+    });
+
+    expect(api.deleteMoment).toHaveBeenCalledWith("moment-new");
+    expect(result.current.draft).toBeNull();
+  });
+
   it("reuses an existing Moment and never creates a draft for it", async () => {
     const existing = {
       id: "moment-1",

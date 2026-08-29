@@ -1,4 +1,5 @@
 import Quill, { Delta, type Range } from "quill";
+import "quill/dist/quill.core.css";
 import {
   forwardRef,
   useCallback,
@@ -9,13 +10,6 @@ import {
 import type { QuillDelta } from "../../api/generated/types.gen";
 import type { InlineMediaKind } from "./deltaProfile";
 import {
-  findPlaceholderIndex,
-  type PlaceholderState,
-  releaseAllPlaceholders,
-  setPlaceholderState as setPlaceholderStateDom,
-  UPLOAD_BLOT_NAME,
-} from "./uploadPlaceholder";
-import {
   cloneDelta,
   INLINE_MEDIA_KINDS,
   isQuillDocumentDelta,
@@ -24,8 +18,14 @@ import {
   stripUploadPlaceholders,
 } from "./deltaProfile";
 import "./mediaBlots";
-import "quill/dist/quill.core.css";
 import "./quill-adapter.css";
+import {
+  findPlaceholderIndex,
+  type PlaceholderState,
+  releaseAllPlaceholders,
+  setPlaceholderState as setPlaceholderStateDom,
+  UPLOAD_BLOT_NAME,
+} from "./uploadPlaceholder";
 
 export interface QuillSurfaceHandle {
   getContents(): QuillDelta;
@@ -118,7 +118,7 @@ function indexFromPoint(
   fallback: number,
 ): number {
   const point = document as Document & {
-    caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    caretRangeFromPoint?: (x: number, y: number) => globalThis.Range | null;
     caretPositionFromPoint?: (
       x: number,
       y: number,
@@ -183,8 +183,15 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
     const linkRangeRef = useRef<Range | null>(null);
     const composingRef = useRef(false);
     const emitStateRef = useRef<((range: Range | null) => void) | null>(null);
+    // Content changes alone must not discard unsaved edits, but a deliberate
+    // surface reinitialization (new entry or placeholder) must use its latest
+    // content rather than the component's mount-time value.
     const initialContentRef = useRef(cloneDelta(initialContent));
-    const initialReadOnlyRef = useRef(readOnly);
+    initialContentRef.current = cloneDelta(initialContent);
+    const readOnlyRef = useRef(readOnly);
+    readOnlyRef.current = readOnly;
+    const ariaLabelRef = useRef(ariaLabel);
+    ariaLabelRef.current = ariaLabel;
     const initialFormatsRef = useRef(formats ?? JOURNIV_DELTA_FORMATS);
     // A surface validates against its own profile. A text-only surface must
     // still refuse embeds; one configured with media formats accepts them.
@@ -194,9 +201,6 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       )
         ? isReaderDocumentDelta
         : isQuillDocumentDelta,
-    );
-    const initialAriaLabelRef = useRef(
-      ariaLabel ?? (readOnly ? "Entry content" : "Entry body"),
     );
     const filesRef = useRef(onFiles);
     filesRef.current = onFiles;
@@ -443,16 +447,20 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           history: { userOnly: true },
         },
         placeholder,
-        readOnly: initialReadOnlyRef.current,
+        readOnly: readOnlyRef.current,
       });
       quillRef.current = quill;
       quill.root.dataset.editorIdentity = editorId;
-      quill.root.setAttribute("aria-label", initialAriaLabelRef.current);
+      quill.root.setAttribute(
+        "aria-label",
+        ariaLabelRef.current ??
+          (readOnlyRef.current ? "Entry content" : "Entry body"),
+      );
       quill.root.setAttribute(
         "spellcheck",
-        initialReadOnlyRef.current ? "false" : "true",
+        readOnlyRef.current ? "false" : "true",
       );
-      if (initialReadOnlyRef.current) {
+      if (readOnlyRef.current) {
         quill.root.setAttribute("tabindex", "-1");
       } else {
         quill.root.setAttribute("role", "textbox");
@@ -603,16 +611,31 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
     }, [editorId, placeholder]);
 
     useEffect(() => {
+      const root = quillRef.current?.root;
+      if (!root) return;
       quillRef.current?.enable(!readOnly);
-    }, [readOnly]);
+      root.setAttribute("aria-readonly", String(readOnly));
+      root.setAttribute(
+        "aria-label",
+        ariaLabel ?? (readOnly ? "Entry content" : "Entry body"),
+      );
+      root.setAttribute("spellcheck", readOnly ? "false" : "true");
+      if (readOnly) {
+        root.setAttribute("tabindex", "-1");
+        root.removeAttribute("role");
+        root.removeAttribute("aria-multiline");
+      } else {
+        root.removeAttribute("tabindex");
+        root.setAttribute("role", "textbox");
+        root.setAttribute("aria-multiline", "true");
+      }
+    }, [ariaLabel, readOnly]);
 
     return (
       <div
         className={[
           "jv-prose",
-          initialReadOnlyRef.current
-            ? "jv-prose--reader"
-            : "jv-editor__surface",
+          readOnly ? "jv-prose--reader" : "jv-editor__surface",
           className,
         ]
           .filter(Boolean)

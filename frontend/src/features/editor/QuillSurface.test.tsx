@@ -43,10 +43,14 @@ describe("QuillSurface", () => {
         readOnly
       />,
     );
-    expect(screen.getByLabelText("Entry body")).toBe(editor);
+    expect(screen.getByLabelText("Entry content")).toBe(editor);
     expect(editor.getAttribute("contenteditable")).toBe("false");
-    expect(editor.getAttribute("role")).toBe("textbox");
-    expect(editor.getAttribute("aria-multiline")).toBe("true");
+    expect(editor.getAttribute("role")).toBeNull();
+    expect(editor.getAttribute("aria-multiline")).toBeNull();
+    expect(editor.getAttribute("aria-readonly")).toBe("true");
+    expect(editor.closest(".jv-prose")?.className).toContain(
+      "jv-prose--reader",
+    );
   });
 
   it("loads and serializes every canonical fixture without semantic loss", () => {
@@ -65,6 +69,42 @@ describe("QuillSurface", () => {
       ).toBe(true);
       view.unmount();
     }
+  });
+
+  it("hydrates the current content when its entry or placeholder changes", () => {
+    const ref = createRef<QuillSurfaceHandle>();
+    const view = render(
+      <QuillSurface
+        ref={ref}
+        editorId="entry-1"
+        initialContent={{ ops: [{ insert: "First entry\n" }] }}
+        placeholder="Write about this moment…"
+      />,
+    );
+
+    view.rerender(
+      <QuillSurface
+        ref={ref}
+        editorId="entry-2"
+        initialContent={{ ops: [{ insert: "Second entry\n" }] }}
+        placeholder="Write about this moment…"
+      />,
+    );
+    expect(ref.current?.getContents()).toEqual({
+      ops: [{ insert: "Second entry\n" }],
+    });
+
+    view.rerender(
+      <QuillSurface
+        ref={ref}
+        editorId="entry-2"
+        initialContent={{ ops: [{ insert: "Replacement draft\n" }] }}
+        placeholder="Continue writing…"
+      />,
+    );
+    expect(ref.current?.getContents()).toEqual({
+      ops: [{ insert: "Replacement draft\n" }],
+    });
   });
 
   it("round-trips inline media without gaining newlines, unlike flutter_quill", () => {

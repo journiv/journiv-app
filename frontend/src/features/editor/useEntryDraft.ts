@@ -53,6 +53,23 @@ export function useEntryDraft({
   const [created, setCreated] = useState<DraftIdentity | null>(owned);
   const inFlight = useRef<Promise<DraftIdentity> | null>(null);
   const createdRef = useRef<DraftIdentity | null>(owned);
+  const discardRequested = useRef<boolean | null>(null);
+
+  const cleanup = useCallback(
+    async (identity: DraftIdentity, keepMedia: boolean) => {
+      try {
+        if (keepMedia) {
+          if (identity.entryId) await api.deleteEntry(identity.entryId);
+        } else {
+          await api.deleteMoment(identity.momentId);
+        }
+      } catch {
+        // A failed cleanup leaves an invisible draft, recoverable through
+        // /entries/drafts. Never block the user's navigation on it.
+      }
+    },
+    [],
+  );
 
   const ensure = useCallback(
     async (journalId: string): Promise<DraftIdentity> => {
@@ -84,6 +101,13 @@ export function useEntryDraft({
         }
         const identity: DraftIdentity = { momentId: draftMoment.id, entryId };
         createdRef.current = identity;
+        const keepMedia = discardRequested.current;
+        if (keepMedia !== null) {
+          discardRequested.current = null;
+          createdRef.current = null;
+          await cleanup(identity, keepMedia);
+          return identity;
+        }
         setCreated(identity);
         return identity;
       })();
@@ -95,7 +119,7 @@ export function useEntryDraft({
         inFlight.current = null;
       }
     },
-    [moment, loggedAtUtc, loggedTimezone],
+    [cleanup, moment, loggedAtUtc, loggedTimezone],
   );
 
   /**
@@ -109,24 +133,15 @@ export function useEntryDraft({
       // a session that opened on an existing Moment deletes nothing.
       if (moment) return;
       const identity = createdRef.current;
-      if (!identity) return;
+      if (!identity) {
+        if (inFlight.current) discardRequested.current = keepMedia;
+        return;
+      }
       createdRef.current = null;
       setCreated(null);
-      try {
-        if (keepMedia) {
-          // Drop only the draft Entry, so the Moment stops being filtered out
-          // of the Timeline and its media becomes visible.
-          if (identity.entryId) await api.deleteEntry(identity.entryId);
-        } else {
-          // Deleting the Moment cascades its Entry and media.
-          await api.deleteMoment(identity.momentId);
-        }
-      } catch {
-        // A failed cleanup leaves an invisible draft, recoverable through
-        // /entries/drafts. Never block the user's navigation on it.
-      }
+      await cleanup(identity, keepMedia);
     },
-    [moment],
+    [cleanup, moment],
   );
 
   /** Forget the draft without touching the server — used after a successful save. */

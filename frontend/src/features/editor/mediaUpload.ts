@@ -98,6 +98,8 @@ export type UploadHandle = {
   abort: () => void;
 };
 
+const UPLOAD_TIMEOUT_MS = 60_000;
+
 export function uploadMedia({
   file,
   momentId,
@@ -120,6 +122,7 @@ export function uploadMedia({
     if (altText) body.append("alt_text", altText);
 
     request.open("POST", "/api/v1/media/upload");
+    request.timeout = UPLOAD_TIMEOUT_MS;
     const session = sessionStore.read();
     if (session) {
       request.setRequestHeader(
@@ -150,6 +153,9 @@ export function uploadMedia({
     });
     request.addEventListener("error", () =>
       reject(new MediaUploadError("network", "Upload failed")),
+    );
+    request.addEventListener("timeout", () =>
+      reject(new MediaUploadError("network", "Upload timed out")),
     );
     request.addEventListener("abort", () =>
       reject(new MediaUploadError("aborted", "Upload cancelled")),
@@ -186,7 +192,9 @@ export async function runWithConcurrency<T>(
       while (next < tasks.length) {
         const index = next;
         next += 1;
-        await tasks[index]();
+        // A single upload failure must not leave later selections unstarted.
+        // Individual tasks surface their own failures to the attachment state.
+        await tasks[index]().catch(() => undefined);
       }
     },
   );

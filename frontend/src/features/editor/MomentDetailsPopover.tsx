@@ -497,6 +497,7 @@ function WeatherSection({
       runWithMoment((id) =>
         api.updateMoment(id, { weather_summary: value || null }),
       ),
+    onSuccess: () => setManual(""),
   });
 
   const current = moment?.weather_summary?.trim() || null;
@@ -548,7 +549,6 @@ function WeatherSection({
           event.preventDefault();
           if (manual.trim()) {
             saveManual.mutate(manual.trim());
-            setManual("");
           }
         }}
       >
@@ -689,6 +689,7 @@ function TagsSection({ moment, disabled, runWithMoment }: SectionProps) {
   const add = useMutation({
     mutationFn: (names: string[]) =>
       runWithMoment((id) => api.addMomentTags(id, names)),
+    onSuccess: () => setValue(""),
   });
   const remove = useMutation({
     mutationFn: (tagId: string) =>
@@ -713,7 +714,6 @@ function TagsSection({ moment, disabled, runWithMoment }: SectionProps) {
       .map((name) => name.trim())
       .filter((name) => name && !currentNames.has(name.toLowerCase()));
     if (names.length) add.mutate([...new Set(names)]);
-    setValue("");
   };
 
   const addError = sectionError(
