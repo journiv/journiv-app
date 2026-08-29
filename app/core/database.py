@@ -51,6 +51,10 @@ if database_type == "sqlite":
         if not is_sqlite_memory:
             cursor.execute("PRAGMA journal_mode=WAL")  # Better concurrency
             cursor.execute("PRAGMA synchronous=NORMAL")  # Balance safety/performance
+            # Wait (up to 5s) for a competing writer/checkpoint instead of failing
+            # immediately with "database is locked" — matters when the API and the
+            # Celery workers share one SQLite file.
+            cursor.execute("PRAGMA busy_timeout=5000")
         cursor.execute("PRAGMA cache_size=10000")  # Increase cache
         cursor.execute("PRAGMA temp_store=MEMORY")  # Use memory for temp tables
         cursor.close()
