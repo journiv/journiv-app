@@ -1331,6 +1331,19 @@ class MediaService:
                 log_error(error_message, media_id=media_id, user_id=user_id)
                 self._mark_processing_failed(media_id, error_message)
 
+        except MediaNotFoundError:
+            # The row was committed by the upload request but is not yet visible to
+            # this worker's database connection (WAL / cross-process visibility lag,
+            # common on SQLite over a shared volume). This is transient: propagate so
+            # the Celery task retries instead of silently leaving the media PENDING.
+            # We deliberately do NOT call _mark_processing_failed here — it needs the
+            # same row and would be a no-op anyway.
+            log_warning(
+                f"Media {media_id} not visible to worker yet; signalling retry",
+                media_id=media_id, user_id=user_id,
+            )
+            raise
+
         except Exception as e:
             log_error(f"File processing failed for {media_id}: {e}",
                      media_id=media_id, user_id=user_id, exc_info=True)

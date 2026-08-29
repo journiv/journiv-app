@@ -644,16 +644,24 @@ class MomentService:
     def _apply_mood_filter(
         self, statement: Any, mood_ids: Optional[List[uuid.UUID]]
     ) -> Any:
-        """Apply filter for moments associated with specific moods."""
+        """Apply filter for moments associated with specific moods.
+
+        A moment "has" a mood when it is the moment's ``primary_mood_id`` (how
+        the web editor records mood) or when it appears in the moment's
+        mood/activity links (the multi-mood path). Either qualifies.
+        """
         if not mood_ids:
             return statement
         # Filter by moments that have ANY of the specified mood_ids
         normalized_mood_ids = normalize_uuid_list(mood_ids)
         return statement.where(
-            col(Moment.id).in_(
-                select(MomentMoodActivity.moment_id).where(
-                    col(MomentMoodActivity.mood_id).in_(normalized_mood_ids)
-                )
+            or_(
+                col(Moment.primary_mood_id).in_(normalized_mood_ids),
+                col(Moment.id).in_(
+                    select(MomentMoodActivity.moment_id).where(
+                        col(MomentMoodActivity.mood_id).in_(normalized_mood_ids)
+                    )
+                ),
             )
         )
 
@@ -701,6 +709,51 @@ class MomentService:
             col(Moment.id).in_(
                 select(MomentPersonLink.moment_id).where(
                     col(MomentPersonLink.person_id).in_(normalized_person_ids)
+                )
+            )
+        )
+
+    def _apply_tag_filter(
+        self, statement: Any, tag_ids: Optional[List[uuid.UUID]]
+    ) -> Any:
+        """Filter to moments carrying ANY of the given tags."""
+        if not tag_ids:
+            return statement
+        normalized_tag_ids = normalize_uuid_list(tag_ids)
+        return statement.where(
+            col(Moment.id).in_(
+                select(MomentTagLink.moment_id).where(
+                    col(MomentTagLink.tag_id).in_(normalized_tag_ids)
+                )
+            )
+        )
+
+    def _apply_activity_filter(
+        self, statement: Any, activity_ids: Optional[List[uuid.UUID]]
+    ) -> Any:
+        """Filter to moments logging ANY of the given activities."""
+        if not activity_ids:
+            return statement
+        normalized_activity_ids = normalize_uuid_list(activity_ids)
+        return statement.where(
+            col(Moment.id).in_(
+                select(MomentMoodActivity.moment_id).where(
+                    col(MomentMoodActivity.activity_id).in_(normalized_activity_ids)
+                )
+            )
+        )
+
+    def _apply_goal_filter(
+        self, statement: Any, goal_id: Optional[uuid.UUID]
+    ) -> Any:
+        """Filter to moments a completed period of this goal was logged against."""
+        if not goal_id:
+            return statement
+        return statement.where(
+            col(Moment.id).in_(
+                select(GoalLog.moment_id).where(
+                    col(GoalLog.goal_id) == goal_id,
+                    col(GoalLog.moment_id).is_not(None),
                 )
             )
         )
@@ -1051,6 +1104,9 @@ class MomentService:
         mood_ids: Optional[List[uuid.UUID]] = None,
         person_ids: Optional[List[uuid.UUID]] = None,
         people_match: PeopleMatch = PeopleMatch.any,
+        tag_ids: Optional[List[uuid.UUID]] = None,
+        activity_ids: Optional[List[uuid.UUID]] = None,
+        goal_id: Optional[uuid.UUID] = None,
         search: Optional[str] = None,
         include_drafts: bool = False,
         include_empty: bool = False,
@@ -1076,6 +1132,9 @@ class MomentService:
         statement = self._apply_draft_filter(statement, include_drafts, None)
         statement = self._apply_mood_filter(statement, mood_ids)
         statement = self._apply_people_filter(statement, person_ids, people_match)
+        statement = self._apply_tag_filter(statement, tag_ids)
+        statement = self._apply_activity_filter(statement, activity_ids)
+        statement = self._apply_goal_filter(statement, goal_id)
         statement = self._apply_search_filter(statement, search)
         statement = self._apply_cursor_filter(
             statement, cursor_logged_at_utc, cursor_id

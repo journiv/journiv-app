@@ -9,6 +9,7 @@ import pytest
 from fastapi import UploadFile
 from sqlmodel import Session, create_engine
 
+from app.core.exceptions import MediaNotFoundError
 from app.models.base import BaseModel
 from app.models.entry import Entry
 from app.models.enums import JournalColor
@@ -168,3 +169,22 @@ async def test_upload_media_uses_streaming_path(tmp_path, test_db, test_user, te
 
     media_record = result["media_record"]
     assert media_record.moment_id == test_entry.moment_id
+
+
+def test_process_uploaded_file_reraises_when_media_row_not_visible(tmp_path, test_db):
+    """A missing media row is transient (WAL / cross-process visibility lag), not a
+    silent success. process_uploaded_file must propagate MediaNotFoundError so the
+    Celery task can retry instead of leaving the upload stuck in PENDING forever.
+
+    Regression: previously the broad ``except Exception`` swallowed this and the task
+    reported success, stranding the attachment.
+    """
+    service = _build_service(tmp_path, test_db)
+    unknown_media_id = str(uuid.uuid4())
+
+    with pytest.raises(MediaNotFoundError):
+        service.process_uploaded_file(
+            unknown_media_id,
+            str(tmp_path / "media" / "does-not-matter.jpg"),
+            str(uuid.uuid4()),
+        )

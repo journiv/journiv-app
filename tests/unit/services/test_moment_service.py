@@ -9,12 +9,16 @@ import pytest
 from sqlmodel import Session, create_engine, select
 
 from app.core.exceptions import JournalNotFoundError
+from app.models.activity import Activity
 from app.models.base import BaseModel
 from app.models.entry import Entry
+from app.models.goal import Goal, GoalLog
 from app.models.journal import Journal
 from app.models.moment import Moment, MomentMoodActivity
 from app.models.moment_person_link import MomentPersonLink
+from app.models.moment_tag_link import MomentTagLink
 from app.models.person import Person
+from app.models.tag import Tag
 from app.models.user import User, UserSettings
 from app.schemas.entry import EntryUpdate
 from app.schemas.moment import (
@@ -201,6 +205,132 @@ def test_get_moments_filter_by_person_ids_all(test_db, test_user, test_moment_se
     )
     assert len(items) == 1
     assert items[0].id == m3.id
+
+
+def test_get_moments_filter_by_mood_ids_matches_primary_mood(
+    test_db, test_user, test_moment_service
+):
+    """The web editor records mood only as ``primary_mood_id`` (no link row);
+    the mood filter must still match those moments."""
+    mood_id = uuid.uuid4()
+    other_mood_id = uuid.uuid4()
+
+    m1 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        primary_mood_id=mood_id,
+        note="Primary mood only",
+    )
+    m2 = Moment(
+        user_id=test_user.id,
+        logged_at_utc=datetime.utcnow(),
+        primary_mood_id=other_mood_id,
+        note="Different mood",
+    )
+    test_db.add(m1)
+    test_db.add(m2)
+    test_db.commit()
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id, mood_ids=[mood_id]
+    )
+    assert [item.id for item in items] == [m1.id]
+
+
+def test_get_moments_filter_by_tag_ids(test_db, test_user, test_moment_service):
+    tag_one = Tag(user_id=test_user.id, name="hiking")
+    tag_two = Tag(user_id=test_user.id, name="cooking")
+    test_db.add(tag_one)
+    test_db.add(tag_two)
+    test_db.commit()
+    test_db.refresh(tag_one)
+    test_db.refresh(tag_two)
+
+    m1 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Tagged hiking")
+    m2 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Tagged cooking")
+    test_db.add(m1)
+    test_db.add(m2)
+    test_db.commit()
+
+    test_db.add(MomentTagLink(moment_id=m1.id, tag_id=tag_one.id))
+    test_db.add(MomentTagLink(moment_id=m2.id, tag_id=tag_two.id))
+    test_db.commit()
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id, tag_ids=[tag_one.id]
+    )
+    assert [item.id for item in items] == [m1.id]
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id, tag_ids=[tag_one.id, tag_two.id]
+    )
+    assert {item.id for item in items} == {m1.id, m2.id}
+
+
+def test_get_moments_filter_by_activity_ids(test_db, test_user, test_moment_service):
+    activity_one = Activity(user_id=test_user.id, name="Running")
+    activity_two = Activity(user_id=test_user.id, name="Reading")
+    test_db.add(activity_one)
+    test_db.add(activity_two)
+    test_db.commit()
+    test_db.refresh(activity_one)
+    test_db.refresh(activity_two)
+
+    m1 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Went running")
+    m2 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Read a book")
+    test_db.add(m1)
+    test_db.add(m2)
+    test_db.commit()
+
+    test_db.add(MomentMoodActivity(moment_id=m1.id, activity_id=activity_one.id))
+    test_db.add(MomentMoodActivity(moment_id=m2.id, activity_id=activity_two.id))
+    test_db.commit()
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id, activity_ids=[activity_one.id]
+    )
+    assert [item.id for item in items] == [m1.id]
+
+
+def test_get_moments_filter_by_goal_id(test_db, test_user, test_moment_service):
+    goal = Goal(user_id=test_user.id, title="Run three times a week")
+    test_db.add(goal)
+    test_db.commit()
+    test_db.refresh(goal)
+
+    m1 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Logged the goal")
+    m2 = Moment(user_id=test_user.id, logged_at_utc=datetime.utcnow(), note="Unrelated")
+    test_db.add(m1)
+    test_db.add(m2)
+    test_db.commit()
+
+    test_db.add(
+        GoalLog(
+            goal_id=goal.id,
+            user_id=test_user.id,
+            logged_date=date(2026, 1, 5),
+            period_start=date(2026, 1, 5),
+            period_end=date(2026, 1, 5),
+            moment_id=m1.id,
+        )
+    )
+    # A period roll-up with no moment attached must not pull in unrelated moments.
+    test_db.add(
+        GoalLog(
+            goal_id=goal.id,
+            user_id=test_user.id,
+            logged_date=date(2026, 1, 6),
+            period_start=date(2026, 1, 6),
+            period_end=date(2026, 1, 6),
+            moment_id=None,
+        )
+    )
+    test_db.commit()
+
+    items, _, _ = test_moment_service.get_moments(
+        user_id=test_user.id, goal_id=goal.id
+    )
+    assert [item.id for item in items] == [m1.id]
 
 
 def test_get_moments_search_note(test_db, test_user, test_moment_service):

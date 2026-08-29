@@ -767,6 +767,9 @@ async def get_moments(
     mood_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
     person_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
     people_match: Annotated[PeopleMatch | None, Query()] = None,
+    tag_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    activity_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    goal_id: Annotated[uuid.UUID | None, Query()] = None,
     search: Annotated[str | None, Query()] = None,
     include_drafts: Annotated[bool, Query()] = False,
     include_empty: Annotated[bool, Query()] = False,
@@ -790,6 +793,9 @@ async def get_moments(
         mood_ids=mood_ids if mood_ids else None,
         person_ids=person_ids if person_ids else None,
         people_match=people_match or PeopleMatch.any,
+        tag_ids=tag_ids if tag_ids else None,
+        activity_ids=activity_ids if activity_ids else None,
+        goal_id=goal_id,
         search=search,
         include_drafts=include_drafts,
         include_empty=include_empty,

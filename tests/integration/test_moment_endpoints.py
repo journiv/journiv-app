@@ -190,6 +190,53 @@ def test_moment_listing_supports_empty_mood_list(
     assert m2["id"] in result_ids
 
 
+def test_moment_listing_supports_tag_filtering(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """Moments can be filtered to those carrying a given tag."""
+    tagged = moment_factory(note="Tagged moment")
+    untagged = moment_factory(note="Untagged moment")
+
+    tags = api_client.request(
+        "POST",
+        f"/moments/{tagged['id']}/tags",
+        token=api_user.access_token,
+        json=["hiking"],
+        expected=(200, 201),
+    ).json()
+    tag_id = tags[0]["id"]
+
+    results = api_client.list_moments(api_user.access_token, tag_ids=[tag_id])
+    result_ids = {m["id"] for m in results}
+
+    assert tagged["id"] in result_ids
+    assert untagged["id"] not in result_ids
+
+
+def test_moment_listing_supports_activity_filtering(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """Moments can be filtered to those logging a given activity."""
+    activity = api_client.create_activity(api_user.access_token, name="Running")
+    with_activity = moment_factory(
+        note="Went running",
+        mood_activity=[{"activity_id": activity["id"]}],
+    )
+    without_activity = moment_factory(note="Sat still")
+
+    results = api_client.list_moments(
+        api_user.access_token, activity_ids=[activity["id"]]
+    )
+    result_ids = {m["id"] for m in results}
+
+    assert with_activity["id"] in result_ids
+    assert without_activity["id"] not in result_ids
+
+
 def test_moment_media_count_tracks_upload_and_delete(
     api_client: JournivApiClient,
     api_user: ApiUser,
