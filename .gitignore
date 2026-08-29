@@ -148,6 +148,9 @@ user_media/
 entry_media/
 thumbnails/
 generated/
+# Keep the generated frontend API client committed.
+!frontend/src/api/generated/
+!frontend/src/api/generated/**
 public/uploads/
 static/uploads/
 
