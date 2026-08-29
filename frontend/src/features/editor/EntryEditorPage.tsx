@@ -14,6 +14,7 @@ import {
   useState,
 } from "react";
 import { api } from "../../api/client/api";
+import { isConflict } from "../../api/client/errors";
 import type {
   JournalResponse,
   MomentCreate,
@@ -89,13 +90,17 @@ export function acceptAttribute(value: unknown): string {
 /**
  * Leaving the editor with writing that never reached the server.
  *
- * The old wording — "Discard your unsaved changes?" — is no longer true: the
- * writing is kept on this device and offered back next time. Say so, so nobody
- * abandons work they think is about to vanish. (This is the in-app prompt only;
- * the browser writes its own text for a reload or a closed tab.)
+ * Two different things, and they must not share one sentence. Navigating away
+ * leaves the local copy in place, so it is offered back next time. Cancel is an
+ * explicit discard: it removes that copy and cleans up the draft this session
+ * created. Saying "your writing is kept" on the second one would be a lie told
+ * at the exact moment it matters. (These are the in-app prompts only; the
+ * browser writes its own text for a reload or a closed tab.)
  */
 const LEAVE_CONFIRMATION =
   "Leave without saving to your journal? Your writing is kept on this device.";
+const CANCEL_CONFIRMATION =
+  "Discard this entry? The writing will not be kept on this device either.";
 
 export const EDITOR_FORMATS = [
   ...JOURNIV_DELTA_FORMATS,
@@ -303,15 +308,11 @@ export function EntryEditorPage() {
       // A recovered draft brings its server Moment back with it, so Done
       // finalises the Moment that already owns the recovered media instead of
       // creating a second one. Only for a NEW entry: on an existing one the
-      // recorded Moment is the reader's own saved entry, not a draft.
-      recoveredIdentity={
-        !momentId && recovered?.draft.momentId
-          ? {
-              momentId: recovered.draft.momentId,
-              entryId: recovered.draft.entryId ?? null,
-            }
-          : null
-      }
+      // recorded Moment is the reader's own saved entry, not a draft. The
+      // identity is the one the server confirmed, not the one the record
+      // remembered — null when that Moment is gone, and Done then makes a
+      // fresh one rather than failing forever.
+      recoveredIdentity={(!momentId && recovered?.verifiedIdentity) || null}
       // Attachments the recovered draft still has. They belong to the draft
       // Moment, so cancelling must keep them — the same thing it does for a
       // session that never reloaded.
@@ -390,6 +391,12 @@ function EntryEditorForm({
   const [bodyDirty, setBodyDirty] = useState(startsDirty);
   const [metaDirty, setMetaDirty] = useState(false);
   const [error, setError] = useState("");
+  /**
+   * The server refused this save because the entry moved underneath it. Held in
+   * state rather than read off the mutation, because it must survive the retry
+   * that resolves it and clear only when that retry is actually made.
+   */
+  const [conflict, setConflict] = useState(false);
 
   // The Moment that owns this entry's metadata. For an existing Moment that is
   // `moment` (the parent refetches it on invalidation, so it stays current). A
@@ -565,7 +572,12 @@ function EntryEditorForm({
   useLayoutEffect(resizeTitle, [resizeTitle]);
 
   const mutation = useMutation({
-    mutationFn: async () => {
+    /**
+     * `overwrite` is the writer answering the conflict: save this, on top of
+     * whatever the other device wrote. It is the only thing that drops
+     * `expected_updated_at`, and only for the one request it is passed to.
+     */
+    mutationFn: async (overwrite: boolean = false) => {
       setError("");
       const contentDelta = surfaceRef.current?.getContents();
       if (!contentDelta) throw new Error("Editor is not ready");
@@ -578,6 +590,13 @@ function EntryEditorForm({
         title: title.trim() || null,
         content_delta: contentDelta,
         journal_id: journalId,
+        // The version this editor opened on. The backend refuses the save with
+        // 409 if the entry has moved since, so a second device's writing is
+        // never silently replaced. A draft Entry nobody else can see has no
+        // version worth defending, and a brand-new entry has none at all.
+        ...(!overwrite && moment?.entry && serverUpdatedAt
+          ? { expected_updated_at: serverUpdatedAt }
+          : {}),
       };
       if (!moment && !draft.draft) {
         const body: MomentCreate = {
@@ -599,6 +618,7 @@ function EntryEditorForm({
     },
     onSuccess: async (savedMoment) => {
       allowNavigationRef.current = true;
+      setConflict(false);
       // The writing is on the server now, so the local copy has done its job.
       // This is the ONLY place a save removes it — every failure below keeps it.
       await localDraft.remove();
@@ -629,6 +649,14 @@ function EntryEditorForm({
       );
     },
     onError: (caught) => {
+      if (isConflict(caught)) {
+        // Not a failure to write — a refusal to overwrite. It gets its own
+        // surface, because the only useful next step is a decision.
+        setConflict(true);
+        setError("");
+        return;
+      }
+      setConflict(false);
       setError(
         caught instanceof Error && caught.message
           ? caught.message
@@ -646,7 +674,7 @@ function EntryEditorForm({
       )
         return;
       event.preventDefault();
-      mutation.mutate();
+      mutation.mutate(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -669,10 +697,10 @@ function EntryEditorForm({
   }
 
   const cancel = () => {
-    const keptMedia = sessionMediaRef.current.length;
+    const keptMedia = moment ? 0 : sessionMediaRef.current.length;
     const question = keptMedia
-      ? `${LEAVE_CONFIRMATION} The ${keptMedia === 1 ? "file" : `${keptMedia} files`} you added will stay on this moment.`
-      : LEAVE_CONFIRMATION;
+      ? `${CANCEL_CONFIRMATION} The ${keptMedia === 1 ? "file" : `${keptMedia} files`} you added will stay on this moment.`
+      : CANCEL_CONFIRMATION;
     if (dirty && !window.confirm(question)) return;
     allowNavigationRef.current = true;
     // An explicit discard is one of only two things that may remove the local
@@ -754,7 +782,7 @@ function EntryEditorForm({
             </Button>
             <Button
               variant="primary"
-              onClick={() => mutation.mutate()}
+              onClick={() => mutation.mutate(false)}
               disabled={mutation.isPending}
             >
               {mutation.isPending ? "Saving…" : error ? "Retry" : "Done"}
@@ -868,6 +896,12 @@ function EntryEditorForm({
             placeholder="Write about this moment…"
             readOnly={mutation.isPending}
           />
+          {conflict && (
+            <SaveConflict
+              onOverwrite={() => mutation.mutate(true)}
+              busy={mutation.isPending}
+            />
+          )}
           {error && (
             <p className="jv-editor__error" role="alert">
               {error}
@@ -878,6 +912,45 @@ function EntryEditorForm({
           <MomentChips moment={momentForDisplay} />
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The save the server refused, and the only decision that resolves it.
+ *
+ * Deliberately not a dialog and not a countdown: the writing is on screen,
+ * untouched, and stays there until the writer picks. Leaving the editor keeps
+ * the local copy — the recovery prompt says the entry changed elsewhere the
+ * next time it opens — so doing nothing is a safe answer too.
+ *
+ * There is no "see what changed": Journiv has no server-side history to show,
+ * and inventing a comparison against a version we do not hold would be worse
+ * than saying plainly that the two cannot be combined.
+ */
+function SaveConflict({
+  onOverwrite,
+  busy,
+}: {
+  onOverwrite: () => void;
+  busy: boolean;
+}) {
+  return (
+    <div className="jv-editor__conflict" role="alert">
+      <TriangleAlert aria-hidden="true" size={17} />
+      <div className="jv-editor__conflict-body">
+        <p className="jv-body">
+          This entry was saved somewhere else while you were writing. Saving now
+          replaces that version — the two are not combined.
+        </p>
+        <p className="jv-meta">
+          Your writing is still here, and it is kept on this device if you
+          leave.
+        </p>
+      </div>
+      <Button variant="secondary" onClick={onOverwrite} disabled={busy}>
+        {busy ? "Saving…" : "Save anyway"}
+      </Button>
     </div>
   );
 }
