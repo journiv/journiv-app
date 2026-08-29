@@ -87,12 +87,19 @@ class UserService:
             log_error(exc, context="is_first_user check")
             return False
 
-    def count_admin_users(self) -> int:
-        """Count the number of admin users."""
+    def count_admin_users(self, active_only: bool = False) -> int:
+        """Count admin users.
+
+        Args:
+            active_only: When True, exclude deactivated admins. A disabled
+                admin cannot sign in, so it must not satisfy the "at least one
+                admin must exist" guards.
+        """
         from sqlalchemy import func
-        return self.session.exec(
-            select(func.count(User.id)).where(User.role == UserRole.ADMIN)
-        ).one() or 0
+        statement = select(func.count(User.id)).where(User.role == UserRole.ADMIN)
+        if active_only:
+            statement = statement.where(User.is_active.is_(True))
+        return self.session.exec(statement).one() or 0
 
     def can_delete_user(self, user_id: str) -> tuple[bool, Optional[str]]:
         """
@@ -108,11 +115,10 @@ class UserService:
         if not user:
             return False, "User not found"
 
-        # Cannot delete the last admin
-        if user.role == UserRole.ADMIN:
-            admin_count = self.count_admin_users()
-            if admin_count <= 1:
-                return False, "Cannot delete the last admin user. At least one admin must exist."
+        # Cannot delete the last admin who can still sign in
+        if user.role == UserRole.ADMIN and user.is_active:
+            if self.count_admin_users(active_only=True) <= 1:
+                return False, "Cannot delete the last admin user. At least one active admin must exist."
 
         return True, None
 
@@ -131,11 +137,40 @@ class UserService:
         if not user:
             return False, "User not found"
 
-        # If demoting from admin to user, check if this is the last admin
-        if user.role == UserRole.ADMIN and new_role != UserRole.ADMIN:
-            admin_count = self.count_admin_users()
-            if admin_count <= 1:
-                return False, "Cannot demote the last admin user. At least one admin must exist."
+        # If demoting from admin to user, check this is not the last active admin
+        if user.role == UserRole.ADMIN and new_role != UserRole.ADMIN and user.is_active:
+            if self.count_admin_users(active_only=True) <= 1:
+                return False, "Cannot demote the last admin user. At least one active admin must exist."
+
+        return True, None
+
+    def can_change_active_status(
+        self, user_id: str, is_active: bool
+    ) -> tuple[bool, Optional[str]]:
+        """
+        Check if a user's active status can be changed.
+
+        Deactivating the last admin who can still sign in would lock every
+        administrator out of the instance, so it is refused.
+
+        Args:
+            user_id: User ID to check
+            is_active: The requested active status
+
+        Returns:
+            tuple: (can_change: bool, error_message: Optional[str])
+        """
+        user = self.get_user_by_id(user_id)
+        if not user:
+            return False, "User not found"
+
+        if (
+            user.role == UserRole.ADMIN
+            and user.is_active
+            and not is_active
+            and self.count_admin_users(active_only=True) <= 1
+        ):
+            return False, "Cannot deactivate the last admin user. At least one active admin must exist."
 
         return True, None
 
@@ -658,6 +693,14 @@ class UserService:
         if user_data.role is not None and user_data.role != user.role:
             can_update, error_msg = self.can_update_user_role(user_id, user_data.role)
             if not can_update:
+                raise ValueError(error_msg)
+
+        # Check active-status change protection (never strand the last admin)
+        if user_data.is_active is not None and user_data.is_active != user.is_active:
+            can_change, error_msg = self.can_change_active_status(
+                user_id, user_data.is_active
+            )
+            if not can_change:
                 raise ValueError(error_msg)
 
         # Update fields

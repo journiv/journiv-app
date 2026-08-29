@@ -291,3 +291,72 @@ def test_multiple_admins_supported(api_client: JournivApiClient):
 
     assert response1.status_code == 200, "First admin should access admin endpoints"
     assert response2.status_code == 200, "Promoted admin should access admin endpoints"
+
+
+def test_cannot_deactivate_last_admin(api_client: JournivApiClient):
+    """Deactivating the last admin who can sign in must be refused."""
+    admin = _ensure_admin_user(api_client)
+
+    # Attempt to deactivate self (mirrors test_cannot_demote_last_admin).
+    response = api_client.request(
+        "PATCH",
+        f"/admin/users/{admin.user_id}",
+        headers={"Authorization": f"Bearer {admin.access_token}"},
+        json={"is_active": False},
+    )
+
+    assert response.status_code == 400, "Should prevent deactivating the last admin"
+    error_detail = response.json().get("detail", "")
+    assert "last admin" in error_detail.lower() or "active admin" in error_detail.lower()
+
+
+def test_admin_can_deactivate_another_admin_when_one_remains(
+    api_client: JournivApiClient,
+):
+    """With more than one active admin, deactivating one is allowed."""
+    admin = _ensure_admin_user(api_client)
+    second = _ensure_regular_user(api_client, admin)
+
+    promote = api_client.request(
+        "PATCH",
+        f"/admin/users/{second.user_id}",
+        headers={"Authorization": f"Bearer {admin.access_token}"},
+        json={"role": "admin"},
+    )
+    assert promote.status_code == 200
+
+    deactivate = api_client.request(
+        "PATCH",
+        f"/admin/users/{second.user_id}",
+        headers={"Authorization": f"Bearer {admin.access_token}"},
+        json={"is_active": False},
+    )
+    assert deactivate.status_code == 200
+    assert deactivate.json()["is_active"] is False
+
+    # Clean up so the shared instance keeps a spare active admin.
+    api_client.request(
+        "DELETE",
+        f"/admin/users/{second.user_id}",
+        headers={"Authorization": f"Bearer {admin.access_token}"},
+    )
+
+
+def test_admin_create_rejects_weak_password(api_client: JournivApiClient):
+    """Admin-created accounts are held to the same password policy as signup."""
+    admin = _ensure_admin_user(api_client)
+    email, _ = _unique_credentials("weak-pass")
+
+    response = api_client.request(
+        "POST",
+        "/admin/users",
+        headers={"Authorization": f"Bearer {admin.access_token}"},
+        json={
+            "email": email,
+            "password": "short",
+            "name": "Weak Password User",
+            "role": "user",
+        },
+    )
+
+    assert response.status_code in (400, 422), "Weak password should be rejected"
