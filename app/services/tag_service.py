@@ -192,6 +192,36 @@ class TagService:
         log_info(f"Tag hard-deleted for user {user_id}: {tag_id}")
         return True
 
+    def delete_unused_tags(self, user_id: uuid.UUID) -> int:
+        """
+        Hard-delete every tag owned by the user that no moment references.
+
+        "Unused" is decided from the link table, not the denormalised
+        ``usage_count`` column, so a drifted count cannot spare or doom a tag.
+        Returns the number of tags removed.
+        """
+        used_tag_ids = select(MomentTagLink.tag_id).distinct()
+        statement = select(Tag).where(
+            Tag.user_id == user_id,
+            col(Tag.id).not_in(used_tag_ids),
+        )
+        unused = list(self.session.exec(statement))
+        if not unused:
+            return 0
+
+        for tag in unused:
+            self.session.delete(tag)
+
+        try:
+            self._commit()
+        except SQLAlchemyError as exc:
+            self.session.rollback()
+            log_error(exc)
+            raise
+
+        log_info(f"Deleted {len(unused)} unused tag(s) for user {user_id}")
+        return len(unused)
+
     def _get_moment_for_user(self, moment_id: uuid.UUID, user_id: uuid.UUID) -> Moment:
         """Load a moment and ensure it belongs to the user."""
         moment = self.session.exec(
