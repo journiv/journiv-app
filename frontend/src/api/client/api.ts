@@ -67,6 +67,7 @@ import {
   mergePeopleApiV1PeopleSourceIdMergeTargetIdPost,
   mergeTagsApiV1TagsSourceIdMergeTargetIdPost,
   refreshTokenApiV1AuthRefreshPost,
+  registerApiV1AuthRegisterPost,
   removePersonProfileImageApiV1PeoplePersonIdProfileImageDelete,
   removeTagFromMomentApiV1MomentsMomentIdTagsTagIdDelete,
   reorderJournalsApiV1JournalsReorderPut,
@@ -129,6 +130,7 @@ import type {
   TagCreate,
   TagUpdate,
   UserSettingsUpdate,
+  UserCreate,
   UserUpdate,
   WeatherFetchRequest,
 } from "../generated/types.gen";
@@ -141,6 +143,8 @@ const options = () => ({
 const data = <T>(result: Promise<{ data: T }>) =>
   result.then((response) => response.data);
 export const api = {
+  register: (body: UserCreate) =>
+    data(registerApiV1AuthRegisterPost({ ...options(), body })),
   login: (email: string, password: string) =>
     data(loginApiV1AuthLoginPost({ ...options(), body: { email, password } })),
   refresh: (refresh_token: string) =>

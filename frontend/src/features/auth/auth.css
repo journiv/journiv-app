@@ -36,24 +36,33 @@
   font-size: 0.875rem;
 }
 
+.jv-auth__status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 .jv-auth__form {
-  display: grid;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-4);
 }
 
-.jv-auth__label {
-  display: grid;
-  gap: var(--space-2);
-  font-size: 0.8125rem;
-  font-weight: 500;
+.jv-auth__fields {
+  gap: var(--space-4);
 }
 
-.jv-auth__error {
-  margin: 0;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--danger-border);
-  border-radius: var(--radius-sm);
-  background: var(--danger-surface);
+.jv-auth__alternate {
+  margin: var(--space-6) 0 0;
+  text-align: center;
+}
+
+.jv-auth__alternate a {
   color: var(--foreground);
-  font-size: 0.8125rem;
+  font-weight: 500;
+  text-underline-offset: 0.18em;
+}
+
+.jv-auth__alternate a:hover {
+  color: var(--primary);
 }

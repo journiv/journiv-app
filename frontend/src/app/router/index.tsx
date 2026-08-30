@@ -11,6 +11,7 @@ import { lazy, Suspense } from "react";
 import { sessionStore } from "../../api/auth/session";
 import { StatusView } from "../../components/journiv/StatusView";
 import { LoginPage } from "../../features/auth/LoginPage";
+import { SignUpPage } from "../../features/auth/SignUpPage";
 import { AppShell } from "../../features/shell/AppShell";
 import { Workspace } from "../../features/shell/Workspace";
 
@@ -218,11 +219,26 @@ const loginRoute = createRoute({
     returnTo:
       typeof s.returnTo === "string" &&
       s.returnTo.startsWith("/") &&
-      !s.returnTo.startsWith("//")
+      !s.returnTo.startsWith("//") &&
+      !s.returnTo.startsWith("/\\")
         ? s.returnTo
         : "/timeline",
   }),
   component: LoginPage,
+});
+const signupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/signup",
+  validateSearch: (s: Record<string, unknown>) => ({
+    returnTo:
+      typeof s.returnTo === "string" &&
+      s.returnTo.startsWith("/") &&
+      !s.returnTo.startsWith("//") &&
+      !s.returnTo.startsWith("/\\")
+        ? s.returnTo
+        : "/timeline",
+  }),
+  component: SignUpPage,
 });
 const indexRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -462,6 +478,7 @@ const journalMomentRoute = createRoute({
 });
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  signupRoute,
   protectedRoute.addChildren([
     indexRoute,
     timelineRoute,

@@ -1360,8 +1360,9 @@ form edit in place; only small confirmations (discard) may stack.
   and pages the complete collection locally. Edits send only changed fields, so
   an untouched value never routes through a server protection. `POST
   /admin/users` creates local password accounts and applies the same password
-  policy as signup; `PATCH /admin/users/{user_id}` edits name, email, role and
-  active status (plus password for local accounts); `DELETE
+  policy as the change-password flow (self-hosted signup intentionally permits
+  any non-empty password; §26); `PATCH /admin/users/{user_id}` edits name, email,
+  role and active status (plus password for local accounts); `DELETE
   /admin/users/{user_id}` is protected by an exact-email confirmation that names
   the full cascade. The server refuses to delete, demote or deactivate the last
   admin who can still sign in; the row menu also **hides Deactivate and Delete
@@ -1673,17 +1674,17 @@ deliberately no corner-radius control (§3).
 Reference: none yet — add `docs/design/reference/26-login-*` when the capture
 script covers it (§19).
 
-- One route, `/login`, outside the shell entirely — no nav, no `PageBar`, no
-  Settings. It is the one screen in the product that is not one of the three
-  panes.
+- Two routes, `/login` and `/signup`, outside the shell entirely — no nav, no
+  `PageBar`, no Settings. They are the only screens in the product that are not
+  one of the three panes.
 - `.jv-auth` centres a single card on `--sidebar` (the app-shell ground, not
   the reading `--background`) — the only place the ground itself is the whole
   page. The card is `--card`, `--radius-lg`, `max-width: 22rem`.
-- **The login card is the second sanctioned use of `--shadow-overlay`** (§5
-  says "no shadow outside overlays" — this is the exception, not a violation).
-  A lone card on an otherwise bare screen reads as the one focal object the
-  same way a dialog does; nowhere else outside `components/ui/*` overlays
-  earns this.
+- **The authentication card is the second sanctioned use of
+  `--shadow-overlay`** (§5 says "no shadow outside overlays" — this is the
+  exception, not a violation). A lone card on an otherwise bare screen reads as
+  the one focal object the same way a dialog does; nowhere else outside
+  `components/ui/*` overlays earns this.
 - Brand mark, `.jv-display` heading ("Welcome back"), a one-line lede, then the
   form: email, password, a single `role="alert"` error line, one primary
   submit. Exactly one primary action, per §6.
@@ -1693,6 +1694,28 @@ script covers it (§19).
 - `returnTo` is carried in the `/login` route's search params and is where a
   successful sign-in navigates — so a session expiring mid-read returns the
   reader to the same Moment, not to the Timeline.
+- `/signup` carries the same safe, same-origin `returnTo`. Its card reuses the
+  authentication surface and adds name, email, password and password
+  confirmation. Client validation covers required values, email shape and
+  confirmation only. Because Journiv is self-hosted, signup intentionally
+  accepts any non-empty password and does not impose a strength policy.
+  Registration uses
+  `POST /auth/register`, then signs in through `POST /auth/login`, writes the
+  existing session abstraction and navigates to `returnTo`. If registration
+  succeeds but sign-in fails, the card says the account exists and links to
+  `/login`; it never encourages a duplicate registration attempt.
+- Signup errors are status-aware but never echo the raw response: duplicate or
+  invalid data (400), disabled signup (403), validation (422), rate limiting
+  (429), and unavailable/network failures each get a calm human sentence.
+- Both authentication routes read `GET /instance/config`. The login page only
+  renders "Create an account" after configuration confirms that
+  `disable_signup` is false. `/signup` fails closed while availability is
+  unknown; a true flag replaces the form with a "Sign up is disabled" state
+  explaining that an administrator can enable signup in the server
+  configuration and restart Journiv. A configuration read failure gets a retry
+  state and never exposes the form. The backend's first-user exception is not
+  exposed in the frontend: bootstrap requires starting the backend with signup
+  enabled.
 - No OIDC branch is built here yet. When one lands, it joins this section, not
   a new one — the login screen has exactly one spec regardless of how many
   ways there are to arrive at "signed in".
