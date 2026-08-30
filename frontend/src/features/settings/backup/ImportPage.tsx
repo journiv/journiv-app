@@ -31,6 +31,7 @@ export function ImportPage() {
     job.isError ||
     status === "failed" ||
     status === "cancelled";
+  const canStart = !jobId || failed;
   const warningCount = job.data?.warnings?.length ?? 0;
   return (
     <div className="jv-settings__body">
@@ -46,7 +47,7 @@ export function ImportPage() {
             onChange={(event) =>
               setSource(event.target.value as ImportSourceType)
             }
-            disabled={Boolean(jobId)}
+            disabled={!canStart}
           >
             {SOURCES.map((item) => (
               <option key={item.value} value={item.value}>
@@ -65,11 +66,11 @@ export function ImportPage() {
             type="file"
             accept=".zip,application/zip"
             onChange={(event) => setFile(event.target.files?.[0])}
-            disabled={Boolean(jobId)}
+            disabled={!canStart}
           />
         </SettingsRow>
       </SettingsSection>
-      {!jobId && (
+      {canStart && (
         <div className="jv-settings__actions">
           <Button
             variant="primary"

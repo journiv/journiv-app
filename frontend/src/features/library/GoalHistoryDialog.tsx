@@ -135,7 +135,12 @@ export function GoalHistoryDialog({
       description="Completion for each recent period."
       className="sm:max-w-lg"
     >
-      <div className="max-h-[60vh] overflow-y-auto">
+      <section
+        className="max-h-[60vh] overflow-y-auto"
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs a keyboard focus target.
+        tabIndex={0}
+        aria-label="Goal completion history"
+      >
         {logsResult.isLoading && <HistorySkeleton />}
 
         {logsResult.isError && (
@@ -185,7 +190,7 @@ export function GoalHistoryDialog({
             })}
           </ul>
         )}
-      </div>
+      </section>
 
       <div className="jv-dialog__actions">
         <DialogClose render={<Button>Close</Button>} />

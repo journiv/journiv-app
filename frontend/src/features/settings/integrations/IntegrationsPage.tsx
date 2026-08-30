@@ -1,5 +1,5 @@
 import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../../../api/client/api";
 import { queryKeys } from "../../../api/query/keys";
 import {
@@ -29,9 +29,15 @@ export function IntegrationsPage() {
   const [apiKey, setApiKey] = useState("");
   const [mode, setMode] = useState<"link_only" | "copy">("link_only");
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const serverMode = useRef<"link_only" | "copy" | undefined>(undefined);
+  serverMode.current = status.data?.import_mode;
+  const connectionId = status.data
+    ? `${status.data.provider}:${status.data.status}:${status.data.external_user_id ?? ""}:${status.data.connected_at ?? ""}`
+    : undefined;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Deliberately reset only for a new server connection, not a status refetch.
   useEffect(() => {
-    if (status.data?.import_mode) setMode(status.data.import_mode);
-  }, [status.data]);
+    if (serverMode.current) setMode(serverMode.current);
+  }, [connectionId]);
   const connected = status.data?.status === "connected";
   const dirty = connected ? mode !== status.data?.import_mode : Boolean(apiKey);
   useSettingsDirty(dirty);
@@ -62,6 +68,14 @@ export function IntegrationsPage() {
         title="Integrations couldn’t be loaded"
         description="Instance capabilities are unavailable."
         action={<Button onClick={() => config.refetch()}>Try again</Button>}
+      />
+    );
+  if (status.isError)
+    return (
+      <StatusView
+        title="Integration status couldn’t be loaded"
+        description="Check your connection and try again."
+        action={<Button onClick={() => status.refetch()}>Try again</Button>}
       />
     );
   if (!config.data?.immich_base_url)

@@ -55,7 +55,8 @@ export function GroupsManagerDialog({
   groups,
   initialGroup,
   busy,
-  failed,
+  saveFailed,
+  deleteFailed,
   onClose,
   onCreate,
   onUpdate,
@@ -67,7 +68,8 @@ export function GroupsManagerDialog({
   groups: LibraryGroup[];
   initialGroup?: LibraryGroup;
   busy: boolean;
-  failed: boolean;
+  saveFailed: boolean;
+  deleteFailed: boolean;
   onClose: () => void;
   onCreate: (body: LibraryGroupCreateInput) => Promise<void>;
   onUpdate: (id: string, body: LibraryGroupCreateInput) => Promise<void>;
@@ -86,7 +88,7 @@ export function GroupsManagerDialog({
       <GroupForm
         group={view.group}
         busy={busy}
-        failed={failed}
+        failed={saveFailed}
         itemPlural={plural}
         onCancel={() => setView({ kind: "list" })}
         onClose={onClose}
@@ -115,7 +117,7 @@ export function GroupsManagerDialog({
               {`${pluralCap} stay in your Library and are removed only from this group.`}
             </DialogDescription>
           </DialogHeader>
-          {failed && (
+          {deleteFailed && (
             <p className="jv-library__alert" role="alert">
               The group could not be deleted. Try again.
             </p>

@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { Textarea } from "../../../components/ui/textarea";
 import { exportThemeCss } from "../../theme/exportThemeCss";
@@ -36,6 +36,10 @@ export function PersonalizeSection() {
   const [importText, setImportText] = useState("");
   const [importNote, setImportNote] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAccentText(p.theme.light.primary ?? "");
+  }, [p.theme.light.primary]);
 
   const currentScale = p.theme.editorFontScale ?? 1;
   const currentRadius = p.theme.light.radius ?? "0.625rem";

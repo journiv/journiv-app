@@ -125,7 +125,13 @@ export function TimelinePage() {
             title="Moments could not be loaded"
             description="Check your connection and try again."
             action={
-              <Button variant="secondary" onClick={() => data.refetch()}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  void data.refetch();
+                  scope.refetch();
+                }}
+              >
                 Try again
               </Button>
             }

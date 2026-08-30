@@ -42,8 +42,12 @@ describe("Timeline day grouping", () => {
     expect(local[0].label).toBe("Today");
 
     // Same instant, logged somewhere else: the explicit date is shown instead.
+    const elsewhereTimezone =
+      viewerTimezone === "Pacific/Auckland"
+        ? "America/Los_Angeles"
+        : "Pacific/Auckland";
     const elsewhere = groupMomentsByDay(
-      [moment(today, "2026-08-17T18:00:00Z", "Asia/Tokyo")],
+      [moment(today, "2026-08-17T18:00:00Z", elsewhereTimezone)],
       now,
     );
     expect(elsewhere[0].label).not.toBe("Today");

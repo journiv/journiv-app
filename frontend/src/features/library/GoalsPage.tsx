@@ -603,11 +603,8 @@ export function GoalsPage() {
             updateCategory.isPending ||
             removeCategory.isPending
           }
-          failed={
-            createCategory.isError ||
-            updateCategory.isError ||
-            removeCategory.isError
-          }
+          saveFailed={createCategory.isError || updateCategory.isError}
+          deleteFailed={removeCategory.isError}
           onClose={() => setGroupsManager(undefined)}
           onCreate={async (body) => {
             await createCategory.mutateAsync({

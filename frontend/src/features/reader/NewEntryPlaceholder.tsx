@@ -4,17 +4,30 @@ import { Button } from "../../components/ui/button";
 
 export function NewEntryPlaceholder() {
   const { journalId } = useParams({ strict: false }) as { journalId?: string };
-  const { q = "" } = useSearch({ strict: false }) as { q?: string };
+  const {
+    q = "",
+    view,
+    month,
+    date,
+  } = useSearch({ strict: false }) as {
+    q?: string;
+    view?: "calendar" | "media";
+    month?: string;
+    date?: string;
+  };
   const navigate = useNavigate();
   const cancel = () => {
     if (journalId) {
       void navigate({
         to: "/journals/$journalId",
         params: { journalId },
-        search: { q },
+        search: { q, ...(view ? { view, month, date } : {}) },
       });
     } else {
-      void navigate({ to: "/timeline", search: { q } });
+      void navigate({
+        to: "/timeline",
+        search: { q, ...(view ? { view, month, date } : {}) },
+      });
     }
   };
 

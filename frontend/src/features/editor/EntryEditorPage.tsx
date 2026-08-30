@@ -211,7 +211,7 @@ export function EntryEditorPage() {
     return (
       <EditorLoadError
         retry={() => moment.refetch()}
-        draftIsSafe={recovery.state.phase !== "clear"}
+        draftIsSafe={recovery.state.phase === "offer"}
       />
     );
   if (moment.data?.entry && entry.isLoading) return <EditorSkeleton />;
@@ -219,7 +219,7 @@ export function EntryEditorPage() {
     return (
       <EditorLoadError
         retry={() => entry.refetch()}
-        draftIsSafe={recovery.state.phase !== "clear"}
+        draftIsSafe={recovery.state.phase === "offer"}
       />
     );
   if (journals.isLoading) return <EditorSkeleton />;
@@ -227,7 +227,7 @@ export function EntryEditorPage() {
     return (
       <EditorLoadError
         retry={() => journals.refetch()}
-        draftIsSafe={recovery.state.phase !== "clear"}
+        draftIsSafe={recovery.state.phase === "offer"}
       />
     );
 

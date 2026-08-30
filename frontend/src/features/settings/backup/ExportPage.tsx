@@ -5,8 +5,8 @@ import {
   exportDownloadQuery,
   exportJobQuery,
 } from "../../../api/query/options";
-import { Button } from "../../../components/ui/button";
 import { StatusView } from "../../../components/journiv/StatusView";
+import { Button } from "../../../components/ui/button";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 
 export function ExportPage() {
@@ -106,7 +106,10 @@ export function ExportPage() {
       )}
       {failed && (
         <p className="jv-settings__alert" role="alert">
-          The export couldn’t be completed. Try creating a new export.
+          The export couldn’t be completed.{" "}
+          <Button variant="ghost" size="sm" onClick={() => setJobId("")}>
+            Create a new export
+          </Button>
         </p>
       )}
     </div>

@@ -519,9 +519,8 @@ export function ActivitiesPage() {
             updateGroup.isPending ||
             removeGroup.isPending
           }
-          failed={
-            createGroup.isError || updateGroup.isError || removeGroup.isError
-          }
+          saveFailed={createGroup.isError || updateGroup.isError}
+          deleteFailed={removeGroup.isError}
           onClose={() => setGroupsManager(undefined)}
           onCreate={async (body) => {
             await createGroup.mutateAsync({ ...body, position: groups.length });

@@ -27,9 +27,11 @@ export function usePasswordForm() {
 
   const nextIssue = newPasswordIssue(fields.next);
   const confirmIssue =
-    fields.confirm.length > 0 && fields.confirm !== fields.next
-      ? "This doesn’t match the new password."
-      : null;
+    fields.confirm.length === 0
+      ? "Confirm your new password."
+      : fields.confirm !== fields.next
+        ? "This doesn’t match the new password."
+        : null;
   const currentIssue =
     fields.current.length === 0 ? "Enter your current password." : null;
   const valid =

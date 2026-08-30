@@ -135,7 +135,8 @@ function balancedParens(value: string): boolean {
 
 /** Rejects a value that could reference an external resource or break out of
  *  the declaration. Structure is lenient; names and values are strict. */
-function isSafeValue(value: string): boolean {
+/** Shared validation for imported, persisted, and rendered theme token values. */
+export function isSafeThemeValue(value: string): boolean {
   const v = value.trim();
   if (!v) return false;
   if (/[{}<>@\\;]/.test(v)) return false;
@@ -173,7 +174,7 @@ function readTokens(body: string, into: ThemeTokens, notes: string[]): void {
       continue;
     }
     if (!COLOR_VAR_SET.has(name)) continue; // unknown var — silently skip
-    if (!isSafeValue(rawValue)) {
+    if (!isSafeThemeValue(rawValue)) {
       notes.push(`Dropped --${name}: unsupported value.`);
       continue;
     }

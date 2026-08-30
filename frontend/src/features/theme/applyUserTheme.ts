@@ -1,10 +1,12 @@
 import { ensureFont, fontStack } from "./fonts";
+import { isSafeThemeValue } from "./parseThemeCss";
 import { isEmptyTheme, type ThemeTokens, type UserTheme } from "./types";
 
 const STYLE_ID = "journiv-user-theme";
 
 function declarations(tokens: ThemeTokens): string {
   return Object.entries(tokens)
+    .filter(([, value]) => isSafeThemeValue(value))
     .map(([name, value]) => `  --${name}: ${value};`)
     .join("\n");
 }

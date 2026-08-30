@@ -54,6 +54,8 @@ export type MomentScope = {
   isResolving: boolean;
   /** The list that names the scope failed to load. */
   isError: boolean;
+  /** Retry resolving the scoped entity after its lookup query fails. */
+  refetch: () => void;
 };
 
 /** The search params that carry an entity scope, in precedence order. */
@@ -132,6 +134,7 @@ export function useMomentScope(): MomentScope {
       emptyDescription: "Your timeline will fill up as you write.",
       isResolving: false,
       isError: false,
+      refetch: () => undefined,
     };
   }
 
@@ -152,6 +155,7 @@ export function useMomentScope(): MomentScope {
       emptyDescription: "Entries you write in this journal will appear here.",
       isResolving,
       isError,
+      refetch: () => void journals.refetch(),
     };
   }
 
@@ -184,6 +188,7 @@ export function useMomentScope(): MomentScope {
       emptyDescription: "Moments where you note this person will appear here.",
       isResolving,
       isError,
+      refetch: () => void people.refetch(),
     };
   }
 
@@ -201,6 +206,7 @@ export function useMomentScope(): MomentScope {
       emptyDescription: "Moments you give this tag will appear here.",
       isResolving,
       isError,
+      refetch: () => void tags.refetch(),
     };
   }
 
@@ -220,6 +226,7 @@ export function useMomentScope(): MomentScope {
       emptyDescription: "Moments logging this activity will appear here.",
       isResolving,
       isError,
+      refetch: () => void activities.refetch(),
     };
   }
 
@@ -239,6 +246,7 @@ export function useMomentScope(): MomentScope {
       emptyDescription: "Moments with this mood will appear here.",
       isResolving,
       isError,
+      refetch: () => void moods.refetch(),
     };
   }
 
@@ -259,5 +267,6 @@ export function useMomentScope(): MomentScope {
       "Moments a completed period of this goal is logged against will appear here.",
     isResolving,
     isError,
+    refetch: () => void goals.refetch(),
   };
 }

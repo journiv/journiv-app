@@ -1,10 +1,11 @@
+import { isSafeThemeValue } from "./parseThemeCss";
 import {
   type BundledFont,
+  COLOR_VAR_SET,
   EMPTY_USER_THEME,
   type ThemeTokens,
   type UserTheme,
 } from "./types";
-import { COLOR_VAR_SET } from "./types";
 
 const STORAGE_KEY = "journiv.userTheme";
 const FONT_IDS: ReadonlySet<string> = new Set(["dm-sans", "lora"]);
@@ -13,7 +14,7 @@ function safeTokens(value: unknown): ThemeTokens {
   if (!value || typeof value !== "object") return {};
   const out: ThemeTokens = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (COLOR_VAR_SET.has(k) && typeof v === "string") {
+    if (COLOR_VAR_SET.has(k) && typeof v === "string" && isSafeThemeValue(v)) {
       out[k as keyof ThemeTokens] = v;
     }
   }

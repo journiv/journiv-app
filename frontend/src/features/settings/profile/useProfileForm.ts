@@ -60,6 +60,8 @@ export function useProfileForm() {
     },
     onSuccess: async () => {
       setSaved(true);
+    },
+    onSettled: async () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: queryKeys.me }),
         qc.invalidateQueries({ queryKey: queryKeys.userSettings }),

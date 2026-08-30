@@ -251,6 +251,10 @@ export function PeoplePage() {
   const [groupsManager, setGroupsManager] = useState<{
     initialGroup?: PersonGroupWithPeopleResponse;
   }>();
+  const [pendingPhotoUpload, setPendingPhotoUpload] = useState<{
+    personId: string;
+    file: File;
+  }>();
 
   const refresh = async () => {
     await Promise.all([
@@ -270,12 +274,30 @@ export function PeoplePage() {
     }) => {
       const created = await api.createPerson(body);
       if (photo.kind === "set") {
-        await api.uploadPersonImage(created.id, photo.file);
+        try {
+          await api.uploadPersonImage(created.id, photo.file);
+        } catch {
+          return { created, pendingPhoto: photo.file };
+        }
       }
-      return created;
+      return { created };
     },
-    onSuccess: async () => {
+    onSuccess: async ({ created, pendingPhoto }) => {
       setPersonForm(undefined);
+      if (pendingPhoto) {
+        setPendingPhotoUpload({
+          personId: created.id,
+          file: pendingPhoto,
+        });
+      }
+      await refresh();
+    },
+  });
+  const retryPhotoUpload = useMutation({
+    mutationFn: ({ personId, file }: { personId: string; file: File }) =>
+      api.uploadPersonImage(personId, file),
+    onSuccess: async () => {
+      setPendingPhotoUpload(undefined);
       await refresh();
     },
   });
@@ -665,6 +687,20 @@ export function PeoplePage() {
         </div>
       </div>
 
+      {pendingPhotoUpload && (
+        <p className="jv-library__alert" role="alert">
+          The person was added, but their profile photo couldn’t be uploaded.{" "}
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={retryPhotoUpload.isPending}
+            onClick={() => retryPhotoUpload.mutate(pendingPhotoUpload)}
+          >
+            {retryPhotoUpload.isPending ? "Retrying…" : "Retry upload"}
+          </Button>
+        </p>
+      )}
+
       {personForm && (
         <PersonFormDialog
           state={personForm}
@@ -711,9 +747,8 @@ export function PeoplePage() {
             updateGroup.isPending ||
             removeGroup.isPending
           }
-          failed={
-            createGroup.isError || updateGroup.isError || removeGroup.isError
-          }
+          saveFailed={createGroup.isError || updateGroup.isError}
+          deleteFailed={removeGroup.isError}
           onClose={() => setGroupsManager(undefined)}
           onCreate={async (body) => {
             await createGroup.mutateAsync(body);
@@ -889,15 +924,19 @@ function PersonFormDialog({
             : photoCleared
               ? { kind: "clear" }
               : { kind: "keep" };
-          await onSubmit(
-            {
-              name: name.trim(),
-              nickname: nickname.trim() || null,
-              note: note.trim() || null,
-              group_ids: groupIds,
-            },
-            photo,
-          );
+          try {
+            await onSubmit(
+              {
+                name: name.trim(),
+                nickname: nickname.trim() || null,
+                note: note.trim() || null,
+                group_ids: groupIds,
+              },
+              photo,
+            );
+          } catch {
+            // Mutation state owns the on-screen failure.
+          }
         }}
       >
         <div className="jv-library-form__photo">
@@ -1032,7 +1071,11 @@ function ManagePeopleDialog({
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
-          await onSubmit(selected);
+          try {
+            await onSubmit(selected);
+          } catch {
+            // Mutation state owns the on-screen failure.
+          }
         }}
       >
         <fieldset className="jv-library-checklist jv-library-checklist--people">
@@ -1099,7 +1142,11 @@ function ManagePersonGroupsDialog({
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
-          await onSubmit(selected);
+          try {
+            await onSubmit(selected);
+          } catch {
+            // Mutation state owns the on-screen failure.
+          }
         }}
       >
         <GroupChecklist
@@ -1150,7 +1197,11 @@ function MergeDialog({
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
-          await onSubmit(target);
+          try {
+            await onSubmit(target);
+          } catch {
+            // Mutation state owns the on-screen failure.
+          }
         }}
       >
         <label>

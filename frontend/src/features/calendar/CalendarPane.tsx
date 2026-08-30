@@ -271,7 +271,7 @@ export function CalendarPane() {
                           <span
                             className="jv-calendar__thumb"
                             style={{
-                              backgroundImage: `url(${item.thumbnail_url})`,
+                              backgroundImage: `url("${CSS.escape(item.thumbnail_url)}")`,
                             }}
                             aria-hidden="true"
                           />
