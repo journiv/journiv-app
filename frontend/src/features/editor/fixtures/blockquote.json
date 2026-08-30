@@ -1,0 +1,6 @@
+{
+  "ops": [
+    { "insert": "A remembered line." },
+    { "insert": "\n", "attributes": { "blockquote": true } }
+  ]
+}

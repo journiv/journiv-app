@@ -1,0 +1,628 @@
+/* The writing surface.
+ *
+ * Reading and writing share `.jv-prose` and `EntryHeader`; the editor adds only
+ * the controls. Anything that changes prose typography belongs in prose.css so
+ * that both surfaces move together.
+ */
+
+.jv-editor {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--card);
+}
+
+.jv-editor__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.jv-editor__column {
+  width: 100%;
+  max-width: 47rem;
+  margin-inline: auto;
+  padding: var(--space-12) var(--reader-gutter) var(--space-16);
+}
+
+.jv-editor__column .jv-prose {
+  max-width: none;
+}
+
+/* The title wraps. An <input> cannot, which clipped long titles on mobile. */
+.jv-editor__title {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  resize: none;
+  overflow: hidden;
+  background: transparent;
+  color: var(--foreground);
+  font-family: inherit;
+}
+
+.jv-editor__title::placeholder {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.jv-editor__notice {
+  margin: calc(var(--space-4) * -1) 0 var(--space-6);
+}
+
+.jv-editor__journal {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-editor__journal select {
+  min-height: 32px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--popover);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+}
+
+.jv-editor__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted-foreground);
+  font-size: 0.78125rem;
+  font-weight: 500;
+}
+
+.jv-editor__surface {
+  min-height: 18rem;
+}
+
+.jv-editor__surface .ql-editor {
+  min-height: 18rem;
+}
+
+.jv-editor__upload-errors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.jv-editor__upload-error {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-surface);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.jv-editor__upload-error > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.jv-editor__error {
+  margin-top: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-surface);
+  color: var(--foreground);
+  font-size: 0.875rem;
+}
+
+/* The save the server refused. Shares the danger surface with the other
+   editor alerts, but keeps its own layout: it carries a decision, not just a
+   sentence, so the action sits on the row rather than under the text. */
+.jv-editor__conflict {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-surface);
+  color: var(--foreground);
+}
+
+.jv-editor__conflict > svg {
+  flex: none;
+  margin-top: 0.2em;
+  color: var(--destructive);
+}
+
+.jv-editor__conflict-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.jv-editor__conflict-body p {
+  margin: 0;
+}
+
+/* Narrow: the action drops below the sentence rather than squeezing it. */
+@media (width < 34rem) {
+  .jv-editor__conflict {
+    flex-wrap: wrap;
+  }
+
+  .jv-editor__conflict > button {
+    margin-inline-start: auto;
+  }
+}
+
+.jv-reader-content-warning {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.jv-reader-content-warning p {
+  margin: 0 0 var(--space-2);
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.jv-reader-plain-text {
+  white-space: pre-wrap;
+  color: var(--foreground);
+}
+
+/* Dropping files onto the writing surface. Quiet: it confirms the drop will
+   land here without turning the page into a target board. */
+.jv-editor__surface .ql-editor.is-drop-target {
+  border-radius: var(--radius-md);
+  outline: 2px dashed var(--primary);
+  outline-offset: var(--space-2);
+}
+
+/* ---- upload placeholder ------------------------------------------------
+   A file that is still uploading, shown where it will land. Deliberately quiet:
+   it is scaffolding, not content, and it disappears the moment the real media
+   arrives. Sized like inline media so the prose does not jump on replacement. */
+
+.jv-upload {
+  position: relative;
+  display: block;
+  margin: 1.4em 0;
+  padding: var(--space-3);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  text-align: center;
+  user-select: none;
+}
+
+.jv-upload__preview {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 48svh;
+  margin: 0 auto var(--space-3);
+  border-radius: var(--radius-sm);
+  object-fit: contain;
+  /* Dimmed while in flight so it reads as pending, not finished. */
+  opacity: 0.55;
+}
+
+.jv-upload__status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.jv-upload[data-state="failed"] {
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+}
+
+.jv-upload[data-state="failed"] .jv-upload__status {
+  color: var(--destructive);
+}
+
+.jv-upload[data-state="failed"] .jv-upload__preview {
+  opacity: 0.35;
+}
+
+/* ---- toolbar ----------------------------------------------------------- */
+
+.jv-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin: 0 0 var(--space-6);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+/* 30px visual box; IconButton keeps the >=44px hit area via its ::after. */
+.jv-toolbar [data-slot="button"] {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-xs);
+}
+
+.jv-toolbar [data-slot="button"][aria-pressed="true"] {
+  color: var(--primary);
+  background: var(--accent-surface);
+}
+
+/* Groups keep related controls together as the toolbar grows. */
+.jv-toolbar__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.jv-toolbar__divider {
+  flex: 0 0 1px;
+  align-self: stretch;
+  margin: var(--space-1) var(--space-1);
+  background: var(--border);
+}
+
+.jv-toolbar__count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 var(--space-2);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+/* The link dialog uses the shared `.jv-dialog` primitive — defined in
+   components/ui/ui.css (with its compact-width bottom-sheet override) since the
+   Journals feature now uses it too. See DESIGN.md §18. */
+
+/* ---- moment details popover ----------------------------------------------
+   Metadata editing (mood, location, weather, people, tags), opened from the
+   toolbar's Insert group. Its own scroll container — it is an overlay, not the
+   editor pane, so the "one scroll owner per pane" rule is not in play here. */
+
+.jv-details-positioner {
+  z-index: 41;
+  max-width: calc(100vw - var(--space-6));
+}
+
+.jv-details-popover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 22rem;
+  max-width: 100%;
+  max-height: min(30rem, calc(100vh - var(--space-16)));
+  padding: var(--space-4);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  color: var(--foreground);
+  box-shadow: var(--shadow-dialog);
+}
+
+.jv-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.jv-details__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-details__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.jv-details__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.jv-details__option[aria-pressed="true"] {
+  border-color: var(--accent-border);
+  background: var(--accent-surface);
+  color: var(--primary);
+}
+
+.jv-details__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.jv-details__row .jv-field {
+  min-height: 34px;
+  font-size: 0.875rem;
+}
+
+.jv-details__results {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.jv-details__result {
+  padding: 6px var(--space-2);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jv-details__result:hover {
+  background: var(--state-hover);
+}
+
+.jv-details__current {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.jv-details__current .jv-truncate {
+  flex: 1;
+}
+
+.jv-details__people {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 11rem;
+  overflow-y: auto;
+}
+
+.jv-details__person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 4px var(--space-1);
+  font-size: 0.8125rem;
+}
+
+.jv-details__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.jv-details__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px var(--space-2);
+  border-radius: var(--radius-xs);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.78125rem;
+  font-weight: 500;
+}
+
+.jv-details__error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 0.78125rem;
+}
+
+@media (max-width: 860px) {
+  .jv-details-popover {
+    width: min(22rem, calc(100vw - var(--space-6)));
+  }
+  .jv-details__row .jv-field {
+    font-size: 1rem;
+  }
+  .jv-editor__column {
+    padding-top: var(--space-6);
+    padding-bottom: max(var(--space-16), env(safe-area-inset-bottom));
+    padding-inline: max(var(--space-4), env(safe-area-inset-left))
+      max(var(--space-4), env(safe-area-inset-right));
+  }
+  /* Sticky within the existing single scroll owner. Keyboard-relative docking
+     is deliberately NOT attempted until real-device evidence requires it. */
+  .jv-toolbar {
+    top: 0;
+  }
+}
+
+/* The local draft status line sits where the "does not autosave" notice sat,
+   below the entry header, visible at every width. */
+.jv-editor__notice[role="alert"] {
+  color: var(--destructive);
+  font-weight: 500;
+}
+
+.jv-editor__notice[role="status"] {
+  color: var(--success);
+}
+
+/* A caveat inside a recovery prompt's description: a warning the reader must
+   take in before choosing, not a separate state. */
+.jv-draft-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+  background: var(--danger-surface);
+  color: var(--foreground);
+  text-align: left;
+}
+
+.jv-draft-warning svg {
+  flex: none;
+  margin-top: 0.15em;
+  color: var(--destructive);
+}
+
+/* The stored writing, shown when the editor cannot be opened for it. Scrolls
+   inside itself so a long draft cannot stretch the pane. */
+.jv-draft-excerpt {
+  width: min(100%, var(--reader-measure));
+  max-height: 12rem;
+  overflow-y: auto;
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  text-align: left;
+}
+
+.jv-draft-excerpt__text {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+/* ---- entry date & time control ------------------------------------------
+   The editable date line in `EntryHeader` (editor only; the reader keeps a
+   plain <p>). The trigger sits where the date text was and reads the same,
+   with a hover affordance and a small glyph. See DESIGN.md §14. */
+
+.jv-date-control__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  margin-inline-start: calc(var(--space-2) * -1);
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted-foreground);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
+}
+
+.jv-date-control__trigger:hover,
+.jv-date-control__trigger[data-popup-open] {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+
+.jv-date-control__trigger:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.jv-date-control__trigger svg {
+  flex: none;
+  color: var(--muted-foreground);
+}
+
+.jv-date-control__popover {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.jv-date-control__popover .jv-section-title {
+  margin: 0;
+}
+
+.jv-date-control__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-date-control__field .jv-label {
+  color: var(--muted-foreground);
+}
+
+/* react-day-picker + shadcn Calendar. Layout comes from the component's own
+   classes; this only supplies the frame and today/hover polish the token
+   bridge cannot express through utilities. */
+.jv-date-control__calendar {
+  padding: var(--space-1) var(--space-1) 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.jv-date-control__time {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+  color: var(--foreground);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+}
+
+.jv-date-control__time:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-color: var(--focus-ring);
+}
+
+.jv-date-control__zone {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-date-control__error {
+  margin: 0;
+  color: var(--destructive);
+}
+
+.jv-date-control__footer {
+  margin-top: calc(var(--space-1) * -1);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}

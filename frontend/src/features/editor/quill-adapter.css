@@ -1,0 +1,67 @@
+/* Quill -> Journiv adapter.
+ *
+ * This is the ONLY file in the product that may reference Quill's DOM.
+ * Everything else styles semantic elements through `.jv-prose`. If Journiv ever
+ * replaces its editor, this file is what gets rewritten.
+ *
+ * Quill ships `quill.core.css`, which resets block margins and applies its own
+ * padding, line-height and list indentation. The rules below neutralise those
+ * so that Journiv's prose typography is the single source of truth.
+ */
+
+/* Quill applies `ql-container` to the SAME element that carries `.jv-prose`,
+   so these selectors are compound, not descendant. `font-family`/`font-size`
+   are deliberately not reset here — prose.css owns them. */
+.jv-prose.ql-container {
+  border: 0;
+  height: auto;
+  font-family: inherit;
+}
+
+.jv-prose .ql-editor {
+  padding: 0;
+  height: auto;
+  min-height: 100%;
+  overflow: visible;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+  outline: 0;
+}
+
+/* Quill renders both bullet and ordered lists as <ol> with li[data-list] and
+   draws the marker from a .ql-ui pseudo-element, so list indentation has to be
+   corrected here rather than in prose.css. Quill's default is 3em. */
+.jv-prose.jv-prose .ql-editor ol {
+  padding-left: 0;
+}
+
+.jv-prose.jv-prose .ql-editor li {
+  padding-left: 1.4em;
+}
+
+.jv-prose.jv-prose .ql-editor li > .ql-ui::before {
+  margin-left: -1.4em;
+  margin-right: 0.3em;
+  width: 1.1em;
+  color: var(--muted-foreground);
+}
+
+.jv-prose .ql-editor.ql-blank::before {
+  left: 0;
+  right: 0;
+  color: var(--muted-foreground);
+  font-style: normal;
+  content: attr(data-placeholder);
+}
+
+/* The reader instance is inert: it must not look or behave like a text field. */
+.jv-prose--reader .ql-editor {
+  cursor: default;
+  white-space: pre-wrap;
+}
+
+.jv-prose--reader .ql-editor > *:last-child {
+  margin-bottom: 0;
+}

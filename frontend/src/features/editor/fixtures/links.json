@@ -1,0 +1,8 @@
+{
+  "ops": [
+    { "insert": "Journiv", "attributes": { "link": "https://journiv.com" } },
+    { "insert": " and " },
+    { "insert": "email", "attributes": { "link": "mailto:hello@journiv.com" } },
+    { "insert": ".\n" }
+  ]
+}

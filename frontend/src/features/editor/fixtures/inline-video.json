@@ -1,0 +1,7 @@
+{
+  "ops": [
+    { "insert": "The wind picked up as we packed away.\n" },
+    { "insert": { "video": "a83f0d14-5e62-4b90-8c77-1d2f6a9e3b45" } },
+    { "insert": "We stayed until it became dark.\n" }
+  ]
+}

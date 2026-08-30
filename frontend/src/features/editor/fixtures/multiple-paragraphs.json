@@ -1,0 +1,5 @@
+{
+  "ops": [
+    { "insert": "First paragraph.\n\nThird paragraph after a blank line.\n" }
+  ]
+}
