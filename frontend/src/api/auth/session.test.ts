@@ -5,7 +5,7 @@ describe("sessionStore", () => {
   beforeEach(() => sessionStorage.clear());
   it("rejects malformed or unsupported sessions", () => {
     sessionStorage.setItem(
-      "journiv.prototype.session.v1",
+      "journiv.session.v1",
       JSON.stringify({ version: 2, accessToken: "a" }),
     );
     expect(sessionStore.read()).toBeNull();

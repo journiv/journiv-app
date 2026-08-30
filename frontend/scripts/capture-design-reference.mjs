@@ -138,7 +138,7 @@ async function main() {
     });
     if (!response.ok) return "login failed: " + response.status;
     const tokens = await response.json();
-    sessionStorage.setItem("journiv.prototype.session.v1", JSON.stringify({
+    sessionStorage.setItem("journiv.session.v1", JSON.stringify({
       version: 1,
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
@@ -148,7 +148,7 @@ async function main() {
   if (signedIn !== "ok") throw new Error(String(signedIn));
 
   const moments = await evaluate(`(async () => {
-    const token = JSON.parse(sessionStorage.getItem("journiv.prototype.session.v1")).accessToken;
+    const token = JSON.parse(sessionStorage.getItem("journiv.session.v1")).accessToken;
     const auth = { Authorization: "Bearer " + token };
     const response = await fetch("/api/v1/moments?limit=50&include_empty=true", { headers: auth });
     const items = (await response.json()).items;
