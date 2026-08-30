@@ -1,6 +1,6 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -133,13 +133,25 @@ async function renderRoute(path: string) {
 const dateTrigger = () =>
   screen.getByRole("button", { name: /change entry date and time/i });
 
+// This integration test mounts the complete application router and editor.
+// During the full CI suite that can take longer than Testing Library's 1 s
+// default, even though the mocked requests resolve immediately.
+const findDateTrigger = () =>
+  screen.findByRole(
+    "button",
+    { name: /change entry date and time/i },
+    { timeout: 10_000 },
+  );
+
 async function pickDay(
   user: ReturnType<typeof userEvent.setup>,
   label: string,
 ) {
   await user.click(dateTrigger());
-  await screen.findByRole("grid"); // calendar is lazy-loaded on open
-  const day = screen
+  const calendar = await screen.findByRole("grid", {}, { timeout: 10_000 });
+  // Limit the search to the calendar. The page has other controls and the
+  // calendar can render neighbouring-month days with the same visible number.
+  const day = within(calendar)
     .getAllByRole("button")
     .find((button) => button.textContent?.trim() === label);
   if (!day) throw new Error(`no day button "${label}"`);
@@ -150,7 +162,7 @@ describe("editing an existing entry's date", () => {
   it("persists immediately, keeping the Moment's own timezone", async () => {
     const user = userEvent.setup();
     await renderRoute("/timeline/moment-1/edit");
-    await screen.findByRole("button", { name: /change entry date and time/i });
+    await findDateTrigger();
 
     await pickDay(user, "20");
 
@@ -174,6 +186,11 @@ describe("choosing a date for a new entry", () => {
     await user.type(title, "Backdated");
 
     await pickDay(user, "20");
+    // The date change is local for a new entry. Wait for React to commit it
+    // before the immediate save below reads `draftAt` in its mutation.
+    await waitFor(() =>
+      expect(dateTrigger().textContent).toMatch(/\b20,\s*\d{4}/),
+    );
     await user.click(screen.getByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(api.createMoment).toHaveBeenCalled());
