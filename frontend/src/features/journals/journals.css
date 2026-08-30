@@ -1,0 +1,247 @@
+/* The Journals management pane: create, rename, recolour, favourite, reorder,
+   archive and delete. A settings-shaped surface, so it uses a calm divided list
+   (rhythm + selection, not cards — DESIGN.md §5), roomier than a Timeline row. */
+
+.jv-journals__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+@media (max-width: 1100px) {
+  /* The PageBar already names the pane below desktop. */
+  .jv-journals__heading {
+    display: none;
+  }
+}
+
+/* The single scroll owner for this pane. */
+.jv-journals__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--space-2) var(--space-8);
+}
+
+@media (max-width: 860px) {
+  .jv-journals__scroll {
+    padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
+  }
+}
+
+.jv-jlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A row carries a divider and no radius — never both (DESIGN.md §5). */
+.jv-jrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+.jv-jrow + .jv-jrow {
+  border-top: 1px solid var(--border);
+}
+
+.jv-jrow:hover {
+  background: var(--state-hover);
+}
+
+.jv-jrow__link {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-3) var(--space-2);
+  color: inherit;
+  text-decoration: none;
+}
+
+.jv-jrow__glyph {
+  align-self: start;
+  margin-top: 2px;
+}
+
+.jv-jrow__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.jv-jrow__title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.jv-jrow__desc {
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.jv-jrow__stats {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  color: var(--muted-foreground);
+}
+
+/* The counts lead; "Last entry …" gets its own line so the date is never
+   clipped mid-word (DESIGN.md §5). Each line truncates on its own if it must. */
+.jv-jrow__last {
+  color: var(--muted-foreground);
+}
+
+.jv-jrow__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.jv-jrow__actions [data-slot="button"].is-active {
+  color: var(--primary);
+}
+
+.jv-jrow--skeleton {
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+}
+
+/* ---- archived disclosure --------------------------------------------------- */
+
+.jv-journals__archived {
+  margin-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+.jv-journals__archived-summary {
+  padding: var(--space-3) var(--space-4);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* The `⋯` action menu is the shared `.jv-menu*` overlay in journiv.css. */
+
+/* ---- create / edit form ----------------------------------------------- */
+
+.jv-jform {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.jv-jform__textarea {
+  min-height: 3rem;
+  padding: var(--space-2) var(--space-3);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.jv-jform__group {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.jv-jform__group legend {
+  padding: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.jv-jform__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.jv-jform__swatch {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--journal-accent, var(--muted));
+  cursor: pointer;
+}
+
+.jv-jform__swatch--none {
+  background: var(--muted);
+  border-color: var(--line-strong);
+  border-style: dashed;
+}
+
+.jv-jform__swatch:has(input:checked) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.jv-jform__swatch:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.jv-jform__icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.jv-jform__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--journal-accent, var(--muted-foreground));
+  background: var(--popover);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.jv-jform__icon--none {
+  color: var(--muted-foreground);
+}
+
+.jv-jform__icon:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--accent-surface);
+}
+
+.jv-jform__icon:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- delete confirmation --------------------------------------------- */
+
+.jv-jdelete {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.jv-jdelete label {
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
