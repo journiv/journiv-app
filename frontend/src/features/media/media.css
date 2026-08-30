@@ -1,0 +1,94 @@
+/* The media view of the list pane: every photo, video and audio clip the user
+   owns, grouped by month. A scannable index — tapping a tile opens the moment
+   in the reader, where the image is shown whole. */
+
+/* The single scroll owner for this pane. */
+.jv-media-grid__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--space-3) max(var(--space-8), env(safe-area-inset-bottom));
+}
+
+.jv-media-grid__group + .jv-media-grid__group {
+  margin-top: var(--space-4);
+}
+
+.jv-media-grid__month {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.jv-media-grid__tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+  gap: var(--space-1);
+}
+
+.jv-media-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-xs);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.jv-media-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.jv-media-tile:hover img {
+  opacity: 0.9;
+}
+
+.jv-media-tile.is-selected {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.jv-media-tile__glyph {
+  display: inline-flex;
+}
+
+.jv-media-tile__badge {
+  position: absolute;
+  right: var(--space-1);
+  bottom: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--overlay-scrim);
+  color: var(--text-on-overlay);
+}
+
+.jv-media-grid__more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4) 0 0;
+}
+
+@media (max-width: 860px) {
+  .jv-media-grid__scroll {
+    padding-inline: var(--space-2);
+  }
+  .jv-media-grid__tiles {
+    grid-template-columns: repeat(auto-fill, minmax(5rem, 1fr));
+  }
+}

@@ -1,0 +1,221 @@
+/* Administration → Users. A calm, responsive directory inside the existing
+   Settings scroll owner; the page does not add a nested scroll region. */
+
+.jv-users,
+.jv-users-form {
+  max-width: 46rem;
+}
+
+.jv-users__heading,
+.jv-users-form__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: var(--space-6);
+}
+
+.jv-users__heading .jv-settings-section__intro,
+.jv-users-form__heading p {
+  margin: var(--space-1) 0 0;
+  color: var(--muted-foreground);
+}
+
+.jv-users__heading [data-slot="button"] {
+  flex: 0 0 auto;
+}
+
+.jv-users__toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+.jv-users__toolbar [data-slot="input"] {
+  min-width: 0;
+}
+
+.jv-users__count {
+  margin: 0 0 0 auto;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.jv-users [data-slot="alert"] {
+  margin-bottom: var(--space-4);
+}
+
+/* Keep the shadcn container's horizontal scroll as a safety net on very
+   narrow viewports where a long name or provider still overflows. */
+.jv-users [data-slot="table-container"] {
+  overflow-x: auto;
+}
+
+.jv-users-table [data-slot="table-row"] {
+  min-height: var(--tap-target);
+}
+
+.jv-users-table__user-content {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  white-space: normal;
+}
+
+.jv-users__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--space-8);
+  height: var(--space-8);
+  border-radius: 50%;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-weight: 600;
+}
+
+.jv-users__identity,
+.jv-users-table__cell-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.jv-users__name {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.jv-users__email,
+.jv-users__providers,
+.jv-users__created {
+  color: var(--muted-foreground);
+}
+
+.jv-users__email,
+.jv-users__providers {
+  max-width: 17rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.jv-users-table__actions {
+  width: var(--tap-target);
+  text-align: right;
+}
+
+.jv-users-table__actions [data-slot="button"] {
+  margin-left: auto;
+}
+
+.jv-users__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.jv-users__pagination p {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-users__pagination > div {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.jv-users__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-users__skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: var(--tap-target);
+}
+
+.jv-users__skeleton-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-users-form__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 24rem;
+}
+
+.jv-users-form__select {
+  width: 100%;
+}
+
+.jv-users-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+@media (max-width: 860px) {
+  .jv-users-table__auth,
+  .jv-users-table__last {
+    display: none;
+  }
+}
+
+@media (max-width: 620px) {
+  .jv-users__heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-4);
+  }
+
+  .jv-users__heading [data-slot="button"] {
+    align-self: flex-start;
+  }
+
+  .jv-users__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .jv-users__toolbar [data-slot="input"] {
+    min-width: 0;
+  }
+
+  .jv-users__count {
+    margin-left: 0;
+  }
+
+  .jv-users-table__role {
+    display: none;
+  }
+
+  .jv-users-table {
+    table-layout: fixed;
+  }
+
+  .jv-users-table__status {
+    width: 5.5rem;
+  }
+
+  .jv-users-table__actions {
+    padding-inline: 0;
+  }
+
+  .jv-users__email {
+    max-width: 9rem;
+  }
+}
