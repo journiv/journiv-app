@@ -1,0 +1,213 @@
+/* The Timeline list pane. Browsing memories, not scanning a mailbox. */
+
+.jv-list-header {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+}
+
+.jv-list-header__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.jv-list-header__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex: 1;
+}
+
+/* The switch keeps its place when the large heading is hidden below 1100px. */
+.jv-list-header__switch {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* Below the desktop breakpoint the PageBar already names the scope, so the
+   large heading would just repeat it. */
+@media (max-width: 1100px) {
+  .jv-list-header__title {
+    display: none;
+  }
+}
+
+.jv-list-header__dot {
+  width: 10px;
+  height: 10px;
+}
+
+/* Leaves an entity scope (?person=…, ?tag=…, …) back to all moments. Shown at
+   every width — below 1100px the large heading is hidden but the PageBar still
+   only names the scope, with no way out of it. */
+.jv-scope-clear {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted-foreground);
+  font: inherit;
+}
+
+.jv-scope-clear:hover {
+  color: var(--foreground);
+}
+
+/* The single scroll owner for this pane. */
+.jv-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  padding: 0 var(--space-2) var(--space-8);
+}
+
+.jv-list__group + .jv-list__group {
+  margin-top: var(--space-4);
+}
+
+.jv-list__day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 var(--space-1);
+  padding: var(--space-2);
+  background: var(--background);
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.002em;
+}
+
+/* Rows have no dividers. Separation comes from rhythm and the selected state. */
+.jv-moment {
+  position: relative;
+  display: flex;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+  transition: background-color var(--duration-fast) var(--ease);
+}
+
+.jv-moment:hover {
+  background: var(--state-hover);
+}
+
+.jv-moment.is-selected {
+  background: var(--state-selected);
+}
+
+.jv-moment.is-selected::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: var(--space-2);
+  bottom: var(--space-2);
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--state-selected-rail);
+}
+
+.jv-moment__body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.jv-moment__lead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.jv-moment__pin {
+  color: var(--muted-foreground);
+}
+
+.jv-moment-title {
+  color: var(--foreground);
+}
+
+/* A Moment with no title shows its own content here, at body weight so that it
+   never masquerades as a title. */
+.jv-moment__prose {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--foreground);
+}
+
+.jv-moment .jv-meta-row {
+  margin-top: 2px;
+}
+
+.jv-moment__media {
+  position: relative;
+  flex: 0 0 auto;
+  width: 68px;
+  height: 68px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.jv-moment__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.jv-moment__media-count {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: var(--overlay-scrim);
+  color: var(--text-on-overlay);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.jv-moment--skeleton {
+  pointer-events: none;
+}
+
+.jv-moment--skeleton .jv-moment__body {
+  gap: var(--space-2);
+}
+
+.jv-list__more {
+  display: flex;
+  justify-content: center;
+  padding: var(--space-4) 0 0;
+}
+
+@media (max-width: 860px) {
+  .jv-list-header {
+    padding: var(--space-3) var(--space-4) var(--space-3);
+  }
+  .jv-list {
+    padding-inline: var(--space-2);
+    padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
+  }
+  .jv-moment__media {
+    width: 80px;
+    height: 80px;
+  }
+  /* Narrow rows get a tighter metadata budget than the `row` surface default.
+     Refining the budget in CSS avoids a JS breakpoint. */
+  .jv-moment .jv-meta-cell:nth-child(n + 3) {
+    display: none;
+  }
+}

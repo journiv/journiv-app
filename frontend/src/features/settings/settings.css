@@ -1,0 +1,534 @@
+/* Settings — a contextual overlay over Journiv (DESIGN.md §23).
+   Desktop: a large two-column modal. Compact: a full-screen routed flow.
+   One responsive Dialog; the layout switches in CSS, the routes do not. */
+
+.jv-settings-backdrop {
+  position: fixed;
+  z-index: 42;
+  inset: 0;
+  background: var(--surface-overlay);
+}
+
+.jv-settings-popup {
+  position: fixed;
+  z-index: 43;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--popover);
+  color: var(--foreground);
+}
+
+/* Desktop: centre a bounded workspace with generous margins. */
+@media (min-width: 1101px) {
+  .jv-settings-popup {
+    inset: 50% auto auto 50%;
+    width: min(1050px, calc(100vw - 2 * var(--space-8)));
+    height: min(780px, calc(100dvh - 2 * var(--space-8)));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-dialog);
+    transform: translate(-50%, -50%);
+  }
+}
+
+.jv-settings {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+}
+
+@media (min-width: 1101px) {
+  .jv-settings {
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas:
+      "topbar topbar"
+      "nav    content";
+  }
+}
+
+/* ---- top bar ------------------------------------------------------------- */
+/* The modal's header at every width: a flex sibling above the scroll owner,
+   never sticky (DESIGN.md §9). Exactly one close control. */
+
+.jv-settings__topbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  min-height: var(--bar-height);
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+@media (min-width: 1101px) {
+  .jv-settings__topbar {
+    grid-area: topbar;
+    padding-left: var(--space-6);
+  }
+}
+
+.jv-settings__title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+/* The back control is compact-only. Scoped to the topbar so it out-specifies
+   `[data-slot="button"] { display: inline-flex }` — `.jv-compact-only` alone ties on
+   specificity and loses on source order. */
+.jv-settings__topbar .jv-settings__back {
+  display: none;
+  margin-left: calc(var(--space-1) * -1);
+}
+
+@media (max-width: 1100px) {
+  .jv-settings__topbar .jv-settings__back {
+    display: inline-flex;
+  }
+}
+
+.jv-settings__close {
+  flex: 0 0 auto;
+}
+
+/* ---- navigation --------------------------------------------------------- */
+
+.jv-settings__nav {
+  display: none;
+}
+
+@media (min-width: 1101px) {
+  .jv-settings__nav {
+    grid-area: nav;
+    display: block;
+    overflow-y: auto;
+    padding: var(--space-4) var(--space-3);
+    border-right: 1px solid var(--border);
+    background: var(--sidebar);
+  }
+}
+
+.jv-settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.jv-settings-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Quiet hierarchy label — communicates real grouping, not a dashboard eyebrow
+   (DESIGN.md §4, §23). Sentence case, muted, no letterspacing. */
+.jv-settings-nav__label {
+  margin: 0 var(--space-2) var(--space-1);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.jv-settings-nav__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
+}
+
+.jv-settings-nav__item:hover {
+  color: var(--foreground);
+  background: var(--state-hover);
+}
+
+/* Selection: tint plus a rail, never colour alone (DESIGN.md §6). */
+.jv-settings-nav__item.is-selected {
+  color: var(--foreground);
+  background: var(--state-selected);
+  font-weight: 600;
+}
+
+.jv-settings-nav__item.is-selected::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--space-2) * -1);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 2px 2px 0;
+  background: var(--state-selected-rail);
+}
+
+/* Compact: the nav is a full-screen list with roomier rows. */
+@media (max-width: 1100px) {
+  .jv-settings__content .jv-settings-nav {
+    gap: var(--space-8);
+    padding: var(--space-4) var(--space-4) 0;
+  }
+  .jv-settings__content .jv-settings-nav__item {
+    min-height: var(--tap-target);
+    padding-inline: var(--space-2);
+    font-size: 0.9375rem;
+  }
+  .jv-settings__content .jv-settings-nav__item::after {
+    content: "";
+    position: absolute;
+    right: var(--space-2);
+    width: 7px;
+    height: 7px;
+    border-top: 1.5px solid var(--muted-foreground);
+    border-right: 1.5px solid var(--muted-foreground);
+    transform: rotate(45deg);
+  }
+}
+
+/* ---- content pane ----------------------------------------------------------- */
+
+.jv-settings__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--card);
+}
+
+@media (min-width: 1101px) {
+  .jv-settings__content {
+    grid-area: content;
+  }
+}
+
+/* The one scroll owner in the modal. The top bar is a flex sibling above it,
+   never sticky (DESIGN.md §9). */
+.jv-settings__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-6)
+    max(var(--space-8), env(safe-area-inset-bottom));
+}
+
+.jv-settings__body {
+  max-width: 46rem;
+}
+
+/* A short stacked form (password change) reads better with its actions aligned
+   to the fields rather than stranded at the far edge of the pane. */
+.jv-settings__body--narrow {
+  max-width: 26rem;
+}
+
+/* ---- sections and rows ------------------------------------------------------ */
+
+.jv-settings-section + .jv-settings-section {
+  margin-top: var(--space-12);
+}
+
+.jv-settings-section__title {
+  margin: 0 0 var(--space-1);
+}
+
+.jv-settings-section__intro {
+  margin: 0 0 var(--space-6);
+  color: var(--muted-foreground);
+}
+
+.jv-settings-section__divider {
+  height: 1px;
+  margin-bottom: var(--space-6);
+  background: var(--border);
+}
+
+/* Setting: label + description on the left, control on the right. Paper, not
+   panel — no box per row (DESIGN.md §5, §23). */
+.jv-settings-row {
+  display: grid;
+  gap: var(--space-1) var(--space-6);
+  padding: var(--space-4) 0;
+}
+
+.jv-settings-row + .jv-settings-row {
+  border-top: 1px solid var(--border);
+}
+
+@media (min-width: 620px) {
+  .jv-settings-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+    align-items: start;
+  }
+  .jv-settings-row__control {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
+.jv-settings-row__label {
+  margin: 0;
+  color: var(--foreground);
+}
+
+.jv-settings-row__description {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-settings-row__control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+/* Full-width fields still fill the column; buttons stay content-width. */
+.jv-settings-row__control .jv-field {
+  width: 100%;
+}
+
+.jv-settings-row__readonly {
+  margin: 0;
+  padding-top: 2px;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}
+
+/* ---- stacked form (password change) --------------------------------------- */
+
+.jv-settings-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 24rem;
+}
+
+.jv-settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-settings-field__hint {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-settings-field__error,
+.jv-settings__alert {
+  margin: 0;
+  color: var(--destructive);
+}
+
+.jv-settings__notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.jv-settings__success {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-md);
+  background: var(--accent-surface);
+  color: var(--foreground);
+}
+
+/* ---- actions ------------------------------------------------------------- */
+
+.jv-settings__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-8);
+}
+
+/* ---- identity block ---------------------------------------------------------- */
+
+.jv-settings__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding-bottom: var(--space-6);
+}
+
+.jv-settings__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.jv-settings__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.jv-settings__identity-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.jv-settings__identity-name {
+  margin: 0;
+  color: var(--foreground);
+}
+
+.jv-settings__identity-email {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+/* ---- loading / skeleton --------------------------------------------------- */
+
+.jv-settings__skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 24rem;
+}
+
+.jv-settings__skeleton-row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+/* A surface may pair a secondary action with its one primary (Integrations:
+   Disconnect + Connect). */
+.jv-settings__actions {
+  gap: var(--space-3);
+}
+
+.jv-settings__success p {
+  margin: 0;
+}
+
+/* ---- checkbox ---------------------------------------------------------------- */
+/* A plain control, sized so the visible box and its label together clear the
+   44px target (DESIGN.md §17). */
+.jv-settings-checkbox {
+  width: 18px;
+  height: 18px;
+  margin: var(--space-1) 0;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* ---- support link lists -------------------------------------------------- */
+
+.jv-settings-link-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jv-settings-link-list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.jv-settings-link-list a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+
+.jv-settings-link-list a:hover {
+  color: var(--foreground);
+}
+
+/* ---- personalization controls ---------------------------------------- */
+
+.jv-personalize__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.jv-personalize__swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: transform var(--duration-fast, 110ms) ease;
+}
+
+.jv-personalize__swatch:hover {
+  transform: scale(1.08);
+}
+
+.jv-personalize__swatch[aria-pressed="true"] {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.jv-personalize__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.jv-personalize__step {
+  min-width: 3.25rem;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  cursor: pointer;
+}
+
+.jv-personalize__step:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+
+.jv-personalize__step[aria-pressed="true"] {
+  border-color: var(--ring);
+  background: var(--accent-surface);
+  color: var(--primary);
+}
+
+.jv-personalize__import-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-2);
+}

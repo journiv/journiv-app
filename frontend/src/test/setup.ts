@@ -1,14 +1,31 @@
-import { cleanup } from "@testing-library/react";
 import "fake-indexeddb/auto";
+import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
+import { closeDraftDb } from "../features/editor/draftRepository";
 
 /**
  * jsdom ships no IndexedDB, and the editor keeps local drafts in one. Without
  * this every test would exercise only the "this browser will not store
  * anything" path, and the real behaviour would go unverified.
  */
-afterEach(() => {
+const realSetTimeout = globalThis.setTimeout;
+
+afterEach(async () => {
+  // Unmount first: leaving the editor flushes a draft, so a component still
+  // mounted would write a record after the database was cleared.
   cleanup();
+  await new Promise<void>((resolve) => {
+    realSetTimeout(resolve, 0);
+  });
+  // Close first: an open connection blocks `deleteDatabase`, which would then
+  // leave every record in place for the next test to trip over.
+  await closeDraftDb();
+  await new Promise<void>((resolve) => {
+    const request = indexedDB.deleteDatabase("journiv");
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+    request.onblocked = () => resolve();
+  });
 });
 
 const localValues = new Map<string, string>();

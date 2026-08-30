@@ -1,0 +1,266 @@
+/* Layout of the three panes, and the navigation rail. */
+
+.jv-shell {
+  height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns:
+    var(--nav-width)
+    minmax(var(--list-width-min), var(--list-width-max))
+    minmax(0, 1fr);
+  background: var(--sidebar);
+}
+
+@supports (height: 100dvh) {
+  .jv-shell {
+    height: 100dvh;
+  }
+}
+
+.jv-shell__nav {
+  min-width: 0;
+  overflow: hidden auto;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+}
+
+.jv-shell__list {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--background);
+  border-right: 1px solid var(--border);
+}
+
+.jv-shell__page {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--card);
+}
+
+/* ---- navigation -------------------------------------------------------- */
+
+.jv-nav {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: var(--space-4) var(--space-3) var(--space-3);
+}
+
+.jv-nav__brand {
+  padding: 0 var(--space-2);
+  margin-bottom: var(--space-4);
+  font-size: 1.0625rem;
+  font-weight: 680;
+  letter-spacing: -0.025em;
+}
+
+.jv-nav__new {
+  width: 100%;
+  margin-bottom: var(--space-4);
+}
+
+.jv-nav__group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.jv-nav__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  background: transparent;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color var(--duration-fast) var(--ease),
+    color var(--duration-fast) var(--ease);
+}
+
+.jv-nav__item:hover {
+  color: var(--foreground);
+  background: var(--state-hover);
+}
+
+/* Aligns the label with the journal rows above, whose leading colour dot
+   pushes their text to about the same offset. (`--space-5` is not a token.) */
+.jv-nav__item--nested {
+  padding-left: var(--space-8);
+}
+
+/* Selection is carried by colour AND a rail, never by colour alone. */
+.jv-nav__item.is-selected {
+  color: var(--foreground);
+  background: var(--state-selected);
+  font-weight: 600;
+}
+
+.jv-nav__item.is-selected::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--space-3) * -1);
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 18px;
+  border-radius: 0 2px 2px 0;
+  background: var(--state-selected-rail);
+}
+
+.jv-nav__item-dot {
+  margin: 0 3px;
+}
+
+.jv-nav__section {
+  margin: var(--space-6) var(--space-2) var(--space-2);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.jv-nav__loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-2);
+}
+
+.jv-nav__empty {
+  padding: 0 var(--space-2);
+}
+
+.jv-nav__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: auto;
+  padding-top: var(--space-6);
+}
+
+.jv-nav__account {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.jv-nav__account-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.jv-nav__account-text .jv-caption {
+  color: var(--muted-foreground);
+}
+
+/* ---- theme control ----------------------------------------------------- */
+
+.jv-theme-control {
+  display: grid;
+  margin: 0;
+  min-inline-size: 0;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
+.jv-theme-control__option {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  border: 0;
+  border-radius: calc(var(--radius-sm) - 3px);
+  color: var(--muted-foreground);
+  background: transparent;
+  cursor: pointer;
+}
+
+.jv-theme-control__option:hover {
+  color: var(--foreground);
+}
+
+.jv-theme-control__option.is-selected {
+  color: var(--foreground);
+  /* The raised surface alone carries the selected state. DESIGN.md §5: shadows
+     are for overlays, not for controls. */
+  background: var(--popover);
+}
+
+/* ---- drawer ------------------------------------------------------------ */
+
+.jv-drawer-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  background: var(--surface-overlay);
+}
+
+.jv-drawer {
+  position: fixed;
+  z-index: 31;
+  inset: 0 auto 0 0;
+  width: min(86vw, 300px);
+  overflow: hidden auto;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
+  box-shadow: var(--shadow-dialog);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.jv-drawer__close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 1;
+}
+
+/* ---- responsive -------------------------------------------------------- */
+
+@media (max-width: 1100px) {
+  .jv-shell {
+    grid-template-columns: minmax(var(--list-width-min), 380px) minmax(0, 1fr);
+  }
+  .jv-shell__nav {
+    display: none;
+  }
+}
+
+/* One task per screen. Browser history is the navigation. */
+@media (max-width: 860px) {
+  .jv-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .jv-shell:not(.is-detail) .jv-shell__page {
+    display: none;
+  }
+  .jv-shell.is-detail .jv-shell__list {
+    display: none;
+  }
+  .jv-shell__list,
+  .jv-shell__page {
+    border-right: 0;
+  }
+}
