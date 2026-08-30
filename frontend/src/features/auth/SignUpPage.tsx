@@ -15,7 +15,10 @@ import {
   FieldLabel,
 } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
+import { Separator } from "../../components/ui/separator";
 import { Spinner } from "../../components/ui/spinner";
+import { AuthCard } from "./AuthCard";
+import { OidcAction } from "./oidc";
 import "./auth.css";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -31,36 +34,6 @@ export function signUpErrorMessage(error: unknown): string {
   if (error.status === 429)
     return "Too many account creation attempts. Wait a moment and try again.";
   return "We couldn’t create your account. Try again.";
-}
-
-/** The shared authentication card. Every SignUpPage state renders through this
- *  so the brand mark, heading and lede stay identical across them (DESIGN §26,
- *  "exactly one spec"). */
-function AuthCard({
-  heading,
-  lede,
-  busy,
-  children,
-}: {
-  heading: string;
-  lede: React.ReactNode;
-  busy?: boolean;
-  children?: React.ReactNode;
-}) {
-  return (
-    <main className="jv-auth">
-      <div className="jv-auth__card" aria-busy={busy || undefined}>
-        <p className="jv-auth__brand">Journiv</p>
-        <h1 className="jv-display">{heading}</h1>
-        {typeof lede === "string" ? (
-          <p className="jv-auth__lede">{lede}</p>
-        ) : (
-          lede
-        )}
-        {children}
-      </div>
-    </main>
-  );
 }
 
 export function SignUpPage() {
@@ -178,7 +151,34 @@ export function SignUpPage() {
     );
   }
 
-  if (instanceConfig.data.disable_signup || instanceConfig.data.oidc_only) {
+  if (instanceConfig.data.oidc_only) {
+    return (
+      <AuthCard
+        heading="Create or access your account"
+        lede="This Journiv instance uses single sign-on. Your administrator controls whether your identity provider account can create a new Journiv account."
+      >
+        <OidcAction returnTo={returnTo} primary />
+      </AuthCard>
+    );
+  }
+
+  if (instanceConfig.data.disable_signup) {
+    if (instanceConfig.data.oidc_enabled) {
+      return (
+        <AuthCard
+          heading="Password sign up is disabled"
+          lede="You can still continue with single sign-on. Your administrator controls whether new Journiv accounts are created through the identity provider."
+        >
+          <OidcAction returnTo={returnTo} primary />
+          <p className="jv-auth__alternate jv-caption">
+            Already have an account?{" "}
+            <Link to="/login" search={{ returnTo }}>
+              Return to sign in
+            </Link>
+          </p>
+        </AuthCard>
+      );
+    }
     return (
       <AuthCard
         heading="Sign up is disabled"
@@ -317,6 +317,17 @@ export function SignUpPage() {
           {pending ? "Creating account…" : "Create account"}
         </Button>
       </form>
+
+      {instanceConfig.data.oidc_enabled && (
+        <>
+          <div className="jv-auth__divider">
+            <Separator aria-hidden="true" />
+            <span className="jv-caption">or</span>
+            <Separator aria-hidden="true" />
+          </div>
+          <OidcAction returnTo={returnTo} />
+        </>
+      )}
 
       <p className="jv-auth__alternate jv-caption">
         Already have an account?{" "}

@@ -9,6 +9,7 @@ import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import type {
   EntryResponse,
+  InstanceConfigResponse,
   JournalResponse,
   MomentPageResponse,
   MomentResponse,
@@ -29,11 +30,24 @@ vi.mock("../../api/client/api", () => ({
     createMoment: vi.fn(),
     updateMoment: vi.fn(),
     login: vi.fn(),
+    instanceConfig: vi.fn(),
     refresh: vi.fn(),
   },
 }));
 
 const now = "2026-08-24T08:30:00Z";
+const instanceConfig: InstanceConfigResponse = {
+  import_export_max_file_size_mb: 100,
+  max_file_size_mb: 50,
+  disable_signup: false,
+  oidc_enabled: false,
+  oidc_only: false,
+  plus: {
+    available: false,
+    tier: "member",
+    upgrade_url: "https://journiv.com/plus",
+  },
+};
 const user: UserResponse = {
   id: "user-1",
   email: "phase-b@example.com",
@@ -103,6 +117,7 @@ beforeEach(() => {
     refreshToken: "refresh",
   });
   vi.mocked(api.me).mockResolvedValue(user);
+  vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
   vi.mocked(api.journals).mockResolvedValue([journal, otherJournal]);
   vi.mocked(api.moods).mockResolvedValue([]);
   vi.mocked(api.moments).mockResolvedValue(page);

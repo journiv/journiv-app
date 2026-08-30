@@ -10,6 +10,7 @@ import { ApiError } from "../../api/client/errors";
 import { createAppQueryClient } from "../../app/queryClient";
 import { createAppRouter } from "../../app/router";
 import { signUpErrorMessage } from "./SignUpPage";
+import { oidcReturnToStore } from "./oidc";
 
 vi.mock("../../api/client/api", () => ({
   api: {
@@ -116,6 +117,65 @@ describe("SignUpPage", () => {
         "/timeline/moment-1?q=rain",
       );
     });
+  });
+
+  it("offers OIDC alongside password signup and preserves returnTo", async () => {
+    vi.mocked(api.instanceConfig).mockResolvedValue({
+      ...instanceConfig,
+      oidc_enabled: true,
+    });
+    await renderSignUp("/signup?returnTo=%2Ftimeline%2Fmoment-1");
+
+    expect(await screen.findByLabelText("Name")).toBeTruthy();
+    expect(screen.queryAllByRole("separator")).toHaveLength(0);
+    expect(screen.getAllByRole("separator", { hidden: true })).toHaveLength(2);
+    const oidc = screen.getByRole("link", {
+      name: "Continue with single sign-on",
+    });
+    expect(oidc.getAttribute("href")).toBe("/api/v1/auth/oidc/login");
+    oidc.addEventListener("click", (event) => event.preventDefault());
+    await userEvent.click(oidc);
+    expect(oidcReturnToStore.read()).toBe("/timeline/moment-1");
+  });
+
+  it("uses OIDC instead of a password form in OIDC-only mode", async () => {
+    vi.mocked(api.instanceConfig).mockResolvedValue({
+      ...instanceConfig,
+      disable_signup: true,
+      oidc_enabled: true,
+      oidc_only: true,
+    });
+    await renderSignUp();
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Create or access your account",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Continue with single sign-on" }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Name")).toBeNull();
+    expect(screen.queryByLabelText("Password")).toBeNull();
+  });
+
+  it("keeps OIDC available when only password signup is disabled", async () => {
+    vi.mocked(api.instanceConfig).mockResolvedValue({
+      ...instanceConfig,
+      disable_signup: true,
+      oidc_enabled: true,
+    });
+    await renderSignUp();
+
+    expect(
+      await screen.findByRole("heading", {
+        name: "Password sign up is disabled",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Continue with single sign-on" }),
+    ).toBeTruthy();
+    expect(screen.queryByLabelText("Name")).toBeNull();
   });
 
   it("normalizes supported fields, signs in, stores the session and returns", async () => {

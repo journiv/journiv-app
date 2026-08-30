@@ -66,6 +66,7 @@ import {
   loginApiV1AuthLoginPost,
   mergePeopleApiV1PeopleSourceIdMergeTargetIdPost,
   mergeTagsApiV1TagsSourceIdMergeTargetIdPost,
+  oidcExchangeApiV1AuthOidcExchangePost,
   refreshTokenApiV1AuthRefreshPost,
   registerApiV1AuthRegisterPost,
   removePersonProfileImageApiV1PeoplePersonIdProfileImageDelete,
@@ -147,6 +148,13 @@ export const api = {
     data(registerApiV1AuthRegisterPost({ ...options(), body })),
   login: (email: string, password: string) =>
     data(loginApiV1AuthLoginPost({ ...options(), body: { email, password } })),
+  oidcExchange: (ticket: string) =>
+    data(
+      oidcExchangeApiV1AuthOidcExchangePost({
+        ...options(),
+        body: { ticket },
+      }),
+    ),
   refresh: (refresh_token: string) =>
     data(
       refreshTokenApiV1AuthRefreshPost({
