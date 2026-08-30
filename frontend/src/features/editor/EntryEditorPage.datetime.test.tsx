@@ -185,6 +185,10 @@ describe("choosing a date for a new entry", () => {
     const title = await screen.findByLabelText("Entry title");
     await user.type(title, "Backdated");
 
+    // Typing creates the first local draft, which adds its id to the URL.
+    // Let that one-time router transition settle before changing `draftAt`.
+    // Subsequent draft writes reuse that id and cannot remount the editor.
+    await screen.findByText(/Saved locally/, {}, { timeout: 4_000 });
     await pickDay(user, "20");
     // The date change is local for a new entry. Wait for React to commit it
     // before the immediate save below reads `draftAt` in its mutation.
