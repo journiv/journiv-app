@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
   "files": {
-    "includes": ["**", "!dist", "!src/api/generated", "!openapi/openapi.json"]
+    "includes": [
+      "**",
+      "!dist",
+      "!src/api/generated",
+      "!openapi/openapi.json",
+      "!test-results",
+      "!playwright-report",
+      "!blob-report"
+    ]
   },
   "formatter": {
     "indentStyle": "space",
