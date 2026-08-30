@@ -1,0 +1,304 @@
+/* Tags-specific content inside the shared Library shells (DESIGN.md §24). The
+   list and detail *shells* (span-2 layout, header, breadcrumb bar, scroll
+   owner) live in `LibraryWorkspace` / `LibraryDetailView` + library.css; this
+   file styles only what is unique to Tags: the search / sort row, the insights
+   strip and its charts, the per-tag usage section, and the merge dialog. Tags
+   have no groups, colour or icon — the mark is a plain `#`. */
+
+/* ---- search + sort row --------------------------------------------------- */
+
+.jv-tags__controls {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin: var(--space-2) 0 var(--space-4);
+}
+
+.jv-tags__search {
+  flex: 1;
+  min-width: 0;
+}
+
+.jv-tags__sort .jv-field {
+  width: auto;
+}
+
+/* ---- insights strip ---------------------------------------------------- */
+
+.jv-tag-insights {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.jv-tag-insights__plus {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.jv-tag-insights__note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--muted-foreground);
+}
+
+.jv-tag-insights__note a {
+  color: var(--primary);
+}
+
+/* ---- stat tiles ------------------------------------------------------------ */
+
+.jv-tag-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.jv-tag-stats__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.jv-tag-stats__tile dt {
+  color: var(--muted-foreground);
+}
+
+.jv-tag-stats__value {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 520px) {
+  .jv-tag-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ---- distribution bars --------------------------------------------------- */
+
+.jv-tag-bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.jv-tag-bars__row {
+  display: grid;
+  grid-template-columns: 3.5rem 1fr 2rem;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-tag-bars__label {
+  color: var(--muted-foreground);
+  text-align: right;
+}
+
+.jv-tag-bars__track {
+  height: 0.5rem;
+  border-radius: var(--radius-xs);
+  background: var(--muted);
+  overflow: hidden;
+}
+
+.jv-tag-bars__fill {
+  display: block;
+  height: 100%;
+  min-inline-size: 2px;
+  border-radius: var(--radius-xs);
+  background: var(--chart-1);
+}
+
+.jv-tag-bars__value {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- sparkline --------------------------------------------------------- */
+
+.jv-tag-spark {
+  margin: 0;
+}
+
+.jv-tag-spark__svg {
+  display: block;
+  width: 100%;
+  height: 3rem;
+}
+
+.jv-tag-spark__axis {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  color: var(--muted-foreground);
+}
+
+/* ---- per-tag detail content ------------------------------------------------ */
+
+.jv-tag-detail__sub {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-tag-detail__section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.jv-tag-detail__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.jv-tag-detail__range .jv-field {
+  width: auto;
+}
+
+.jv-tag-detail__viewall {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.jv-tag-detail__viewall:hover {
+  text-decoration: underline;
+}
+
+.jv-tag-detail__analytics {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.jv-tag-detail__empty {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-tag-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.jv-tag-facts__row {
+  display: grid;
+  gap: 2px;
+}
+
+.jv-tag-facts__row dt {
+  color: var(--muted-foreground);
+}
+
+.jv-tag-facts__row dd {
+  margin: 0;
+  color: var(--foreground);
+}
+
+/* ---- moments preview ------------------------------------------------------- */
+
+.jv-tag-moments {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.jv-tag-moments__row + .jv-tag-moments__row {
+  border-top: 1px solid var(--border);
+}
+
+.jv-tag-moments__link {
+  display: grid;
+  gap: 2px;
+  padding: var(--space-3) var(--space-2);
+  border-radius: var(--radius-sm);
+  color: inherit;
+  text-decoration: none;
+}
+
+a.jv-tag-moments__link:hover {
+  background: var(--state-hover);
+}
+
+.jv-tag-moments__date {
+  color: var(--muted-foreground);
+}
+
+.jv-tag-moments__text {
+  color: var(--foreground);
+}
+
+/* ---- merge dialog ------------------------------------------------------- */
+
+.jv-tag-merge {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.jv-tag-merge__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 16rem;
+  overflow: hidden auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.jv-tag-merge__option {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.jv-tag-merge__option:hover {
+  background: var(--state-hover);
+}
+
+.jv-tag-merge__name {
+  flex: 1;
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.jv-tag-merge__empty {
+  margin: 0;
+  padding: var(--space-3);
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 640px) {
+  .jv-tags__controls {
+    flex-wrap: wrap;
+  }
+
+  .jv-tags__sort,
+  .jv-tags__sort .jv-field {
+    width: 100%;
+  }
+}

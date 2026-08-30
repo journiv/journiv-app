@@ -1,0 +1,596 @@
+/* First-class Library workspaces use the shell's two content columns as one
+   calm management surface. A future person detail route can split this area
+   without coupling the rows to dialog-only CRUD. The row and identity-mark
+   primitives (`LibraryRow`, `EntityGlyph`) and the `⋯` menu live in
+   components/journiv so Tags, Moods and Activities inherit them. */
+.jv-library {
+  grid-column: span 2;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--card);
+}
+
+/* Header and scrolling body share one measure and one left edge, so the
+   heading, search field and group list all line up. The header (with the one
+   primary action) sits above the scroll owner and stays put; matches Journals
+   (§22). */
+.jv-library__header,
+.jv-library__body {
+  width: 100%;
+  max-width: 52rem;
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+}
+
+.jv-library__header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding-block: var(--space-8) var(--space-4);
+}
+
+.jv-library__headings {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-library__intro {
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-library__actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* The single scroll owner for this pane. */
+.jv-library__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+}
+
+.jv-library__body {
+  padding-bottom: max(var(--space-16), env(safe-area-inset-bottom));
+}
+
+.jv-library__body .jv-search-wrap {
+  margin-block: var(--space-2) var(--space-6);
+}
+
+/* ---- detail view (push navigation) ---------------------------------------
+   Opening a Library item swaps the workspace for `LibraryDetailView` on the
+   same span-2 area (DESIGN.md §24). A breadcrumb bar is the title and the way
+   back at every width; it is a flex sibling above the one scroll owner, never
+   sticky over content (§9). */
+
+.jv-library__bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--bar-height);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.jv-library__crumb {
+  min-width: 0;
+}
+
+.jv-library__bar-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-library__body--detail {
+  padding-block: var(--space-6);
+  display: grid;
+  gap: var(--space-8);
+}
+
+@media (max-width: 860px) {
+  .jv-library__bar {
+    flex-wrap: wrap;
+    padding-block: var(--space-3);
+  }
+
+  .jv-library__body--detail {
+    padding-inline: var(--space-4);
+  }
+}
+
+/* ---- directory sections -------------------------------------------------
+   Each group is a section: colour dot, sentence-case name, a hairline rule,
+   the server count, then an airy grid of people. Whitespace and one rule do
+   the grouping — no boxes, no rail (DESIGN.md §5, §24). The same dot + rule +
+   count device that Journal management uses (§22). */
+
+.jv-lib-dir {
+  margin-top: var(--space-2);
+}
+
+.jv-lib-section {
+  padding-block: var(--space-2);
+}
+
+.jv-lib-section + .jv-lib-section {
+  margin-top: var(--space-6);
+}
+
+/* Three tracks: [ chevron · glyph · name · rule ] [ count ] [ ⋯ slot ].
+   Track 3 is a fixed width whether or not the section has an overflow menu, so
+   the count sits on the same right edge in every section regardless of name
+   length or whether a menu is present. */
+.jv-lib-section__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto var(--space-8);
+  align-items: center;
+  column-gap: var(--space-2);
+}
+
+.jv-lib-section__toggle {
+  display: flex;
+  min-width: 0;
+  min-height: var(--tap-target);
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  color: var(--foreground);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.jv-lib-section__toggle:hover {
+  background: var(--state-hover);
+}
+
+.jv-lib-section__chevron {
+  flex: 0 0 auto;
+  color: var(--muted-foreground);
+}
+
+.jv-lib-section__name {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.jv-lib-section--quiet .jv-lib-section__name {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.jv-lib-section__rule {
+  flex: 1;
+  min-width: var(--space-4);
+  height: 1px;
+  background: var(--border);
+}
+
+.jv-lib-section__count {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  justify-self: end;
+}
+
+.jv-lib-section__head [data-slot="button"] {
+  justify-self: end;
+}
+
+.jv-lib-section__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Goal rows carry cadence, direction, progress and an optional linked activity;
+   one row per line keeps that API metadata readable instead of truncating it in
+   the denser People / Activities grid. */
+.jv-lib-section__grid--goals {
+  grid-template-columns: 1fr;
+}
+
+.jv-lib-section__empty {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-2) 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.jv-lib-dir__nomatch {
+  padding-top: var(--space-6);
+}
+
+/* ---- person avatar (LibraryRow leading slot) ----------------------- */
+
+.jv-library-person__avatar {
+  display: inline-flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.jv-library-person__initials {
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  background: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 650;
+}
+
+/* ---- dialogs (person form, name, checklists, groups manager) -------- */
+
+.jv-library-form {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.jv-library-form > label {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+/* Goal form: paired selects (group, activity, direction, frequency, target,
+   reminder) sit two-up on the reading measure and collapse to one column on
+   compact widths. */
+.jv-library-form__columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+.jv-library-form__columns > label {
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.jv-library-form__error {
+  color: var(--destructive);
+  font-size: 0.75rem;
+  font-weight: 450;
+}
+
+.jv-library-form__hint {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* Wins over the `.jv-library-form > label` grid rule at equal specificity by
+   coming later in the file — the checkbox sits inline with its text, not
+   stacked. */
+.jv-library-form > .jv-library-form__check {
+  display: flex;
+  min-height: var(--tap-target);
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-block: var(--space-1);
+}
+
+.jv-library-form__check input {
+  margin-top: var(--space-1);
+}
+
+.jv-library-form__check > span {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.jv-library-form__check strong {
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.jv-library-form__check small {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.jv-library-form__note {
+  min-height: 5rem;
+  padding: var(--space-2) var(--space-3);
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.jv-library-form__photo {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.jv-library-form__photo-preview {
+  display: inline-flex;
+  width: 4rem;
+  height: 4rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  font-size: 1rem;
+  font-weight: 650;
+  object-fit: cover;
+}
+
+.jv-library-form__photo-actions {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.jv-library-checklist {
+  display: grid;
+  max-height: 14rem;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  overflow: hidden auto;
+  border: 0;
+}
+
+.jv-library-checklist legend {
+  margin-bottom: var(--space-2);
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.jv-library-checklist label {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 0 var(--space-2);
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+
+.jv-library-checklist label:hover {
+  background: var(--state-hover);
+}
+
+.jv-library-checklist--people {
+  border-block: 1px solid var(--border);
+  padding-block: var(--space-2);
+}
+
+.jv-library__alert {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 0.8125rem;
+}
+
+/* Groups manager: one dialog, three views (list / form / delete). */
+.jv-groups-manager {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.jv-groups-manager__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.jv-groups-manager__row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.jv-groups-manager__name {
+  min-width: 0;
+  color: var(--foreground);
+  font-size: 0.875rem;
+  font-weight: 550;
+}
+
+.jv-groups-manager__count {
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+/* Always visible: a management dialog is a focused surface where the edit and
+   delete controls should be obvious, not hover-revealed like a list row. */
+.jv-groups-manager__row-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.jv-groups-manager__empty {
+  margin: 0;
+  padding: var(--space-3) 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.jv-groups-manager__add {
+  justify-self: start;
+  margin-top: var(--space-1);
+}
+
+.jv-groups-manager__back {
+  justify-self: start;
+  margin-bottom: var(--space-1);
+}
+
+.jv-groups-form__group {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.jv-groups-form__group legend {
+  padding: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 550;
+}
+
+.jv-groups-form__swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.jv-groups-form__swatch {
+  display: inline-block;
+  width: 26px;
+  height: 26px;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: var(--entity-accent, var(--muted));
+  cursor: pointer;
+}
+
+.jv-groups-form__swatch--none {
+  background: var(--muted);
+  border-color: var(--line-strong);
+  border-style: dashed;
+}
+
+.jv-groups-form__swatch:has(input:checked) {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.jv-groups-form__swatch:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.jv-groups-form__icons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.jv-groups-form__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xs);
+  color: var(--entity-accent, var(--muted-foreground));
+  background: var(--popover);
+  cursor: pointer;
+}
+
+.jv-groups-form__icon--none {
+  color: var(--muted-foreground);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.jv-groups-form__icon:has(input:checked) {
+  border-color: var(--primary);
+  background: var(--accent-surface);
+}
+
+.jv-groups-form__icon:has(input:focus-visible) {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+@media (max-width: 1100px) {
+  /* The PageBar already names the pane below desktop. */
+  .jv-library__heading,
+  .jv-library__intro {
+    display: none;
+  }
+
+  .jv-library__header {
+    padding-bottom: var(--space-2);
+  }
+}
+
+@media (max-width: 860px) {
+  .jv-library {
+    grid-column: span 1;
+  }
+
+  .jv-library__header {
+    align-items: stretch;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding-block: var(--space-4) var(--space-2);
+  }
+
+  .jv-library__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* A lone action (e.g. Tags with nothing to clean up) fills the row rather
+     than sitting at half width. */
+  .jv-library__actions:not(:has(> * + *)) {
+    grid-template-columns: 1fr;
+  }
+
+  .jv-library__actions [data-slot="button"] {
+    width: 100%;
+  }
+
+  /* One person per row below the two-pane breakpoint. */
+  .jv-lib-section__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .jv-library-form__columns {
+    grid-template-columns: 1fr;
+  }
+}
