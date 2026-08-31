@@ -37,7 +37,7 @@ export function StatusView({
       {icon && (
         <span
           className={cn(
-            "mb-1 inline-flex size-11 items-center justify-center rounded-xl",
+            "mb-1 inline-flex size-11 items-center justify-center rounded-lg",
             tone === "danger"
               ? "bg-destructive/10 text-destructive"
               : "bg-muted text-muted-foreground",
@@ -47,9 +47,7 @@ export function StatusView({
           {icon}
         </span>
       )}
-      <p className="text-[0.9375rem] font-semibold text-balance text-foreground">
-        {title}
-      </p>
+      <p className="jv-section-title text-balance text-foreground">{title}</p>
       {description && (
         <p className="text-sm leading-normal text-pretty text-muted-foreground">
           {description}

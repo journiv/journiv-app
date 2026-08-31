@@ -82,7 +82,7 @@
   gap: var(--space-3);
   min-height: var(--bar-height);
   padding: var(--space-2) var(--space-4);
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
 }
 
 .jv-library__crumb {

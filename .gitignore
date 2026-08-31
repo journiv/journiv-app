@@ -235,6 +235,8 @@ pytest-results-*.xml
 
 # frontend
 frontend/.claude/
+# Screenshot of UI for visual regression testing
+frontend/docs/design/reference
 
 # ===============================================================
 # END OF FILE

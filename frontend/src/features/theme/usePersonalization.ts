@@ -28,13 +28,6 @@ export function usePersonalization() {
     [theme, commit],
   );
 
-  const setRadius = useCallback(
-    (value: string) => {
-      commit({ ...theme, light: { ...theme.light, radius: value } });
-    },
-    [theme, commit],
-  );
-
   const setSystemFont = useCallback(
     (value: BundledFont) => commit({ ...theme, systemFont: value }),
     [theme, commit],
@@ -71,7 +64,6 @@ export function usePersonalization() {
   return {
     theme,
     setAccent,
-    setRadius,
     setSystemFont,
     setEditorFont,
     setEditorFontScale,

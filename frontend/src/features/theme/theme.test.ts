@@ -102,7 +102,7 @@ describe("parseThemeCss — leniency and safety", () => {
 describe("applyUserTheme", () => {
   const theme: UserTheme = {
     version: 1,
-    light: { primary: "oklch(0.5 0.2 20)", radius: "0.75rem" },
+    light: { primary: "oklch(0.5 0.2 20)", border: "oklch(0.9 0 0)" },
     dark: { primary: "oklch(0.7 0.2 20)" },
     systemFont: "lora",
     editorFont: "dm-sans",
@@ -116,7 +116,7 @@ describe("applyUserTheme", () => {
     const css = el?.textContent ?? "";
     expect(css).toContain(":root {");
     expect(css).toContain("--primary: oklch(0.5 0.2 20);");
-    expect(css).toContain("--radius: 0.75rem;");
+    expect(css).toContain("--border: oklch(0.9 0 0);");
     expect(css).toContain(".dark {");
     expect(css).toContain("--prose-font-scale: 1.1;");
     expect(css).toMatch(/--font-sans: "Lora Variable"/);

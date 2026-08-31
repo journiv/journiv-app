@@ -57,13 +57,14 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Radius scale. `--radius-xs` is a Journiv extra; the rest are what the
-     base-vega components reference. */
-  --radius-xs: calc(var(--radius) - 4px);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  /* Radius scale: literal tokens from tokens.css (DESIGN.md §3), aliased here
+     so Tailwind's `rounded-*` utilities resolve to them. Never calc(). There
+     is no `--radius-xl` step — a component that needs the largest radius
+     uses `rounded-lg`. */
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
 }
 
 @layer base {
