@@ -6,7 +6,7 @@
  *  injected session actually signs the app in. If that test fails after a
  *  refactor, this constant is the first thing to check.
  */
-export const SESSION_STORAGE_KEY = "journiv.prototype.session.v1";
+export const SESSION_STORAGE_KEY = "journiv.session.v1";
 
 export interface JournivWorkerUser {
   name: string;

@@ -6,7 +6,7 @@ export type AuthSession = {
 
 type SessionListener = (session: AuthSession | null) => void;
 
-const key = "journiv.prototype.session.v1";
+const key = "journiv.session.v1";
 const listeners = new Set<SessionListener>();
 
 function notify(session: AuthSession | null) {
