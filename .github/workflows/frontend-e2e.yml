@@ -106,7 +106,7 @@ jobs:
       # P0/P1 set rather than adding a second job.
       - name: Run Playwright smoke suite
         working-directory: frontend
-        run: npm run test:e2e:smoke
+        run: npm run test:e2e
 
       - name: Upload Playwright report
         if: failure()
