@@ -1676,12 +1676,13 @@ deliberately no corner-radius control (§3).
 Reference: none yet — add `docs/design/reference/26-login-*` when the capture
 script covers it (§19).
 
+
 Enforced: `e2e/smoke/auth.spec.ts` (route guard, sign-in, session), plus the
 `AUTH-*` rows in `e2e/TEST_PLAN.md` for the rest of this section's behaviour.
 
-- Two routes, `/login` and `/signup`, outside the shell entirely — no nav, no
-  `PageBar`, no Settings. They are the only screens in the product that are not
-  one of the three panes.
+- Three routes, `/login`, `/signup`, and `/oidc-finish`, outside the shell
+  entirely — no nav, no `PageBar`, no Settings. They are the only screens in
+  the product that are not one of the three panes.
 - `.jv-auth` centres a single card on `--sidebar` (the app-shell ground, not
   the reading `--background`) — the only place the ground itself is the whole
   page. The card is `--card`, `--radius-lg`, `max-width: 22rem`.
@@ -1721,6 +1722,25 @@ Enforced: `e2e/smoke/auth.spec.ts` (route guard, sign-in, session), plus the
   state and never exposes the form. The backend's first-user exception is not
   exposed in the frontend: bootstrap requires starting the backend with signup
   enabled.
-- No OIDC branch is built here yet. When one lands, it joins this section, not
-  a new one — the login screen has exactly one spec regardless of how many
-  ways there are to arrive at "signed in".
+- OIDC is part of the same authentication surface. When `oidc_enabled` is true,
+  mixed-mode login and signup show the password form first, then a quiet `or`
+  separator and one outline “Continue with single sign-on” action. When
+  `oidc_only` is true, the form is absent and that action is the single primary
+  action. If password signup alone is disabled, signup remains available through
+  OIDC and explains that account provisioning is administrator-controlled.
+- The OIDC action is a normal browser link to `GET /auth/oidc/login`, because
+  the identity-provider redirect must navigate the top-level page. Before
+  leaving, it stores the validated same-origin `returnTo` in session storage.
+  `/oidc-finish` accepts the callback's one-time `ticket`, sends it exactly once
+  to `POST /auth/oidc/exchange`, writes the existing session abstraction, clears
+  the stored destination, and replaces the route with `returnTo`. Missing,
+  expired, reused, and malformed tickets show one generic recovery state and
+  never expose backend detail.
+- Instance configuration does not expose an OIDC provider display name or
+  whether automatic provisioning is enabled. The UI therefore uses the generic
+  “single sign-on” label and does not promise that continuing will create an
+  account; signup copy assigns that policy to the administrator.
+- At widths up to 860px, the authentication card is top-aligned with the mobile
+  page inset and reduced padding so forms remain usable with the on-screen
+  keyboard. Its width, tokens, states, and action hierarchy otherwise remain the
+  same in light and dark themes.

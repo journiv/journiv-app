@@ -4,7 +4,7 @@ import { toApiError } from "./errors";
 
 let refreshing: Promise<string | null> | undefined;
 
-function apiBaseUrl() {
+export function apiBaseUrl() {
   return import.meta.env.VITE_API_BASE_URL ?? "";
 }
 

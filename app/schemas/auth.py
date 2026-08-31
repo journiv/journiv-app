@@ -3,7 +3,7 @@ Authentication schemas.
 """
 from typing import Optional
 
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, Field, validator
 
 
 class Token(BaseModel):
@@ -24,6 +24,14 @@ class LoginResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: dict
+
+
+class OidcTicketExchangeRequest(BaseModel):
+    """One-time ticket returned to the SPA after an OIDC callback."""
+
+    # Missing/blank/non-string -> 422 (request validation); a well-formed but
+    # unknown or expired ticket -> 400, raised by the endpoint itself.
+    ticket: str = Field(min_length=1)
 
 
 class TokenData(BaseModel):

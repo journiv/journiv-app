@@ -52,6 +52,19 @@
   gap: var(--space-4);
 }
 
+.jv-auth__divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  color: var(--muted-foreground);
+}
+
+.jv-auth__oidc {
+  width: 100%;
+}
+
 .jv-auth__alternate {
   margin: var(--space-6) 0 0;
   text-align: center;
@@ -65,4 +78,15 @@
 
 .jv-auth__alternate a:hover {
   color: var(--primary);
+}
+
+@media (max-width: 860px) {
+  .jv-auth {
+    place-items: start center;
+    padding: var(--space-4);
+  }
+
+  .jv-auth__card {
+    padding: var(--space-6);
+  }
 }

@@ -11,7 +11,9 @@ import { lazy, Suspense } from "react";
 import { sessionStore } from "../../api/auth/session";
 import { StatusView } from "../../components/journiv/StatusView";
 import { LoginPage } from "../../features/auth/LoginPage";
+import { OidcFinishPage } from "../../features/auth/OidcFinishPage";
 import { SignUpPage } from "../../features/auth/SignUpPage";
+import { safeReturnTo } from "../../features/auth/returnTo";
 import { AppShell } from "../../features/shell/AppShell";
 import { Workspace } from "../../features/shell/Workspace";
 
@@ -216,13 +218,7 @@ const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
   validateSearch: (s: Record<string, unknown>) => ({
-    returnTo:
-      typeof s.returnTo === "string" &&
-      s.returnTo.startsWith("/") &&
-      !s.returnTo.startsWith("//") &&
-      !s.returnTo.startsWith("/\\")
-        ? s.returnTo
-        : "/timeline",
+    returnTo: safeReturnTo(s.returnTo),
   }),
   component: LoginPage,
 });
@@ -230,15 +226,22 @@ const signupRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/signup",
   validateSearch: (s: Record<string, unknown>) => ({
-    returnTo:
-      typeof s.returnTo === "string" &&
-      s.returnTo.startsWith("/") &&
-      !s.returnTo.startsWith("//") &&
-      !s.returnTo.startsWith("/\\")
-        ? s.returnTo
-        : "/timeline",
+    returnTo: safeReturnTo(s.returnTo),
   }),
   component: SignUpPage,
+});
+const oidcFinishRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/oidc-finish",
+  validateSearch: (s: Record<string, unknown>) => ({
+    ticket:
+      typeof s.ticket === "string" &&
+      s.ticket.length > 0 &&
+      s.ticket.length <= 512
+        ? s.ticket
+        : undefined,
+  }),
+  component: OidcFinishPage,
 });
 const indexRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -479,6 +482,7 @@ const journalMomentRoute = createRoute({
 const routeTree = rootRoute.addChildren([
   loginRoute,
   signupRoute,
+  oidcFinishRoute,
   protectedRoute.addChildren([
     indexRoute,
     timelineRoute,

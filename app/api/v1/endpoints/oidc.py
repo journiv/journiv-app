@@ -6,7 +6,7 @@ from typing import Annotated
 from urllib.parse import urlencode
 
 from authlib.integrations.starlette_client import OAuthError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session, select
 
@@ -16,7 +16,7 @@ from app.core.logging_config import log_error, log_info, log_user_action, log_wa
 from app.core.oidc import build_pkce, oauth
 from app.core.security import create_access_token, create_refresh_token
 from app.models.external_identity import ExternalIdentity
-from app.schemas.auth import LoginResponse
+from app.schemas.auth import LoginResponse, OidcTicketExchangeRequest
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/auth/oidc", tags=["authentication"])
@@ -69,7 +69,10 @@ register_oidc_provider()
 
 @router.get(
     "/login",
+    response_class=RedirectResponse,
+    status_code=status.HTTP_302_FOUND,
     responses={
+        302: {"description": "Redirect to the OIDC provider authorization endpoint"},
         404: {"description": "OIDC authentication is not enabled"},
     }
 )
@@ -110,7 +113,10 @@ async def oidc_login(request: Request):
 
 @router.get(
     "/callback",
+    response_class=RedirectResponse,
+    status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     responses={
+        307: {"description": "Redirect to the SPA with a one-time login ticket"},
         400: {"description": "Invalid or expired state parameter, token exchange failed, invalid nonce, or missing OIDC claims"},
         403: {"description": "User provisioning failed"},
         404: {"description": "OIDC authentication is not enabled"},
@@ -302,29 +308,23 @@ async def oidc_callback(
     "/exchange",
     response_model=LoginResponse,
     responses={
-        400: {"description": "Invalid request body, missing ticket parameter, or invalid/expired ticket"},
+        400: {"description": "Invalid or expired ticket"},
         404: {"description": "OIDC authentication is not enabled"},
     }
 )
-async def oidc_exchange(request: Request):
+async def oidc_exchange(request: Request, body: OidcTicketExchangeRequest):
     """
     Exchange one-time ticket for access/refresh tokens.
 
     The SPA calls this endpoint with the ticket received from the callback redirect.
-    Tickets are single-use and expire after 60 seconds.
+    Tickets are single-use and expire after 60 seconds. A missing or malformed
+    body is a 422 (FastAPI request validation); a well-formed but unknown or
+    expired ticket is a 400.
     """
     if not settings.oidc_enabled:
         raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
 
-    try:
-        body = await request.json()
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid request body") from None
-
-    ticket = body.get("ticket")
-
-    if not ticket:
-        raise HTTPException(status_code=400, detail="Missing ticket parameter")
+    ticket = body.ticket
 
     # Retrieve ticket data from cache
     ticket_data = request.app.state.cache.get(f"ticket:{ticket}")

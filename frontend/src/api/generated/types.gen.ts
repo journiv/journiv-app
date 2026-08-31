@@ -4922,6 +4922,18 @@ export type WeatherServiceDisabledResponse = {
 };
 
 /**
+ * OidcTicketExchangeRequest
+ *
+ * One-time ticket returned to the SPA after an OIDC callback.
+ */
+export type OidcTicketExchangeRequest = {
+    /**
+     * Ticket
+     */
+    ticket: string;
+};
+
+/**
  * ImmichImportJobResponse
  *
  * Response schema for import job status mapping to unified ImportJob.
@@ -5169,13 +5181,6 @@ export type OidcLoginApiV1AuthOidcLoginGetErrors = {
     404: unknown;
 };
 
-export type OidcLoginApiV1AuthOidcLoginGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
 export type OidcCallbackApiV1AuthOidcCallbackGetData = {
     body?: never;
     path?: never;
@@ -5198,15 +5203,8 @@ export type OidcCallbackApiV1AuthOidcCallbackGetErrors = {
     404: unknown;
 };
 
-export type OidcCallbackApiV1AuthOidcCallbackGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
 export type OidcExchangeApiV1AuthOidcExchangePostData = {
-    body?: never;
+    body: OidcTicketExchangeRequest;
     path?: never;
     query?: never;
     url: '/api/v1/auth/oidc/exchange';
@@ -5214,14 +5212,20 @@ export type OidcExchangeApiV1AuthOidcExchangePostData = {
 
 export type OidcExchangeApiV1AuthOidcExchangePostErrors = {
     /**
-     * Invalid request body, missing ticket parameter, or invalid/expired ticket
+     * Invalid or expired ticket
      */
     400: unknown;
     /**
      * OIDC authentication is not enabled
      */
     404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
 };
+
+export type OidcExchangeApiV1AuthOidcExchangePostError = OidcExchangeApiV1AuthOidcExchangePostErrors[keyof OidcExchangeApiV1AuthOidcExchangePostErrors];
 
 export type OidcExchangeApiV1AuthOidcExchangePostResponses = {
     /**
