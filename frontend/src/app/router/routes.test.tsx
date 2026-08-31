@@ -199,7 +199,7 @@ describe("Phase B routes", () => {
     const view = await renderRoute("/journals/journal-1/new?q=idea");
 
     expect(await screen.findByLabelText("Entry title")).toBeTruthy();
-    expect(screen.getByLabelText("Entry body")).toBeTruthy();
+    expect(await screen.findByLabelText("Entry body")).toBeTruthy();
     expect(
       view.container
         .querySelector(".jv-shell")
@@ -215,7 +215,7 @@ describe("Phase B routes", () => {
   it("creates a new Moment with an inline full document Delta", async () => {
     const view = await renderRoute("/journals/journal-1/new?q=idea");
     const title = await screen.findByLabelText("Entry title");
-    const body = screen.getByLabelText("Entry body");
+    const body = await screen.findByLabelText("Entry body");
 
     await userEvent.type(title, "Phone checkpoint");
     await userEvent.type(body, "Typed from Quill");
@@ -408,7 +408,10 @@ describe("Phase B routes", () => {
       await screen.findByLabelText("Entry title"),
       "Shortcut entry",
     );
-    await userEvent.type(screen.getByLabelText("Entry body"), "Full document");
+    await userEvent.type(
+      await screen.findByLabelText("Entry body"),
+      "Full document",
+    );
     window.dispatchEvent(
       new KeyboardEvent("keydown", {
         bubbles: true,
@@ -471,7 +474,10 @@ describe("Phase B routes", () => {
     await renderRoute("/journals/journal-1/new");
     const title = await screen.findByLabelText("Entry title");
     await userEvent.type(title, "Still here");
-    await userEvent.type(screen.getByLabelText("Entry body"), "Unsaved words");
+    await userEvent.type(
+      await screen.findByLabelText("Entry body"),
+      "Unsaved words",
+    );
     await userEvent.click(screen.getByRole("button", { name: "Done" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain(
@@ -489,7 +495,7 @@ describe("Phase B routes", () => {
       vi.mocked(api.createMoment).mockRejectedValueOnce(new Error(message));
       await renderRoute("/journals/journal-1/new");
       const title = await screen.findByLabelText("Entry title");
-      const body = screen.getByLabelText("Entry body");
+      const body = await screen.findByLabelText("Entry body");
       await userEvent.type(title, "Retry title");
       await userEvent.type(body, "Retry body");
       await userEvent.click(screen.getByRole("button", { name: "Done" }));
