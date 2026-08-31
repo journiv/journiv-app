@@ -31,7 +31,7 @@ link from this file to a `src/...` path, and a handful of literal token facts
 must match between `tokens.css` and this file's prose — all fail the build
 with the fix printed. **What it does not check:** anything that requires a
 rendered page — computed contrast, actual visual layout, whether a component
-looks right. That is Playwright's job (§19), once it lands; this script stays
+looks right. That is Playwright's job (§19); this script stays
 static and cheap. A green run is not proof the UI looks right: open the screen
 at 1440 / 1024 / 390,
 in light and dark, and look.
@@ -144,7 +144,7 @@ literal hex arrays. They are content a user picks per-journal or per-group —
 matching the Flutter client's own fixed palette — not a piece of Journiv's
 theme, so they sit outside `color-mix`/token derivation on purpose. Do not add
 a third such array without naming it here; do not use either array's literals
-for anything that *is* chrome.
+for anything that _is_ chrome.
 
 ### Shape, depth, spacing, layout
 
@@ -191,7 +191,7 @@ explicitly exempts inactive UI components and their text, precisely because a
 disabled control's whole job is to read as visually muted. Do not "fix" a
 disabled state by boosting its contrast — that defeats the state.
 
-These numbers describe the *stock* tokens. A user's imported accent or theme
+These numbers describe the _stock_ tokens. A user's imported accent or theme
 (§25) can shift any of them; personalization is opt-in and deliberately not
 contrast-checked on the way in.
 
@@ -285,14 +285,14 @@ treatments on one control, and do not add a third.
 **Actions.** Six variants carry meaning; two more are aliases kept for the
 stock vocabulary:
 
-| Variant                  | Use                                                          |
-| ------------------------ | ------------------------------------------------------------- |
-| `primary` (= `default`)  | The one primary action on a surface. Filled, `--primary`.     |
-| `secondary`              | The default for buttons that are not the primary.             |
-| `outline`                | A secondary action that needs a visible boundary (dialogs, toolbars). |
-| `ghost`                  | Tertiary — icon buttons, inline row actions.                  |
-| `danger` (= `destructive`)| A destructive action that is not (yet) the final confirm — tinted, not filled. |
-| `link`                   | Inline text acting as a control.                               |
+| Variant                    | Use                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------ |
+| `primary` (= `default`)    | The one primary action on a surface. Filled, `--primary`.                      |
+| `secondary`                | The default for buttons that are not the primary.                              |
+| `outline`                  | A secondary action that needs a visible boundary (dialogs, toolbars).          |
+| `ghost`                    | Tertiary — icon buttons, inline row actions.                                   |
+| `danger` (= `destructive`) | A destructive action that is not (yet) the final confirm — tinted, not filled. |
+| `link`                     | Inline text acting as a control.                                               |
 
 Exactly one `primary` per surface. `secondary` is the Button's own default
 variant. `ghost` for tertiary. Cancel and Done must never look identical — that
@@ -319,7 +319,7 @@ below), never a book icon repeated down the list — a shared icon would tell
 journals apart from everything else, not from each other, which is not the
 job. Fixed destinations that are not journals (Timeline, Calendar, Media,
 People, Tags, Moods, Activities, Goals) may carry a distinguishing icon each,
-because there the icon's job is exactly to tell different *kinds* of
+because there the icon's job is exactly to tell different _kinds_ of
 destination apart.
 
 > **A journal may carry a chosen icon.** `JournalResponse.icon` holds one key
@@ -353,7 +353,7 @@ loading spinner. Nothing else animates.
 
 ## 9. Responsive behaviour
 
-Two *layout* breakpoints, expressed in CSS, and no more. **Do not introduce JS
+Two _layout_ breakpoints, expressed in CSS, and no more. **Do not introduce JS
 breakpoint state** for layout — the one sanctioned exception is Settings'
 single `matchMedia` read at navigation time (§23), which is not reactive
 breakpoint state.
@@ -373,9 +373,8 @@ heading), `tags.css` (520px stat grid, 640px controls wrap), `editor.css`
 (34rem, conflict banner). Prefer a container query for a new one — the
 component already lives inside a pane whose width it does not control — and
 name the breakpoint's job in a comment next to it. What is not allowed is a
-new *page*-shaped breakpoint (a pane restructuring, a pattern moving between
-stacked and side-by-side across a whole screen) at a width that is not 860 or
-1100.
+new _page_-shaped breakpoint (a pane restructuring, a pattern moving between
+stacked and side-by-side across a whole screen) at a width that is not 860 or 1100.
 
 - `.jv-desktop-only` / `.jv-compact-only` are the sanctioned visibility helpers.
 - `PageBar` renders its `leading` slot only below 1100px, so compact layouts
@@ -518,8 +517,8 @@ Reference: `docs/design/reference/02-reader-rich-*`, `03-reader-plain-*`,
   the measure, so `.jv-prose { max-width: none }` inside it.
 - `EntryHeader` (shared with the editor) renders: date line (`Monday, 17 August
 2026 · 7:04 AM`), title, then `MomentMeta` at `reader` budget. The date line is
-**display-only here** — the editable `EntryDateControl` is passed only by the
-editor (§14 "Entry date & time").
+  **display-only here** — the editable `EntryDateControl` is passed only by the
+  editor (§14 "Entry date & time").
 - Body: `.jv-prose` via `QuillReader`. Never `dangerouslySetInnerHTML`.
 - Foot: people, then tags, above a `--line-subtle` rule.
 - Malformed stored content falls back to `content_plain_text` inside a bordered
@@ -550,7 +549,7 @@ Media appears in two places, and never in both at once:
 - `media_count` is **denormalised on the Moment row**. When the media list
   disagrees with it, the list wins.
 
-#### Layout — a photograph is never cropped where it *is* the content
+#### Layout — a photograph is never cropped where it _is_ the content
 
 The rule is about role, not surface: **wherever media is the thing being
 looked at, it is shown whole; wherever a thumbnail is a navigational
@@ -572,7 +571,7 @@ correct today, lightbox or no lightbox.
 
 A compact cropped **gallery** grid — replacing the reader's one-column list
 above — becomes acceptable **once a full-image viewer exists**, and not
-before: cropping the one place media *is* the content, with no way to see the
+before: cropping the one place media _is_ the content, with no way to see the
 uncropped version, is what this rule forbids. Until then, a Moment with
 several photos pushes the prose a long way down; that is the accepted trade.
 
@@ -1070,29 +1069,29 @@ JOURNIV_EMAIL=... JOURNIV_PASSWORD=... \
 
 Credentials come from the environment. **Never commit an account into this repo.**
 
-> **Migrating to Playwright.** `scripts/capture-design-reference.mjs` is not
-> being developed further — its determinism problems (a live-database
-> heuristic picks the scenes, fixed sleeps instead of real waits, no frozen
-> clock, no personalization reset) and its lack of any actual diffing make it
-> a screenshotter, not a regression guard. When Playwright lands, visual
-> regression moves there in full: deterministic fixture data, viewport/theme
-> coverage, a frozen clock, a personalization reset, and the screenshot
-> comparison itself (`expect(page).toHaveScreenshot()`), with Playwright's own
-> committed snapshots becoming the single reference set this section points
-> at. Once that coverage exists, delete the custom script and this section's
-> `node scripts/capture-design-reference.mjs` instructions along with it. Until
-> then, the script and the manual regenerate-and-look step above are what
-> exists — do not invest further in the script itself.
+> **Migrating to Playwright.** Playwright has landed — see
+> [`e2e/README.md`](e2e/README.md) — with the determinism this script lacks:
+> fixture data created through the API, pinned viewports, theme and
+> personalization reset, a frozen clock, and real waits instead of sleeps.
+> **Visual regression itself has not landed yet:** no `toHaveScreenshot()`
+> baselines are committed, so `scripts/capture-design-reference.mjs` remains
+> the only screenshot tooling and the manual regenerate-and-look step above is
+> still what exists. Do not invest further in the script.
+>
+> Delete the script, and this section's `node scripts/capture-design-reference.mjs`
+> instructions with it, once committed Playwright baselines cover the scenes it
+> captures.
 
 **What stays a static check regardless of Playwright** (§ preamble, and
-`scripts/check-design-system.mjs`): a *documented* token fact — a literal
+`scripts/check-design-system.mjs`): a _documented_ token fact — a literal
 value in this file's own prose, like the radius scale — is validated by
 parsing `tokens.css`, not by rendering a page. Playwright separately verifies
-the *runtime* result of those tokens — rendered contrast, computed styles,
+the _runtime_ result of those tokens — rendered contrast, computed styles,
 whether a token actually reached the pixel — which a source-level parse cannot
 see (a page-specific override could still make the rendered value wrong even
 when the source values match). The two are complementary, not redundant: keep
-both once Playwright exists.
+both. The runtime half is the `RD-*` rows in `e2e/TEST_PLAN.md`; keep that set
+small rather than reimplementing the guard in a browser.
 
 ---
 
@@ -1114,6 +1113,8 @@ both once Playwright exists.
 - [ ] `npm run verify` passes (format, lint, design guard, types, tests, build,
       OpenAPI drift) — one command, run it before reporting anything done
 - [ ] Reference screenshots regenerated if the visuals changed
+- [ ] `npm run test:e2e` passes if the change touches a journey Playwright
+      covers (`e2e/TEST_PLAN.md`)
 
 ---
 
@@ -1359,11 +1360,11 @@ form edit in place; only small confirmations (discard) may stack.
   fixed page ceiling guards against a broken short-page response), then searches
   and pages the complete collection locally. Edits send only changed fields, so
   an untouched value never routes through a server protection. `POST
-  /admin/users` creates local password accounts and applies the same password
+/admin/users` creates local password accounts and applies the same password
   policy as the change-password flow (self-hosted signup intentionally permits
   any non-empty password; §26); `PATCH /admin/users/{user_id}` edits name, email,
   role and active status (plus password for local accounts); `DELETE
-  /admin/users/{user_id}` is protected by an exact-email confirmation that names
+/admin/users/{user_id}` is protected by an exact-email confirmation that names
   the full cascade. The server refuses to delete, demote or deactivate the last
   admin who can still sign in; the row menu also **hides Deactivate and Delete
   on the signed-in admin's own row** and disables them while the account is the
@@ -1398,19 +1399,20 @@ navigation drawer. Rows use whitespace and one hairline rule, or an airy
 belongs to a Library surface.
 
 **List → detail is a push, not a third pane.** Opening an item swaps the
-workspace for a detail *page* on the same span-2 route area (the marketplace
+workspace for a detail _page_ on the same span-2 route area (the marketplace
 pattern), with a breadcrumb bar as the title and the way back. Two shared
 shells carry this: `LibraryWorkspace` (the compact `PageBar`, the header with
 the one primary, the scroll owner) and `LibraryDetailView` (the breadcrumb bar
-+ actions, its own scroll owner). Tags is the reference implementation; People,
-Moods, Activities and Goals adopt `LibraryDetailView` as their `$id` routes
-land. Neither route carries `staticData: detailPane` — there is no side-by-side
-detail here, so the shell's `.is-detail` machinery is not involved.
+
+- actions, its own scroll owner). Tags is the reference implementation; People,
+  Moods, Activities and Goals adopt `LibraryDetailView` as their `$id` routes
+  land. Neither route carries `staticData: detailPane` — there is no side-by-side
+  detail here, so the shell's `.is-detail` machinery is not involved.
 
 **The scoped Timeline stays three-pane.** "View moments" on any Library item
 opens `/timeline` filtered to that entity — the ordinary nav ∥ list ∥ reader
 Timeline — so a tag's or person's moments are browsable beside the reader. That
-is deliberately *not* the `LibraryDetailView`.
+is deliberately _not_ the `LibraryDetailView`.
 
 ### People
 
@@ -1423,7 +1425,7 @@ page combines `GET /people` (full person metadata) with `GET /people-groups`
 
 - A group is a **directory section**, not the absence of one: a header of
   `chevron · EntityGlyph colour dot · sentence-case name · hairline rule ·
-  server count · ⋯` (the same dot + rule + count device as §22), then an airy
+server count · ⋯` (the same dot + rule + count device as §22), then an airy
   responsive grid of people (`repeat(auto-fill, minmax(15rem, 1fr))`, one
   column below the two-pane breakpoint). No boxes, no rail — whitespace and the
   one rule carry the grouping (§5). Named groups are open by default; the chevron
@@ -1615,7 +1617,7 @@ second surface needs them (§18).
 ## 25. Personalization
 
 A viewer can retint and re-font Journiv for their device. It works precisely
-*because* the app is on stock shadcn tokens — nothing is hard-coded, so a
+_because_ the app is on stock shadcn tokens — nothing is hard-coded, so a
 retheme reaches every surface including the reader and editor.
 
 ### The layer
@@ -1623,8 +1625,8 @@ retheme reaches every surface including the reader and editor.
 [`src/features/theme/`](src/features/theme/) owns it.
 
 - **`UserTheme`** (`types.ts`) — `{ version, light, dark, systemFont?,
-  editorFont?, editorFontScale? }`. `light` / `dark` are `Partial<Record<ColorVar,
-  string>>`; `ColorVar` is the stock shadcn colour / shadow set —
+editorFont?, editorFontScale? }`. `light` / `dark` are `Partial<Record<ColorVar,
+string>>`; `ColorVar` is the stock shadcn colour / shadow set —
   **font variables are deliberately not in it, and neither is `radius`.** Shape
   is not personalizable (§3); only colour, fonts and text size are. This shape
   is exactly what a
@@ -1651,7 +1653,7 @@ retheme reaches every surface including the reader and editor.
 ### Controls (Settings → Appearance → "Personalize")
 
 Accent colour (preset swatches + any CSS colour → `--primary`, light and dark);
-**system font** and **editor font** as *independent* pickers over the bundled
+**system font** and **editor font** as _independent_ pickers over the bundled
 set (`fonts.ts` — DM Sans always, others lazy); **text size** as a prose-only
 scale (`--prose-font-scale`, consumed by `prose.css` — **the root font-size is
 never scaled**, that would resize Tailwind's whole rem system); import / export
@@ -1673,6 +1675,9 @@ deliberately no corner-radius control (§3).
 
 Reference: none yet — add `docs/design/reference/26-login-*` when the capture
 script covers it (§19).
+
+Enforced: `e2e/smoke/auth.spec.ts` (route guard, sign-in, session), plus the
+`AUTH-*` rows in `e2e/TEST_PLAN.md` for the rest of this section's behaviour.
 
 - Two routes, `/login` and `/signup`, outside the shell entirely — no nav, no
   `PageBar`, no Settings. They are the only screens in the product that are not

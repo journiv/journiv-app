@@ -34,6 +34,22 @@ screen at 1440 / 1024 / 390, in light and dark, and look.
 If the visuals changed, regenerate the design reference screenshots (see
 DESIGN.md §19) and review the diff before calling the work finished.
 
+## Browser tests
+
+`npm run verify` and `npm run test:e2e` are **two separate commands**, and
+`verify` deliberately does not run the browser suite — E2E needs a running
+backend and an installed Chromium, so folding it in would make the routine
+command fail for environmental reasons.
+
+```bash
+npm run test:e2e     # Playwright, needs a backend (see e2e/README.md §5)
+```
+
+**Before writing or changing any Playwright test, read
+[`e2e/README.md`](e2e/README.md).** It is the contract: how authentication and
+test data work, which locators are allowed, how time and theme are pinned, and
+what belongs in Vitest or the design guard instead.
+
 ## Common commands
 
 ```bash
@@ -42,6 +58,7 @@ npm test             # vitest
 npm run lint:design  # design-system guard only
 npm run api:pull     # refresh openapi/openapi.json from the running backend
 npm run api:generate # regenerate src/api/generated/ from openapi.json
+npm run test:e2e     # playwright (needs a backend)
 ```
 
 Both `openapi/openapi.json` (minified to one line) and the generated client
