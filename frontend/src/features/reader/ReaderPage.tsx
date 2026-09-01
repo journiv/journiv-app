@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
 import {
   ArrowLeft,
@@ -7,7 +7,9 @@ import {
   Pencil,
   TriangleAlert,
 } from "lucide-react";
+import { api } from "../../api/client/api";
 import { entryQuery, momentQuery } from "../../api/query/options";
+import { queryKeys } from "../../api/query/keys";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import { JournalBadge } from "../../components/journiv/JournalBadge";
 import { MomentChips } from "../../components/journiv/MomentChips";
@@ -20,6 +22,8 @@ import { useJournalLookup } from "../../lib/useJournalLookup";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
 import { planReaderContent, QuillReader } from "../editor/QuillReader";
+import { scopeSearchFrom } from "../timeline/momentScope";
+import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import { EntryMedia } from "./EntryMedia";
 import { useMomentMedia } from "./useMomentMedia";
 import "./reader.css";
@@ -29,21 +33,27 @@ export function ReaderPage() {
     momentId: string;
     journalId?: string;
   };
-  const {
-    q = "",
-    view,
-    month,
-    date,
-  } = useSearch({ strict: false }) as {
+  const search = useSearch({ strict: false }) as {
     q?: string;
     view?: "calendar" | "media";
     month?: string;
     date?: string;
+    person?: string;
+    tag?: string;
+    activity?: string;
+    mood?: string;
+    goal?: string;
   };
+  const { q = "", view, month, date } = search;
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   // Carry the list-pane mode back so Back returns to the calendar or grid the
   // reader was opened from, not the plain list.
-  const listSearch = { q, ...(view ? { view, month, date } : {}) };
+  const listSearch = {
+    q,
+    ...(view ? { view, month, date } : {}),
+    ...scopeSearchFrom(search),
+  };
   const journals = useJournalLookup();
   const moment = useQuery(momentQuery(momentId));
   const entry = useQuery({
@@ -80,6 +90,43 @@ export function ReaderPage() {
       });
     }
   };
+  const remove = useMutation({
+    mutationFn: async (entryId: string) => {
+      await api.deleteEntry(entryId);
+
+      queryClient.removeQueries({ queryKey: queryKeys.entry(entryId) });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.allMoments }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.allMomentCalendars,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.allMediaLibraries,
+        }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.journals }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.tags }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.moment(momentId),
+          refetchType: "none",
+        }),
+      ]);
+
+      try {
+        await queryClient.fetchQuery({
+          ...momentQuery(momentId),
+          retry: false,
+          staleTime: 0,
+        });
+        return true;
+      } catch {
+        queryClient.removeQueries({ queryKey: queryKeys.moment(momentId) });
+        return false;
+      }
+    },
+    onSuccess: (momentSurvived) => {
+      if (!momentSurvived) goBack();
+    },
+  });
 
   if (moment.isLoading) return <ReaderSkeleton />;
   if (moment.isError || !moment.data) {
@@ -107,6 +154,7 @@ export function ReaderPage() {
   }
 
   const data = moment.data;
+  const entryId = data.entry?.id;
   const kind = momentKind(data);
   const title = momentTitle(data);
   const journal = journals.get(data.entry?.journal_id ?? journalId);
@@ -127,19 +175,33 @@ export function ReaderPage() {
         }
         title={<JournalBadge journal={journal} />}
         actions={
-          <Button variant={hasWriting ? "secondary" : "primary"} onClick={edit}>
-            {hasWriting ? (
-              <>
-                <Pencil aria-hidden="true" size={15} />
-                Edit
-              </>
-            ) : (
-              <>
-                <NotebookPen aria-hidden="true" size={15} />
-                Write
-              </>
+          <>
+            {entryId && (
+              <DeleteEntryDialog
+                entryTitle={title}
+                deleting={remove.isPending}
+                failed={remove.isError}
+                onConfirm={() => remove.mutate(entryId)}
+                onReset={remove.reset}
+              />
             )}
-          </Button>
+            <Button
+              variant={hasWriting ? "secondary" : "primary"}
+              onClick={edit}
+            >
+              {hasWriting ? (
+                <>
+                  <Pencil aria-hidden="true" size={15} />
+                  Edit
+                </>
+              ) : (
+                <>
+                  <NotebookPen aria-hidden="true" size={15} />
+                  Write
+                </>
+              )}
+            </Button>
+          </>
         }
       />
 

@@ -1,12 +1,13 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from ".";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
+import { ApiError } from "../../api/client/errors";
 import type {
   EntryResponse,
   InstanceConfigResponse,
@@ -27,6 +28,8 @@ vi.mock("../../api/client/api", () => ({
     momentCalendar: vi.fn(),
     mediaLibrary: vi.fn(),
     entry: vi.fn(),
+    deleteEntry: vi.fn(),
+    tags: vi.fn(),
     createMoment: vi.fn(),
     updateMoment: vi.fn(),
     login: vi.fn(),
@@ -132,6 +135,8 @@ beforeEach(() => {
   ]);
   vi.mocked(api.mediaLibrary).mockResolvedValue({ items: [] });
   vi.mocked(api.entry).mockResolvedValue(entry);
+  vi.mocked(api.deleteEntry).mockResolvedValue(undefined);
+  vi.mocked(api.tags).mockResolvedValue([]);
   vi.mocked(api.createMoment).mockResolvedValue({
     ...moment,
     id: "moment-new",
@@ -189,6 +194,91 @@ describe("Phase B routes", () => {
       expect(view.router.state.location.pathname).toBe("/timeline");
       expect(view.router.state.location.search.q).toBe("rain");
     });
+  });
+
+  it("cancels entry deletion, then returns to the same scoped list when the Moment is pruned", async () => {
+    vi.mocked(api.moment)
+      .mockResolvedValueOnce(moment)
+      .mockRejectedValueOnce(new ApiError("Moment not found", { status: 404 }));
+    const view = await renderRoute("/timeline/moment-1?q=rain&tag=tag-1");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Delete entry" }),
+    );
+    let dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("heading", {
+        name: "Delete “A rainy morning”?",
+      }),
+    ).toBeTruthy();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    );
+    expect(api.deleteEntry).not.toHaveBeenCalled();
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Delete entry" }),
+    );
+    dialog = screen.getByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete entry" }),
+    );
+
+    await waitFor(() =>
+      expect(api.deleteEntry).toHaveBeenCalledWith("entry-1"),
+    );
+    await waitFor(() => {
+      expect(view.router.state.location.pathname).toBe("/timeline");
+      expect(view.router.state.location.search.q).toBe("rain");
+      expect(view.router.state.location.search.tag).toBe("tag-1");
+    });
+  });
+
+  it("keeps a surviving Moment open as a quick log after deleting its writing", async () => {
+    const quickLog: MomentResponse = {
+      ...moment,
+      entry: null,
+      is_pinned: true,
+    };
+    vi.mocked(api.moment)
+      .mockResolvedValueOnce(moment)
+      .mockResolvedValueOnce(quickLog);
+    const view = await renderRoute("/timeline/moment-1?q=rain");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Delete entry" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Delete entry",
+      }),
+    );
+
+    expect(await screen.findByRole("button", { name: "Write" })).toBeTruthy();
+    expect(view.router.state.location.pathname).toBe("/timeline/moment-1");
+    expect(screen.queryByRole("button", { name: "Delete entry" })).toBeNull();
+    expect(api.moment).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the confirmation open and shows a human error when deletion fails", async () => {
+    vi.mocked(api.deleteEntry).mockRejectedValueOnce(new Error("offline"));
+    const view = await renderRoute("/timeline/moment-1");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Delete entry" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete entry" }),
+    );
+
+    expect(
+      await within(dialog).findByText(
+        "The entry couldn’t be deleted. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    expect(view.router.state.location.pathname).toBe("/timeline/moment-1");
+    expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
   it("debounces search into the URL and query policy", async () => {
