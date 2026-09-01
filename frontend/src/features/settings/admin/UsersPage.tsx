@@ -1,6 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  MoreHorizontal,
   Pencil,
   Trash2,
   UserCheck,
@@ -24,13 +23,9 @@ import { Alert, AlertDescription } from "../../../components/ui/alert";
 import { Badge } from "../../../components/ui/badge";
 import { Button } from "../../../components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../../components/ui/dropdown-menu";
+  AppAdaptiveMenu,
+  type AppMenuAction,
+} from "../../../components/journiv/AppAdaptiveMenu";
 import {
   Empty,
   EmptyContent,
@@ -39,7 +34,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "../../../components/ui/empty";
-import { IconButton } from "../../../components/ui/icon-button";
 import { SearchInput } from "../../../components/ui/search-input";
 import { Skeleton } from "../../../components/ui/skeleton";
 import {
@@ -453,62 +447,53 @@ export function UsersPage() {
                           </span>
                         </TableCell>
                         <TableCell className="jv-users-table__actions">
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <IconButton label={`${user.name} actions`}>
-                                  <MoreHorizontal aria-hidden="true" />
-                                </IconButton>
-                              }
-                            />
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuGroup>
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    setFormFailure(undefined);
-                                    setEditor({ kind: "edit", user });
-                                  }}
-                                >
-                                  <Pencil aria-hidden="true" />
-                                  Edit
-                                </DropdownMenuItem>
-                                {!isCurrent && (
-                                  <DropdownMenuItem
-                                    disabled={
-                                      statusUserId === user.id ||
-                                      isLastActiveAdmin
-                                    }
-                                    onClick={() => void setActive(user)}
-                                  >
-                                    {user.is_active ? (
-                                      <UserX aria-hidden="true" />
-                                    ) : (
-                                      <UserCheck aria-hidden="true" />
-                                    )}
-                                    {user.is_active ? "Deactivate" : "Activate"}
-                                  </DropdownMenuItem>
-                                )}
-                              </DropdownMenuGroup>
-                              {!isCurrent && (
-                                <>
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuGroup>
-                                    <DropdownMenuItem
-                                      variant="destructive"
-                                      disabled={isLastActiveAdmin}
-                                      onClick={() => {
+                          <AppAdaptiveMenu
+                            label={`${user.name} actions`}
+                            align="end"
+                            actions={[
+                              {
+                                kind: "command",
+                                id: "edit",
+                                label: "Edit",
+                                icon: Pencil,
+                                onSelect: () => {
+                                  setFormFailure(undefined);
+                                  setEditor({ kind: "edit", user });
+                                },
+                              },
+                              // Your own account cannot be deactivated or
+                              // deleted from this row.
+                              ...(isCurrent
+                                ? []
+                                : ([
+                                    {
+                                      kind: "command",
+                                      id: "active",
+                                      label: user.is_active
+                                        ? "Deactivate"
+                                        : "Activate",
+                                      icon: user.is_active ? UserX : UserCheck,
+                                      disabled:
+                                        statusUserId === user.id ||
+                                        isLastActiveAdmin,
+                                      onSelect: () => void setActive(user),
+                                    },
+                                    {
+                                      kind: "command",
+                                      id: "delete",
+                                      label: "Delete",
+                                      icon: Trash2,
+                                      destructive: true,
+                                      separatorBefore: true,
+                                      disabled: isLastActiveAdmin,
+                                      onSelect: () => {
                                         setDeleteFailure(undefined);
                                         setDeleteTarget(user);
-                                      }}
-                                    >
-                                      <Trash2 aria-hidden="true" />
-                                      Delete
-                                    </DropdownMenuItem>
-                                  </DropdownMenuGroup>
-                                </>
-                              )}
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                      },
+                                    },
+                                  ] satisfies AppMenuAction[])),
+                            ]}
+                          />
                         </TableCell>
                       </TableRow>
                     );

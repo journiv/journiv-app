@@ -1,15 +1,9 @@
 import { ChevronLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { type CSSProperties, useId, useState } from "react";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
+import { AppAdaptiveDialog } from "../../components/journiv/AppAdaptiveDialog";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { Button } from "../../components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../../components/ui/dialog";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import {
@@ -109,108 +103,98 @@ export function GroupsManagerDialog({
   if (view.kind === "delete") {
     const group = view.group;
     return (
-      <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{`Delete ${group.name}?`}</DialogTitle>
-            <DialogDescription>
-              {`${pluralCap} stay in your Library and are removed only from this group.`}
-            </DialogDescription>
-          </DialogHeader>
-          {deleteFailed && (
-            <p className="jv-library__alert" role="alert">
-              The group could not be deleted. Try again.
-            </p>
-          )}
-          <div className="jv-dialog__actions">
-            <Button variant="ghost" onClick={() => setView({ kind: "list" })}>
-              Cancel
-            </Button>
-            <Button
-              variant="danger"
-              disabled={busy}
-              onClick={async () => {
-                try {
-                  await onDelete(group.id);
-                  setView({ kind: "list" });
-                } catch {
-                  // Keep the confirmation visible with its failure message.
-                }
-              }}
-            >
-              {busy ? "Deleting…" : "Delete group"}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <AppConfirmDialog
+        open
+        // Cancel returns to the group list rather than closing the manager.
+        onOpenChange={(open) => !open && setView({ kind: "list" })}
+        title={`Delete ${group.name}?`}
+        description={`${pluralCap} stay in your Library and are removed only from this group.`}
+        confirmLabel={busy ? "Deleting…" : "Delete group"}
+        destructive
+        pending={busy}
+        onConfirm={async () => {
+          try {
+            await onDelete(group.id);
+            setView({ kind: "list" });
+          } catch {
+            // Keep the confirmation visible with its failure message.
+          }
+        }}
+      >
+        {deleteFailed && (
+          <p className="jv-library__alert" role="alert">
+            The group could not be deleted. Try again.
+          </p>
+        )}
+      </AppConfirmDialog>
     );
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Manage groups</DialogTitle>
-          <DialogDescription>
-            {`Rename, recolour or remove a group. Deleting a group never removes its ${plural}.`}
-          </DialogDescription>
-        </DialogHeader>
-        <div className="jv-groups-manager">
-          {groups.length ? (
-            <ul className="jv-groups-manager__list">
-              {groups.map((group) => (
-                <li key={group.id} className="jv-groups-manager__row">
-                  <EntityGlyph
-                    colorValue={group.color_value}
-                    icon={group.icon}
-                    size={13}
-                  />
-                  <span className="jv-groups-manager__name jv-truncate">
-                    {group.name}
-                  </span>
-                  <span className="jv-groups-manager__count">
-                    {countLabel(
-                      itemCount(group),
-                      itemNoun.singular,
-                      itemNoun.plural,
-                    )}
-                  </span>
-                  <span className="jv-groups-manager__row-actions">
-                    <IconButton
-                      label={`Edit ${group.name}`}
-                      onClick={() => setView({ kind: "form", group })}
-                    >
-                      <Pencil aria-hidden="true" size={15} />
-                    </IconButton>
-                    <IconButton
-                      label={`Delete ${group.name}`}
-                      onClick={() => setView({ kind: "delete", group })}
-                    >
-                      <Trash2 aria-hidden="true" size={15} />
-                    </IconButton>
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="jv-groups-manager__empty">
-              {`No groups yet. Create one to organise your ${plural}.`}
-            </p>
-          )}
-          <Button
-            variant="ghost"
-            className="jv-groups-manager__add"
-            onClick={() => setView({ kind: "form" })}
-          >
-            <Plus aria-hidden="true" size={16} />
-            New group
-          </Button>
-        </div>
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button variant="secondary">Done</Button>} />
-        </div>
-      </DialogContent>
-    </Dialog>
+    <AppAdaptiveDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title="Manage groups"
+      description={`Rename, recolour or remove a group. Deleting a group never removes its ${plural}.`}
+      size="md"
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Done
+        </Button>
+      }
+    >
+      <div className="jv-groups-manager">
+        {groups.length ? (
+          <ul className="jv-groups-manager__list">
+            {groups.map((group) => (
+              <li key={group.id} className="jv-groups-manager__row">
+                <EntityGlyph
+                  colorValue={group.color_value}
+                  icon={group.icon}
+                  size={13}
+                />
+                <span className="jv-groups-manager__name jv-truncate">
+                  {group.name}
+                </span>
+                <span className="jv-groups-manager__count">
+                  {countLabel(
+                    itemCount(group),
+                    itemNoun.singular,
+                    itemNoun.plural,
+                  )}
+                </span>
+                <span className="jv-groups-manager__row-actions">
+                  <IconButton
+                    label={`Edit ${group.name}`}
+                    onClick={() => setView({ kind: "form", group })}
+                  >
+                    <Pencil aria-hidden="true" size={15} />
+                  </IconButton>
+                  <IconButton
+                    label={`Delete ${group.name}`}
+                    onClick={() => setView({ kind: "delete", group })}
+                  >
+                    <Trash2 aria-hidden="true" size={15} />
+                  </IconButton>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="jv-groups-manager__empty">
+            {`No groups yet. Create one to organise your ${plural}.`}
+          </p>
+        )}
+        <Button
+          variant="ghost"
+          className="jv-groups-manager__add"
+          onClick={() => setView({ kind: "form" })}
+        >
+          <Plus aria-hidden="true" size={16} />
+          New group
+        </Button>
+      </div>
+    </AppAdaptiveDialog>
   );
 }
 
@@ -232,6 +216,7 @@ function GroupForm({
   onSubmit: (body: LibraryGroupCreateInput) => Promise<void>;
 }) {
   const editing = Boolean(group);
+  const formId = useId();
   const nameId = useId();
   const colorName = useId();
   const iconName = useId();
@@ -249,134 +234,132 @@ function GroupForm({
     ({ "--entity-accent": hex }) as CSSProperties;
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {editing ? `Edit ${group?.name}` : "New group"}
-          </DialogTitle>
-          <DialogDescription>
-            {`A group is a way to file the ${itemPlural} in your journal together.`}
-          </DialogDescription>
-        </DialogHeader>
-        <Button
-          variant="ghost"
-          className="jv-groups-manager__back"
-          onClick={onCancel}
-        >
-          <ChevronLeft aria-hidden="true" size={16} />
-          All groups
-        </Button>
-        <form
-          className="jv-library-form"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (!trimmed || busy) return;
-            await onSubmit({
-              name: trimmed,
-              color_value: colorHex ? argbFromHex(colorHex) : null,
-              icon: icon || null,
-            });
-          }}
-        >
-          <label htmlFor={nameId}>
-            <span>Group name</span>
-            <Input
-              id={nameId}
-              aria-label="Group name"
-              value={name}
-              maxLength={100}
-              autoFocus
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
+    <AppAdaptiveDialog
+      open
+      onOpenChange={(open) => !open && onClose()}
+      title={editing ? `Edit ${group?.name}` : "New group"}
+      description={`A group is a way to file the ${itemPlural} in your journal together.`}
+      size="sm"
+      footer={
+        <>
+          <Button variant="ghost" type="button" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="primary"
+            disabled={!trimmed || !dirty || busy}
+          >
+            {busy ? "Saving…" : editing ? "Save" : "Create group"}
+          </Button>
+        </>
+      }
+    >
+      <Button
+        variant="ghost"
+        className="jv-groups-manager__back"
+        onClick={onCancel}
+      >
+        <ChevronLeft aria-hidden="true" size={16} />
+        All groups
+      </Button>
+      <form
+        id={formId}
+        className="jv-library-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!trimmed || busy) return;
+          await onSubmit({
+            name: trimmed,
+            color_value: colorHex ? argbFromHex(colorHex) : null,
+            icon: icon || null,
+          });
+        }}
+      >
+        <label htmlFor={nameId}>
+          <span>Group name</span>
+          <Input
+            id={nameId}
+            aria-label="Group name"
+            value={name}
+            maxLength={100}
+            autoFocus
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
 
-          <fieldset className="jv-groups-form__group">
-            <legend>Colour</legend>
-            <div className="jv-groups-form__swatches">
-              <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
+        <fieldset className="jv-groups-form__group">
+          <legend>Colour</legend>
+          <div className="jv-groups-form__swatches">
+            <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
+              <input
+                type="radio"
+                name={colorName}
+                className="sr-only"
+                checked={!colorHex}
+                onChange={() => setColorHex("")}
+              />
+              <span className="sr-only">No colour</span>
+            </label>
+            {ENTITY_COLOR_PRESETS.map((preset) => (
+              <label
+                key={preset.hex}
+                className="jv-groups-form__swatch"
+                style={tint(preset.hex)}
+              >
                 <input
                   type="radio"
                   name={colorName}
                   className="sr-only"
-                  checked={!colorHex}
-                  onChange={() => setColorHex("")}
+                  checked={colorHex.toLowerCase() === preset.hex.toLowerCase()}
+                  onChange={() => setColorHex(preset.hex)}
                 />
-                <span className="sr-only">No colour</span>
+                <span className="sr-only">{preset.label}</span>
               </label>
-              {ENTITY_COLOR_PRESETS.map((preset) => (
-                <label
-                  key={preset.hex}
-                  className="jv-groups-form__swatch"
-                  style={tint(preset.hex)}
-                >
-                  <input
-                    type="radio"
-                    name={colorName}
-                    className="sr-only"
-                    checked={
-                      colorHex.toLowerCase() === preset.hex.toLowerCase()
-                    }
-                    onChange={() => setColorHex(preset.hex)}
-                  />
-                  <span className="sr-only">{preset.label}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+            ))}
+          </div>
+        </fieldset>
 
-          <fieldset className="jv-groups-form__group">
-            <legend>Icon</legend>
-            <div className="jv-groups-form__icons">
-              <label className="jv-groups-form__icon jv-groups-form__icon--none">
+        <fieldset className="jv-groups-form__group">
+          <legend>Icon</legend>
+          <div className="jv-groups-form__icons">
+            <label className="jv-groups-form__icon jv-groups-form__icon--none">
+              <input
+                type="radio"
+                name={iconName}
+                className="sr-only"
+                checked={!icon}
+                onChange={() => setIcon("")}
+              />
+              None
+            </label>
+            {JOURNAL_ICONS.map(({ key, label, Icon }) => (
+              <label
+                key={key}
+                className="jv-groups-form__icon"
+                style={colorHex ? tint(colorHex) : undefined}
+              >
                 <input
                   type="radio"
                   name={iconName}
                   className="sr-only"
-                  checked={!icon}
-                  onChange={() => setIcon("")}
+                  checked={icon === key}
+                  onChange={() => setIcon(key)}
                 />
-                None
+                <span className="sr-only">{label}</span>
+                <Icon size={17} aria-hidden="true" />
               </label>
-              {JOURNAL_ICONS.map(({ key, label, Icon }) => (
-                <label
-                  key={key}
-                  className="jv-groups-form__icon"
-                  style={colorHex ? tint(colorHex) : undefined}
-                >
-                  <input
-                    type="radio"
-                    name={iconName}
-                    className="sr-only"
-                    checked={icon === key}
-                    onChange={() => setIcon(key)}
-                  />
-                  <span className="sr-only">{label}</span>
-                  <Icon size={17} aria-hidden="true" />
-                </label>
-              ))}
-            </div>
-          </fieldset>
-
-          {failed && (
-            <p className="jv-library__alert" role="alert">
-              The group could not be saved. Your changes are still here.
-            </p>
-          )}
-          <div className="jv-dialog__actions">
-            <Button variant="ghost" type="button" onClick={onCancel}>
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!trimmed || !dirty || busy}
-            >
-              {busy ? "Saving…" : editing ? "Save" : "Create group"}
-            </Button>
+            ))}
           </div>
-        </form>
-      </DialogContent>
-    </Dialog>
+        </fieldset>
+
+        {failed && (
+          <p className="jv-library__alert" role="alert">
+            The group could not be saved. Your changes are still here.
+          </p>
+        )}
+      </form>
+    </AppAdaptiveDialog>
   );
 }

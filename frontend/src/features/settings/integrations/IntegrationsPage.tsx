@@ -7,14 +7,7 @@ import {
   integrationStatusQuery,
 } from "../../../api/query/options";
 import { Button } from "../../../components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "../../../components/ui/dialog";
+import { AppConfirmDialog } from "../../../components/journiv/AppConfirmDialog";
 import { Input } from "../../../components/ui/input";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { StatusView } from "../../../components/journiv/StatusView";
@@ -160,23 +153,16 @@ export function IntegrationsPage() {
           {connected ? "Save settings" : "Connect"}
         </Button>
       </div>
-      <Dialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Disconnect Immich?</DialogTitle>
-            <DialogDescription>
-              Journiv will stop accessing this provider. Existing imported media
-              stays in place.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button variant="danger" onClick={() => disconnect.mutate()}>
-              Disconnect
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <AppConfirmDialog
+        open={disconnectOpen}
+        onOpenChange={setDisconnectOpen}
+        title="Disconnect Immich?"
+        description="Journiv will stop accessing this provider. Existing imported media stays in place."
+        confirmLabel="Disconnect"
+        destructive
+        pending={disconnect.isPending}
+        onConfirm={() => disconnect.mutate()}
+      />
     </div>
   );
 }

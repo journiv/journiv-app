@@ -4,7 +4,6 @@ import {
   ArrowDown,
   ArrowUp,
   Archive as ArchiveIcon,
-  MoreHorizontal,
   Palette,
   Pencil,
   Star,
@@ -13,12 +12,9 @@ import {
 import type { JournalResponse } from "../../api/generated/types.gen";
 import { JournalDot } from "../../components/journiv/JournalBadge";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+  AppAdaptiveMenu,
+  type AppMenuAction,
+} from "../../components/journiv/AppAdaptiveMenu";
 import { IconButton } from "../../components/ui/icon-button";
 import { formatDateMedium } from "../../lib/datetime";
 
@@ -56,6 +52,60 @@ export function JournalRow({
   onMove: (id: string, direction: "up" | "down") => void;
 }) {
   const archived = journal.is_archived;
+  const menuActions: AppMenuAction[] = [
+    {
+      kind: "command",
+      id: "rename",
+      label: "Rename",
+      icon: Pencil,
+      onSelect: () => onRename(journal),
+    },
+    {
+      kind: "command",
+      id: "appearance",
+      label: "Edit appearance",
+      icon: Palette,
+      onSelect: () => onEditAppearance(journal),
+    },
+    // Ordering and archiving are meaningless for an already-archived journal.
+    ...(archived
+      ? []
+      : ([
+          {
+            kind: "command",
+            id: "move-up",
+            label: "Move up",
+            icon: ArrowUp,
+            disabled: !canMoveUp,
+            onSelect: () => onMove(journal.id, "up"),
+          },
+          {
+            kind: "command",
+            id: "move-down",
+            label: "Move down",
+            icon: ArrowDown,
+            disabled: !canMoveDown,
+            onSelect: () => onMove(journal.id, "down"),
+          },
+          {
+            kind: "command",
+            id: "archive",
+            label: "Archive",
+            icon: ArchiveIcon,
+            onSelect: () => onSetArchived(journal.id, true),
+          },
+        ] satisfies AppMenuAction[])),
+    {
+      kind: "command",
+      id: "delete",
+      label: "Delete…",
+      icon: Trash2,
+      destructive: true,
+      separatorBefore: true,
+      onSelect: () => onDelete(journal),
+    },
+  ];
+
   return (
     <li className="jv-jrow">
       <Link
@@ -110,57 +160,11 @@ export function JournalRow({
           </IconButton>
         )}
 
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <IconButton label={`${journal.title} actions`}>
-                <MoreHorizontal aria-hidden="true" size={16} />
-              </IconButton>
-            }
-          />
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => onRename(journal)}>
-              <Pencil aria-hidden="true" size={15} />
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => onEditAppearance(journal)}>
-              <Palette aria-hidden="true" size={15} />
-              Edit appearance
-            </DropdownMenuItem>
-            {!archived && (
-              <>
-                <DropdownMenuItem
-                  disabled={!canMoveUp}
-                  onClick={() => onMove(journal.id, "up")}
-                >
-                  <ArrowUp aria-hidden="true" size={15} />
-                  Move up
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  disabled={!canMoveDown}
-                  onClick={() => onMove(journal.id, "down")}
-                >
-                  <ArrowDown aria-hidden="true" size={15} />
-                  Move down
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() => onSetArchived(journal.id, true)}
-                >
-                  <ArchiveIcon aria-hidden="true" size={15} />
-                  Archive
-                </DropdownMenuItem>
-              </>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              variant="destructive"
-              onClick={() => onDelete(journal)}
-            >
-              <Trash2 aria-hidden="true" size={15} />
-              Delete…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <AppAdaptiveMenu
+          label={`${journal.title} actions`}
+          align="end"
+          actions={menuActions}
+        />
       </div>
     </li>
   );

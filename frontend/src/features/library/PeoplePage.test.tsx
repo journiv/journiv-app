@@ -215,4 +215,29 @@ describe("Library · People", () => {
       }),
     );
   });
+
+  it("keeps the archive confirmation open and shows a mutation error", async () => {
+    vi.mocked(api.archivePerson).mockRejectedValue(new Error("archive failed"));
+    await view();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Jane Doe actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Archive" }),
+    );
+    const dialog = await screen.findByRole("alertdialog", {
+      name: "Archive Jane Doe?",
+    });
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Archive" }),
+    );
+
+    expect(
+      await within(dialog).findByText(
+        "The person could not be archived. Try again.",
+      ),
+    ).toBeTruthy();
+    expect(dialog.isConnected).toBe(true);
+  });
 });

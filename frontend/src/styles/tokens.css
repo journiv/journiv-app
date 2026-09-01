@@ -116,6 +116,10 @@
   --reader-measure: 68ch;
   --reader-gutter: clamp(24px, 5vw, 64px);
   --tap-target: 44px;
+  /* Tallest an adaptive dialog may grow (DESIGN.md §9, "Adaptive overlays").
+     `svh`, not `vh`: on iOS Safari `vh` measures the *largest* viewport, so a
+     `vh`-tall dialog puts its footer under the browser chrome. */
+  --overlay-max-height: 85svh;
 
   /* ---- motion --------------------------------------------------------- */
   --ease: cubic-bezier(0.2, 0, 0.15, 1);

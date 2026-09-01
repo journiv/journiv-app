@@ -4,7 +4,6 @@ import {
   ChevronRight,
   History,
   Menu,
-  MoreHorizontal,
   Pencil,
   Plus,
   Sparkles,
@@ -36,13 +35,8 @@ import { PageBar } from "../../components/journiv/PageBar";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogClose } from "../../components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
@@ -57,7 +51,7 @@ import { JOURNAL_ICONS } from "../../lib/journalIcons";
 import { useShell } from "../shell/AppShell";
 import { GoalHistoryDialog } from "./GoalHistoryDialog";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
-import { ViewMomentsMenuItem } from "./ViewMomentsMenuItem";
+import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
 
 type GoalFormState =
@@ -170,31 +164,36 @@ function GoalListItem({
       title={goal.title}
       meta={goalMeta(goal, activity)}
       actions={
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <IconButton label={`${goal.title} actions`}>
-                <MoreHorizontal aria-hidden="true" size={17} />
-              </IconButton>
-            }
-          />
-          <DropdownMenuContent align="end">
-            <ViewMomentsMenuItem scope={{ goal: goal.id }} />
-            <DropdownMenuItem onClick={onHistory}>
-              <History aria-hidden="true" size={15} />
-              View history
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onEdit}>
-              <Pencil aria-hidden="true" size={15} />
-              Edit goal
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2 aria-hidden="true" size={15} />
-              Delete goal…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <AppAdaptiveMenu
+          label={`${goal.title} actions`}
+          align="end"
+          actions={[
+            viewMomentsAction({ goal: goal.id }),
+            {
+              kind: "command",
+              id: "history",
+              label: "View history",
+              icon: History,
+              onSelect: onHistory,
+            },
+            {
+              kind: "command",
+              id: "edit",
+              label: "Edit goal",
+              icon: Pencil,
+              onSelect: onEdit,
+            },
+            {
+              kind: "command",
+              id: "delete",
+              label: "Delete goal…",
+              icon: Trash2,
+              destructive: true,
+              separatorBefore: true,
+              onSelect: onDelete,
+            },
+          ]}
+        />
       }
     />
   );
@@ -411,53 +410,41 @@ export function GoalsPage() {
                         open={searching || !collapsed.has(category.id)}
                         onToggle={() => toggleCategory(category.id)}
                         menu={
-                          <DropdownMenu>
-                            <DropdownMenuTrigger
-                              render={
-                                <IconButton
-                                  label={`${category.name} group actions`}
-                                >
-                                  <MoreHorizontal
-                                    aria-hidden="true"
-                                    size={17}
-                                  />
-                                </IconButton>
-                              }
-                            />
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onClick={() =>
+                          <AppAdaptiveMenu
+                            label={`${category.name} group actions`}
+                            align="end"
+                            actions={[
+                              {
+                                kind: "command",
+                                id: "add-goal",
+                                label: "Add goal to group",
+                                icon: Plus,
+                                onSelect: () =>
                                   setGoalForm({
                                     mode: "create",
                                     categoryId: category.id,
-                                  })
-                                }
-                              >
-                                <Plus aria-hidden="true" size={15} />
-                                Add goal to group
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={() =>
-                                  setGroupsManager({
-                                    initialGroup: category,
-                                  })
-                                }
-                              >
-                                <Pencil aria-hidden="true" size={15} />
-                                Edit group
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onClick={() =>
-                                  setDeleteCategoryTarget(category)
-                                }
-                              >
-                                <Trash2 aria-hidden="true" size={15} />
-                                Delete group…
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                  }),
+                              },
+                              {
+                                kind: "command",
+                                id: "edit-group",
+                                label: "Edit group",
+                                icon: Pencil,
+                                onSelect: () =>
+                                  setGroupsManager({ initialGroup: category }),
+                              },
+                              {
+                                kind: "command",
+                                id: "delete-group",
+                                label: "Delete group…",
+                                icon: Trash2,
+                                destructive: true,
+                                separatorBefore: true,
+                                onSelect: () =>
+                                  setDeleteCategoryTarget(category),
+                              },
+                            ]}
+                          />
                         }
                       >
                         {visible.length ? (
@@ -621,52 +608,40 @@ export function GoalsPage() {
         />
       )}
       {deleteGoalTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteGoalTarget(undefined)}
           title={`Delete ${deleteGoalTarget.title}?`}
           description="This permanently removes the goal and its completion history. This cannot be undone."
+          confirmLabel={removeGoal.isPending ? "Deleting…" : "Delete goal"}
+          destructive
+          pending={removeGoal.isPending}
+          onConfirm={() => removeGoal.mutate(deleteGoalTarget.id)}
         >
           {removeGoal.isError && (
             <p className="jv-library__alert" role="alert">
               The goal could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeGoal.isPending}
-              onClick={() => removeGoal.mutate(deleteGoalTarget.id)}
-            >
-              {removeGoal.isPending ? "Deleting…" : "Delete goal"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
       {deleteCategoryTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteCategoryTarget(undefined)}
           title={`Delete ${deleteCategoryTarget.name}?`}
           description="Goals remain in your Library and move to Without a group."
+          confirmLabel={removeCategory.isPending ? "Deleting…" : "Delete group"}
+          destructive
+          pending={removeCategory.isPending}
+          onConfirm={() => removeCategory.mutate(deleteCategoryTarget.id)}
         >
           {removeCategory.isError && (
             <p className="jv-library__alert" role="alert">
               The group could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeCategory.isPending}
-              onClick={() => removeCategory.mutate(deleteCategoryTarget.id)}
-            >
-              {removeCategory.isPending ? "Deleting…" : "Delete group"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
     </main>
   );

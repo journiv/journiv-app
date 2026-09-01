@@ -1,10 +1,5 @@
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -12,7 +7,6 @@ import {
   ChevronRight,
   ImagePlus,
   Menu,
-  MoreHorizontal,
   Pencil,
   Plus,
   Trash2,
@@ -53,7 +47,7 @@ import { colorFromArgb } from "../../lib/color";
 import { cx } from "../../lib/cx";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
-import { ViewMomentsMenuItem } from "./ViewMomentsMenuItem";
+import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
 
 type PersonFormState =
@@ -125,34 +119,45 @@ function PersonListItem({
       title={person.name}
       meta={personMeta(person)}
       actions={
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <IconButton label={`${person.name} actions`}>
-                <MoreHorizontal aria-hidden="true" size={17} />
-              </IconButton>
-            }
-          />
-          <DropdownMenuContent align="end">
-            <ViewMomentsMenuItem scope={{ person: person.id }} />
-            <DropdownMenuItem onClick={actions.onEdit}>
-              <Pencil aria-hidden="true" size={15} />
-              Edit person
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={actions.onManageGroups}>
-              <Users aria-hidden="true" size={15} />
-              Manage groups
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={actions.onMerge}>
-              Merge duplicate…
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={actions.onArchive}>
-              <Archive aria-hidden="true" size={15} />
-              Archive
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <AppAdaptiveMenu
+          label={`${person.name} actions`}
+          align="end"
+          actions={[
+            viewMomentsAction({ person: person.id }),
+            {
+              kind: "command",
+              id: "edit",
+              label: "Edit person",
+              icon: Pencil,
+              onSelect: actions.onEdit,
+            },
+            {
+              kind: "command",
+              id: "groups",
+              label: "Manage groups",
+              icon: Users,
+              onSelect: actions.onManageGroups,
+            },
+            // No icon, as before — this action never carried one.
+            {
+              kind: "command",
+              id: "merge",
+              label: "Merge duplicate…",
+              onSelect: actions.onMerge,
+            },
+            // Destructive, but archiving is not deleting: it keeps its own
+            // Archive glyph (DESIGN.md §17).
+            {
+              kind: "command",
+              id: "archive",
+              label: "Archive",
+              icon: Archive,
+              destructive: true,
+              separatorBefore: true,
+              onSelect: actions.onArchive,
+            },
+          ]}
+        />
       }
     />
   );
@@ -564,50 +569,47 @@ export function PeoplePage() {
                       open={searching || !collapsed.has(group.id)}
                       onToggle={() => toggleGroup(group.id)}
                       menu={
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <IconButton label={`${group.name} group actions`}>
-                                <MoreHorizontal aria-hidden="true" size={17} />
-                              </IconButton>
-                            }
-                          />
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() =>
+                        <AppAdaptiveMenu
+                          label={`${group.name} group actions`}
+                          align="end"
+                          actions={[
+                            {
+                              kind: "command",
+                              id: "add-person",
+                              label: "Add person to group",
+                              icon: UserPlus,
+                              onSelect: () =>
                                 setPersonForm({
                                   mode: "create",
                                   groupIds: [group.id],
-                                })
-                              }
-                            >
-                              <UserPlus aria-hidden="true" size={15} />
-                              Add person to group
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setGroupsManager({ initialGroup: group })
-                              }
-                            >
-                              <Pencil aria-hidden="true" size={15} />
-                              Rename group
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => setManageGroup(group)}
-                            >
-                              <Users aria-hidden="true" size={15} />
-                              Manage people
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => setDeleteGroupTarget(group)}
-                            >
-                              <Trash2 aria-hidden="true" size={15} />
-                              Delete group…
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                }),
+                            },
+                            {
+                              kind: "command",
+                              id: "rename-group",
+                              label: "Rename group",
+                              icon: Pencil,
+                              onSelect: () =>
+                                setGroupsManager({ initialGroup: group }),
+                            },
+                            {
+                              kind: "command",
+                              id: "manage-people",
+                              label: "Manage people",
+                              icon: Users,
+                              onSelect: () => setManageGroup(group),
+                            },
+                            {
+                              kind: "command",
+                              id: "delete-group",
+                              label: "Delete group…",
+                              icon: Trash2,
+                              destructive: true,
+                              separatorBefore: true,
+                              onSelect: () => setDeleteGroupTarget(group),
+                            },
+                          ]}
+                        />
                       }
                     >
                       {visible.length ? (
@@ -789,47 +791,40 @@ export function PeoplePage() {
         />
       )}
       {archivePerson && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setArchivePerson(undefined)}
           title={`Archive ${archivePerson.name}?`}
           description="The person is hidden from active lists. Existing moment references remain."
+          confirmLabel={archive.isPending ? "Archiving…" : "Archive"}
+          destructive
+          pending={archive.isPending}
+          onConfirm={() => archive.mutate(archivePerson.id)}
         >
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={archive.isPending}
-              onClick={() => archive.mutate(archivePerson.id)}
-            >
-              {archive.isPending ? "Archiving…" : "Archive"}
-            </Button>
-          </div>
-        </Dialog>
+          {archive.isError && (
+            <p className="jv-library__alert" role="alert">
+              The person could not be archived. Try again.
+            </p>
+          )}
+        </AppConfirmDialog>
       )}
       {deleteGroupTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteGroupTarget(undefined)}
           title={`Delete ${deleteGroupTarget.name}?`}
           description="People remain in your Library and are removed only from this group."
+          confirmLabel={removeGroup.isPending ? "Deleting…" : "Delete group"}
+          destructive
+          pending={removeGroup.isPending}
+          onConfirm={() => removeGroup.mutate(deleteGroupTarget.id)}
         >
           {removeGroup.isError && (
             <p className="jv-library__alert" role="alert">
               The group could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeGroup.isPending}
-              onClick={() => removeGroup.mutate(deleteGroupTarget.id)}
-            >
-              {removeGroup.isPending ? "Deleting…" : "Delete group"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
     </main>
   );

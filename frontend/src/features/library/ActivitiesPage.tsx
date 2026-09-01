@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronRight,
   Menu,
-  MoreHorizontal,
   Pencil,
   Plus,
   Sparkles,
@@ -28,13 +27,8 @@ import { PageBar } from "../../components/journiv/PageBar";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogClose } from "../../components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
@@ -44,7 +38,7 @@ import { cx } from "../../lib/cx";
 import { JOURNAL_ICONS } from "../../lib/journalIcons";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
-import { ViewMomentsMenuItem } from "./ViewMomentsMenuItem";
+import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
 
 type ActivityFormState =
@@ -137,27 +131,29 @@ function ActivityListItem({
       }
       title={activity.name}
       actions={
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <IconButton label={`${activity.name} actions`}>
-                <MoreHorizontal aria-hidden="true" size={17} />
-              </IconButton>
-            }
-          />
-          <DropdownMenuContent align="end">
-            <ViewMomentsMenuItem scope={{ activity: activity.id }} />
-            <DropdownMenuItem onClick={onEdit}>
-              <Pencil aria-hidden="true" size={15} />
-              Edit activity
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2 aria-hidden="true" size={15} />
-              Delete activity…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <AppAdaptiveMenu
+          label={`${activity.name} actions`}
+          align="end"
+          actions={[
+            viewMomentsAction({ activity: activity.id }),
+            {
+              kind: "command",
+              id: "edit",
+              label: "Edit activity",
+              icon: Pencil,
+              onSelect: onEdit,
+            },
+            {
+              kind: "command",
+              id: "delete",
+              label: "Delete activity…",
+              icon: Trash2,
+              destructive: true,
+              separatorBefore: true,
+              onSelect: onDelete,
+            },
+          ]}
+        />
       }
     />
   );
@@ -361,44 +357,40 @@ export function ActivitiesPage() {
                       open={searching || !collapsed.has(group.id)}
                       onToggle={() => toggleGroup(group.id)}
                       menu={
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <IconButton label={`${group.name} group actions`}>
-                                <MoreHorizontal aria-hidden="true" size={17} />
-                              </IconButton>
-                            }
-                          />
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() =>
+                        <AppAdaptiveMenu
+                          label={`${group.name} group actions`}
+                          align="end"
+                          actions={[
+                            {
+                              kind: "command",
+                              id: "add-activity",
+                              label: "Add activity to group",
+                              icon: Plus,
+                              onSelect: () =>
                                 setActivityForm({
                                   mode: "create",
                                   groupId: group.id,
-                                })
-                              }
-                            >
-                              <Plus aria-hidden="true" size={15} />
-                              Add activity to group
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setGroupsManager({ initialGroup: group })
-                              }
-                            >
-                              <Pencil aria-hidden="true" size={15} />
-                              Edit group
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => setDeleteGroupTarget(group)}
-                            >
-                              <Trash2 aria-hidden="true" size={15} />
-                              Delete group…
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                                }),
+                            },
+                            {
+                              kind: "command",
+                              id: "edit-group",
+                              label: "Edit group",
+                              icon: Pencil,
+                              onSelect: () =>
+                                setGroupsManager({ initialGroup: group }),
+                            },
+                            {
+                              kind: "command",
+                              id: "delete-group",
+                              label: "Delete group…",
+                              icon: Trash2,
+                              destructive: true,
+                              separatorBefore: true,
+                              onSelect: () => setDeleteGroupTarget(group),
+                            },
+                          ]}
+                        />
                       }
                     >
                       {visible.length ? (
@@ -534,52 +526,42 @@ export function ActivitiesPage() {
         />
       )}
       {deleteActivityTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteActivityTarget(undefined)}
           title={`Delete ${deleteActivityTarget.name}?`}
           description="The activity is hidden from active lists. Existing moment references remain."
+          confirmLabel={
+            removeActivity.isPending ? "Deleting…" : "Delete activity"
+          }
+          destructive
+          pending={removeActivity.isPending}
+          onConfirm={() => removeActivity.mutate(deleteActivityTarget.id)}
         >
           {removeActivity.isError && (
             <p className="jv-library__alert" role="alert">
               The activity could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeActivity.isPending}
-              onClick={() => removeActivity.mutate(deleteActivityTarget.id)}
-            >
-              {removeActivity.isPending ? "Deleting…" : "Delete activity"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
       {deleteGroupTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteGroupTarget(undefined)}
           title={`Delete ${deleteGroupTarget.name}?`}
           description="Activities remain in your Library and move to Without a group."
+          confirmLabel={removeGroup.isPending ? "Deleting…" : "Delete group"}
+          destructive
+          pending={removeGroup.isPending}
+          onConfirm={() => removeGroup.mutate(deleteGroupTarget.id)}
         >
           {removeGroup.isError && (
             <p className="jv-library__alert" role="alert">
               The group could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeGroup.isPending}
-              onClick={() => removeGroup.mutate(deleteGroupTarget.id)}
-            >
-              {removeGroup.isPending ? "Deleting…" : "Delete group"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
     </main>
   );

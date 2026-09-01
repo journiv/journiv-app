@@ -199,7 +199,7 @@ describe("Library · Tag detail", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Delete tag…" }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: /delete #travel/i,
     });
     await userEvent.click(

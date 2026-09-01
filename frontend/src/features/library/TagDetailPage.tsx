@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { MoreHorizontal, Sparkles, TriangleAlert } from "lucide-react";
+import { Sparkles, TriangleAlert } from "lucide-react";
 import { useState } from "react";
 import { ApiError } from "../../api/client/errors";
 import { api } from "../../api/client/api";
@@ -12,15 +12,9 @@ import {
 } from "../../api/query/options";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button, buttonVariants } from "../../components/ui/button";
-import { Dialog, DialogClose } from "../../components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
-import { IconButton } from "../../components/ui/icon-button";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
+import { viewMomentsAction } from "./viewMomentsAction";
 import { Skeleton } from "../../components/ui/skeleton";
 import { cn } from "../../lib/utils";
 import { formatDateMedium } from "../../lib/datetime";
@@ -162,32 +156,27 @@ export function TagDetailPage() {
       <Button variant="primary" onClick={() => setRenaming(true)}>
         Rename
       </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <IconButton label={`${tag.name} actions`}>
-              <MoreHorizontal aria-hidden="true" size={17} />
-            </IconButton>
-          }
-        />
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem
-            render={<Link to="/timeline" search={{ q: "", tag: tag.id }} />}
-          >
-            View moments
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => setMerging(true)}>
-            Merge into…
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            variant="destructive"
-            onClick={() => setDeleting(true)}
-          >
-            Delete tag…
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <AppAdaptiveMenu
+        label={`${tag.name} actions`}
+        align="end"
+        actions={[
+          viewMomentsAction({ tag: tag.id }),
+          {
+            kind: "command",
+            id: "merge",
+            label: "Merge into…",
+            onSelect: () => setMerging(true),
+          },
+          {
+            kind: "command",
+            id: "delete",
+            label: "Delete tag…",
+            destructive: true,
+            separatorBefore: true,
+            onSelect: () => setDeleting(true),
+          },
+        ]}
+      />
     </>
   );
 
@@ -396,7 +385,7 @@ export function TagDetailPage() {
       )}
 
       {deleting && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleting(false)}
           title={`Delete #${tag.name}?`}
@@ -407,23 +396,17 @@ export function TagDetailPage() {
                 )}. It can’t be undone.`
               : "This tag is on no moments. It can’t be undone."
           }
+          confirmLabel={remove.isPending ? "Deleting…" : "Delete tag"}
+          destructive
+          pending={remove.isPending}
+          onConfirm={() => remove.mutate()}
         >
           {remove.isError && (
             <p className="jv-library__alert" role="alert">
               The tag could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={remove.isPending}
-              onClick={() => remove.mutate()}
-            >
-              {remove.isPending ? "Deleting…" : "Delete tag"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
     </LibraryDetailView>
   );

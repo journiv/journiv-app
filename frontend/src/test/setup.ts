@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { closeDraftDb } from "../features/editor/draftRepository";
+import { installMatchMediaStub, resetTestViewportWidth } from "./viewport";
 
 /**
  * jsdom ships no IndexedDB, and the editor keeps local drafts in one. Without
@@ -11,6 +12,9 @@ import { closeDraftDb } from "../features/editor/draftRepository";
 const realSetTimeout = globalThis.setTimeout;
 
 afterEach(async () => {
+  // An adaptive-overlay test that narrows the viewport must not leak that
+  // width into the next test.
+  resetTestViewportWidth();
   // Unmount first: leaving the editor flushes a draft, so a component still
   // mounted would write a record after the database was cleared.
   cleanup();
@@ -61,18 +65,6 @@ if (!Range.prototype.getClientRects) {
   });
 }
 
-if (typeof matchMedia !== "function") {
-  Object.defineProperty(globalThis, "matchMedia", {
-    configurable: true,
-    value: (query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addEventListener: () => undefined,
-      removeEventListener: () => undefined,
-      addListener: () => undefined,
-      removeListener: () => undefined,
-      dispatchEvent: () => false,
-    }),
-  });
-}
+/* Width-aware `matchMedia` (see src/test/viewport.ts). Installed
+ * unconditionally, so behaviour does not depend on the jsdom version. */
+installMatchMediaStub();

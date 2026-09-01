@@ -277,7 +277,7 @@ describe("Library · Moods", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Delete mood…" }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: "Delete Awesome?",
     });
     await userEvent.click(
