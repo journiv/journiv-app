@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Link,
   useBlocker,
+  useMatchRoute,
   useNavigate,
   useRouter,
 } from "@tanstack/react-router";
@@ -72,6 +73,10 @@ export function useSettingsDirty(dirty: boolean) {
 export function SettingsModal({ section }: { section: SettingsSection }) {
   const router = useRouter();
   const navigate = useNavigate();
+  const matchRoute = useMatchRoute();
+  const onIntegrationsDetail = Boolean(
+    matchRoute({ to: "/settings/integrations/$provider" }),
+  );
   const dirtyRef = useRef(false);
   const currentUser = useQuery(currentUserQuery());
   const isAdmin = currentUser.data?.role === "admin";
@@ -123,7 +128,11 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
   }, [currentUser.data, isAdmin, navigate, section]);
 
   const sectionLabel =
-    section === "index" ? "Settings" : settingsItem(section).label;
+    section === "index"
+      ? "Settings"
+      : onIntegrationsDetail
+        ? "Immich"
+        : settingsItem(section).label;
 
   return (
     <SettingsFormContext.Provider value={{ setDirty }}>
@@ -143,12 +152,20 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
               <div className="jv-settings__topbar">
                 {section !== "index" && (
                   <IconButton
-                    label="Back to settings"
+                    label={
+                      onIntegrationsDetail
+                        ? "Back to integrations"
+                        : "Back to settings"
+                    }
                     className="jv-settings__back"
                     nativeButton={false}
                     render={
                       <Link
-                        to="/settings"
+                        to={
+                          onIntegrationsDetail
+                            ? "/settings/integrations"
+                            : "/settings"
+                        }
                         search={{ q: "" }}
                         state={(prev) => prev}
                       />

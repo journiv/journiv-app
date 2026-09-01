@@ -26,8 +26,11 @@ import { queryKeys } from "../../api/query/keys";
 import {
   currentUserQuery,
   entryQuery,
+  instanceConfigQuery,
+  integrationStatusQuery,
   journalsQuery,
   mediaFormatsQuery,
+  momentMediaQuery,
   momentQuery,
 } from "../../api/query/options";
 import { browserTimeZone } from "../../lib/datetime";
@@ -58,6 +61,8 @@ import { useDraftRecovery } from "./useDraftRecovery";
 import { type DraftIdentity, useEntryDraft } from "./useEntryDraft";
 import { useLocalDraft } from "./useLocalDraft";
 import { useMediaAttachments } from "./useMediaAttachments";
+import { ImmichPickerDialog } from "./immich/ImmichPickerDialog";
+import { useImmichAttachments } from "./immich/useImmichAttachments";
 import { EditorToolbar } from "./EditorToolbar";
 import {
   type EditorState,
@@ -431,6 +436,10 @@ function EntryEditorForm({
     enabled: Boolean(draftMomentId),
   });
   const momentForDisplay = moment ?? liveDraftMoment.data;
+  const momentMedia = useQuery({
+    ...momentMediaQuery(momentForDisplay?.id ?? ""),
+    enabled: Boolean(momentForDisplay?.id),
+  });
   const [editorState, setEditorState] = useState<EditorState>({
     formats: {},
     focused: false,
@@ -493,31 +502,85 @@ function EntryEditorForm({
     activeJournals.length > 1 ||
     !activeJournals.some((journal) => journal.id === initialJournalId);
 
+  const ensureMediaDraft = useCallback(async () => {
+    if (!journalId) {
+      setError("Choose a Journal before adding media");
+      return null;
+    }
+    try {
+      return await draft.ensure(journalId);
+    } catch {
+      setError("Could not prepare this entry for media. Try again.");
+      return null;
+    }
+  }, [draft, journalId]);
+  const onMediaDirty = useCallback(() => {
+    setBodyDirty(true);
+    keepLocally();
+  }, [keepLocally]);
+  const trackSessionMedia = useCallback(
+    (mediaId: string) => sessionMediaRef.current.push(mediaId),
+    [],
+  );
+
   const media = useMediaAttachments({
     surfaceRef,
-    ensureDraft: useCallback(async () => {
-      if (!journalId) {
-        setError("Choose a Journal before adding media");
-        return null;
-      }
-      try {
-        return await draft.ensure(journalId);
-      } catch {
-        setError("Could not prepare this entry for media. Try again.");
-        return null;
-      }
-    }, [draft, journalId]),
-    onDirty: () => {
-      setBodyDirty(true);
-      keepLocally();
-    },
-    onMediaAdded: (mediaId) => sessionMediaRef.current.push(mediaId),
+    ensureDraft: ensureMediaDraft,
+    onDirty: onMediaDirty,
+    onMediaAdded: trackSessionMedia,
   });
+
+  // Immich source: shown as a "This device / Immich" choice inside the picker
+  // when this instance provides an Immich server and the user has connected.
+  const instanceConfig = useQuery(instanceConfigQuery());
+  const immichEnabled = Boolean(instanceConfig.data?.immich_base_url);
+  const immichStatus = useQuery({
+    ...integrationStatusQuery(),
+    enabled: immichEnabled,
+  });
+  const immichConnection = immichStatus.isPending
+    ? "loading"
+    : immichStatus.data?.status === "connected"
+      ? immichStatus.data.last_error
+        ? "error"
+        : "connected"
+      : "disconnected";
+  const [immichPickerOpen, setImmichPickerOpen] = useState(false);
+
+  const immichMedia = useImmichAttachments({
+    surfaceRef,
+    ensureDraft: ensureMediaDraft,
+    onDirty: onMediaDirty,
+    onMediaAdded: trackSessionMedia,
+  });
+  // Gates the editor's "Suggested from Immich" people strip: only ask Immich's
+  // face index about a moment that actually holds Immich media.
+  const hasImmichMedia =
+    immichEnabled &&
+    (immichMedia.attachments.length > 0 ||
+      momentMedia.data?.some((media) => media.origin?.source === "immich") ===
+        true);
+
+  // After an Immich import lands, the moment's Immich asset ids change, so the
+  // face-suggestion list must be recomputed (M2 "face lookup" seam).
+  const attachFromImmich = useCallback(
+    async (assets: Parameters<typeof immichMedia.attach>[0]) => {
+      await immichMedia.attach(assets);
+      const id = momentForDisplay?.id ?? draftMomentId;
+      if (id) {
+        void queryClient.invalidateQueries({
+          queryKey: queryKeys.immichPeopleSuggestions(id),
+        });
+      }
+    },
+    [immichMedia, momentForDisplay?.id, draftMomentId, queryClient],
+  );
 
   const openMediaPicker = useCallback(() => {
     setError("");
-    fileInputRef.current?.click();
-  }, []);
+    if (immichEnabled) setImmichPickerOpen(true);
+    else fileInputRef.current?.click();
+  }, [immichEnabled]);
 
   // Metadata editing needs a server Moment id. Reuse the lazy-draft path so a
   // new entry only creates a row once the user actually sets something.
@@ -612,7 +675,7 @@ function EntryEditorForm({
       if (!journalId) throw new Error("Choose a Journal before saving");
       if (!activeJournals.some((journal) => journal.id === journalId))
         throw new Error("Choose an active Journal before saving");
-      if (media.pending > 0)
+      if (media.pending > 0 || immichMedia.pending > 0)
         throw new Error("Wait for uploads to finish before saving");
       const entryPayload = {
         title: title.trim() || null,
@@ -782,8 +845,10 @@ function EntryEditorForm({
     // An explicit discard is one of only two things that may remove the local
     // copy. The other is a confirmed server save.
     void localDraft.remove();
-    // Abort anything still uploading before leaving.
+    // Abort anything still uploading or importing before leaving.
     for (const item of media.attachments) media.cancel(item.uploadId);
+    for (const item of immichMedia.attachments)
+      immichMedia.cancel(item.uploadId);
     // A draft created for this session is cleaned up. Media the user actually
     // attached is KEPT: the Moment survives as a media-only Moment rather than
     // silently deleting photographs someone just took.
@@ -925,6 +990,7 @@ function EntryEditorForm({
               onSaved: onDetailsSaved,
               loggedAtUtc: effectiveLoggedAtUtc,
               loggedTimezone: effectiveTimezone,
+              hasImmichMedia,
             }}
           />
           <input
@@ -942,7 +1008,10 @@ function EntryEditorForm({
               if (files.length) void media.attach(files);
             }}
           />
-          {(media.error || media.failed.length > 0) && (
+          {(media.error ||
+            media.failed.length > 0 ||
+            immichMedia.error ||
+            immichMedia.failed.length > 0) && (
             <div className="jv-editor__upload-errors" role="alert">
               {media.error && (
                 <p className="jv-editor__upload-error">{media.error}</p>
@@ -966,8 +1035,38 @@ function EntryEditorForm({
                   </Button>
                 </p>
               ))}
+              {immichMedia.error && (
+                <p className="jv-editor__upload-error">{immichMedia.error}</p>
+              )}
+              {immichMedia.failed.map((item) => (
+                <p key={item.uploadId} className="jv-editor__upload-error">
+                  <span>{item.message}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => immichMedia.retry(item.uploadId)}
+                  >
+                    Retry
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => immichMedia.cancel(item.uploadId)}
+                  >
+                    Remove
+                  </Button>
+                </p>
+              ))}
             </div>
           )}
+          <ImmichPickerDialog
+            open={immichPickerOpen}
+            onOpenChange={setImmichPickerOpen}
+            connection={immichConnection}
+            importMode={immichStatus.data?.import_mode ?? "link_only"}
+            onPickDevice={() => fileInputRef.current?.click()}
+            onPickImmich={(assets) => void attachFromImmich(assets)}
+          />
           <QuillSurface
             ref={surfaceRef}
             editorId={moment?.entry?.id ?? moment?.id ?? "new-entry"}

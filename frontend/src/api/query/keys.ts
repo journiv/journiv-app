@@ -78,6 +78,22 @@ export const queryKeys = {
   licenseInfo: ["instance", "license"] as const,
   integrationStatus: (provider: string) =>
     ["integrations", provider, "status"] as const,
+  /** The connected Immich library, browsed page by page in the editor picker.
+   *  Not nested under `integrationStatus` — disconnect/reconnect invalidates
+   *  both explicitly. */
+  immichAssets: ["integrations", "immich", "assets"] as const,
+  /** One Immich → Moment import job, polled until it settles. */
+  immichImportJob: (id: string) =>
+    ["integrations", "immich", "import-job", id] as const,
+  /** A page-search of the connected Immich instance's detected people, keyed by
+   *  the (trimmed) search term so each term is its own infinite query. */
+  immichPeople: (search: string) =>
+    ["integrations", "immich", "people", search] as const,
+  /** People Immich's face index suggests for one moment. Nested under
+   *  `["moment", id]` so a moment invalidation drops it too — same rule as
+   *  `momentMedia`. Do not flatten to a sibling key. */
+  immichPeopleSuggestions: (momentId: string) =>
+    ["moment", momentId, "immich-people-suggestions"] as const,
   exportJob: (id: string) => ["export", id] as const,
   exportDownload: (id: string) => ["export", id, "signed"] as const,
   importJob: (id: string) => ["import", id] as const,

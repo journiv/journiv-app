@@ -870,6 +870,31 @@ discarded, but **media the user attached is kept** — the Moment survives as a
 media-only Moment rather than deleting photographs someone just took. The
 confirm says so. Media that existed before this edit is never touched.
 
+**Attaching from Immich.** When the instance provides an Immich server
+(`GET /instance/config` → `immich_base_url`), the "Add photo, video or audio"
+button opens an `AppAdaptiveDialog` source chooser — a bottom sheet at ≤ 860px,
+a centred dialog above it —
+([`ImmichPickerDialog`](src/features/editor/immich/ImmichPickerDialog.tsx)) with
+a `This device` / `Immich` switch. Its selection state lives above the adaptive
+primitive, so crossing the boundary does not lose chosen assets; with no Immich
+server it goes straight to the native file input as before. The Immich tab is a
+virtualized, infinite-scroll
+multi-select grid ([`AssetGridPicker`](src/features/media/AssetGridPicker.tsx),
+`@tanstack/react-virtual`) over `GET /integrations/immich/assets` — images and
+videos only, newest first, `page`/`limit` paging (the backend exposes no search
+or filter yet — §21). Confirming hands the chosen assets to
+[`useImmichAttachments`](src/features/editor/immich/useImmichAttachments.ts),
+which runs the **same pipeline** as an upload: caret capture → `ensureDraft()` →
+placeholders → **one** `POST /media/import-from-immich-async` for the whole
+selection → each returned media row matched to its placeholder by
+`origin.external_id` → `replacePlaceholder` with the row's `signed_url` → the
+shared processing poll
+([`mediaProcessingPoll.ts`](src/features/editor/mediaProcessingPoll.ts), also
+used by the device path). The race check, the "only the import call blocks
+Done" rule, and Cancel keeping attached media are identical. Link-only vs copy
+is the integration's setting, applied server-side; the dialog only says which is
+in effect.
+
 ### Local drafts, and how they meet the server draft
 
 Two different mechanisms, doing two different jobs. Keep them straight.
@@ -1015,6 +1040,18 @@ time (not a delta). **Tags** are `POST /moments/{id}/tags` by name (comma or
 Enter commits) and `DELETE /moments/{id}/tags/{tag_id}` to remove; `GET
 /tags/search` feeds inline suggestions. Both pickers filter client-side.
 
+**Suggested from Immich.** When the moment holds Immich-origin media
+(`hasImmichMedia`, threaded from the editor — a non-Immich entry makes no
+call), a quiet strip above the people list
+([`ImmichSuggestedPeople`](src/features/editor/immich/ImmichSuggestedPeople.tsx))
+asks `POST /moments/{id}/people/suggestions/immich` which linked, sync-enabled
+people Immich's face index matches — add-chips only. Tapping one runs the same
+`PUT /moments/{id}/people`; nothing is written without the tap (§2.6). It never
+auto-adds. A **fetch failure is not a failed user action**, so it shows a
+`jv-caption` + Retry with `role="status"` — never a `role="alert"` or a
+pane-filling `StatusView` (the reader-media precedent, §13); the people list and
+its own save errors are untouched. Empty and still-loading render nothing.
+
 **Every failure reaches the screen.** Each section owns a `role="alert"` with a
 human message; searches show their own inline error and empty states; mood and
 people show `Skeleton` while loading and a `StatusView` on error or when the
@@ -1115,7 +1152,14 @@ src/app/                      router (`app/router/`), query client, theme.ts
 src/features/theme/           personalization: UserTheme model, applyUserTheme,
                               parseThemeCss, exportThemeCss, fonts, usePersonalization
 src/features/library/         People / Tags / Moods / Activities / Goals (§24)
-src/features/media/           the Media grid list-pane mode
+src/features/library/immich/  the People "Import from Immich" dialog + its pure
+                              row→request mapping (§24 People)
+src/features/media/           the Media grid list-pane mode; the shared
+                              virtualized selection grid (`AssetGridPicker`,
+                              `useVirtualGrid` — `@tanstack/react-virtual`) used
+                              by the editor's Immich picker
+src/features/editor/immich/   the editor's Immich source chooser + attach pipeline,
+                              and the "Suggested from Immich" people strip (§14)
 src/lib/                      moment semantics, datetime, journal lookup + order,
                               journal colours + icons, `utils.ts` (`cn`), `cx.ts`,
                               useCompactViewport (the one reactive breakpoint read)
@@ -1300,6 +1344,45 @@ small rather than reimplementing the guard in a browser.
     Users therefore walks pages until a short response and only then offers
     local search and ten-row presentation paging. A server total or cursor
     would let very large self-hosted instances render progressively.
+16. **The Immich asset picker (§14) has no search, type, date or album
+    filter.** `GET /integrations/immich/assets` is `page`/`limit` only, so the
+    picker is infinite-scroll, newest-first. Real filtering needs the backend to
+    forward `query` / `type` / `takenBefore` / `takenAfter` / `albumIds` to
+    Immich's `search/metadata`. Tracked as gap G1 in `frontend-immich-v2.md` §7.
+17. **Immich assets carry no duration or dimensions.** Video tiles show a play
+    glyph with no time and the grid uses a fixed square aspect. `AssetGridItem`
+    already has a `durationSec` slot for when the normalized asset gains one
+    (G2).
+18. **Immich import — resolved.** `MomentMediaResponse.origin.external_id`
+    carries the Immich asset id, so `useImmichAttachments` sends one batched
+    `import-from-immich-async` for the whole selection and matches each returned
+    row back to its placeholder by that id (positional fallback for an older
+    backend that omits it). The earlier per-asset approach raced on the SQLite
+    write lock and left every asset but the first failing.
+19. **No preview inside the Immich picker.** Tiles select on tap; there is no
+    enlarged view or in-picker playback (consistent with #7). An Immich
+    `original_url` has a 5-minute TTL, so a preview needs a re-fetch strategy —
+    a follow-up alongside the lightbox (G4).
+20. **G6 — Immich people `sync_enabled` is import-time only.** It is set through
+    `POST /integrations/immich/people/import` and nowhere else — there is no
+    `PATCH /integrations/immich/people/{id}` and `PersonUpdate` has no
+    `sync_enabled`. So a person imported with the auto-suggest box unchecked (or
+    one the writer later wants to stop suggesting) cannot be toggled from the
+    UI. Mitigated by defaulting the box **on**; a per-person toggle is **not
+    built**. Request the field on `PersonUpdate` or a dedicated PATCH.
+21. **G7 — `POST /moments/{id}/people/suggestions/immich` refreshes faces
+    synchronously.** The first call per asset round-trips to the Immich server
+    (`_batch_concurrency = 4`); there is no async/job variant. A moment with
+    many Immich photos can make the first "Moment details" open slow. Mitigated
+    by `staleTime: 60_000` and the `hasImmichMedia` gate (≈ once per editing
+    session).
+22. **G8 — an empty suggestion strip is unexplained.** Suggestions only ever
+    include people imported with `sync_enabled = true`; the response gives no
+    signal distinguishing "no face matched" from "matched people who aren't
+    sync-enabled", so the strip can be silently empty with nothing to say why.
+23. **G9 — `ImmichPersonResponse` has no appearance count.** The import grid
+    can't show "appears in N photos" to help the writer pick who's worth
+    importing. Request `asset_count` on the normalized person.
 
 ---
 
@@ -1449,12 +1532,50 @@ form edit in place; only small confirmations (discard) may stack.
   sidebar control remains the explicit per-device override; it is not silently
   moved or replaced. The page submits the three settings together, invalidates
   `queryKeys.userSettings`, and participates in the shared discard guard.
-- **Integrations** — `/settings/integrations` is capability-gated by
-  `GET /instance/config`. An Immich form appears only when `immich_base_url` is
-  present, reads `GET /integrations/immich/status`, connects or updates through
-  the generated endpoints, and confirms disconnect. API keys remain ephemeral
-  and participate in the shared dirty guard; status cache is invalidated after
-  every successful write.
+- **Integrations** — a **catalogue → detail** drill-down, both real routes
+  (§23 "routing is real"). There is no list-providers endpoint, so the set of
+  providers is a frontend registry
+  ([`providers.ts`](src/features/settings/integrations/providers.ts)); `immich`
+  is the only real one.
+  - `/settings/integrations` is the **catalogue**
+    ([`IntegrationsCatalogue`](src/features/settings/integrations/IntegrationsCatalogue.tsx)):
+    a `LibraryRow` list (§24), one row per provider — icon tile, name, one-line
+    blurb, an `IntegrationStatusPill` (a dot **plus** a label, never colour
+    alone — §6: `Connected` / `Not connected` / `Paused` / `Attention needed`
+    / `Not available` / `Status unavailable`), and an info control linking the
+    public setup guide in a new tab. A provider the instance has not enabled
+    (`immich_base_url` absent) stays listed but **unlinked**, pill `Not
+    available`. A trailing muted, non-interactive row states that more
+    providers are coming. Reads `GET /instance/config` and
+    `GET /integrations/immich/status`; a failed status request degrades the
+    pill rather than erroring the page.
+  - `/settings/integrations/$provider` is the **detail** — a single-segment
+    param route (not a splat), `staticData: { settings: "integrations" }` so
+    the modal chrome and the lit "Providers" nav item are unchanged across the
+    drill-down; only the content pane swaps, with **no transition** (§8), like
+    every other section switch. An unknown or removed provider redirects to the
+    catalogue in `beforeLoad` rather than 404ing. Back to the catalogue is an
+    in-content `‹ Back to integrations` link on desktop and the modal top-bar
+    chevron on compact (`SettingsModal` retargets it) — exactly one affordance
+    per breakpoint.
+  - The Immich detail
+    ([`ImmichConnectForm`](src/features/settings/integrations/ImmichConnectForm.tsx))
+    is unchanged: the server (read-only), connection state, and an
+    **import-mode** choice — `Link originals` vs `Copy into Journiv`, a radio
+    group with descriptions, chosen at connect time (`POST
+/integrations/connect` with `import_mode`) and editable afterwards (`PUT
+/integrations/{provider}/settings`). Connected, it also offers `Sync now`
+    (`POST /integrations/{provider}/sync`) and `Disconnect` (an
+    `AppConfirmDialog`: confirmation sheet at ≤ 860px, `AlertDialog` above). A
+    `last_error` surfaces an alert and re-reveals the API-key field for
+    reconnection; `album_error` shows under the mode control. API keys are
+    ephemeral and never written to any draft; the form participates in the
+    shared dirty guard; `queryKeys.integrationStatus("immich")` is invalidated
+    after every successful write. The same status drives the editor's Immich
+    media picker (§14).
+  - Backend gaps: `is_active` (paused) is readable but not settable — there is
+    no pause/resume endpoint; there is no test-connection endpoint (`connect`
+    is the live test); no provider metadata or icons come from the API.
 - **Data & backup** — `/settings/data/import` and `/settings/data/export` use the
   general background-job APIs. Both require an explicit start action, poll only
   while a job is pending/running, render progress and a human failure state,
@@ -1583,6 +1704,29 @@ server count · ⋯` (the same dot + rule + count device as §22), then an airy
   People keeps the defaults). The People collection's own section rendering
   stays People-local so a future `/library/people/$personId` route can replace
   the dialogs without rewriting it.
+- **Import from Immich** is a secondary header action, rendered **only** when
+  `GET /instance/config` has `immich_base_url` **and**
+  `GET /integrations/immich/status` is `connected` — otherwise not rendered (no
+  dead control). It opens `ImmichPeopleImportDialog`
+  ([`src/features/library/immich/`](src/features/library/immich/ImmichPeopleImportDialog.tsx)):
+  one `AppAdaptiveDialog` — bottom sheet at ≤ 860px, centred dialog above —
+  with caller-owned state and three in-place views (browse → importing →
+  results, they swap, never stack). Browse is a plain infinite-scroll **list** — deliberately not
+  the virtualized `AssetGridPicker`, because every row carries its own mapping
+  state; `GET /integrations/immich/people` takes a real `search` term (unlike
+  the asset endpoint), so a debounced server search narrows it. Each row: round
+  avatar (`thumbnail_url`, initials fallback), the Immich name **or a required
+  name field for an unnamed face cluster**, and a `Create new` / `Link to
+  existing…` / `Skip` control (`Link` reveals a person `Combobox`). A row whose
+  `mapped_person` is already set shows a muted "Linked to …" badge and is
+  excluded. A batch checkbox — **"Suggest these people when their photos are
+  added to an entry", default checked** — sets `sync_enabled` on every item.
+  One primary, `Import N people`, disabled at zero or while any pointed-at row
+  is unfinished. `POST /integrations/immich/people/import` is **partial
+  success**: results list ✓ created/linked and ✗ per-item errors, with a
+  `Retry failed` that resubmits only the failures. Any success invalidates
+  `queryKeys.people`. Turning `sync_enabled` on or off **after** import is not
+  built — see §21.G6.
 
 ### Activities
 

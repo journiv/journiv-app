@@ -1,0 +1,178 @@
+/* Immich integration form — the import-mode radio group and its notices. */
+
+.jv-immich-mode {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.jv-immich-mode__option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--space-2);
+  align-items: start;
+  cursor: pointer;
+}
+
+.jv-immich-mode__option input[type="radio"] {
+  width: 18px;
+  height: 18px;
+  margin-top: var(--space-1);
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+.jv-immich-mode__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.jv-immich-mode__label {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.jv-immich-mode__description {
+  margin: 0;
+}
+
+.jv-immich-mode__album-error {
+  margin-top: var(--space-2);
+  color: var(--destructive);
+}
+
+/* ---- provider catalogue -------------------------------------------------- */
+/* A list of providers, built on the shared `LibraryRow` (DESIGN.md §24). Rows
+   link to their detail route; the trailing slot carries live status, not a
+   hover-only menu, so it opts out of the Library list's reveal-on-hover. */
+
+.jv-integrations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jv-integrations-list .jv-lib-row__actions {
+  gap: var(--space-2);
+  opacity: 1;
+}
+
+.jv-integrations-row__tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+/* Info control — a real link (opens the public setup guide in a new tab), sized
+   to the 44px touch target with an invisible hit area (DESIGN.md §17). */
+.jv-integrations-row__guide {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+}
+
+.jv-integrations-row__guide::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--tap-target);
+  height: var(--tap-target);
+  transform: translate(-50%, -50%);
+}
+
+.jv-integrations-row__guide:hover {
+  background: var(--state-hover);
+  color: var(--foreground);
+}
+
+/* The "more coming" row is informational — no hover affordance, quieter text. */
+.jv-integrations-row--soon .jv-lib-row__title {
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+
+.jv-integrations-row--soon:hover {
+  background: transparent;
+}
+
+/* Narrow: let the status pill + info control drop onto their own line below the
+   name rather than crushing the title. Covers both row variants — the grid
+   (unlinked provider) and the flex `--link` (linked provider). 620px matches
+   settings.css's row-layout switch. */
+@media (max-width: 620px) {
+  .jv-integrations-row.jv-lib-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    row-gap: var(--space-2);
+  }
+  .jv-integrations-row.jv-lib-row--link {
+    flex-wrap: wrap;
+  }
+  .jv-integrations-row.jv-lib-row--link .jv-lib-row__hit {
+    flex: 1 1 100%;
+  }
+  .jv-integrations-list .jv-lib-row__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
+  }
+}
+
+/* ---- status pill ------------------------------------------------------------ */
+/* Dot plus label — never colour alone (DESIGN.md §6). */
+
+.jv-status-pill {
+  gap: var(--space-1);
+}
+
+.jv-status-pill__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--muted-foreground);
+}
+
+.jv-status-pill__dot--ok {
+  background: var(--primary);
+}
+
+.jv-status-pill__dot--warn {
+  background: var(--destructive);
+}
+
+.jv-status-pill__dot--muted {
+  background: var(--muted-foreground);
+}
+
+/* ---- back link ------------------------------------------------------------- */
+/* Desktop-only: on compact widths the modal top bar already carries the back
+   chevron (SettingsModal). */
+
+.jv-integrations__back {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-bottom: var(--space-4);
+  color: var(--muted-foreground);
+  text-decoration: none;
+}
+
+.jv-integrations__back:hover {
+  color: var(--foreground);
+}

@@ -496,6 +496,7 @@
 
 .jv-overlay__body {
   min-height: 0;
+  overflow-x: clip;
   overflow-y: auto;
   /* Keeps a scroll gesture inside the sheet from becoming a drag on it. */
   overscroll-behavior: contain;

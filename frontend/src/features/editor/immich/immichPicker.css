@@ -1,0 +1,32 @@
+/* Header controls for the editor's adaptive "Add media" overlay. The shared
+ * overlay owns sizing, scrolling and the fixed action row (DESIGN.md §9). */
+
+.jv-immich-picker__tabs {
+  display: inline-flex;
+  align-self: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+}
+
+.jv-immich-picker__tab {
+  min-height: var(--tap-target);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted-foreground);
+  font: inherit;
+  cursor: pointer;
+}
+
+.jv-immich-picker__tab[aria-selected="true"] {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+.jv-immich-picker__tab:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

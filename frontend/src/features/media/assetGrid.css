@@ -1,0 +1,190 @@
+/* Shared virtualized selection grid — the Immich asset picker today, the
+ * people picker in a later milestone. Column count is set inline from the
+ * container's measured width (useVirtualGrid), so there are no media queries
+ * here: the grid reflows at its own width (DESIGN.md §9). */
+
+.jv-asset-picker {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
+.jv-asset-picker__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-1);
+  outline: none;
+}
+
+.jv-asset-picker[data-scroll-owner="overlay"] {
+  height: auto;
+  min-height: 100%;
+}
+
+.jv-asset-picker[data-scroll-owner="overlay"] .jv-asset-picker__scroll {
+  flex: none;
+  overflow: visible;
+}
+
+.jv-asset-picker__viewport {
+  position: relative;
+  width: 100%;
+}
+
+.jv-asset-picker__row {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0 0 var(--space-2);
+  list-style: none;
+}
+
+.jv-asset-picker__row--static {
+  position: static;
+}
+
+.jv-asset-picker__row:not(.jv-asset-picker__row--static) {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+
+.jv-asset-picker__row > li {
+  min-width: 0;
+}
+
+.jv-asset-tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  border-radius: var(--radius-xs);
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: outline-color var(--duration-fast) ease;
+}
+
+.jv-asset-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.jv-asset-tile:hover img {
+  opacity: 0.92;
+}
+
+.jv-asset-tile:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.jv-asset-tile.is-selected {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.jv-asset-tile[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.jv-asset-tile__glyph {
+  display: inline-flex;
+}
+
+.jv-asset-tile__badge {
+  position: absolute;
+  left: var(--space-1);
+  bottom: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 1.25rem;
+  padding: 0 var(--space-1);
+  border-radius: 999px;
+  background: var(--overlay-scrim);
+  color: var(--text-on-overlay);
+  font-size: 0.6875rem;
+  line-height: 1;
+}
+
+.jv-asset-tile__check {
+  position: absolute;
+  top: var(--space-1);
+  right: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  opacity: 0;
+  transform: scale(0.8);
+  transition:
+    opacity var(--duration-fast) ease,
+    transform var(--duration-fast) ease;
+}
+
+.jv-asset-tile.is-selected .jv-asset-tile__check {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.jv-asset-picker[data-variant="person"] .jv-asset-tile {
+  border-radius: 999px;
+}
+
+.jv-asset-picker__more {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-4) 0 var(--space-2);
+  color: var(--muted-foreground);
+}
+
+.jv-asset-picker__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-1) 0;
+  border-top: 1px solid var(--border);
+}
+
+.jv-overlay__footer > .jv-asset-picker__footer {
+  width: 100%;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.jv-overlay__footer--sheet > .jv-asset-picker__footer {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.jv-asset-picker__count {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-asset-picker__cap {
+  margin: var(--space-2) 0 0;
+  color: var(--destructive);
+}
