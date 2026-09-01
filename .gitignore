@@ -157,6 +157,10 @@ static/uploads/
 # ...but not the frontend source feature directory that shares the name.
 !frontend/src/**/media/
 
+# Playwright media journeys generate their files in memory; keep their specs.
+!frontend/e2e/media/
+!frontend/e2e/media/**
+
 # Backups / exports / imports
 backups/
 exports/

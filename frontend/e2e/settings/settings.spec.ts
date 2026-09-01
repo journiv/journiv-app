@@ -55,12 +55,14 @@ test.describe("settings", () => {
     await darkTheme.click();
 
     await expect(darkTheme).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("html")).toHaveClass(/dark/);
 
     await page.reload();
 
     await expect(
       page.getByRole("button", { name: "Dark theme" }),
     ).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator("html")).toHaveClass(/dark/);
   });
 
   test("changing the password rejects the old password and restores the worker credential", async ({
