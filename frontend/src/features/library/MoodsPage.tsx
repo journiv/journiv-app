@@ -3,7 +3,6 @@ import {
   ChevronDown,
   ChevronRight,
   Menu,
-  MoreHorizontal,
   Pencil,
   Plus,
   Sparkles,
@@ -28,13 +27,8 @@ import { PageBar } from "../../components/journiv/PageBar";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogClose } from "../../components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
@@ -47,7 +41,7 @@ import {
 import { cx } from "../../lib/cx";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
-import { ViewMomentsMenuItem } from "./ViewMomentsMenuItem";
+import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
 
 type MoodFormState = { mode: "create" } | { mode: "edit"; mood: MoodResponse };
@@ -143,27 +137,29 @@ function MoodListItem({
       title={mood.name}
       meta={moodMeta(mood)}
       actions={
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <IconButton label={`${mood.name} actions`}>
-                <MoreHorizontal aria-hidden="true" size={17} />
-              </IconButton>
-            }
-          />
-          <DropdownMenuContent align="end">
-            <ViewMomentsMenuItem scope={{ mood: mood.id }} />
-            <DropdownMenuItem onClick={onEdit}>
-              <Pencil aria-hidden="true" size={15} />
-              Edit mood
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2 aria-hidden="true" size={15} />
-              Delete mood…
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <AppAdaptiveMenu
+          label={`${mood.name} actions`}
+          align="end"
+          actions={[
+            viewMomentsAction({ mood: mood.id }),
+            {
+              kind: "command",
+              id: "edit",
+              label: "Edit mood",
+              icon: Pencil,
+              onSelect: onEdit,
+            },
+            {
+              kind: "command",
+              id: "delete",
+              label: "Delete mood…",
+              icon: Trash2,
+              destructive: true,
+              separatorBefore: true,
+              onSelect: onDelete,
+            },
+          ]}
+        />
       }
     />
   );
@@ -364,33 +360,29 @@ export function MoodsPage() {
                       open={searching || !collapsed.has(group.id)}
                       onToggle={() => toggleGroup(group.id)}
                       menu={
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <IconButton label={`${group.name} group actions`}>
-                                <MoreHorizontal aria-hidden="true" size={17} />
-                              </IconButton>
-                            }
-                          />
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setGroupsManager({ initialGroup: group })
-                              }
-                            >
-                              <Pencil aria-hidden="true" size={15} />
-                              Edit group
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => setDeleteGroupTarget(group)}
-                            >
-                              <Trash2 aria-hidden="true" size={15} />
-                              Delete group…
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <AppAdaptiveMenu
+                          label={`${group.name} group actions`}
+                          align="end"
+                          actions={[
+                            {
+                              kind: "command",
+                              id: "edit-group",
+                              label: "Edit group",
+                              icon: Pencil,
+                              onSelect: () =>
+                                setGroupsManager({ initialGroup: group }),
+                            },
+                            {
+                              kind: "command",
+                              id: "delete-group",
+                              label: "Delete group…",
+                              icon: Trash2,
+                              destructive: true,
+                              separatorBefore: true,
+                              onSelect: () => setDeleteGroupTarget(group),
+                            },
+                          ]}
+                        />
                       }
                     >
                       {visible.length ? (
@@ -497,52 +489,40 @@ export function MoodsPage() {
         />
       )}
       {deleteMoodTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteMoodTarget(undefined)}
           title={`Delete ${deleteMoodTarget.name}?`}
           description="The mood is hidden from active lists. Existing moment references remain."
+          confirmLabel={removeMood.isPending ? "Deleting…" : "Delete mood"}
+          destructive
+          pending={removeMood.isPending}
+          onConfirm={() => removeMood.mutate(deleteMoodTarget.id)}
         >
           {removeMood.isError && (
             <p className="jv-library__alert" role="alert">
               The mood could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeMood.isPending}
-              onClick={() => removeMood.mutate(deleteMoodTarget.id)}
-            >
-              {removeMood.isPending ? "Deleting…" : "Delete mood"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
       {deleteGroupTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteGroupTarget(undefined)}
           title={`Delete ${deleteGroupTarget.name}?`}
           description="Moods remain in your Library and are removed only from this group."
+          confirmLabel={removeGroup.isPending ? "Deleting…" : "Delete group"}
+          destructive
+          pending={removeGroup.isPending}
+          onConfirm={() => removeGroup.mutate(deleteGroupTarget.id)}
         >
           {removeGroup.isError && (
             <p className="jv-library__alert" role="alert">
               The group could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeGroup.isPending}
-              onClick={() => removeGroup.mutate(deleteGroupTarget.id)}
-            >
-              {removeGroup.isPending ? "Deleting…" : "Delete group"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
     </main>
   );

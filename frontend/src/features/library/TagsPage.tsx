@@ -2,7 +2,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import {
   Hash,
-  MoreHorizontal,
   Plus,
   Sparkles,
   Tags as TagsIcon,
@@ -18,14 +17,9 @@ import { LibraryRow } from "../../components/journiv/LibraryRow";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
 import { Dialog, DialogClose } from "../../components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
-import { IconButton } from "../../components/ui/icon-button";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
+import { viewMomentsAction } from "./viewMomentsAction";
 import { Input } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -253,34 +247,27 @@ export function TagsPage() {
                 tag.created_at,
               )}`}
               actions={
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <IconButton label={`${tag.name} actions`}>
-                        <MoreHorizontal aria-hidden="true" size={17} />
-                      </IconButton>
-                    }
-                  />
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      render={
-                        <Link to="/timeline" search={{ q: "", tag: tag.id }} />
-                      }
-                    >
-                      View moments
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => setMergeSource(tag)}>
-                      Merge into…
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      variant="destructive"
-                      onClick={() => setDeleteTarget(tag)}
-                    >
-                      Delete tag…
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <AppAdaptiveMenu
+                  label={`${tag.name} actions`}
+                  align="end"
+                  actions={[
+                    viewMomentsAction({ tag: tag.id }),
+                    {
+                      kind: "command",
+                      id: "merge",
+                      label: "Merge into…",
+                      onSelect: () => setMergeSource(tag),
+                    },
+                    {
+                      kind: "command",
+                      id: "delete",
+                      label: "Delete tag…",
+                      destructive: true,
+                      separatorBefore: true,
+                      onSelect: () => setDeleteTarget(tag),
+                    },
+                  ]}
+                />
               }
             />
           ))}
@@ -313,7 +300,7 @@ export function TagsPage() {
       )}
 
       {deleteTarget && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setDeleteTarget(undefined)}
           title={`Delete #${deleteTarget.name}?`}
@@ -324,50 +311,40 @@ export function TagsPage() {
                 )}. It can’t be undone.`
               : "This tag is on no moments. It can’t be undone."
           }
+          confirmLabel={removeTag.isPending ? "Deleting…" : "Delete tag"}
+          destructive
+          pending={removeTag.isPending}
+          onConfirm={() => removeTag.mutate(deleteTarget.id)}
         >
           {removeTag.isError && (
             <p className="jv-library__alert" role="alert">
               The tag could not be deleted. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={removeTag.isPending}
-              onClick={() => removeTag.mutate(deleteTarget.id)}
-            >
-              {removeTag.isPending ? "Deleting…" : "Delete tag"}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
 
       {cleanupOpen && (
-        <Dialog
+        <AppConfirmDialog
           open
           onOpenChange={(open) => !open && setCleanupOpen(false)}
           title="Clean up unused tags?"
           description={`This permanently deletes ${unusedCount} ${
             unusedCount === 1 ? "tag that is" : "tags that are"
           } on no moments.`}
+          confirmLabel={
+            cleanup.isPending ? "Deleting…" : `Delete ${unusedCount}`
+          }
+          destructive
+          pending={cleanup.isPending}
+          onConfirm={() => cleanup.mutate()}
         >
           {cleanup.isError && (
             <p className="jv-library__alert" role="alert">
               The tags could not be cleaned up. Try again.
             </p>
           )}
-          <div className="jv-dialog__actions">
-            <DialogClose render={<Button>Cancel</Button>} />
-            <Button
-              variant="danger"
-              disabled={cleanup.isPending}
-              onClick={() => cleanup.mutate()}
-            >
-              {cleanup.isPending ? "Deleting…" : `Delete ${unusedCount}`}
-            </Button>
-          </div>
-        </Dialog>
+        </AppConfirmDialog>
       )}
     </LibraryWorkspace>
   );

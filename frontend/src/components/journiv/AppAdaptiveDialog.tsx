@@ -1,0 +1,135 @@
+import type { ReactNode } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "../ui/drawer";
+import { cx } from "../../lib/cx";
+import { useCompactViewport } from "../../lib/useCompactViewport";
+import { guardDismissal } from "./overlayDismissal";
+
+export type AppDialogSize = "sm" | "md" | "lg";
+
+/** Regular-presentation width only — the sheet always spans the viewport.
+ *  The `sm:` half is not redundant: `DialogContent` ships `sm:max-w-md`, and
+ *  tailwind-merge only replaces a class within the same variant, so a bare
+ *  `max-w-2xl` would still be overridden above 640px. */
+const SIZE_CLASS: Record<AppDialogSize, string> = {
+  sm: "max-w-sm sm:max-w-sm",
+  md: "max-w-md sm:max-w-md",
+  lg: "max-w-2xl sm:max-w-2xl",
+};
+
+export interface AppAdaptiveDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: ReactNode;
+  description?: ReactNode;
+  /** Keeps the accessible name while hiding the title visually. */
+  titleVisuallyHidden?: boolean;
+  children: ReactNode;
+  /** The action row. Exactly one primary action (DESIGN.md §6). */
+  footer?: ReactNode;
+  /** Regular-presentation width. There is deliberately no `full`. */
+  size?: AppDialogSize;
+  /** When false, Escape, outside press and swipe cannot close the surface.
+   *  The caller still owns dirty state, discard prompts and cleanup. */
+  dismissible?: boolean;
+}
+
+/**
+ * A form or other substantial modal workflow, presented as the viewport
+ * requires (DESIGN.md §9, "Adaptive overlays"):
+ *
+ *     <= 860px   Drawer (bottom sheet)
+ *     >  860px   Dialog (centred)
+ *
+ * Only the chosen branch is mounted — never both with one hidden, which would
+ * duplicate every control, accessible name and `useId()` inside the overlay.
+ * Crossing 860px therefore remounts the primitive, so state that must survive
+ * (form values, drafts) belongs in the caller, above this component.
+ *
+ * This is not the place for a simple yes/no question — use `AppConfirmDialog`.
+ * It *is* the place for a destructive flow that needs typed confirmation, an
+ * acknowledgement, or an alternative action.
+ */
+export function AppAdaptiveDialog({
+  open,
+  onOpenChange,
+  title,
+  description,
+  titleVisuallyHidden = false,
+  children,
+  footer,
+  size = "md",
+  dismissible = true,
+}: AppAdaptiveDialogProps) {
+  const compact = useCompactViewport();
+  const handleOpenChange = guardDismissal(onOpenChange, dismissible);
+
+  // Built once and slotted into whichever branch renders, so the two branches
+  // cannot drift. Only the title/description differ — they are different
+  // primitives and must be.
+  const body = <div className="jv-overlay__body">{children}</div>;
+  const titleClass = titleVisuallyHidden ? "sr-only" : undefined;
+
+  if (compact) {
+    return (
+      <Drawer
+        open={open}
+        onOpenChange={handleOpenChange}
+        disablePointerDismissal={!dismissible}
+        showSwipeHandle={dismissible}
+      >
+        <DrawerContent className="jv-overlay jv-overlay--sheet">
+          {/* Stock base-vega centres a sheet header (its own
+              `group-data-[swipe-axis=y]:text-center`); only the padding is
+              overridden, since .jv-overlay--sheet already pads the surface. */}
+          <DrawerHeader className="p-0">
+            <DrawerTitle className={titleClass}>{title}</DrawerTitle>
+            {description != null && (
+              <DrawerDescription>{description}</DrawerDescription>
+            )}
+          </DrawerHeader>
+          {body}
+          {footer != null && (
+            <div className="jv-overlay__footer jv-overlay__footer--sheet">
+              {footer}
+            </div>
+          )}
+        </DrawerContent>
+      </Drawer>
+    );
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={handleOpenChange}
+      disablePointerDismissal={!dismissible}
+    >
+      <DialogContent
+        className={cx("jv-overlay jv-overlay--dialog", SIZE_CLASS[size])}
+        showCloseButton={dismissible}
+      >
+        <DialogHeader>
+          <DialogTitle className={titleClass}>{title}</DialogTitle>
+          {description != null && (
+            <DialogDescription>{description}</DialogDescription>
+          )}
+        </DialogHeader>
+        {body}
+        {footer != null && <div className="jv-overlay__footer">{footer}</div>}
+      </DialogContent>
+    </Dialog>
+  );
+}

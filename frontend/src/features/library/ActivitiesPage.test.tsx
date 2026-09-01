@@ -262,7 +262,7 @@ describe("Library · Activities", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Delete activity…" }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: "Delete Running?",
     });
     await userEvent.click(

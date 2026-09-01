@@ -205,7 +205,7 @@ describe("Phase B routes", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Delete entry" }),
     );
-    let dialog = screen.getByRole("dialog");
+    let dialog = screen.getByRole("alertdialog");
     expect(
       within(dialog).getByRole("heading", {
         name: "Delete “A rainy morning”?",
@@ -219,7 +219,7 @@ describe("Phase B routes", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Delete entry" }),
     );
-    dialog = screen.getByRole("dialog");
+    dialog = screen.getByRole("alertdialog");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Delete entry" }),
     );
@@ -249,7 +249,7 @@ describe("Phase B routes", () => {
       await screen.findByRole("button", { name: "Delete entry" }),
     );
     await userEvent.click(
-      within(screen.getByRole("dialog")).getByRole("button", {
+      within(screen.getByRole("alertdialog")).getByRole("button", {
         name: "Delete entry",
       }),
     );
@@ -267,7 +267,7 @@ describe("Phase B routes", () => {
     await userEvent.click(
       await screen.findByRole("button", { name: "Delete entry" }),
     );
-    const dialog = screen.getByRole("dialog");
+    const dialog = screen.getByRole("alertdialog");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Delete entry" }),
     );
@@ -278,7 +278,7 @@ describe("Phase B routes", () => {
       ),
     ).toBeTruthy();
     expect(view.router.state.location.pathname).toBe("/timeline/moment-1");
-    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
   });
 
   it("debounces search into the URL and query policy", async () => {

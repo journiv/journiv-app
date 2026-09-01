@@ -14,6 +14,7 @@ import type {
 } from "../../api/generated/types.gen";
 import { createAppQueryClient } from "../../app/queryClient";
 import { createAppRouter } from "../../app/router";
+import { setTestViewportWidth } from "../../test/viewport";
 
 vi.mock("../../api/client/api", () => ({
   api: {
@@ -275,6 +276,10 @@ describe("Settings routing and modal", () => {
   });
 
   it("opens from the current route and closes back to it", async () => {
+    // Compact: /settings stays on the section list rather than redirecting to
+    // Profile (DESIGN.md §23). Pinned explicitly — this used to depend on the
+    // jsdom matchMedia stub matching nothing.
+    setTestViewportWidth(860);
     const view = await renderRoute("/timeline/moment-1?q=rain");
     await screen.findAllByText("A clear morning");
 
@@ -309,7 +314,8 @@ describe("Settings routing and modal", () => {
   });
 
   it("shows the section list on compact /settings and drills into a section", async () => {
-    // jsdom matchMedia reports no match, so /settings does not redirect.
+    // Below Settings' 1101px boundary, /settings does not redirect.
+    setTestViewportWidth(860);
     const view = await renderRoute("/settings");
     const dialog = await screen.findByRole("dialog");
     const links = within(dialog).getAllByRole("link", { name: "Profile" });

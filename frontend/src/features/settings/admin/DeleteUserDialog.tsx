@@ -1,16 +1,8 @@
 import { useId, useState } from "react";
 import type { AdminUserListResponse } from "../../../api/generated/types.gen";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
+import { AppAdaptiveDialog } from "../../../components/journiv/AppAdaptiveDialog";
 import { Button } from "../../../components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../../../components/ui/dialog";
 import { Field, FieldLabel } from "../../../components/ui/field";
 import { Input } from "../../../components/ui/input";
 import { Spinner } from "../../../components/ui/spinner";
@@ -37,39 +29,23 @@ export function DeleteUserDialog({
   const deletingSelf = user.id === currentUserId;
 
   return (
-    <Dialog open onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{`Delete ${user.name}?`}</DialogTitle>
-          <DialogDescription>
-            Journals, entries, media, tags, mood logs, prompts, settings and
-            writing streaks owned by this account are permanently deleted. This
-            cannot be undone.{deletingSelf ? " You will be signed out." : ""}
-          </DialogDescription>
-        </DialogHeader>
-
-        <Field>
-          <FieldLabel htmlFor={inputId}>
-            Type <strong>{user.email}</strong> to confirm
-          </FieldLabel>
-          <Input
-            id={inputId}
-            value={confirmation}
-            autoComplete="off"
-            onChange={(event) => setConfirmation(event.target.value)}
-          />
-        </Field>
-
-        {failure && (
-          <Alert variant="destructive">
-            <AlertDescription>{failure}</AlertDescription>
-          </Alert>
-        )}
-
-        <DialogFooter>
-          <DialogClose render={<Button variant="ghost" />} disabled={deleting}>
+    // Not an AppConfirmDialog: the account's email must be typed back, which
+    // makes this a deliberate workflow rather than a yes/no question.
+    <AppAdaptiveDialog
+      open
+      onOpenChange={onOpenChange}
+      title={`Delete ${user.name}?`}
+      description={`Journals, entries, media, tags, mood logs, prompts, settings and writing streaks owned by this account are permanently deleted. This cannot be undone.${deletingSelf ? " You will be signed out." : ""}`}
+      size="md"
+      footer={
+        <>
+          <Button
+            variant="ghost"
+            disabled={deleting}
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
-          </DialogClose>
+          </Button>
           <Button
             type="button"
             variant="danger"
@@ -81,8 +57,26 @@ export function DeleteUserDialog({
             )}
             {deleting ? "Deleting…" : "Delete user"}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </>
+      }
+    >
+      <Field>
+        <FieldLabel htmlFor={inputId}>
+          Type <strong>{user.email}</strong> to confirm
+        </FieldLabel>
+        <Input
+          id={inputId}
+          value={confirmation}
+          autoComplete="off"
+          onChange={(event) => setConfirmation(event.target.value)}
+        />
+      </Field>
+
+      {failure && (
+        <Alert variant="destructive">
+          <AlertDescription>{failure}</AlertDescription>
+        </Alert>
+      )}
+    </AppAdaptiveDialog>
   );
 }

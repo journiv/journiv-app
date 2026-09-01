@@ -117,8 +117,11 @@ Only a handful. Everything else is stock.
   role. `--surface-overlay` is the backdrop behind Settings and the compact
   nav drawer — a translucent scrim, not a solid overlay surface.
 - **Layout / motion constants** — `--nav-width`, `--bar-height`,
-  `--reader-measure`, `--reader-gutter`, `--tap-target`, `--space-*`, `--ease`,
-  `--duration-*`. Not theming.
+  `--reader-measure`, `--reader-gutter`, `--tap-target`,
+  `--overlay-max-height`, `--space-*`, `--ease`, `--duration-*`. Not theming.
+  `--overlay-max-height` (85svh) caps an adaptive dialog; it is `svh` rather
+  than `vh` because iOS Safari's `vh` measures the largest viewport, which
+  would put a dialog's footer under the browser chrome.
 - **On-media** — `--overlay-scrim`, `--text-on-overlay` are deliberately
   theme-independent (they sit on a photograph, not a Journiv surface).
 
@@ -157,8 +160,15 @@ needs `--radius-xl`. There is also no corner-radius personalization control —
 unlike colour, shape is not user-configurable.
 
 Shadows: `--shadow-overlay` and `--shadow-dialog`. Two values, **overlays only**.
-A shadow on a header, toolbar or list row is a bug. There is no backdrop blur in
-Journiv.
+A shadow on a header, toolbar or list row is a bug.
+
+Overlay backdrops carry the stock base-vega treatment: a `bg-black/10` scrim
+plus a progressive-enhancement `backdrop-filter` blur behind
+`supports-backdrop-filter:`. `Dialog`, `AlertDialog` and `Drawer` all share it,
+so the scrim does not change as an adaptive overlay crosses 860px (§9). **That
+is the only blur in Journiv** — do not add another, and never put one on a
+non-overlay surface. `--surface-overlay` remains the scrim for the two
+hand-built Base UI surfaces, Settings and the AppShell nav drawer.
 
 Spacing: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 as `--space-1 … --space-16`. Do not
 write `mt-[13px]`.
@@ -246,7 +256,8 @@ to 13px with no paragraph spacing.
 - Borders: `--border` for every structural edge — pane, bar, dense-list
   divider. `--line-strong` for inputs and quote rules, where a border needs to
   read as heavier than a structural hairline.
-- No blur. No gradient. No glow. No shadow outside overlays.
+- No gradient. No glow. No shadow outside overlays. The one blur is the
+  overlay backdrop's own progressive-enhancement `backdrop-filter` (§3).
 
 ---
 
@@ -291,7 +302,7 @@ stock vocabulary:
 | `secondary`                | The default for buttons that are not the primary.                              |
 | `outline`                  | A secondary action that needs a visible boundary (dialogs, toolbars).          |
 | `ghost`                    | Tertiary — icon buttons, inline row actions.                                   |
-| `danger` (= `destructive`) | A destructive action that is not (yet) the final confirm — tinted, not filled. |
+| `danger` (= `destructive`) | The destructive action on a surface, including the final confirm in a confirmation dialog. Tinted, never filled — destructive should read as serious, not as the surface's primary. |
 | `link`                     | Inline text acting as a control.                                               |
 
 Exactly one `primary` per surface. `secondary` is the Button's own default
@@ -354,9 +365,13 @@ loading spinner. Nothing else animates.
 ## 9. Responsive behaviour
 
 Two _layout_ breakpoints, expressed in CSS, and no more. **Do not introduce JS
-breakpoint state** for layout — the one sanctioned exception is Settings'
-single `matchMedia` read at navigation time (§23), which is not reactive
-breakpoint state.
+breakpoint state** for layout. Two narrow exceptions, both named here and
+nowhere else: Settings' single `matchMedia` read at navigation time (§23),
+which is not reactive; and
+[`useCompactViewport()`](src/lib/useCompactViewport.ts), which _is_ reactive but
+chooses an overlay's **primitive**, not a layout — see "Adaptive overlays"
+below. Only the three adaptive overlays may call it; feature code never asks
+how wide the window is.
 
 | Width      | Layout                                                           |
 | ---------- | ---------------------------------------------------------------- |
@@ -388,6 +403,73 @@ stacked and side-by-side across a whole screen) at a width that is not 860 or 11
 - Touch targets ≥ 44px. Text inputs ≥ 16px on touch, or iOS zooms the viewport.
 - Safe-area insets are applied to the drawer and to the bottom padding of every
   scrolling pane.
+
+### Adaptive overlays
+
+**The semantic interaction chooses the primitive family. The viewport chooses
+its presentation.**
+
+| Interaction                     | ≤ 860px             | > 860px        |
+| ------------------------------- | ------------------- | -------------- |
+| Form / substantial modal        | Drawer              | Dialog         |
+| Simple confirmation             | Drawer              | AlertDialog    |
+| Overflow / context command menu | Drawer action sheet | DropdownMenu   |
+| Popover                         | Popover             | Popover        |
+| Routed application surface      | route-specific      | route-specific |
+
+Three components own this:
+[`AppAdaptiveDialog`](src/components/journiv/AppAdaptiveDialog.tsx),
+[`AppConfirmDialog`](src/components/journiv/AppConfirmDialog.tsx),
+[`AppAdaptiveMenu`](src/components/journiv/AppAdaptiveMenu.tsx). Feature code
+never learns which branch it got.
+
+- **860px is the only overlay boundary.** 1100px is a layout breakpoint and
+  selects no primitive: a 1024px window gets the anchored menu and the centred
+  dialog, exactly like 1440px. Never use Tailwind's `sm`/`md`/`lg` as overlay
+  architecture, and never detect a device, a touch capability or an orientation.
+- **One tree at a time.** The chosen branch mounts; the other does not exist.
+  Never render both and hide one — that duplicates every control, accessible
+  name and `useId()` in the overlay.
+- **State survives the swap by living above it.** Crossing 860px remounts the
+  primitive. Form values, drafts and mutations belong in the caller, above the
+  adaptive component. `JournalFormDialog` is the reference: it owns the state
+  and passes fields down as children.
+- **The body is the only scroll owner** (`.jv-overlay`, `.jv-overlay__body` in
+  `journiv.css`), so a title and its actions can never scroll out of reach. A
+  compact sheet pads its actions with `env(safe-area-inset-bottom)`.
+- **`dismissible` is presentation, not policy.** `false` turns off Escape,
+  outside press and swipe. It is not a Base UI prop — none of the three roots
+  has one — but implemented in
+  [`overlayDismissal.ts`](src/components/journiv/overlayDismissal.ts) by
+  cancelling implicit close reasons. The caller still owns dirty state, discard
+  prompts and cleanup; the generic components do not know what "dirty" means.
+- **A confirmation is an `alertdialog` above 860px and a `dialog` below it.**
+  Base UI's Drawer reads its role from the shared dialog store and never becomes
+  an `alertdialog`; the compact branch does not claim semantics the primitive
+  does not implement. What holds on both branches is the behaviour §17 asks
+  for: an accessible name from the title, a description, a real focus trap
+  (`modal` defaults to `true`), an inert background, and focus returned to the
+  trigger on close.
+- **A typed or multi-step destructive flow is not a confirmation.** Anything
+  needing typed confirmation, an acknowledgement, an alternative action
+  ("Archive instead") or a form input uses `AppAdaptiveDialog`.
+  `DeleteJournalDialog` (§22) and `DeleteUserDialog` are the two.
+- **Menus are declared as data.** `AppAdaptiveMenu` takes a typed
+  `AppMenuAction[]` (`kind: "command" | "link"`), not children — a rendered
+  `DropdownMenuItem` is meaningless inside the compact action sheet. There is
+  deliberately no `render` or `children` escape hatch; add a third `kind` when
+  a real menu needs one. A destructive action keeps **its own** icon: the
+  destructive treatment is colour, not an icon override (§17), so Archive keeps
+  `Archive` and only deletion uses `Trash2`.
+- **Popovers stay popovers.** A Popover is anchored, lighter, and semantically
+  distinct from both a dialog and a menu. `MomentDetailsPopover` and
+  `EntryDateControl` keep the Popover at every width. There is no
+  `AppAdaptivePopover` — §18's two-feature threshold is unmet, and turning a
+  small picker into a sheet for consistency's sake is a regression.
+- **Two exceptions, both application shell, both unchanged.** `SettingsModal`
+  is a routed surface with its own 1100px boundary, history and
+  unsaved-changes blocking (§23). The `AppShell` nav drawer is navigation. Each
+  may reuse the underlying primitives but keeps its own product behaviour.
 
 ---
 
@@ -1016,11 +1098,14 @@ src/styles/prose.css         long-form typography — editor-independent
 src/styles/fonts.css          --font-sans / --font-reader / --font-mono stacks
 src/styles/util.css           .jv-field, .jv-dialog__actions, pane-status, spinner
 src/components/ui/            shadcn base-vega primitives: button, input, dialog,
-                              popover, dropdown-menu, select, combobox, calendar,
-                              tooltip … + Journiv wrappers icon-button, search-input
+                              alert-dialog, drawer, popover, dropdown-menu, select,
+                              combobox, calendar, tooltip … + Journiv wrappers
+                              icon-button, search-input
 src/components/journiv/       cross-feature product patterns: PageBar, EntryHeader,
                               JournalBadge, MomentMeta, PersonChip, StatusView,
-                              LibraryRow, EntityGlyph, ListViewSwitch, journiv.css
+                              LibraryRow, EntityGlyph, ListViewSwitch, journiv.css,
+                              the adaptive overlays (§9) AppAdaptiveDialog,
+                              AppConfirmDialog, AppAdaptiveMenu + overlayDismissal
 src/api/                      generated OpenAPI client (`generated/`, gitignored),
                               the hand-written wrapper (`client/`), auth session
                               storage (`auth/`), React Query keys/options (`query/`)
@@ -1032,10 +1117,12 @@ src/features/theme/           personalization: UserTheme model, applyUserTheme,
 src/features/library/         People / Tags / Moods / Activities / Goals (§24)
 src/features/media/           the Media grid list-pane mode
 src/lib/                      moment semantics, datetime, journal lookup + order,
-                              journal colours + icons, `utils.ts` (`cn`), `cx.ts`
+                              journal colours + icons, `utils.ts` (`cn`), `cx.ts`,
+                              useCompactViewport (the one reactive breakpoint read)
 src/features/<feature>/       feature UI + its own <feature>.css
 src/features/editor/quill-adapter.css   the only file that knows about Quill
-src/test/                     vitest setup only — not a feature directory
+src/test/                     vitest setup + the width-aware matchMedia stub
+                              (`viewport.ts`) — not a feature directory
 ```
 
 **Placement rule:** a component goes in `components/journiv/` only when **two or
@@ -1265,8 +1352,10 @@ how the top journal — the one a new entry is filed in when the route names non
 
 ### Create / edit
 
-A `Dialog` ([`src/components/ui/dialog.tsx`](src/components/ui/dialog.tsx), the
-shared modal now used here and by the editor's link dialog). Title (required, validated in-form — no native
+An [`AppAdaptiveDialog`](src/components/journiv/AppAdaptiveDialog.tsx) (§9) — a
+bottom sheet at ≤ 860px, a centred `Dialog` above it. The form state lives in
+`JournalFormDialog`, above the adaptive component, so crossing the boundary
+mid-edit does not discard it. Title (required, validated in-form — no native
 `required` bubble), description, a colour radio group of the 22 `JournalColor`
 presets rendered as `JournalDot` swatches (the only sanctioned swatch — §3), and
 an icon radio grid from the curated Lucide set, each option tinted with the
@@ -1279,6 +1368,8 @@ Every failure lands in a `role="alert"` with a human sentence.
 (the parent Moments survive as quick logs). The dialog states exactly that,
 offers **Archive instead** first, and keeps the destructive button disabled
 until the journal's title is typed back. A regression test proves the guard.
+It is an `AppAdaptiveDialog`, **not** an `AppConfirmDialog`: a typed guard plus
+a reversible alternative is a workflow, not a yes/no question (§9).
 
 ---
 
@@ -1429,6 +1520,14 @@ the one primary, the scroll owner) and `LibraryDetailView` (the breadcrumb bar
   Moods, Activities and Goals adopt `LibraryDetailView` as their `$id` routes
   land. Neither route carries `staticData: detailPane` — there is no side-by-side
   detail here, so the shell's `.is-detail` machinery is not involved.
+
+**Every Library row's ⋯ menu is an
+[`AppAdaptiveMenu`](src/components/journiv/AppAdaptiveMenu.tsx)** (§9): an
+anchored `DropdownMenu` above 860px, a bottom action sheet at or below it. The
+actions are declared as data, and "View moments" is the shared
+[`viewMomentsAction()`](src/features/library/viewMomentsAction.ts) descriptor so
+every entity reaches its moments the same way. Deletions and archives are
+`AppConfirmDialog`s.
 
 **The scoped Timeline stays three-pane.** "View moments" on any Library item
 opens `/timeline` filtered to that entity — the ordinary nav ∥ list ∥ reader

@@ -1,19 +1,8 @@
 import { Trash2, TriangleAlert } from "lucide-react";
 import { useState } from "react";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { Alert, AlertDescription } from "../../components/ui/alert";
-import { Button } from "../../components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "../../components/ui/dialog";
 import { IconButton } from "../../components/ui/icon-button";
-import { Spinner } from "../../components/ui/spinner";
 
 export function DeleteEntryDialog({
   entryTitle,
@@ -31,30 +20,30 @@ export function DeleteEntryDialog({
   const [open, setOpen] = useState(false);
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (deleting) return;
-        if (nextOpen) onReset();
-        setOpen(nextOpen);
-      }}
-    >
-      <DialogTrigger render={<IconButton label="Delete entry" />}>
+    <>
+      <IconButton
+        label="Delete entry"
+        onClick={() => {
+          onReset();
+          setOpen(true);
+        }}
+      >
         <Trash2 aria-hidden="true" />
-      </DialogTrigger>
-      <DialogContent showCloseButton={!deleting}>
-        <DialogHeader>
-          <DialogTitle>
-            {entryTitle ? `Delete “${entryTitle}”?` : "Delete entry?"}
-          </DialogTitle>
-          <DialogDescription>
-            The writing in this entry will be permanently removed. Photos,
-            moods, tags, people and other logged details will stay with this
-            moment. If no other details remain, the moment will be removed from
-            the Timeline. This cannot be undone.
-          </DialogDescription>
-        </DialogHeader>
-
+      </IconButton>
+      <AppConfirmDialog
+        open={open}
+        onOpenChange={(next) => {
+          // Never strand the user mid-delete with the surface gone.
+          if (deleting) return;
+          setOpen(next);
+        }}
+        title={entryTitle ? `Delete “${entryTitle}”?` : "Delete entry?"}
+        description="The writing in this entry will be permanently removed. Photos, moods, tags, people and other logged details will stay with this moment. If no other details remain, the moment will be removed from the Timeline. This cannot be undone."
+        confirmLabel={deleting ? "Deleting…" : "Delete entry"}
+        destructive
+        pending={deleting}
+        onConfirm={onConfirm}
+      >
         {failed && (
           <Alert variant="destructive">
             <TriangleAlert aria-hidden="true" />
@@ -64,19 +53,7 @@ export function DeleteEntryDialog({
             </AlertDescription>
           </Alert>
         )}
-
-        <DialogFooter>
-          <DialogClose render={<Button variant="ghost" disabled={deleting} />}>
-            Cancel
-          </DialogClose>
-          <Button variant="danger" disabled={deleting} onClick={onConfirm}>
-            {deleting && (
-              <Spinner data-icon="inline-start" aria-hidden="true" />
-            )}
-            {deleting ? "Deleting…" : "Delete entry"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </AppConfirmDialog>
+    </>
   );
 }

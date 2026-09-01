@@ -153,7 +153,7 @@ describe("Library · Tags", () => {
     await userEvent.click(
       screen.getByRole("button", { name: /clean up 1 unused/i }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: /clean up unused tags/i,
     });
     await userEvent.click(

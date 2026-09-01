@@ -462,7 +462,7 @@ describe("Library · Goals", () => {
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Delete goal…" }),
     );
-    const dialog = await screen.findByRole("dialog", {
+    const dialog = await screen.findByRole("alertdialog", {
       name: "Delete Run three times?",
     });
     await userEvent.click(

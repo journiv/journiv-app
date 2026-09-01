@@ -93,7 +93,7 @@ test.describe("entry journeys", () => {
 
     await page.goto(`/timeline/${moment.id}`);
     await page.getByRole("button", { name: "Delete entry" }).click();
-    const dialog = page.getByRole("dialog");
+    const dialog = page.getByRole("alertdialog");
     await expect(
       dialog.getByRole("heading", { name: `Delete “${title}”?` }),
     ).toBeVisible();
@@ -133,7 +133,7 @@ test.describe("entry journeys", () => {
           `/api/v1/entries/${moment.entry?.id}`,
     );
     await page
-      .getByRole("dialog")
+      .getByRole("alertdialog")
       .getByRole("button", { name: "Delete entry" })
       .click();
     await deleted;
