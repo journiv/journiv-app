@@ -32,7 +32,12 @@ import type {
 } from "../../api/generated/types.gen";
 import { api } from "../../api/client/api";
 import { queryKeys } from "../../api/query/keys";
-import { peopleQuery, personGroupsQuery } from "../../api/query/options";
+import {
+  instanceConfigQuery,
+  integrationStatusQuery,
+  peopleQuery,
+  personGroupsQuery,
+} from "../../api/query/options";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
 import { LibraryRow } from "../../components/journiv/LibraryRow";
 import { PageBar } from "../../components/journiv/PageBar";
@@ -48,6 +53,7 @@ import { cx } from "../../lib/cx";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
 import { viewMomentsAction } from "./viewMomentsAction";
+import { ImmichPeopleImportDialog } from "./immich/ImmichPeopleImportDialog";
 import "./library.css";
 
 type PersonFormState =
@@ -239,6 +245,21 @@ export function PeoplePage() {
   const groupsQueryResult = useQuery(personGroupsQuery());
   const people = peopleQueryResult.data ?? [];
   const groups = groupsQueryResult.data ?? [];
+
+  // "Import from Immich" is shown only when the instance provides an Immich
+  // server and the integration is currently connected — otherwise the control
+  // would open a dialog that can only say "reconnect" (DESIGN §23: dead links
+  // are not rendered). The status query is gated on the config so a
+  // non-Immich instance makes no integration call.
+  const instanceConfig = useQuery(instanceConfigQuery());
+  const immichConfigured = Boolean(instanceConfig.data?.immich_base_url);
+  const immichStatus = useQuery({
+    ...integrationStatusQuery(),
+    enabled: immichConfigured,
+  });
+  const immichConnected =
+    immichConfigured && immichStatus.data?.status === "connected";
+  const [immichImportOpen, setImmichImportOpen] = useState(false);
 
   const [search, setSearch] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -460,6 +481,14 @@ export function PeoplePage() {
           </p>
         </div>
         <div className="jv-library__actions">
+          {immichConnected && (
+            <Button
+              variant="secondary"
+              onClick={() => setImmichImportOpen(true)}
+            >
+              Import from Immich
+            </Button>
+          )}
           <Button onClick={() => setGroupsManager({})}>Manage groups</Button>
           <Button
             variant="primary"
@@ -826,6 +855,10 @@ export function PeoplePage() {
           )}
         </AppConfirmDialog>
       )}
+      <ImmichPeopleImportDialog
+        open={immichImportOpen}
+        onOpenChange={setImmichImportOpen}
+      />
     </main>
   );
 }

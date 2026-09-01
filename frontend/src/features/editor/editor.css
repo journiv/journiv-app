@@ -451,6 +451,46 @@
   font-size: 0.78125rem;
 }
 
+/* "Suggested from Immich" — quiet add-chips above the people list. */
+.jv-details__suggest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.jv-details__suggest-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.jv-details__suggest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2) 3px 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.jv-details__suggest-chip:hover {
+  background: var(--state-hover);
+}
+
+.jv-details__suggest-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.jv-details__suggest-note {
+  margin: 0;
+}
+
 @media (max-width: 860px) {
   .jv-details-popover {
     width: min(22rem, calc(100vw - var(--space-6)));

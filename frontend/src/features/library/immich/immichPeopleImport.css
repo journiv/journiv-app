@@ -1,0 +1,113 @@
+/* "Import people from Immich" — an adaptive Library overlay with three
+ * in-place views. The shared overlay owns sizing and the only scroll region. */
+
+.jv-immich-people-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  container-type: inline-size;
+}
+
+.jv-immich-people-import__search {
+  flex: 0 0 auto;
+}
+
+.jv-immich-people-import__scroll {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.jv-immich-people-import__list {
+  display: flex;
+  flex-direction: column;
+}
+
+.jv-immich-people-import__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.jv-immich-people-import__row:last-child {
+  border-bottom: 0;
+}
+
+.jv-immich-people-import__avatar {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: var(--muted);
+}
+
+.jv-immich-people-import__avatar--initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.jv-immich-people-import__name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.jv-immich-people-import__controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-immich-people-import__linked {
+  flex: 0 0 auto;
+}
+
+.jv-immich-people-import__sync {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  max-width: 30rem;
+}
+
+.jv-immich-people-import__count {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.jv-immich-people-import__results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-immich-people-import__result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-immich-people-import__result--fail {
+  color: var(--destructive);
+}
+
+/* Row controls reflow at their own container width, independent of the
+ * overlay's 860px primitive boundary (DESIGN.md §9). */
+@container (max-width: 34rem) {
+  .jv-immich-people-import__row {
+    flex-wrap: wrap;
+  }
+
+  .jv-immich-people-import__controls {
+    width: 100%;
+  }
+}

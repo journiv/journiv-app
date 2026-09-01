@@ -43,6 +43,8 @@ import {
   getGoalCategoriesApiV1GoalCategoriesGet,
   getGoalLogsApiV1GoalsGoalIdLogsGet,
   getGoalsApiV1GoalsGet,
+  getImmichPeopleSuggestionsApiV1MomentsMomentIdPeopleSuggestionsImmichPost,
+  getImportJobStatusApiV1MediaImportJobsJobIdGet,
   getImportStatusApiV1ImportJobIdGet,
   getInstanceConfigApiV1InstanceConfigGet,
   getLicenseInfoApiV1InstanceLicenseInfoGet,
@@ -62,6 +64,10 @@ import {
   getUserJournalsApiV1JournalsGet,
   getUserTagsApiV1TagsGet,
   getVersionInfoApiV1InstanceVersionInfoGet,
+  importFromImmichAsyncApiV1MediaImportFromImmichAsyncPost,
+  importImmichPeopleApiV1IntegrationsImmichPeopleImportPost,
+  listAssetsApiV1IntegrationsProviderAssetsGet,
+  listImmichPeopleApiV1IntegrationsImmichPeopleGet,
   listUsersApiV1AdminUsersGet,
   loginApiV1AuthLoginPost,
   mergePeopleApiV1PeopleSourceIdMergeTargetIdPost,
@@ -78,6 +84,7 @@ import {
   searchTagsApiV1TagsSearchGet,
   signExportUrlApiV1ExportJobIdSignGet,
   toggleFavoriteApiV1JournalsJournalIdFavoritePost,
+  triggerSyncApiV1IntegrationsProviderSyncPost,
   unarchiveJournalApiV1JournalsJournalIdUnarchivePost,
   updateActivityApiV1ActivitiesActivityIdPut,
   updateActivityGroupApiV1ActivityGroupsGroupIdPut,
@@ -114,10 +121,14 @@ import type {
   GoalCategoryUpdate,
   GoalCreate,
   GoalUpdate,
+  ImmichImportRequest,
+  ImmichPeopleImportRequest,
+  ImportMode,
   IntegrationSettingsUpdateRequest,
   JournalCreate,
   JournalReorderRequest,
   JournalUpdate,
+  ListAssetsApiV1IntegrationsProviderAssetsGetData,
   MomentCreate,
   MomentUpdate,
   MoodCreate,
@@ -592,11 +603,18 @@ export const api = {
         path: { provider: "immich" },
       }),
     ),
-  connectImmich: (credentials: Record<string, unknown>) =>
+  connectImmich: (
+    credentials: Record<string, unknown>,
+    import_mode?: ImportMode,
+  ) =>
     data(
       connectApiV1IntegrationsConnectPost({
         ...options(),
-        body: { provider: "immich", credentials },
+        body: {
+          provider: "immich",
+          credentials,
+          ...(import_mode ? { import_mode } : {}),
+        },
       }),
     ),
   updateImmich: (body: IntegrationSettingsUpdateRequest) =>
@@ -613,6 +631,91 @@ export const api = {
         ...options(),
         path: { provider: "immich" },
       }),
+    ),
+  /** Manually re-run the provider sync (metadata cache refresh). */
+  syncImmich: () =>
+    data(
+      triggerSyncApiV1IntegrationsProviderSyncPost({
+        ...options(),
+        path: { provider: "immich" },
+      }),
+    ),
+  /**
+   * One page of the connected Immich library, newest first. Pagination is
+   * `page`/`limit` only — the backend exposes no search / type / date / album
+   * filter yet (tracked as gap G1 in frontend-immich-v2.md), so the picker
+   * scrolls rather than queries.
+   */
+  immichAssets: (
+    query: NonNullable<
+      ListAssetsApiV1IntegrationsProviderAssetsGetData["query"]
+    >,
+  ) =>
+    data(
+      listAssetsApiV1IntegrationsProviderAssetsGet({
+        ...options(),
+        path: { provider: "immich" },
+        query,
+      }),
+    ),
+  /**
+   * Starts a background job that attaches the chosen Immich assets to `moment_id`.
+   * Link-only vs copy is decided server-side by the integration's import mode.
+   * Returns placeholder media rows the editor swaps its upload placeholders for.
+   */
+  importFromImmich: (body: ImmichImportRequest) =>
+    data(
+      importFromImmichAsyncApiV1MediaImportFromImmichAsyncPost({
+        ...options(),
+        body,
+      }),
+    ),
+  /** Status of an Immich import job — poll while `pending`/`running`. */
+  immichImportJob: (job_id: string) =>
+    data(
+      getImportJobStatusApiV1MediaImportJobsJobIdGet({
+        ...options(),
+        path: { job_id },
+      }),
+    ),
+  /**
+   * One page of the connected Immich instance's detected people, newest first.
+   * Unlike the asset list this endpoint takes a real `search` term. Each row
+   * carries `mapped_person` when it is already linked to a Journiv person and
+   * `sync_enabled` when its faces feed moment suggestions.
+   */
+  immichPeople: (query: { page: number; limit: number; search?: string }) =>
+    data(
+      listImmichPeopleApiV1IntegrationsImmichPeopleGet({
+        ...options(),
+        query,
+      }),
+    ),
+  /**
+   * Creates or links Journiv people from selected Immich people. Partial
+   * success: the response's `results[]` carry a `person` or an `error` each —
+   * the call does not fail as a whole when one item does.
+   */
+  importImmichPeople: (body: ImmichPeopleImportRequest) =>
+    data(
+      importImmichPeopleApiV1IntegrationsImmichPeopleImportPost({
+        ...options(),
+        body,
+      }),
+    ),
+  /**
+   * People the Immich face index matches to this moment's Immich media and who
+   * are sync-enabled but not yet on the moment. POST with no body; read-shaped,
+   * so it is consumed as a query. Never writes — the editor only suggests.
+   */
+  immichPeopleSuggestions: (moment_id: string) =>
+    data(
+      getImmichPeopleSuggestionsApiV1MomentsMomentIdPeopleSuggestionsImmichPost(
+        {
+          ...options(),
+          path: { moment_id },
+        },
+      ),
     ),
   /** Tag name suggestions for the tag picker. */
   searchTags: (q: string) =>

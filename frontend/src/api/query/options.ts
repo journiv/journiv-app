@@ -119,6 +119,48 @@ export const integrationStatusQuery = () =>
     queryFn: () => api.integrationStatus(),
     retry: false,
   });
+/**
+ * The connected Immich library, one page at a time for the editor picker.
+ * `retry: false` because a 400 (not connected) or 401 (stale key) is an answer
+ * the picker renders a reconnect state from, not a transient failure to spin
+ * on. `staleTime` sits well under the 24h thumbnail-URL TTL so reopening the
+ * picker in a session reuses pages rather than refetching; `gcTime` keeps the
+ * loaded pages and scroll position across a close/reopen.
+ */
+export const immichAssetsInfiniteQuery = (pageSize = 100) =>
+  infiniteQueryOptions({
+    queryKey: [...queryKeys.immichAssets, pageSize] as const,
+    queryFn: ({ pageParam }) =>
+      api.immichAssets({ page: pageParam, limit: pageSize }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.page + 1 : undefined,
+    staleTime: 5 * 60_000,
+    gcTime: 30 * 60_000,
+    retry: false,
+  });
+/**
+ * The connected Immich instance's detected people, page by page, for the
+ * Library → People import dialog. Keyed by the trimmed `search` term so typing
+ * starts a fresh query rather than mutating the current one. `retry: false` for
+ * the same reason as the asset query — a 400/401 is a reconnect answer, not a
+ * blip.
+ */
+export const immichPeopleInfiniteQuery = (search: string, pageSize = 100) =>
+  infiniteQueryOptions({
+    queryKey: [...queryKeys.immichPeople(search.trim()), pageSize] as const,
+    queryFn: ({ pageParam }) =>
+      api.immichPeople({
+        page: pageParam,
+        limit: pageSize,
+        ...(search.trim() ? { search: search.trim() } : {}),
+      }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) =>
+      lastPage.has_more ? lastPage.page + 1 : undefined,
+    staleTime: 60_000,
+    retry: false,
+  });
 export const exportJobQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.exportJob(id),

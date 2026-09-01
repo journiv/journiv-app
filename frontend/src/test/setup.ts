@@ -68,3 +68,41 @@ if (!Range.prototype.getClientRects) {
 /* Width-aware `matchMedia` (see src/test/viewport.ts). Installed
  * unconditionally, so behaviour does not depend on the jsdom version. */
 installMatchMediaStub();
+
+// jsdom ships neither observer. The virtualized media/asset grid measures its
+// container with ResizeObserver and could use IntersectionObserver for its
+// load-more sentinel; without these, importing that code throws before a single
+// assertion runs. The stubs are inert — layout-driven behaviour is verified by
+// unit-testing the pure helpers and by Playwright, per DESIGN.md §19.
+if (typeof globalThis.ResizeObserver !== "function") {
+  Object.defineProperty(globalThis, "ResizeObserver", {
+    configurable: true,
+    value: class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  });
+}
+if (typeof globalThis.IntersectionObserver !== "function") {
+  Object.defineProperty(globalThis, "IntersectionObserver", {
+    configurable: true,
+    value: class {
+      readonly root = null;
+      readonly rootMargin = "";
+      readonly thresholds = [];
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+      takeRecords() {
+        return [];
+      }
+    },
+  });
+}
+if (!Element.prototype.scrollIntoView) {
+  Object.defineProperty(Element.prototype, "scrollIntoView", {
+    configurable: true,
+    value: () => undefined,
+  });
+}

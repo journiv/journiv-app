@@ -4,7 +4,7 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from "../../components/ui/popover";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LocateFixed, RotateCw, SlidersHorizontal, X } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { api } from "../../api/client/api";
@@ -13,11 +13,13 @@ import type {
   MomentResponse,
   WeatherData,
 } from "../../api/generated/types.gen";
+import { queryKeys } from "../../api/query/keys";
 import {
   moodsQuery,
   peopleQuery,
   tagSearchQuery,
 } from "../../api/query/options";
+import { ImmichSuggestedPeople } from "./immich/ImmichSuggestedPeople";
 import { locationLabel, moodColor } from "../../components/journiv/MomentMeta";
 import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
@@ -51,6 +53,9 @@ export type MomentDetailsPanelProps = {
   loggedAtUtc: string;
   loggedTimezone: string;
   disabled?: boolean;
+  /** True when the moment holds Immich-origin media — gates the "Suggested
+   *  from Immich" people strip so a non-Immich entry makes no face call. */
+  hasImmichMedia?: boolean;
 };
 
 /** Free-text weather summary, matching the seed-data shape ("Clear 14°C"). */
@@ -142,6 +147,7 @@ export function MomentDetailsPanel({
   loggedAtUtc,
   loggedTimezone,
   disabled = false,
+  hasImmichMedia = false,
 }: MomentDetailsPanelProps) {
   const runWithMoment = useCallback(
     async (fn: (momentId: string) => Promise<unknown>) => {
@@ -178,6 +184,7 @@ export function MomentDetailsPanel({
         moment={moment}
         disabled={disabled}
         runWithMoment={runWithMoment}
+        hasImmichMedia={hasImmichMedia}
       />
       <TagsSection
         moment={moment}
@@ -586,12 +593,27 @@ function WeatherSection({
 
 /* ---- people ---------------------------------------------------------- */
 
-function PeopleSection({ moment, disabled, runWithMoment }: SectionProps) {
+function PeopleSection({
+  moment,
+  disabled,
+  runWithMoment,
+  hasImmichMedia = false,
+}: SectionProps & { hasImmichMedia?: boolean }) {
   const [filter, setFilter] = useState("");
+  const queryClient = useQueryClient();
   const people = useQuery(peopleQuery());
   const mutation = useMutation({
     mutationFn: (personIds: string[]) =>
       runWithMoment((id) => api.setMomentPeople(id, personIds)),
+    onSuccess: () => {
+      // A person the writer just added is no longer a "suggestion" — let the
+      // server recompute the strip.
+      if (moment?.id) {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.immichPeopleSuggestions(moment.id),
+        });
+      }
+    },
   });
   const selected = useMemo(
     () => new Set((moment?.people ?? []).map((person) => person.id)),
@@ -622,6 +644,16 @@ function PeopleSection({ moment, disabled, runWithMoment }: SectionProps) {
   return (
     <section className="jv-details__section">
       <p className="jv-label">People</p>
+      <ImmichSuggestedPeople
+        momentId={moment?.id}
+        enabled={hasImmichMedia && Boolean(moment?.id)}
+        selectedIds={selected}
+        busy={busy}
+        onAdd={(personId) => mutation.mutate([...selected, personId])}
+        onAddAll={(personIds) =>
+          mutation.mutate([...new Set([...selected, ...personIds])])
+        }
+      />
       {people.isLoading && <Skeleton height="1.75rem" />}
       {people.isError && (
         <StatusView

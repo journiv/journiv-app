@@ -185,7 +185,7 @@ describe("Settings routing and modal", () => {
 
   it.each([
     ["/settings/appearance", "Appearance", "Theme & time"],
-    ["/settings/integrations", "No integrations available", "Providers"],
+    ["/settings/integrations", "Integrations", "Providers"],
     ["/settings/data/import", "Import", "Import"],
     ["/settings/data/export", "Export", "Export"],
     ["/settings/support/help", "Help & feedback", "Help & feedback"],

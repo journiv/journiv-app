@@ -3,6 +3,7 @@ import { api } from "../../api/client/api";
 import type { MomentMediaResponse } from "../../api/generated/types.gen";
 import { uuid } from "../../lib/uuid";
 import type { InlineMediaKind } from "./deltaProfile";
+import { pollMediaProcessing } from "./mediaProcessingPoll";
 import {
   MediaUploadError,
   runWithConcurrency,
@@ -12,22 +13,6 @@ import {
 } from "./mediaUpload";
 import type { QuillSurfaceHandle } from "./QuillSurface";
 import { registerPlaceholder } from "./uploadPlaceholder";
-
-/** How long to keep asking whether the worker has finished a file. */
-const PROCESS_POLL_INTERVAL_MS = 1500;
-/**
- * Longer than the backend's own retry budget for a not-yet-visible upload row
- * (~2 min of capped backoff before it records a hard failure), so the poll can
- * observe that outcome instead of giving up first and reporting a false success.
- */
-const PROCESS_POLL_TIMEOUT_MS = 180_000;
-
-/** The server reported it could not process the file. */
-const PROCESSING_FAILED_MESSAGE =
-  "This file couldn’t be processed. Retry, or remove it from the entry.";
-/** Upload landed, but processing never finished within the poll window. */
-const PROCESSING_STALLED_MESSAGE =
-  "This file is still being processed. Keep writing — reload the entry later to check, or retry now.";
 
 export type Attachment = {
   uploadId: string;
@@ -102,58 +87,25 @@ export function useMediaAttachments({
 
   /**
    * Uploads return before the worker has produced dimensions and thumbnails.
-   * Polling stops at a terminal state (`completed` → done, `failed` → surfaced
-   * with a retry) and pauses while the page is hidden. If the window elapses
-   * without a terminal state the file is treated as failed, not quietly done —
-   * a stuck upload must reach the writer.
+   * The shared poll (`mediaProcessingPoll`) stops at a terminal state, pauses
+   * while the page is hidden, and reports a stalled file as failed rather than
+   * a false success — a stuck upload must reach the writer.
    */
   const pollUntilProcessed = useCallback(
     (uploadId: string, momentId: string, mediaId: string) => {
-      const startedAt = Date.now();
-      const scheduleTick = () => {
-        const timer = window.setTimeout(() => {
-          timers.current.delete(timer);
-          void tick();
-        }, PROCESS_POLL_INTERVAL_MS);
-        timers.current.add(timer);
-      };
-      const tick = async () => {
-        if (!mounted.current) return;
-        if (document.visibilityState === "hidden") {
-          scheduleTick();
-          return;
-        }
-        try {
-          const items = await api.momentMedia(momentId);
-          const item = items.find((candidate) => candidate.id === mediaId);
-          const status = item?.upload_status;
-          if (status === "completed") {
-            patch(uploadId, { state: "done", message: undefined });
-            return;
-          }
-          if (status === "failed") {
-            patch(uploadId, {
-              state: "failed",
-              message: PROCESSING_FAILED_MESSAGE,
-            });
-            return;
-          }
-        } catch {
-          // A failed poll is not a failed upload; try again until the timeout.
-        }
-        if (Date.now() - startedAt > PROCESS_POLL_TIMEOUT_MS) {
-          // The bytes uploaded, but the server never finished processing. Do NOT
-          // claim success — surface it so the writer can retry or remove it,
-          // rather than leaving a silently broken attachment in the entry.
-          patch(uploadId, {
-            state: "failed",
-            message: PROCESSING_STALLED_MESSAGE,
-          });
-          return;
-        }
-        scheduleTick();
-      };
-      scheduleTick();
+      pollMediaProcessing({
+        momentId,
+        mediaId,
+        isActive: () => mounted.current,
+        timers: timers.current,
+        onOutcome: (outcome) =>
+          patch(
+            uploadId,
+            outcome.state === "done"
+              ? { state: "done", message: undefined }
+              : { state: "failed", message: outcome.message },
+          ),
+      });
     },
     [patch],
   );

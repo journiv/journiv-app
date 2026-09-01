@@ -414,6 +414,23 @@ const settingsIntegrationsRoute = createRoute({
   staticData: { settings: "integrations" },
   component: SettingsBackground,
 });
+/** The provider detail drill-down. Same `settings` section as the catalogue, so
+ *  the modal chrome and the "Providers" nav item are unchanged across the
+ *  drill-down — only the content pane swaps (DESIGN.md §23). A single-segment
+ *  param, not a splat, so route matching stays unaffected elsewhere. Only
+ *  `immich` is a real provider; an unknown or removed one (a stale bookmark) is
+ *  redirected to the catalogue rather than 404ing. */
+const settingsIntegrationProviderRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/settings/integrations/$provider",
+  validateSearch: timelineSearch,
+  staticData: { settings: "integrations" },
+  beforeLoad: ({ params }) => {
+    if (params.provider !== "immich")
+      throw redirect({ to: "/settings/integrations", search: { q: "" } });
+  },
+  component: SettingsBackground,
+});
 const settingsImportRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings/data/import",
@@ -502,6 +519,7 @@ const routeTree = rootRoute.addChildren([
     settingsActivitiesRoute,
     settingsGoalsRoute,
     settingsIntegrationsRoute,
+    settingsIntegrationProviderRoute,
     settingsImportRoute,
     settingsExportRoute,
     settingsHelpRoute,

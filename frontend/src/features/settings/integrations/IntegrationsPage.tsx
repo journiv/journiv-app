@@ -1,168 +1,100 @@
-import { useMutation, useQueries, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
-import { api } from "../../../api/client/api";
-import { queryKeys } from "../../../api/query/keys";
+import { useQueries } from "@tanstack/react-query";
+import { Link, useMatchRoute } from "@tanstack/react-router";
+import { ChevronLeft } from "lucide-react";
 import {
   instanceConfigQuery,
   integrationStatusQuery,
 } from "../../../api/query/options";
 import { Button } from "../../../components/ui/button";
-import { AppConfirmDialog } from "../../../components/journiv/AppConfirmDialog";
-import { Input } from "../../../components/ui/input";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { StatusView } from "../../../components/journiv/StatusView";
-import { useSettingsDirty } from "../SettingsModal";
-import { SettingsRow, SettingsSection } from "../SettingsSection";
+import { ImmichConnectForm } from "./ImmichConnectForm";
+import { IntegrationsCatalogue } from "./IntegrationsCatalogue";
+import "./integrations.css";
 
+/**
+ * `/settings/integrations` is the provider catalogue;
+ * `/settings/integrations/immich` is the Immich detail. Both carry
+ * `staticData.settings: "integrations"`, so the modal chrome and the "Providers"
+ * nav item are unchanged across the drill-down — only this pane swaps
+ * (DESIGN.md §23). An unknown provider sub-route is redirected to the catalogue
+ * by the router, so anything that reaches here that is not the Immich detail is
+ * the catalogue.
+ */
 export function IntegrationsPage() {
-  const qc = useQueryClient();
+  const matchRoute = useMatchRoute();
+  if (matchRoute({ to: "/settings/integrations/$provider" }))
+    return <ImmichIntegrationDetail />;
+  return <IntegrationsCatalogue />;
+}
+
+function ImmichIntegrationDetail() {
   const [config, status] = useQueries({
     queries: [instanceConfigQuery(), integrationStatusQuery()],
   });
-  const [apiKey, setApiKey] = useState("");
-  const [mode, setMode] = useState<"link_only" | "copy">("link_only");
-  const [disconnectOpen, setDisconnectOpen] = useState(false);
-  const serverMode = useRef<"link_only" | "copy" | undefined>(undefined);
-  serverMode.current = status.data?.import_mode;
-  const connectionId = status.data
-    ? `${status.data.provider}:${status.data.status}:${status.data.external_user_id ?? ""}:${status.data.connected_at ?? ""}`
-    : undefined;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Deliberately reset only for a new server connection, not a status refetch.
-  useEffect(() => {
-    if (serverMode.current) setMode(serverMode.current);
-  }, [connectionId]);
-  const connected = status.data?.status === "connected";
-  const dirty = connected ? mode !== status.data?.import_mode : Boolean(apiKey);
-  useSettingsDirty(dirty);
-  const refresh = () =>
-    qc.invalidateQueries({ queryKey: queryKeys.integrationStatus("immich") });
-  const save = useMutation({
-    mutationFn: async () => {
-      if (connected) await api.updateImmich({ import_mode: mode });
-      else await api.connectImmich({ api_key: apiKey });
-    },
-    onSuccess: async () => {
-      setApiKey("");
-      await refresh();
-    },
-  });
-  const disconnect = useMutation({
-    mutationFn: api.disconnectImmich,
-    onSuccess: async () => {
-      setDisconnectOpen(false);
-      await refresh();
-    },
-  });
+
+  const back = (
+    <Link
+      to="/settings/integrations"
+      search={{ q: "" }}
+      state={(prev) => prev}
+      className="jv-integrations__back jv-desktop-only jv-caption"
+    >
+      <ChevronLeft aria-hidden="true" size={15} />
+      Back to integrations
+    </Link>
+  );
+
   if (config.isLoading || status.isLoading)
-    return <Skeleton className="jv-settings__skeleton" />;
+    return (
+      <>
+        {back}
+        <Skeleton className="jv-settings__skeleton" />
+      </>
+    );
+
   if (config.isError)
     return (
-      <StatusView
-        title="Integrations couldn’t be loaded"
-        description="Instance capabilities are unavailable."
-        action={<Button onClick={() => config.refetch()}>Try again</Button>}
-      />
+      <>
+        {back}
+        <StatusView
+          title="Integrations couldn’t be loaded"
+          description="Instance capabilities are unavailable."
+          action={<Button onClick={() => config.refetch()}>Try again</Button>}
+        />
+      </>
     );
-  if (status.isError)
+
+  if (status.isError || !status.data)
     return (
-      <StatusView
-        title="Integration status couldn’t be loaded"
-        description="Check your connection and try again."
-        action={<Button onClick={() => status.refetch()}>Try again</Button>}
-      />
+      <>
+        {back}
+        <StatusView
+          title="Integration status couldn’t be loaded"
+          description="Check your connection and try again."
+          action={<Button onClick={() => status.refetch()}>Try again</Button>}
+        />
+      </>
     );
+
   if (!config.data?.immich_base_url)
     return (
-      <StatusView
-        title="No integrations available"
-        description="This instance has not enabled an integration provider."
-      />
+      <>
+        {back}
+        <StatusView
+          title="Immich isn’t enabled on this instance"
+          description="An administrator has not configured an Immich server."
+        />
+      </>
     );
+
   return (
-    <div className="jv-settings__body">
-      <SettingsSection
-        title="Immich"
-        intro="Connect Journiv to the Immich provider configured by this instance."
-      >
-        <SettingsRow label="Server">
-          <p className="jv-settings-row__readonly">
-            {config.data.immich_base_url}
-          </p>
-        </SettingsRow>
-        <SettingsRow label="Status">
-          <p className="jv-settings-row__readonly">
-            {connected ? "Connected" : "Not connected"}
-          </p>
-          {status.data?.last_synced_at && (
-            <p className="jv-caption">
-              Last synced{" "}
-              {new Date(status.data.last_synced_at).toLocaleString()}
-            </p>
-          )}
-        </SettingsRow>
-        {!connected && (
-          <SettingsRow label="API key" htmlFor="immich-key">
-            <Input
-              id="immich-key"
-              type="password"
-              autoComplete="off"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-            />
-          </SettingsRow>
-        )}
-        {connected && (
-          <SettingsRow label="Import mode" htmlFor="immich-mode">
-            <select
-              id="immich-mode"
-              className="jv-field"
-              value={mode}
-              onChange={(event) =>
-                setMode(event.target.value as "link_only" | "copy")
-              }
-            >
-              <option value="link_only">Link originals</option>
-              <option value="copy">Copy into Journiv</option>
-            </select>
-          </SettingsRow>
-        )}
-      </SettingsSection>
-      {status.data?.last_error && (
-        <p className="jv-settings__alert" role="alert">
-          Immich reported a connection problem. Check the provider and
-          reconnect.
-        </p>
-      )}
-      {save.isError && (
-        <p className="jv-settings__alert" role="alert">
-          The Immich connection couldn’t be saved. Your entered value is still
-          here.
-        </p>
-      )}
-      <div className="jv-settings__actions">
-        {connected && (
-          <Button variant="ghost" onClick={() => setDisconnectOpen(true)}>
-            Disconnect
-          </Button>
-        )}
-        <Button
-          variant="primary"
-          disabled={!dirty || save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {connected ? "Save settings" : "Connect"}
-        </Button>
-      </div>
-      <AppConfirmDialog
-        open={disconnectOpen}
-        onOpenChange={setDisconnectOpen}
-        title="Disconnect Immich?"
-        description="Journiv will stop accessing this provider. Existing imported media stays in place."
-        confirmLabel="Disconnect"
-        destructive
-        pending={disconnect.isPending}
-        onConfirm={() => disconnect.mutate()}
+    <>
+      {back}
+      <ImmichConnectForm
+        baseUrl={config.data.immich_base_url}
+        status={status.data}
       />
-    </div>
+    </>
   );
 }

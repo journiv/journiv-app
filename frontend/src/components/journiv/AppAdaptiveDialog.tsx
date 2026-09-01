@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +34,8 @@ export interface AppAdaptiveDialogProps {
   onOpenChange: (open: boolean) => void;
   title: ReactNode;
   description?: ReactNode;
+  /** Optional controls that belong with the fixed header, such as source tabs. */
+  headerExtra?: ReactNode;
   /** Keeps the accessible name while hiding the title visually. */
   titleVisuallyHidden?: boolean;
   children: ReactNode;
@@ -44,6 +46,9 @@ export interface AppAdaptiveDialogProps {
   /** When false, Escape, outside press and swipe cannot close the surface.
    *  The caller still owns dirty state, discard prompts and cleanup. */
   dismissible?: boolean;
+  /** Lets a virtualized child observe the shared body scroll owner without
+   *  introducing a nested scrolling region. */
+  bodyRef?: Ref<HTMLDivElement>;
 }
 
 /**
@@ -67,11 +72,13 @@ export function AppAdaptiveDialog({
   onOpenChange,
   title,
   description,
+  headerExtra,
   titleVisuallyHidden = false,
   children,
   footer,
   size = "md",
   dismissible = true,
+  bodyRef,
 }: AppAdaptiveDialogProps) {
   const compact = useCompactViewport();
   const handleOpenChange = guardDismissal(onOpenChange, dismissible);
@@ -79,7 +86,11 @@ export function AppAdaptiveDialog({
   // Built once and slotted into whichever branch renders, so the two branches
   // cannot drift. Only the title/description differ — they are different
   // primitives and must be.
-  const body = <div className="jv-overlay__body">{children}</div>;
+  const body = (
+    <div ref={bodyRef} className="jv-overlay__body">
+      {children}
+    </div>
+  );
   const titleClass = titleVisuallyHidden ? "sr-only" : undefined;
 
   if (compact) {
@@ -99,6 +110,7 @@ export function AppAdaptiveDialog({
             {description != null && (
               <DrawerDescription>{description}</DrawerDescription>
             )}
+            {headerExtra}
           </DrawerHeader>
           {body}
           {footer != null && (
@@ -126,6 +138,7 @@ export function AppAdaptiveDialog({
           {description != null && (
             <DialogDescription>{description}</DialogDescription>
           )}
+          {headerExtra}
         </DialogHeader>
         {body}
         {footer != null && <div className="jv-overlay__footer">{footer}</div>}
