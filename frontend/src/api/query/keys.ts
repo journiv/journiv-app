@@ -107,4 +107,6 @@ export const queryKeys = {
   momentMedia: (id: string) => ["moment", id, "media"] as const,
   entry: (id: string) => ["entry", id] as const,
   allMoments: ["moments"] as const,
+  allMomentCalendars: ["moment-calendar"] as const,
+  allMediaLibraries: ["media-library"] as const,
 };

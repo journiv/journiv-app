@@ -524,6 +524,27 @@ Reference: `docs/design/reference/02-reader-rich-*`, `03-reader-plain-*`,
 - Malformed stored content falls back to `content_plain_text` inside a bordered
   notice; it must never crash or render raw HTML.
 
+### Delete entry
+
+The reader `PageBar` shows one ghost trash `IconButton` immediately before Edit
+when the Moment has an Entry. It is the same direct action at every width; there
+is no compact overflow menu, Timeline-row action or swipe gesture. Confirmation
+uses the existing centred shadcn `Dialog` at every width, with a danger final
+action, a disabled pending state and an inline human error that leaves the
+dialog open.
+
+`DELETE /entries/{entry_id}` permanently removes the Entry's writing, **not the
+Moment**. Photos, moods, tags, people, location and other Moment context remain,
+so a successful delete refetches the Moment in place and the reader becomes the
+corresponding quick log. The backend prunes a Moment that has no meaningful
+context left; a 404 from that refetch returns to the same list mode, search and
+entity scope. The mutation invalidates every Moment list, Calendar, Media
+library, journal count and tag preview affected by the change.
+
+There is no Undo: the endpoint is a hard delete and the API exposes no restore
+contract. Recreating cached writing would produce a different Entry identity
+and is not presented as recovery.
+
 ### Reader media
 
 Media appears in two places, and never in both at once:
