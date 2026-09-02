@@ -19,10 +19,6 @@
   min-width: 0;
 }
 
-.jv-tags__sort .jv-field {
-  width: auto;
-}
-
 /* ---- insights strip ---------------------------------------------------- */
 
 .jv-tag-insights {
@@ -47,7 +43,7 @@
 }
 
 .jv-tag-insights__note a {
-  color: var(--primary);
+  color: var(--brand);
 }
 
 /* ---- stat tiles ------------------------------------------------------------ */
@@ -59,6 +55,7 @@
   margin: 0;
 }
 
+/* Stat tiles are detached objects, so they carry a card surface (§5). */
 .jv-tag-stats__tile {
   display: flex;
   flex-direction: column;
@@ -110,7 +107,7 @@
 
 .jv-tag-bars__track {
   height: 0.5rem;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--muted);
   overflow: hidden;
 }
@@ -119,7 +116,7 @@
   display: block;
   height: 100%;
   min-inline-size: 2px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--chart-1);
 }
 
@@ -154,24 +151,17 @@
   color: var(--muted-foreground);
 }
 
-.jv-tag-detail__section {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.jv-tag-detail__section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.jv-tag-detail__range .jv-field {
-  width: auto;
+/* The section is a stock `Card`; only the heading level is Journiv's, and it
+   inherits `CardTitle`'s type rather than carrying its own. */
+.jv-tag-detail__section-title {
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
 }
 
 .jv-tag-detail__viewall {
-  color: var(--primary);
+  color: var(--brand);
   text-decoration: none;
 }
 
@@ -237,7 +227,7 @@
 }
 
 a.jv-tag-moments__link:hover {
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
 .jv-tag-moments__date {
@@ -255,10 +245,9 @@ a.jv-tag-moments__link:hover {
   gap: var(--space-3);
 }
 
+/* The scroll box around the choice; `RadioGroup` owns the stacking. */
 .jv-tag-merge__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+  gap: 0;
   max-height: 16rem;
   overflow: hidden auto;
   border: 1px solid var(--border);
@@ -275,7 +264,7 @@ a.jv-tag-moments__link:hover {
 }
 
 .jv-tag-merge__option:hover {
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
 .jv-tag-merge__name {
@@ -295,10 +284,5 @@ a.jv-tag-moments__link:hover {
 @media (max-width: 640px) {
   .jv-tags__controls {
     flex-wrap: wrap;
-  }
-
-  .jv-tags__sort,
-  .jv-tags__sort .jv-field {
-    width: 100%;
   }
 }

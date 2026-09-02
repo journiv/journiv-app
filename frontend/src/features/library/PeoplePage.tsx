@@ -1,5 +1,3 @@
-import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
-import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Archive,
@@ -11,17 +9,19 @@ import {
   Plus,
   Trash2,
   TriangleAlert,
-  Users,
   UserPlus,
+  Users,
 } from "lucide-react";
 import {
   type CSSProperties,
   type ReactNode,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { api } from "../../api/client/api";
 import type {
   PersonCreate,
   PersonGroupCreate,
@@ -30,7 +30,6 @@ import type {
   PersonResponse,
   PersonUpdate,
 } from "../../api/generated/types.gen";
-import { api } from "../../api/client/api";
 import { queryKeys } from "../../api/query/keys";
 import {
   instanceConfigQuery,
@@ -38,23 +37,38 @@ import {
   peopleQuery,
   personGroupsQuery,
 } from "../../api/query/options";
+import {
+  AppAdaptiveDialog,
+  useOverlayAutoFocus,
+} from "../../components/journiv/AppAdaptiveDialog";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
 import { LibraryRow } from "../../components/journiv/LibraryRow";
 import { PageBar } from "../../components/journiv/PageBar";
+import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
-import { Dialog, DialogClose } from "../../components/ui/dialog";
+import { Checkbox } from "../../components/ui/checkbox";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "../../components/ui/field";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
 import { Skeleton } from "../../components/ui/skeleton";
-import { StatusView } from "../../components/journiv/StatusView";
 import { colorFromArgb } from "../../lib/color";
 import { cx } from "../../lib/cx";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
-import { viewMomentsAction } from "./viewMomentsAction";
 import { ImmichPeopleImportDialog } from "./immich/ImmichPeopleImportDialog";
+import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
+import { NativeSelect } from "../../components/ui/native-select";
+import { Textarea } from "../../components/ui/textarea";
 
 type PersonFormState =
   | { mode: "create"; groupIds: string[] }
@@ -169,9 +183,10 @@ function PersonListItem({
   );
 }
 
-/** A directory section: a colour dot, a sentence-case name, a hairline rule, the
- *  server count, then an airy grid of people. Whitespace and one rule carry the
- *  grouping — no boxes, no rail (DESIGN.md §5, §24). */
+/** A directory section: an open head — colour dot, sentence-case name, hairline
+ *  rule, server count — over a panel holding the grid of people. The head
+ *  carries the grouping; the panel gives the rows an edge so one is
+ *  recognisable at rest (DESIGN.md §5, §24). */
 function GroupSection({
   title,
   quiet,
@@ -489,9 +504,11 @@ export function PeoplePage() {
               Import from Immich
             </Button>
           )}
-          <Button onClick={() => setGroupsManager({})}>Manage groups</Button>
+          <Button variant="secondary" onClick={() => setGroupsManager({})}>
+            Manage groups
+          </Button>
           <Button
-            variant="primary"
+            variant="default"
             onClick={() => setPersonForm({ mode: "create", groupIds: [] })}
           >
             <Plus aria-hidden="true" size={16} />
@@ -552,6 +569,7 @@ export function PeoplePage() {
               description="Check your connection and try again."
               action={
                 <Button
+                  variant="secondary"
                   onClick={() => {
                     peopleQueryResult.refetch();
                     groupsQueryResult.refetch();
@@ -570,7 +588,7 @@ export function PeoplePage() {
               description="Add a person or create a group to begin organising your Library."
               action={
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() =>
                     setPersonForm({ mode: "create", groupIds: [] })
                   }
@@ -706,7 +724,10 @@ export function PeoplePage() {
                       title="No people found"
                       description={`No people or groups match “${search.trim()}”.`}
                       action={
-                        <Button onClick={() => setSearch("")}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setSearch("")}
+                        >
                           Clear search
                         </Button>
                       }
@@ -874,25 +895,27 @@ function GroupChecklist({
 }) {
   if (!groups.length) return <p className="jv-caption">No groups yet.</p>;
   return (
-    <fieldset className="jv-library-checklist">
-      <legend>Groups</legend>
+    <FieldSet className="jv-library-checklist">
+      <FieldLegend variant="label">Groups</FieldLegend>
       {groups.map((group) => (
-        <label key={group.id}>
-          <input
-            type="checkbox"
+        <Field key={group.id} orientation="horizontal">
+          <Checkbox
+            id={`person-group-${group.id}`}
             checked={selected.includes(group.id)}
-            onChange={(event) =>
+            onCheckedChange={(checked) =>
               onChange(
-                event.target.checked
+                checked === true
                   ? [...selected, group.id]
                   : selected.filter((id) => id !== group.id),
               )
             }
           />
-          <span>{group.name}</span>
-        </label>
+          <FieldLabel htmlFor={`person-group-${group.id}`}>
+            {group.name}
+          </FieldLabel>
+        </Field>
       ))}
-    </fieldset>
+    </FieldSet>
   );
 }
 
@@ -914,6 +937,8 @@ function PersonFormDialog({
     photo: PhotoChange,
   ) => Promise<void>;
 }) {
+  const formId = useId();
+  const autoFocus = useOverlayAutoFocus();
   const person = state.mode === "edit" ? state.person : undefined;
   const [name, setName] = useState(person?.name ?? "");
   const [nickname, setNickname] = useState(person?.nickname ?? "");
@@ -938,12 +963,29 @@ function PersonFormDialog({
     previewUrl ?? (photoCleared ? null : (person?.profile_image_url ?? null));
 
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={person ? `Edit ${person.name}` : "Add person"}
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="default"
+            disabled={!name.trim() || submitting}
+          >
+            {submitting ? "Saving…" : person ? "Save" : "Add person"}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -995,7 +1037,11 @@ function PersonFormDialog({
                 event.target.value = "";
               }}
             />
-            <Button size="sm" onClick={() => photoInputRef.current?.click()}>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => photoInputRef.current?.click()}
+            >
               <ImagePlus aria-hidden="true" size={15} />
               {shownImage ? "Change photo" : "Add photo"}
             </Button>
@@ -1013,38 +1059,41 @@ function PersonFormDialog({
             )}
           </div>
         </div>
-        <label htmlFor="library-person-name">
-          <span>Name</span>
-          <Input
-            id="library-person-name"
-            aria-label="Name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </label>
-        <label htmlFor="library-person-nickname">
-          <span>
-            Nickname <span className="jv-caption">Optional</span>
-          </span>
-          <Input
-            id="library-person-nickname"
-            aria-label="Nickname"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-          />
-        </label>
-        <label htmlFor="library-person-note">
-          <span>
-            Note <span className="jv-caption">Optional</span>
-          </span>
-          <textarea
-            id="library-person-note"
-            className="jv-field jv-library-form__note"
-            aria-label="Note"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </label>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="library-person-name">Name</FieldLabel>
+            <Input
+              id="library-person-name"
+              aria-label="Name"
+              value={name}
+              autoFocus={autoFocus}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="library-person-nickname">
+              Nickname <span className="jv-caption">Optional</span>
+            </FieldLabel>
+            <Input
+              id="library-person-nickname"
+              aria-label="Nickname"
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="library-person-note">
+              Note <span className="jv-caption">Optional</span>
+            </FieldLabel>
+            <Textarea
+              id="library-person-note"
+              className="jv-library-form__note"
+              aria-label="Note"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+            />
+          </Field>
+        </FieldGroup>
         <GroupChecklist
           groups={groups}
           selected={groupIds}
@@ -1055,18 +1104,8 @@ function PersonFormDialog({
             The person could not be saved. Your changes are still here.
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!name.trim() || submitting}
-          >
-            {submitting ? "Saving…" : person ? "Save" : "Add person"}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }
 
@@ -1088,14 +1127,31 @@ function ManagePeopleDialog({
   const [selected, setSelected] = useState(
     (group.people ?? []).map((p) => p.id),
   );
+  const formId = useId();
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Manage ${group.name}`}
       description="People can belong to more than one group."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="default"
+            disabled={submitting}
+          >
+            {submitting ? "Saving…" : "Save"}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -1106,38 +1162,34 @@ function ManagePeopleDialog({
           }
         }}
       >
-        <fieldset className="jv-library-checklist jv-library-checklist--people">
-          <legend>People</legend>
+        <FieldSet className="jv-library-checklist jv-library-checklist--people">
+          <FieldLegend variant="label">People</FieldLegend>
           {people.map((person) => (
-            <label key={person.id}>
-              <input
-                type="checkbox"
+            <Field key={person.id} orientation="horizontal">
+              <Checkbox
+                id={`group-person-${person.id}`}
                 checked={selected.includes(person.id)}
-                onChange={(event) =>
+                onCheckedChange={(checked) =>
                   setSelected(
-                    event.target.checked
+                    checked === true
                       ? [...selected, person.id]
                       : selected.filter((id) => id !== person.id),
                   )
                 }
               />
-              <span>{person.name}</span>
-            </label>
+              <FieldLabel htmlFor={`group-person-${person.id}`}>
+                {person.name}
+              </FieldLabel>
+            </Field>
           ))}
-        </fieldset>
+        </FieldSet>
         {failed && (
           <p className="jv-library__alert" role="alert">
             Group membership could not be saved.
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button type="submit" variant="primary" disabled={submitting}>
-            {submitting ? "Saving…" : "Save"}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }
 
@@ -1159,14 +1211,31 @@ function ManagePersonGroupsDialog({
   const [selected, setSelected] = useState(
     (person.groups ?? []).map((group) => group.id),
   );
+  const formId = useId();
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Manage groups for ${person.name}`}
       description="A person can belong to more than one group."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="default"
+            disabled={submitting}
+          >
+            {submitting ? "Saving…" : "Save"}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -1187,14 +1256,8 @@ function ManagePersonGroupsDialog({
             Group membership could not be saved.
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button type="submit" variant="primary" disabled={submitting}>
-            {submitting ? "Saving…" : "Save"}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }
 
@@ -1214,14 +1277,31 @@ function MergeDialog({
   onSubmit: (target: string) => Promise<void>;
 }) {
   const [target, setTarget] = useState("");
+  const formId = useId();
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Merge ${person.name}`}
       description="Moments, group memberships and linked identities move to the person you choose. This cannot be undone."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="destructive"
+            disabled={!target || submitting}
+          >
+            {submitting ? "Merging…" : "Merge people"}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -1232,40 +1312,34 @@ function MergeDialog({
           }
         }}
       >
-        <label>
-          <span>Merge into</span>
-          <select
-            className="jv-field"
-            aria-label="Merge into"
-            value={target}
-            onChange={(event) => setTarget(event.target.value)}
-          >
-            <option value="">Choose a person</option>
-            {people
-              .filter((item) => item.id !== person.id)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.name}
-                </option>
-              ))}
-          </select>
-        </label>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor="library-person-merge-target">
+              Merge into
+            </FieldLabel>
+            <NativeSelect
+              id="library-person-merge-target"
+              aria-label="Merge into"
+              value={target}
+              onChange={(event) => setTarget(event.target.value)}
+            >
+              <option value="">Choose a person</option>
+              {people
+                .filter((item) => item.id !== person.id)
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </NativeSelect>
+          </Field>
+        </FieldGroup>
         {failed && (
           <p className="jv-library__alert" role="alert">
             The people could not be merged.
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button
-            type="submit"
-            variant="danger"
-            disabled={!target || submitting}
-          >
-            {submitting ? "Merging…" : "Merge people"}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }

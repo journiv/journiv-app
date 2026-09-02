@@ -39,6 +39,9 @@ if (!EMAIL || !PASSWORD) {
 /** Scenarios are named after what they demonstrate, not after test data. */
 const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900, scale: 1 },
+  // The 861–1100px band has its own layout (nav in a drawer, two panes) and
+  // was previously never captured.
+  { name: "tablet", width: 1024, height: 768, scale: 1 },
   { name: "mobile", width: 390, height: 844, scale: 1 },
 ];
 const THEMES = ["light", "dark"];
@@ -216,6 +219,13 @@ async function main() {
     // modal, the mobile capture the full-screen routed page.
     { name: "12-settings-profile", url: `${BASE}/settings/profile` },
     { name: "13-settings-security", url: `${BASE}/settings/security` },
+    // Appearance carries the densest set of stock controls in the product —
+    // selects, a toggle group, swatches, a textarea — so it is the fastest
+    // read on whether controls still look like base-vega.
+    { name: "14-settings-appearance", url: `${BASE}/settings/appearance` },
+    // Library rows and the Journals list are the product's two row treatments.
+    { name: "15-library-people", url: `${BASE}/settings/journaling/people` },
+    { name: "16-journals", url: `${BASE}/journals` },
   ].filter(Boolean);
 
   await mkdir(OUT, { recursive: true });

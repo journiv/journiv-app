@@ -99,7 +99,7 @@ export function JournalsPage() {
 
       <header className="jv-journals__header">
         <h1 className="jv-display jv-journals__heading">Journals</h1>
-        <Button variant="primary" onClick={openCreate}>
+        <Button variant="default" onClick={openCreate}>
           <Plus aria-hidden="true" size={16} />
           New journal
         </Button>
@@ -142,7 +142,7 @@ export function JournalsPage() {
             title="No journals yet"
             description="Create a journal to group the moments you write."
             action={
-              <Button variant="primary" onClick={openCreate}>
+              <Button variant="default" onClick={openCreate}>
                 <Plus aria-hidden="true" size={16} />
                 New journal
               </Button>

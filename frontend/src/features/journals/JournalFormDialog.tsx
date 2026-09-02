@@ -96,7 +96,7 @@ export function JournalFormDialog({
           <Button
             type="submit"
             form={formId}
-            variant="primary"
+            variant="default"
             disabled={submitting}
           >
             {submitting

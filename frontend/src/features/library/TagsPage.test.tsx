@@ -111,9 +111,11 @@ describe("Library · Tags", () => {
   it("renders a flat, most-used-first card grid with counts", async () => {
     await view();
     await screen.findByText("travel");
+    // `LibraryRow` renders a stock `Item`, so the title is addressed by the
+    // registry's own slot rather than by a Journiv class.
     const names = screen
       .getAllByText((_, el) =>
-        Boolean(el?.classList.contains("jv-lib-row__title")),
+        Boolean(el?.getAttribute("data-slot") === "item-title"),
       )
       .map((n) => n.textContent);
     expect(names).toEqual(["travel", "food", "orphan"]);
@@ -171,7 +173,9 @@ describe("Library · Tags", () => {
     const dialog = await screen.findByRole("dialog", {
       name: /merge #food into/i,
     });
-    await userEvent.click(within(dialog).getByLabelText(/travel/));
+    await userEvent.click(
+      within(dialog).getByRole("radio", { name: /travel/ }),
+    );
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Merge tags" }),
     );

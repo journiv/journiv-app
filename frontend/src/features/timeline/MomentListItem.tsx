@@ -14,6 +14,7 @@ import {
   truncate,
 } from "../../lib/moment";
 import { cx } from "../../lib/cx";
+import { Badge } from "../../components/ui/badge";
 
 /**
  * One Moment in the Timeline.
@@ -61,9 +62,7 @@ export function MomentListItem({
           <span className="jv-meta">
             {formatTimeOfDay(moment.logged_at_utc, moment.logged_timezone)}
           </span>
-          {kindLabel && (
-            <span className="jv-tag jv-tag--quiet">{kindLabel}</span>
-          )}
+          {kindLabel && <Badge variant="outline">{kindLabel}</Badge>}
           {moment.is_pinned && (
             <Pin className="jv-moment__pin" aria-label="Pinned" size={12} />
           )}

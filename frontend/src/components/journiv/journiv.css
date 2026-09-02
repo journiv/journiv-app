@@ -49,7 +49,7 @@
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  background: var(--journal-accent, var(--line-strong));
+  background: var(--journal-accent, var(--muted-foreground));
 }
 
 /* The journal's icon, drawn in the journal's own hue in place of the dot. */
@@ -58,7 +58,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--journal-accent, var(--line-strong));
+  color: var(--journal-accent, var(--muted-foreground));
 }
 
 .jv-journal-badge {
@@ -104,30 +104,30 @@
   width: 8px;
   height: 8px;
   border-radius: 999px;
-  background: var(--mood-accent, var(--line-strong));
+  background: var(--mood-accent, var(--muted-foreground));
 }
 
-/* ---- tags and people --------------------------------------------------- */
+/* ---- tags and people ---------------------------------------------------
+   Both are stock `Badge`s — a tag is `secondary`, a person is `outline` with
+   an `Avatar` inside it, because a person has a face and a tag is a word
+   (DESIGN.md §24). Only the person chip's shape is Journiv's: it has to grow
+   to fit an avatar, which a stock badge does not. */
 
-.jv-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 1px;
-  padding: 3px var(--space-2);
-  border-radius: var(--radius-xs);
-  background: var(--muted);
-  color: var(--muted-foreground);
-  font-size: 0.78125rem;
-  font-weight: 500;
+.jv-person {
+  height: auto;
+  gap: var(--space-2);
+  padding: 3px var(--space-3) 3px 3px;
+  border-radius: 999px;
+  color: var(--foreground);
+  font-size: 0.8125rem;
 }
 
-.jv-tag--quiet {
-  padding: 1px 6px;
-  background: transparent;
-  border: 1px solid var(--border);
-  color: var(--muted-foreground);
+.jv-person__avatar {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
   font-size: 0.6875rem;
-  text-transform: none;
+  font-weight: 600;
 }
 
 /* People and tags at the foot of a document, shared by reader and editor. */
@@ -144,52 +144,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-2);
-}
-
-.jv-person {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 3px var(--space-3) 3px 3px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--foreground);
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.jv-person__avatar {
-  flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  object-fit: cover;
-  background: var(--muted);
-}
-
-.jv-person__avatar--initial {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted-foreground);
-  font-size: 0.6875rem;
-  font-weight: 600;
-}
-
-/* A chip that navigates to its entity's scoped Timeline (DESIGN.md §24). */
-.jv-person--link,
-.jv-tag--link {
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.jv-person--link:hover {
-  background: var(--state-hover);
-}
-
-.jv-tag--link:hover {
-  background: var(--accent-surface);
-  color: var(--foreground);
 }
 
 /* ---- entry header ------------------------------------------------------ */
@@ -232,57 +186,6 @@
   }
 }
 
-/* ---- list view switch (Timeline / Calendar / Media) ------------------- */
-/* Segmented control: the raised surface alone carries the selected option
-   (DESIGN.md §5 — shadows are for overlays), plus a rail and aria-current. */
-
-.jv-view-switch {
-  display: inline-grid;
-  grid-auto-flow: column;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--muted);
-}
-
-.jv-view-switch__option {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 34px;
-  min-height: 28px;
-  border-radius: var(--radius-xs);
-  color: var(--muted-foreground);
-  text-decoration: none;
-  cursor: pointer;
-  transition:
-    background-color var(--duration-fast) var(--ease),
-    color var(--duration-fast) var(--ease);
-}
-
-.jv-view-switch__option:hover {
-  color: var(--foreground);
-}
-
-.jv-view-switch__option.is-selected {
-  color: var(--foreground);
-  background: var(--popover);
-}
-
-.jv-view-switch__option.is-selected::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -3px;
-  transform: translateX(-50%);
-  width: 16px;
-  height: 3px;
-  border-radius: 2px 2px 0 0;
-  background: var(--state-selected-rail);
-}
-
 /* ---- Library entity identity ---------------------------------------------
    `--entity-accent` is set inline from API data by `EntityGlyph` (and by the
    group's left rail), exactly like `--journal-accent` / `--mood-accent`. It is
@@ -293,7 +196,7 @@
   width: 9px;
   height: 9px;
   border-radius: 999px;
-  background: var(--entity-accent, var(--line-strong));
+  background: var(--entity-accent, var(--muted-foreground));
 }
 
 .jv-entity-glyph {
@@ -301,79 +204,40 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--entity-accent, var(--line-strong));
+  color: var(--entity-accent, var(--muted-foreground));
 }
 
 /* ---- Library row -------------------------------------------------------
-   The shared unit for People / Tags / Moods / Activities lists. It is a grid
-   cell in a directory section, not a divided list row: it carries a radius so
-   its hover reads as a discrete target, and no divider (§5 — never both). */
+   The row is a stock `Item`. Only the stretched-link composition and the
+   rest-hidden `⋯` are Journiv's (DESIGN.md §6, §24). */
 
 .jv-lib-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--space-3);
   min-height: 3.25rem;
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
 }
 
-.jv-lib-row:hover {
-  background: var(--state-hover);
-}
-
-/* `rowLink` variant: the leading + text are one stretched link, the `⋯` sits
-   on top of it. The hover/focus treatment moves onto the link itself so the
-   whole card reads as the target (DESIGN.md §6, §24). */
 .jv-lib-row--link {
   display: flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 0;
+  /* The `Item` inside is only the link's hit area; the radius lives on the row
+     so the resting surface is a rounded item and not a square block. */
+  border-radius: var(--radius-md);
 }
 
+/* The resting surface belongs to the row, not to the link inside it. Hovering
+   anywhere on the row — including the trailing `⋯` and any control that wraps
+   onto its own line at narrow widths — highlights the whole row, so the
+   affordance always matches the hit area (DESIGN.md §5, "Rows"). */
 .jv-lib-row--link:hover {
-  background: transparent;
+  background: var(--muted);
 }
 
 .jv-lib-row__hit {
   display: flex;
   flex: 1;
   min-width: 0;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2);
-  border-radius: var(--radius-sm);
   color: inherit;
   text-decoration: none;
-}
-
-.jv-lib-row__hit:hover {
-  background: var(--state-hover);
-}
-
-.jv-lib-row__leading {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.jv-lib-row__text {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.jv-lib-row__title {
-  color: var(--foreground);
-  font-size: 0.9375rem;
-  font-weight: 560;
-}
-
-.jv-lib-row__meta {
-  color: var(--muted-foreground);
 }
 
 .jv-lib-row__actions {
@@ -387,9 +251,19 @@
   padding-right: var(--space-1);
 }
 
-/* The `⋯` rests hidden and appears on hover / keyboard focus, so a resting
-   list is just people (DESIGN.md §1). Pointer-less devices always show it. */
-@media (hover: hover) {
+/* The `⋯` rests hidden and appears on hover or keyboard focus, so a list at
+   rest is just people (DESIGN.md §1, §6 "Secondary row actions").
+ *
+ * This is not a violation of "interactive things look interactive at rest":
+ * the row's own action — opening the person — is what has to read as
+ * interactive, and it does. The `⋯` is the secondary action, and it stays
+ * reachable in every input mode. Verified rendered, not assumed: at rest it is
+ * `opacity: 0` but still in the tab order, it appears on `:hover` and on
+ * `:focus-within`, it stays up while its menu is open, and where the primary
+ * pointer cannot hover it is never hidden at all. `pointer: fine` is part of
+ * the condition so a touchscreen laptop, which reports `hover: hover`, keeps
+ * them visible. */
+@media (hover: hover) and (pointer: fine) {
   .jv-lib-row__actions,
   .jv-lib-section__head [data-slot="button"] {
     opacity: 0;
@@ -404,66 +278,6 @@
   .jv-lib-section__head [data-slot="button"][aria-expanded="true"] {
     opacity: 1;
   }
-}
-
-/* ---- overflow menu ---------------------------------------------------
-   One overlay treatment for every `⋯` menu in the product (Journals, Library,
-   and the next surface that needs one). base-ui Menu drives the markup. */
-
-.jv-menu-positioner {
-  z-index: 41;
-}
-
-.jv-menu {
-  min-width: 12rem;
-  padding: var(--space-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--popover);
-  box-shadow: var(--shadow-overlay);
-}
-
-.jv-menu__item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border: 0;
-  border-radius: var(--radius-xs);
-  color: var(--muted-foreground);
-  background: transparent;
-  font-size: 0.8125rem;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-
-.jv-menu__item[data-highlighted],
-.jv-menu__item:hover {
-  color: var(--foreground);
-  background: var(--state-hover);
-}
-
-.jv-menu__item[data-disabled] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.jv-menu__item--destructive {
-  color: var(--destructive);
-}
-
-.jv-menu__item--destructive[data-highlighted],
-.jv-menu__item--destructive:hover {
-  color: var(--destructive);
-  background: var(--danger-surface);
-}
-
-.jv-menu__separator {
-  height: 1px;
-  margin: var(--space-1) 0;
-  background: var(--border);
 }
 
 /* ---- Adaptive overlays (DESIGN.md §9, "Adaptive overlays") --------------
@@ -525,7 +339,10 @@
   min-height: var(--tap-target);
 }
 
-/* ---- Action sheet rows (AppAdaptiveMenu, compact branch) ---------------- */
+/* ---- Action sheet rows (AppAdaptiveMenu, compact branch) ----------------
+ * The rows themselves are stock `Item`s; only the thumb-sized target and the
+ * destructive tone are Journiv's, because a Drawer row is a touch target
+ * before it is a list row (DESIGN.md §9, §17). */
 
 .jv-sheet-actions {
   display: flex;
@@ -533,25 +350,9 @@
 }
 
 .jv-sheet-action {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
   min-height: var(--tap-target);
-  padding: var(--space-3) var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--foreground);
-  font: inherit;
-  text-align: left;
-  text-decoration: none;
   cursor: pointer;
-  transition: background-color var(--duration-fast) var(--ease);
-}
-
-.jv-sheet-action:hover:not(:disabled) {
-  background: var(--state-hover);
+  text-align: left;
 }
 
 .jv-sheet-action:disabled {
@@ -573,4 +374,28 @@
   margin-top: var(--space-2);
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+/* ---- List view switch ---------------------------------------------------
+ * A `ButtonGroup` of three router links (ListViewSwitch). The current view is
+ * marked with `aria-current="page"` rather than a toggle's pressed state, so
+ * the selected fill keys off that — the same neutral `--muted` a segmented
+ * ToggleGroup paints, because selection is never blue (DESIGN.md §3).
+ */
+
+.jv-view-switch [aria-current="page"] {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+/* Vega's `icon-sm` box is 32px, which is right beside a heading on a pointer
+   device and too small for a thumb. The three segments sit flush, so the
+   `IconButton` trick of projecting a 44px hit area past the visual box would
+   make neighbours overlap and mis-fire — here the control itself grows, and
+   only where the pointer is coarse (DESIGN.md §7). */
+@media (pointer: coarse) {
+  .jv-view-switch [data-slot="button"] {
+    width: var(--tap-target);
+    height: var(--tap-target);
+  }
 }

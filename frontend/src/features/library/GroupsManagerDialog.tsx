@@ -1,9 +1,19 @@
 import { ChevronLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { type CSSProperties, useId, useState } from "react";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
-import { AppAdaptiveDialog } from "../../components/journiv/AppAdaptiveDialog";
+import {
+  AppAdaptiveDialog,
+  useOverlayAutoFocus,
+} from "../../components/journiv/AppAdaptiveDialog";
 import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { Button } from "../../components/ui/button";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "../../components/ui/field";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import {
@@ -215,6 +225,7 @@ function GroupForm({
   onClose: () => void;
   onSubmit: (body: LibraryGroupCreateInput) => Promise<void>;
 }) {
+  const autoFocus = useOverlayAutoFocus();
   const editing = Boolean(group);
   const formId = useId();
   const nameId = useId();
@@ -248,7 +259,7 @@ function GroupForm({
           <Button
             type="submit"
             form={formId}
-            variant="primary"
+            variant="default"
             disabled={!trimmed || !dirty || busy}
           >
             {busy ? "Saving…" : editing ? "Save" : "Create group"}
@@ -277,83 +288,86 @@ function GroupForm({
           });
         }}
       >
-        <label htmlFor={nameId}>
-          <span>Group name</span>
-          <Input
-            id={nameId}
-            aria-label="Group name"
-            value={name}
-            maxLength={100}
-            autoFocus
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={nameId}>Group name</FieldLabel>
+            <Input
+              id={nameId}
+              aria-label="Group name"
+              value={name}
+              maxLength={100}
+              autoFocus={autoFocus}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
 
-        <fieldset className="jv-groups-form__group">
-          <legend>Colour</legend>
-          <div className="jv-groups-form__swatches">
-            <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
-              <input
-                type="radio"
-                name={colorName}
-                className="sr-only"
-                checked={!colorHex}
-                onChange={() => setColorHex("")}
-              />
-              <span className="sr-only">No colour</span>
-            </label>
-            {ENTITY_COLOR_PRESETS.map((preset) => (
-              <label
-                key={preset.hex}
-                className="jv-groups-form__swatch"
-                style={tint(preset.hex)}
-              >
+          <FieldSet>
+            <FieldLegend variant="label">Colour</FieldLegend>
+            <div className="jv-groups-form__swatches">
+              <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
                 <input
                   type="radio"
                   name={colorName}
                   className="sr-only"
-                  checked={colorHex.toLowerCase() === preset.hex.toLowerCase()}
-                  onChange={() => setColorHex(preset.hex)}
+                  checked={!colorHex}
+                  onChange={() => setColorHex("")}
                 />
-                <span className="sr-only">{preset.label}</span>
+                <span className="sr-only">No colour</span>
               </label>
-            ))}
-          </div>
-        </fieldset>
+              {ENTITY_COLOR_PRESETS.map((preset) => (
+                <label
+                  key={preset.hex}
+                  className="jv-groups-form__swatch"
+                  style={tint(preset.hex)}
+                >
+                  <input
+                    type="radio"
+                    name={colorName}
+                    className="sr-only"
+                    checked={
+                      colorHex.toLowerCase() === preset.hex.toLowerCase()
+                    }
+                    onChange={() => setColorHex(preset.hex)}
+                  />
+                  <span className="sr-only">{preset.label}</span>
+                </label>
+              ))}
+            </div>
+          </FieldSet>
 
-        <fieldset className="jv-groups-form__group">
-          <legend>Icon</legend>
-          <div className="jv-groups-form__icons">
-            <label className="jv-groups-form__icon jv-groups-form__icon--none">
-              <input
-                type="radio"
-                name={iconName}
-                className="sr-only"
-                checked={!icon}
-                onChange={() => setIcon("")}
-              />
-              None
-            </label>
-            {JOURNAL_ICONS.map(({ key, label, Icon }) => (
-              <label
-                key={key}
-                className="jv-groups-form__icon"
-                style={colorHex ? tint(colorHex) : undefined}
-              >
+          <FieldSet>
+            <FieldLegend variant="label">Icon</FieldLegend>
+            <div className="jv-groups-form__icons">
+              <label className="jv-groups-form__icon jv-groups-form__icon--none">
                 <input
                   type="radio"
                   name={iconName}
                   className="sr-only"
-                  checked={icon === key}
-                  onChange={() => setIcon(key)}
+                  checked={!icon}
+                  onChange={() => setIcon("")}
                 />
-                <span className="sr-only">{label}</span>
-                <Icon size={17} aria-hidden="true" />
+                None
               </label>
-            ))}
-          </div>
-        </fieldset>
-
+              {JOURNAL_ICONS.map(({ key, label, Icon }) => (
+                <label
+                  key={key}
+                  className="jv-groups-form__icon"
+                  style={colorHex ? tint(colorHex) : undefined}
+                >
+                  <input
+                    type="radio"
+                    name={iconName}
+                    className="sr-only"
+                    checked={icon === key}
+                    onChange={() => setIcon(key)}
+                  />
+                  <span className="sr-only">{label}</span>
+                  <Icon size={17} aria-hidden="true" />
+                </label>
+              ))}
+            </div>
+          </FieldSet>
+        </FieldGroup>
         {failed && (
           <p className="jv-library__alert" role="alert">
             The group could not be saved. Your changes are still here.

@@ -22,25 +22,30 @@ export function SettingsNavigation({
       {groups.map((group) => (
         <div className="jv-settings-nav__group" key={group.label}>
           <p className="jv-settings-nav__label">{group.label}</p>
-          {group.items.map((item) => {
-            const selected = Boolean(matchRoute({ to: item.to }));
-            return (
-              <Link
-                key={item.id}
-                to={item.to}
-                search={{ q: "" }}
-                state={(prev) => prev}
-                onClick={onNavigate}
-                className={cx(
-                  "jv-settings-nav__item",
-                  selected && "is-selected",
-                )}
-                aria-current={selected ? "page" : undefined}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+          {/* The items are wrapped separately from the label so the compact
+              settings index can card the destinations and leave the group
+              label on the canvas above them (DESIGN.md §23). */}
+          <div className="jv-settings-nav__items">
+            {group.items.map((item) => {
+              const selected = Boolean(matchRoute({ to: item.to }));
+              return (
+                <Link
+                  key={item.id}
+                  to={item.to}
+                  search={{ q: "" }}
+                  state={(prev) => prev}
+                  onClick={onNavigate}
+                  className={cx(
+                    "jv-settings-nav__item",
+                    selected && "is-selected",
+                  )}
+                  aria-current={selected ? "page" : undefined}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </div>
         </div>
       ))}
     </nav>

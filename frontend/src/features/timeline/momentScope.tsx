@@ -12,6 +12,11 @@ import {
 } from "../../api/query/options";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
 import { JournalDot } from "../../components/journiv/JournalBadge";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "../../components/ui/avatar";
 
 /**
  * "All moments associated with X" — the one surface behind every entity's
@@ -168,20 +173,13 @@ export function useMomentScope(): MomentScope {
       id,
       filters: { person_id: id },
       title,
-      glyph: person?.profile_image_url ? (
-        <img
-          className="jv-person__avatar"
-          src={person.profile_image_url}
-          alt=""
-          loading="lazy"
-        />
-      ) : (
-        <span
-          className="jv-person__avatar jv-person__avatar--initial"
-          aria-hidden="true"
-        >
-          {initial}
-        </span>
+      glyph: (
+        <Avatar className="jv-person__avatar" aria-hidden="true">
+          {person?.profile_image_url && (
+            <AvatarImage src={person.profile_image_url} alt="" loading="lazy" />
+          )}
+          <AvatarFallback>{initial}</AvatarFallback>
+        </Avatar>
       ),
       searchLabel: `Search moments with ${title}`,
       emptyTitle: `No moments with ${title} yet`,

@@ -104,7 +104,7 @@ export function AssetGridPicker({
             title={source.error.title}
             description={source.error.description}
             action={
-              <Button onClick={() => refetch()}>
+              <Button variant="secondary" onClick={() => refetch()}>
                 {source.error.retryLabel ?? "Try again"}
               </Button>
             }
@@ -217,7 +217,7 @@ export function AssetGridPickerFooter({
         )}
       </div>
       <Button
-        variant="primary"
+        variant="default"
         disabled={selectedCount === 0}
         onClick={onConfirm}
       >

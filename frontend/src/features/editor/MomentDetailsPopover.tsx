@@ -30,6 +30,7 @@ import {
   geolocationErrorMessage,
   getCurrentPosition,
 } from "../../lib/geolocation";
+import { Input } from "../../components/ui/input";
 
 /**
  * Editing for the metadata the reader shows via `MomentMeta` and `MomentChips`:
@@ -418,8 +419,7 @@ function LocationSection({
           if (query.trim()) search.mutate(query.trim());
         }}
       >
-        <input
-          className="jv-field"
+        <Input
           aria-label="Search for a place"
           placeholder="Search for a place"
           value={query}
@@ -559,8 +559,7 @@ function WeatherSection({
           }
         }}
       >
-        <input
-          className="jv-field"
+        <Input
           aria-label="Weather summary"
           placeholder="Or type it, e.g. Clear 14°C"
           value={manual}
@@ -679,8 +678,7 @@ function PeopleSection({
       )}
       {active.length > 0 && (
         <>
-          <input
-            className="jv-field"
+          <Input
             aria-label="Filter people"
             placeholder="Filter people"
             value={filter}
@@ -787,8 +785,7 @@ function TagsSection({ moment, disabled, runWithMoment }: SectionProps) {
           commit(value);
         }}
       >
-        <input
-          className="jv-field"
+        <Input
           aria-label="Add a tag"
           placeholder="Add a tag"
           value={value}

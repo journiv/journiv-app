@@ -305,7 +305,9 @@ describe("Library · Goals", () => {
     fireEvent.change(within(dialog).getByLabelText("Reminder time"), {
       target: { value: "18:45" },
     });
-    await userEvent.click(within(dialog).getByLabelText(/Pause this goal/));
+    await userEvent.click(
+      within(dialog).getByRole("checkbox", { name: /Pause this goal/ }),
+    );
     await userEvent.click(within(dialog).getByLabelText("No colour"));
     await userEvent.click(within(dialog).getByLabelText("None"));
     await userEvent.click(within(dialog).getByRole("button", { name: "Save" }));

@@ -1,7 +1,12 @@
 import { useCallback, useState } from "react";
+import { type AccentPair, accentPair } from "./accent";
 import { applyUserTheme } from "./applyUserTheme";
 import { clearUserTheme, readUserTheme, writeUserTheme } from "./themeStorage";
-import type { BundledFont, UserTheme } from "./types";
+import {
+  type BundledFont,
+  type UserTheme,
+  withoutPartialBrandPair,
+} from "./types";
 
 /**
  * Live-preview personalization state. Every setter applies the `<style>` layer
@@ -17,15 +22,34 @@ export function usePersonalization() {
     writeUserTheme(next);
   }, []);
 
-  const setAccent = useCallback(
-    (value: string) => {
+  /** The accent picker moves Journiv's brand colour, not `--primary`.
+   *  `--primary` is neutral in both references (DESIGN.md §3); the blue a user
+   *  chooses is the identity accent, so it lands on `--brand`.
+   *
+   *  An accent is always a light/dark *pair* with its own foregrounds. Writing
+   *  one value into both themes and leaving `--brand-foreground` alone is what
+   *  made every curated preset fail 4.5:1 in one theme or the other. */
+  const setAccentPair = useCallback(
+    (pair: AccentPair) => {
       commit({
         ...theme,
-        light: { ...theme.light, primary: value },
-        dark: { ...theme.dark, primary: value },
+        light: { ...theme.light, ...pair.light },
+        dark: { ...theme.dark, ...pair.dark },
       });
     },
     [theme, commit],
+  );
+
+  /** A typed colour. Returns `false` when the value is not a colour we can
+   *  check for contrast, in which case nothing is applied — see `accent.ts`. */
+  const setAccent = useCallback(
+    (value: string): boolean => {
+      const pair = accentPair(value);
+      if (!pair) return false;
+      setAccentPair(pair);
+      return true;
+    },
+    [setAccentPair],
   );
 
   const setSystemFont = useCallback(
@@ -45,10 +69,12 @@ export function usePersonalization() {
 
   const importTheme = useCallback(
     (parsed: { light: UserTheme["light"]; dark: UserTheme["dark"] }) => {
+      const light = withoutPartialBrandPair(parsed.light);
+      const dark = withoutPartialBrandPair(parsed.dark);
       commit({
         ...theme,
-        light: { ...theme.light, ...parsed.light },
-        dark: { ...theme.dark, ...parsed.dark },
+        light: { ...theme.light, ...light },
+        dark: { ...theme.dark, ...dark },
       });
     },
     [theme, commit],
@@ -64,6 +90,7 @@ export function usePersonalization() {
   return {
     theme,
     setAccent,
+    setAccentPair,
     setSystemFont,
     setEditorFont,
     setEditorFontScale,

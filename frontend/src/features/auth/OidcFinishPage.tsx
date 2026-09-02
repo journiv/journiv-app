@@ -50,7 +50,7 @@ export function OidcFinishPage() {
         </Alert>
         <Link
           className={cx(
-            buttonVariants({ variant: "primary" }),
+            buttonVariants({ variant: "default" }),
             "jv-auth__oidc",
           )}
           to="/login"

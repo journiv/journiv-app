@@ -84,6 +84,30 @@ describe("parseThemeCss — leniency and safety", () => {
     expect(notes.some((n) => /font/i.test(n))).toBe(true);
   });
 
+  it("drops a partial brand pair instead of combining it with stored tokens", () => {
+    const { light, dark, notes } = parseThemeCss(`
+      :root { --primary: oklch(0.5 0.2 20); --brand: oklch(0.5 0.2 20); }
+      .dark { --brand-foreground: oklch(0.9 0 0); }
+    `);
+    expect(light.brand).toBeUndefined();
+    expect(light["brand-foreground"]).toBeUndefined();
+    expect(dark.brand).toBeUndefined();
+    expect(dark["brand-foreground"]).toBeUndefined();
+    expect(notes).toContain("Ignored partial --brand pair in light mode.");
+    expect(notes).toContain("Ignored partial --brand pair in dark mode.");
+  });
+
+  it("keeps a complete imported brand pair", () => {
+    const { light } = parseThemeCss(`
+      :root {
+        --brand: oklch(0.5 0.2 20);
+        --brand-foreground: oklch(0.9 0 0);
+      }
+    `);
+    expect(light.brand).toBe("oklch(0.5 0.2 20)");
+    expect(light["brand-foreground"]).toBe("oklch(0.9 0 0)");
+  });
+
   it("rejects a paste with nothing usable", () => {
     expect(() => parseThemeCss(`.button { color: hotpink; }`)).toThrow(
       ThemeParseError,

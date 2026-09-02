@@ -168,12 +168,10 @@ describe("Library · People", () => {
     );
     const dialog = await screen.findByRole("dialog", { name: "Add person" });
     expect(
-      (
-        within(dialog).getByRole("checkbox", {
-          name: "Family",
-        }) as HTMLInputElement
-      ).checked,
-    ).toBe(true);
+      within(dialog)
+        .getByRole("checkbox", { name: "Family" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
     await userEvent.type(within(dialog).getByLabelText("Name"), "Alex Doe");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Add person" }),

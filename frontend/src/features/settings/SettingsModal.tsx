@@ -143,7 +143,7 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
         }}
       >
         <Dialog.Portal>
-          <Dialog.Backdrop className="jv-settings-backdrop" />
+          <Dialog.Backdrop className="z-[42] fixed inset-0 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
           <Dialog.Popup className="jv-settings-popup">
             <Dialog.Title className="sr-only">Settings</Dialog.Title>
             <div className="jv-settings">

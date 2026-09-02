@@ -922,7 +922,7 @@ function EntryEditorForm({
               Cancel
             </Button>
             <Button
-              variant="primary"
+              variant="default"
               onClick={() => mutation.mutate(false)}
               disabled={mutation.isPending}
             >

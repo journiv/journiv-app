@@ -8,6 +8,8 @@ import {
 import { StatusView } from "../../../components/journiv/StatusView";
 import { Button } from "../../../components/ui/button";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
+import { Checkbox } from "../../../components/ui/checkbox";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
 
 export function ExportPage() {
   const [jobId, setJobId] = useState("");
@@ -37,33 +39,31 @@ export function ExportPage() {
       <SettingsSection
         title="Export"
         intro="Create a portable archive in the background. Nothing downloads until you choose the download action."
+        footer={
+          jobId ? undefined : (
+            <Button
+              variant="default"
+              disabled={create.isPending}
+              onClick={() => create.mutate()}
+            >
+              {create.isPending ? "Starting…" : "Create export"}
+            </Button>
+          )
+        }
       >
         <SettingsRow
           label="Include media"
           htmlFor="export-media"
           description="Adds original photos and files to the archive."
         >
-          <input
+          <Checkbox
             id="export-media"
-            type="checkbox"
-            className="jv-settings-checkbox"
             checked={includeMedia}
-            onChange={(event) => setIncludeMedia(event.target.checked)}
+            onCheckedChange={(checked) => setIncludeMedia(checked === true)}
             disabled={Boolean(jobId)}
           />
         </SettingsRow>
       </SettingsSection>
-      {!jobId && (
-        <div className="jv-settings__actions">
-          <Button
-            variant="primary"
-            disabled={create.isPending}
-            onClick={() => create.mutate()}
-          >
-            {create.isPending ? "Starting…" : "Create export"}
-          </Button>
-        </div>
-      )}
       {inProgress && (
         <div role="status">
           <StatusView
@@ -73,36 +73,38 @@ export function ExportPage() {
         </div>
       )}
       {ready && (
-        <div className="jv-settings__success">
-          <p>
-            Your export is ready.
-            {status === "partial"
-              ? " Some items were skipped — check the archive."
-              : ""}
-          </p>
-          {link.data?.signed_url ? (
-            <Button
-              variant="primary"
-              nativeButton={false}
-              render={<a href={link.data.signed_url} />}
-            >
-              Download export
-            </Button>
-          ) : link.isError ? (
-            <p className="jv-settings__alert" role="alert">
-              The download link couldn’t be prepared.{" "}
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => void link.refetch()}
-              >
-                Try again
-              </Button>
+        <Alert role="status">
+          <AlertDescription>
+            <p>
+              Your export is ready.
+              {status === "partial"
+                ? " Some items were skipped — check the archive."
+                : ""}
             </p>
-          ) : (
-            <p className="jv-caption">Preparing download…</p>
-          )}
-        </div>
+            {link.data?.signed_url ? (
+              <Button
+                variant="default"
+                nativeButton={false}
+                render={<a href={link.data.signed_url} />}
+              >
+                Download export
+              </Button>
+            ) : link.isError ? (
+              <p className="jv-settings__alert" role="alert">
+                The download link couldn’t be prepared.{" "}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void link.refetch()}
+                >
+                  Try again
+                </Button>
+              </p>
+            ) : (
+              <p className="jv-caption">Preparing download…</p>
+            )}
+          </AlertDescription>
+        </Alert>
       )}
       {failed && (
         <p className="jv-settings__alert" role="alert">

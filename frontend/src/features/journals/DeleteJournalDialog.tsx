@@ -52,7 +52,7 @@ export function DeleteJournalDialog({
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="destructive"
             disabled={!matches || deleting}
             onClick={() => {
               void onConfirm();

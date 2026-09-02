@@ -35,7 +35,11 @@ export function IntegrationsCatalogue() {
       <StatusView
         title="Integrations couldn’t be loaded"
         description="Instance capabilities are unavailable."
-        action={<Button onClick={() => config.refetch()}>Try again</Button>}
+        action={
+          <Button variant="secondary" onClick={() => config.refetch()}>
+            Try again
+          </Button>
+        }
       />
     );
 

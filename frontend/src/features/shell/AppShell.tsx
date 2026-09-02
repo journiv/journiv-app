@@ -78,7 +78,7 @@ export function AppShell() {
       <div className={cx("jv-shell", detailActive && "is-detail")}>
         <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
           <Dialog.Portal>
-            <Dialog.Backdrop className="jv-drawer-backdrop" />
+            <Dialog.Backdrop className="z-30 fixed inset-0 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
             <Dialog.Popup className="jv-drawer">
               <Dialog.Title className="sr-only">
                 Journiv navigation

@@ -30,6 +30,7 @@ export function AboutPage() {
         description="Check your connection and try again."
         action={
           <Button
+            variant="secondary"
             onClick={() => {
               void config.refetch();
               if (isAdmin) void version.refetch();

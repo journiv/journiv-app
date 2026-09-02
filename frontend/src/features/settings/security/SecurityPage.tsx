@@ -1,6 +1,13 @@
 import { useId } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "../../../components/ui/button";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from "../../../components/ui/field";
 import { Input } from "../../../components/ui/input";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { StatusView } from "../../../components/journiv/StatusView";
@@ -11,6 +18,7 @@ import {
 import { useSettingsDirty } from "../SettingsModal";
 import { SettingsSection } from "../SettingsSection";
 import { usePasswordForm } from "./usePasswordForm";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
 
 function SecuritySkeleton() {
   return (
@@ -40,18 +48,14 @@ function PasswordForm({ email }: { email: string }) {
 
   const fieldError = (id: string, issue: string | null) =>
     form.touched && issue ? (
-      <p
-        id={`${id}-error`}
-        role="alert"
-        className="jv-settings-field__error jv-caption"
-      >
+      <FieldError id={`${id}-error`} role="alert">
         {issue}
-      </p>
+      </FieldError>
     ) : null;
 
   return (
     <form
-      className="jv-settings__body jv-settings__body--narrow"
+      className="jv-settings__body"
       onSubmit={(event) => {
         event.preventDefault();
         form.submit();
@@ -60,11 +64,16 @@ function PasswordForm({ email }: { email: string }) {
       <SettingsSection
         title="Password"
         intro="Change the password you use to sign in to Journiv."
+        footer={
+          <Button type="submit" variant="default" disabled={!form.canSubmit}>
+            {form.submitting ? "Changing…" : "Change password"}
+          </Button>
+        }
       >
         {form.succeeded && (
-          <p role="status" className="jv-settings__success jv-body">
-            Your password has been changed.
-          </p>
+          <Alert role="status">
+            <AlertDescription>Your password has been changed.</AlertDescription>
+          </Alert>
         )}
 
         {/* Helps password managers attach the new credential to this account. */}
@@ -79,11 +88,9 @@ function PasswordForm({ email }: { email: string }) {
           className="sr-only"
         />
 
-        <div className="jv-settings-form">
-          <div className="jv-settings-field">
-            <label className="jv-label" htmlFor={currentId}>
-              Current password
-            </label>
+        <FieldGroup className="jv-settings-form">
+          <Field data-invalid={form.touched && Boolean(form.issues.current)}>
+            <FieldLabel htmlFor={currentId}>Current password</FieldLabel>
             <Input
               id={currentId}
               type="password"
@@ -99,12 +106,10 @@ function PasswordForm({ email }: { email: string }) {
               }
             />
             {fieldError(currentId, form.issues.current)}
-          </div>
+          </Field>
 
-          <div className="jv-settings-field">
-            <label className="jv-label" htmlFor={nextId}>
-              New password
-            </label>
+          <Field data-invalid={form.touched && Boolean(form.issues.next)}>
+            <FieldLabel htmlFor={nextId}>New password</FieldLabel>
             <Input
               id={nextId}
               type="password"
@@ -117,16 +122,14 @@ function PasswordForm({ email }: { email: string }) {
                 form.touched && form.issues.next ? `${nextId}-error` : ruleId
               }
             />
-            <p id={ruleId} className="jv-settings-field__hint jv-caption">
+            <FieldDescription id={ruleId}>
               At least 8 characters, including a letter and a number.
-            </p>
+            </FieldDescription>
             {fieldError(nextId, form.issues.next)}
-          </div>
+          </Field>
 
-          <div className="jv-settings-field">
-            <label className="jv-label" htmlFor={confirmId}>
-              Confirm new password
-            </label>
+          <Field data-invalid={form.touched && Boolean(form.issues.confirm)}>
+            <FieldLabel htmlFor={confirmId}>Confirm new password</FieldLabel>
             <Input
               id={confirmId}
               type="password"
@@ -142,8 +145,8 @@ function PasswordForm({ email }: { email: string }) {
               }
             />
             {fieldError(confirmId, form.issues.confirm)}
-          </div>
-        </div>
+          </Field>
+        </FieldGroup>
 
         {form.failed && (
           <p role="alert" className="jv-settings__alert jv-body">
@@ -151,12 +154,6 @@ function PasswordForm({ email }: { email: string }) {
             try again.
           </p>
         )}
-
-        <div className="jv-settings__actions">
-          <Button type="submit" variant="primary" disabled={!form.canSubmit}>
-            {form.submitting ? "Changing…" : "Change password"}
-          </Button>
-        </div>
       </SettingsSection>
 
       {/* Danger zone — account deletion (`DELETE /users/me`) belongs here in a
@@ -169,12 +166,14 @@ function PasswordForm({ email }: { email: string }) {
 function OidcNotice({ ssoEnabled }: { ssoEnabled: boolean }) {
   return (
     <div className="jv-settings__body">
-      <SettingsSection title="Password" divider={false}>
-        <p className="jv-settings__notice jv-body">
-          {ssoEnabled
-            ? "You sign in to Journiv through your identity provider. Manage your password with that provider."
-            : "This account signs in through an external identity provider, so there is no Journiv password to change."}
-        </p>
+      <SettingsSection title="Password">
+        <Alert>
+          <AlertDescription>
+            {ssoEnabled
+              ? "You sign in to Journiv through your identity provider. Manage your password with that provider."
+              : "This account signs in through an external identity provider, so there is no Journiv password to change."}
+          </AlertDescription>
+        </Alert>
       </SettingsSection>
     </div>
   );

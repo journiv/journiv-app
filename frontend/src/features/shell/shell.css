@@ -1,27 +1,54 @@
 /* Layout of the three panes, and the navigation rail. */
 
+/* The application canvas is `body` (`--muted`, index.css). The shell is one
+   rounded, bordered surface sitting on it, with the panes flush inside it
+   (DESIGN.md §5).
+
+   The outer border is `--border`, which in Minimal Neutral's light palette is
+   the same value as the canvas — so the shell's edge is carried by
+   `shadow-sm`, not by the line. That is Minimal Neutral's own relationship
+   between the two tokens; do not "fix" it by inventing a darker edge.
+
+   `--jv-seam` is the pane divider — a *faded* `--border`, not a full hairline.
+   An A/B test (DESIGN.md §25) compared hard `--border` seams, these faded
+   seams and a no-frame "airy" split; the faded seams read as the calmest
+   without the panes losing their edges. Softer than `--sidebar-border` (the
+   Settings-nav seam) on purpose: this one only has to quiet a division, not
+   carry a structural edge that would otherwise vanish. */
+
 .jv-shell {
-  height: 100vh;
+  /* The margin is the canvas showing around the shell, so the height has to
+     account for it in both the `vh` fallback and the `dvh` rule below. */
+  height: calc(100vh - 2 * var(--space-2));
+  margin: var(--space-2);
   overflow: hidden;
   display: grid;
   grid-template-columns:
     var(--nav-width)
     minmax(var(--list-width-min), var(--list-width-max))
     minmax(0, 1fr);
-  background: var(--sidebar);
+  --jv-seam: color-mix(in oklab, var(--border), transparent 60%);
+
+  border: 1px solid color-mix(in oklab, var(--border), transparent 45%);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
 }
 
 @supports (height: 100dvh) {
   .jv-shell {
-    height: 100dvh;
+    height: calc(100dvh - 2 * var(--space-2));
   }
 }
+
+/* Surface hierarchy: nav is the quietest chrome, the list is the workspace,
+   the reader is the content surface. Minimal Neutral inverts the tonal
+   direction in dark on purpose — see tokens.css. */
 
 .jv-shell__nav {
   min-width: 0;
   overflow: hidden auto;
   background: var(--sidebar);
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--jv-seam);
 }
 
 .jv-shell__list {
@@ -30,7 +57,7 @@
   min-width: 0;
   min-height: 0;
   background: var(--background);
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--jv-seam);
 }
 
 .jv-shell__page {
@@ -69,6 +96,9 @@
   gap: 1px;
 }
 
+/* A nav row carries the same treatment as base-vega's own sidebar menu button
+   (`Item`-shaped: radius, muted hover, accent when active). Journiv adds the
+   rail, because selection is never colour alone (DESIGN.md §6). */
 .jv-nav__item {
   position: relative;
   display: flex;
@@ -78,7 +108,7 @@
   min-height: 34px;
   padding: 0 var(--space-2);
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--muted-foreground);
   background: transparent;
   font-size: 0.8125rem;
@@ -93,7 +123,7 @@
 
 .jv-nav__item:hover {
   color: var(--foreground);
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
 /* Aligns the label with the journal rows above, whose leading colour dot
@@ -102,10 +132,10 @@
   padding-left: var(--space-8);
 }
 
-/* Selection is carried by colour AND a rail, never by colour alone. */
+/* Selection is carried by surface AND a rail, never by colour alone. */
 .jv-nav__item.is-selected {
-  color: var(--foreground);
-  background: var(--state-selected);
+  color: var(--accent-foreground);
+  background: var(--accent);
   font-weight: 600;
 }
 
@@ -118,7 +148,7 @@
   width: 3px;
   height: 18px;
   border-radius: 0 2px 2px 0;
-  background: var(--state-selected-rail);
+  background: var(--brand);
 }
 
 .jv-nav__item-dot {
@@ -172,50 +202,28 @@
 }
 
 /* ---- theme control ----------------------------------------------------- */
+/* The tri-state is a stock `ToggleGroup`; only its width is Journiv's. */
 
 .jv-theme-control {
-  display: grid;
-  margin: 0;
-  min-inline-size: 0;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--muted);
+  width: 100%;
 }
 
-.jv-theme-control__option {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 28px;
-  border: 0;
-  border-radius: calc(var(--radius-sm) - 3px);
-  color: var(--muted-foreground);
-  background: transparent;
-  cursor: pointer;
+.jv-theme-control > * {
+  flex: 1;
 }
 
-.jv-theme-control__option:hover {
-  color: var(--foreground);
-}
-
-.jv-theme-control__option.is-selected {
-  color: var(--foreground);
-  /* The raised surface alone carries the selected state. DESIGN.md §5: shadows
-     are for overlays, not for controls. */
-  background: var(--popover);
+/* Stock ToggleGroup marks the selected item with `bg-muted`. On the `--sidebar`
+   nav that reads as a fill step in light (`--muted` 0.95 vs `--sidebar` 0.985)
+   but vanishes in dark, where Minimal Neutral collapses `--muted` and `--sidebar`
+   to the same `oklch(0.269 0 0)` — so you cannot tell which mode is active.
+   `--accent` is the product's selection role (DESIGN.md §17) and lifts off
+   `--sidebar` in both themes (dark `--accent` 0.371). */
+.jv-theme-control [aria-pressed="true"] {
+  color: var(--accent-foreground);
+  background: var(--accent);
 }
 
 /* ---- drawer ------------------------------------------------------------ */
-
-.jv-drawer-backdrop {
-  position: fixed;
-  z-index: 30;
-  inset: 0;
-  background: var(--surface-overlay);
-}
 
 .jv-drawer {
   position: fixed;
@@ -225,7 +233,7 @@
   overflow: hidden auto;
   background: var(--sidebar);
   border-right: 1px solid var(--border);
-  box-shadow: var(--shadow-dialog);
+  box-shadow: var(--shadow-lg);
   padding-top: env(safe-area-inset-top);
   padding-bottom: env(safe-area-inset-bottom);
 }
@@ -248,10 +256,23 @@
   }
 }
 
-/* One task per screen. Browser history is the navigation. */
+/* One task per screen. Browser history is the navigation.
+   The shell goes full-bleed here: a phone should not spend 16px of its width
+   on a frame, and a rounded corner on a full-height pane reads as a mistake
+   rather than as elevation. */
 @media (max-width: 860px) {
   .jv-shell {
     grid-template-columns: minmax(0, 1fr);
+    margin: 0;
+    height: 100vh;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  @supports (height: 100dvh) {
+    .jv-shell {
+      height: 100dvh;
+    }
   }
   .jv-shell:not(.is-detail) .jv-shell__page {
     display: none;

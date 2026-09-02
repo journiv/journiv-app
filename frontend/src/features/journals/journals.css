@@ -1,6 +1,11 @@
 /* The Journals management pane: create, rename, recolour, favourite, reorder,
-   archive and delete. A settings-shaped surface, so it uses a calm divided list
-   (rhythm + selection, not cards — DESIGN.md §5), roomier than a Timeline row. */
+   archive and delete. This is chrome, not reading content (DESIGN.md §5), so
+   it is composed the way Settings is — a management canvas carrying a panel of
+   rows, roomier than a Timeline row. The canvas stays `--background` (the list
+   column's own surface): this pane carries the New journal control directly on
+   it, and a `--muted` canvas would erase that control's edge in dark, where
+   Minimal Neutral gives `--muted`, `--secondary`, `--border` and `--input` the
+   same value (§3, §5). The panel below is what provides the separation. */
 
 .jv-journals__header {
   flex: 0 0 auto;
@@ -33,13 +38,21 @@
   }
 }
 
+/* Journals are objects being managed, so the list is a panel raised off that
+   canvas — the same card relationship Settings uses (DESIGN.md §5, §22). */
 .jv-jlist {
   list-style: none;
   margin: 0;
   padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
 }
 
-/* A row carries a divider and no radius — never both (DESIGN.md §5). */
+/* Rows are flush inside the panel and separated by hairlines; the panel's own
+   radius clips the ends, so a row carries none of its own. */
 .jv-jrow {
   display: flex;
   align-items: center;
@@ -52,7 +65,7 @@
 }
 
 .jv-jrow:hover {
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
 .jv-jrow__link {
@@ -111,7 +124,7 @@
 }
 
 .jv-jrow__actions [data-slot="button"].is-active {
-  color: var(--primary);
+  color: var(--foreground);
 }
 
 .jv-jrow--skeleton {
@@ -134,7 +147,8 @@
   cursor: pointer;
 }
 
-/* The `⋯` action menu is the shared `.jv-menu*` overlay in journiv.css. */
+/* The `⋯` action menu is `AppAdaptiveMenu`: the registry `DropdownMenu` on
+   desktop, a Drawer action sheet on touch. It has no Journiv skin. */
 
 /* ---- create / edit form ----------------------------------------------- */
 
@@ -182,7 +196,7 @@
 
 .jv-jform__swatch--none {
   background: var(--muted);
-  border-color: var(--line-strong);
+  border-color: var(--border);
   border-style: dashed;
 }
 
@@ -192,7 +206,7 @@
 }
 
 .jv-jform__swatch:has(input:focus-visible) {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -210,7 +224,7 @@
   height: 34px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   color: var(--journal-accent, var(--muted-foreground));
   background: var(--popover);
   font-size: 0.6875rem;
@@ -224,11 +238,11 @@
 
 .jv-jform__icon:has(input:checked) {
   border-color: var(--primary);
-  background: var(--accent-surface);
+  background: var(--accent);
 }
 
 .jv-jform__icon:has(input:focus-visible) {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 

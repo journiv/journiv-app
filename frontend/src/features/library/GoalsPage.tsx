@@ -29,14 +29,28 @@ import {
   goalCategoriesQuery,
   goalsQuery,
 } from "../../api/query/options";
+import {
+  AppAdaptiveDialog,
+  useOverlayAutoFocus,
+} from "../../components/journiv/AppAdaptiveDialog";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
 import { LibraryRow } from "../../components/journiv/LibraryRow";
 import { PageBar } from "../../components/journiv/PageBar";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
-import { Dialog, DialogClose } from "../../components/ui/dialog";
-import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
-import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
+import { Checkbox } from "../../components/ui/checkbox";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "../../components/ui/field";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
@@ -53,6 +67,7 @@ import { GoalHistoryDialog } from "./GoalHistoryDialog";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
 import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
+import { NativeSelect } from "../../components/ui/native-select";
 
 type GoalFormState =
   | { mode: "create"; categoryId: string | null }
@@ -331,9 +346,11 @@ export function GoalsPage() {
           </p>
         </div>
         <div className="jv-library__actions">
-          <Button onClick={() => setGroupsManager({})}>Manage groups</Button>
+          <Button variant="secondary" onClick={() => setGroupsManager({})}>
+            Manage groups
+          </Button>
           <Button
-            variant="primary"
+            variant="default"
             onClick={() => setGoalForm({ mode: "create", categoryId: null })}
           >
             <Plus aria-hidden="true" size={16} />
@@ -363,6 +380,7 @@ export function GoalsPage() {
               description="Check your connection and try again."
               action={
                 <Button
+                  variant="secondary"
                   onClick={() => {
                     goalsResult.refetch();
                     categoriesResult.refetch();
@@ -381,7 +399,7 @@ export function GoalsPage() {
               description="Add a goal or create a group to begin tracking what matters."
               action={
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() =>
                     setGoalForm({ mode: "create", categoryId: null })
                   }
@@ -533,7 +551,10 @@ export function GoalsPage() {
                       title="No goals found"
                       description={`No goals or groups match “${search.trim()}”.`}
                       action={
-                        <Button onClick={() => setSearch("")}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setSearch("")}
+                        >
                           Clear search
                         </Button>
                       }
@@ -707,6 +728,8 @@ function GoalFormDialog({
   onSubmit: (body: GoalCreate | GoalUpdate) => Promise<void>;
 }) {
   const goal = state.mode === "edit" ? state.goal : undefined;
+  const formId = useId();
+  const autoFocus = useOverlayAutoFocus();
   const titleId = useId();
   const categorySelectId = useId();
   const activitySelectId = useId();
@@ -761,14 +784,30 @@ function GoalFormDialog({
     ({ "--entity-accent": hex }) as CSSProperties;
 
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={goal ? `Edit ${goal.title}` : "Add goal"}
       description="Define what to track and how this goal appears in your Library."
-      className="sm:max-w-2xl"
+      size="lg"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="default"
+            disabled={!trimmed || !validTarget || !dirty || submitting}
+          >
+            {submitting ? "Saving…" : goal ? "Save" : "Add goal"}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -792,198 +831,190 @@ function GoalFormDialog({
           }
         }}
       >
-        <label htmlFor={titleId}>
-          <span>Goal title</span>
-          <Input
-            id={titleId}
-            aria-label="Goal title"
-            value={title}
-            maxLength={200}
-            autoFocus
-            onChange={(event) => setTitle(event.target.value)}
-          />
-        </label>
-        <div className="jv-library-form__columns">
-          <label htmlFor={categorySelectId}>
-            <span>Group</span>
-            <select
-              id={categorySelectId}
-              className="jv-field"
-              value={selectedCategory}
-              onChange={(event) => setSelectedCategory(event.target.value)}
-            >
-              <option value="">Without a group</option>
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label htmlFor={activitySelectId}>
-            <span>Linked activity</span>
-            <select
-              id={activitySelectId}
-              className="jv-field"
-              value={selectedActivity}
-              onChange={(event) => setSelectedActivity(event.target.value)}
-            >
-              <option value="">Manual progress</option>
-              {activities.map((activity) => (
-                <option key={activity.id} value={activity.id}>
-                  {activity.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label htmlFor={typeId}>
-            <span>Direction</span>
-            <select
-              id={typeId}
-              className="jv-field"
-              value={goalType}
-              onChange={(event) => setGoalType(event.target.value as GoalType)}
-            >
-              <option value="achieve">Achieve</option>
-              <option value="avoid">Avoid</option>
-            </select>
-          </label>
-          <label htmlFor={frequencyId}>
-            <span>Frequency</span>
-            <select
-              id={frequencyId}
-              className="jv-field"
-              value={frequency}
-              onChange={(event) =>
-                setFrequency(event.target.value as GoalFrequency)
-              }
-            >
-              <option value="daily">Daily</option>
-              <option value="weekly">Weekly</option>
-              <option value="monthly">Monthly</option>
-            </select>
-          </label>
-          <label htmlFor={targetId}>
-            <span>Target count</span>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={titleId}>Goal title</FieldLabel>
             <Input
-              id={targetId}
-              aria-label="Target count"
-              type="number"
-              min={1}
-              step={1}
-              value={target}
-              aria-invalid={!validTarget}
-              onChange={(event) => setTarget(event.target.value)}
+              id={titleId}
+              aria-label="Goal title"
+              value={title}
+              maxLength={200}
+              autoFocus={autoFocus}
+              onChange={(event) => setTitle(event.target.value)}
             />
-            {!validTarget && (
-              <span className="jv-library-form__error" role="alert">
-                Enter a whole number of at least 1.
-              </span>
-            )}
-          </label>
-          <label htmlFor={reminderId}>
-            <span>Reminder time</span>
-            <Input
-              id={reminderId}
-              aria-label="Reminder time"
-              type="time"
-              value={reminder}
-              onChange={(event) => setReminder(event.target.value)}
-            />
-          </label>
-        </div>
-        <label className="jv-library-form__check" htmlFor={pausedId}>
-          <input
-            id={pausedId}
-            type="checkbox"
-            checked={paused}
-            onChange={(event) => setPaused(event.target.checked)}
-          />
-          <span>
-            <strong>Pause this goal</strong>
-            <small>Keep it in your Library without tracking progress.</small>
-          </span>
-        </label>
-        <fieldset className="jv-groups-form__group">
-          <legend>Colour</legend>
-          <div className="jv-groups-form__swatches">
-            <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
-              <input
-                type="radio"
-                name={colorName}
-                className="sr-only"
-                checked={!color}
-                onChange={() => setColor("")}
-              />
-              <span className="sr-only">No colour</span>
-            </label>
-            {ENTITY_COLOR_PRESETS.map((preset) => (
-              <label
-                key={preset.hex}
-                className="jv-groups-form__swatch"
-                style={tint(preset.hex)}
+          </Field>
+          <div className="jv-library-form__columns">
+            <Field>
+              <FieldLabel htmlFor={categorySelectId}>Group</FieldLabel>
+              <NativeSelect
+                id={categorySelectId}
+                value={selectedCategory}
+                onChange={(event) => setSelectedCategory(event.target.value)}
               >
+                <option value="">Without a group</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={activitySelectId}>
+                Linked activity
+              </FieldLabel>
+              <NativeSelect
+                id={activitySelectId}
+                value={selectedActivity}
+                onChange={(event) => setSelectedActivity(event.target.value)}
+              >
+                <option value="">Manual progress</option>
+                {activities.map((activity) => (
+                  <option key={activity.id} value={activity.id}>
+                    {activity.name}
+                  </option>
+                ))}
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={typeId}>Direction</FieldLabel>
+              <NativeSelect
+                id={typeId}
+                value={goalType}
+                onChange={(event) =>
+                  setGoalType(event.target.value as GoalType)
+                }
+              >
+                <option value="achieve">Achieve</option>
+                <option value="avoid">Avoid</option>
+              </NativeSelect>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={frequencyId}>Frequency</FieldLabel>
+              <NativeSelect
+                id={frequencyId}
+                value={frequency}
+                onChange={(event) =>
+                  setFrequency(event.target.value as GoalFrequency)
+                }
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </NativeSelect>
+            </Field>
+            <Field data-invalid={!validTarget}>
+              <FieldLabel htmlFor={targetId}>Target count</FieldLabel>
+              <Input
+                id={targetId}
+                aria-label="Target count"
+                type="number"
+                min={1}
+                step={1}
+                value={target}
+                aria-invalid={!validTarget}
+                onChange={(event) => setTarget(event.target.value)}
+              />
+              {!validTarget && (
+                <FieldError role="alert">
+                  Enter a whole number of at least 1.
+                </FieldError>
+              )}
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={reminderId}>Reminder time</FieldLabel>
+              <Input
+                id={reminderId}
+                aria-label="Reminder time"
+                type="time"
+                value={reminder}
+                onChange={(event) => setReminder(event.target.value)}
+              />
+            </Field>
+          </div>
+          <Field orientation="horizontal">
+            <Checkbox
+              id={pausedId}
+              checked={paused}
+              onCheckedChange={(checked) => setPaused(checked === true)}
+            />
+            <FieldContent>
+              <FieldLabel htmlFor={pausedId}>Pause this goal</FieldLabel>
+              <FieldDescription>
+                Keep it in your Library without tracking progress.
+              </FieldDescription>
+            </FieldContent>
+          </Field>
+          <FieldSet>
+            <FieldLegend variant="label">Colour</FieldLegend>
+            <div className="jv-groups-form__swatches">
+              <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
                 <input
                   type="radio"
                   name={colorName}
                   className="sr-only"
-                  checked={color.toLowerCase() === preset.hex.toLowerCase()}
-                  onChange={() => setColor(preset.hex)}
+                  checked={!color}
+                  onChange={() => setColor("")}
                 />
-                <span className="sr-only">{preset.label}</span>
+                <span className="sr-only">No colour</span>
               </label>
-            ))}
-          </div>
-        </fieldset>
-        <fieldset className="jv-groups-form__group">
-          <legend>Icon</legend>
-          <div className="jv-groups-form__icons">
-            <label className="jv-groups-form__icon jv-groups-form__icon--none">
-              <input
-                type="radio"
-                name={iconName}
-                className="sr-only"
-                checked={!icon}
-                onChange={() => setIcon("")}
-              />
-              None
-            </label>
-            {JOURNAL_ICONS.map(({ key, label, Icon }) => (
-              <label
-                key={key}
-                className="jv-groups-form__icon"
-                style={color ? tint(color) : undefined}
-              >
+              {ENTITY_COLOR_PRESETS.map((preset) => (
+                <label
+                  key={preset.hex}
+                  className="jv-groups-form__swatch"
+                  style={tint(preset.hex)}
+                >
+                  <input
+                    type="radio"
+                    name={colorName}
+                    className="sr-only"
+                    checked={color.toLowerCase() === preset.hex.toLowerCase()}
+                    onChange={() => setColor(preset.hex)}
+                  />
+                  <span className="sr-only">{preset.label}</span>
+                </label>
+              ))}
+            </div>
+          </FieldSet>
+          <FieldSet>
+            <FieldLegend variant="label">Icon</FieldLegend>
+            <div className="jv-groups-form__icons">
+              <label className="jv-groups-form__icon jv-groups-form__icon--none">
                 <input
                   type="radio"
                   name={iconName}
                   className="sr-only"
-                  checked={icon === key}
-                  onChange={() => setIcon(key)}
+                  checked={!icon}
+                  onChange={() => setIcon("")}
                 />
-                <span className="sr-only">{label}</span>
-                <Icon size={17} aria-hidden="true" />
+                None
               </label>
-            ))}
-          </div>
-        </fieldset>
-
+              {JOURNAL_ICONS.map(({ key, label, Icon }) => (
+                <label
+                  key={key}
+                  className="jv-groups-form__icon"
+                  style={color ? tint(color) : undefined}
+                >
+                  <input
+                    type="radio"
+                    name={iconName}
+                    className="sr-only"
+                    checked={icon === key}
+                    onChange={() => setIcon(key)}
+                  />
+                  <span className="sr-only">{label}</span>
+                  <Icon size={17} aria-hidden="true" />
+                </label>
+              ))}
+            </div>
+          </FieldSet>
+        </FieldGroup>
         {failed && (
           <p className="jv-library__alert" role="alert">
             The goal could not be saved. Your changes are still here.
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!trimmed || !validTarget || !dirty || submitting}
-          >
-            {submitting ? "Saving…" : goal ? "Save" : "Add goal"}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }

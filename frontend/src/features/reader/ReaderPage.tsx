@@ -186,7 +186,7 @@ export function ReaderPage() {
               />
             )}
             <Button
-              variant={hasWriting ? "secondary" : "primary"}
+              variant={hasWriting ? "secondary" : "default"}
               onClick={edit}
             >
               {hasWriting ? (
@@ -270,7 +270,7 @@ export function ReaderPage() {
                 }
                 description="Add an entry whenever you are ready."
                 action={
-                  <Button variant="primary" onClick={edit}>
+                  <Button variant="default" onClick={edit}>
                     Write about this moment
                   </Button>
                 }

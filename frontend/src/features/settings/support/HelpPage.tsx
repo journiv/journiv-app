@@ -1,5 +1,13 @@
 import { ExternalLink } from "lucide-react";
 import { SettingsSection } from "../SettingsSection";
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemGroup,
+  ItemSeparator,
+  ItemTitle,
+} from "../../../components/ui/item";
 
 export function HelpPage() {
   return (
@@ -8,26 +16,47 @@ export function HelpPage() {
         title="Help & feedback"
         intro="Find guidance or report a problem to the Journiv project."
       >
-        <ul className="jv-settings-link-list">
-          <li>
-            <a
-              href="https://github.com/journiv/journiv-app"
-              target="_blank"
-              rel="noreferrer"
+        <ItemGroup>
+          <li className="list-none">
+            <Item
+              size="sm"
+              render={
+                <a
+                  href="https://github.com/journiv/journiv-app"
+                  target="_blank"
+                  rel="noreferrer"
+                />
+              }
             >
-              Journiv project <ExternalLink size={14} aria-hidden="true" />
-            </a>
+              <ItemContent>
+                <ItemTitle>Journiv project</ItemTitle>
+              </ItemContent>
+              <ItemActions>
+                <ExternalLink aria-hidden="true" />
+              </ItemActions>
+            </Item>
           </li>
-          <li>
-            <a
-              href="https://github.com/journiv/journiv-app/issues"
-              target="_blank"
-              rel="noreferrer"
+          <ItemSeparator />
+          <li className="list-none">
+            <Item
+              size="sm"
+              render={
+                <a
+                  href="https://github.com/journiv/journiv-app/issues"
+                  target="_blank"
+                  rel="noreferrer"
+                />
+              }
             >
-              Report an issue <ExternalLink size={14} aria-hidden="true" />
-            </a>
+              <ItemContent>
+                <ItemTitle>Report an issue</ItemTitle>
+              </ItemContent>
+              <ItemActions>
+                <ExternalLink aria-hidden="true" />
+              </ItemActions>
+            </Item>
           </li>
-        </ul>
+        </ItemGroup>
       </SettingsSection>
     </div>
   );

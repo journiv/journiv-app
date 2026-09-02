@@ -8,9 +8,9 @@ import type {
   GoalWithProgressResponse,
 } from "../../api/generated/types.gen";
 import { goalLogsQuery } from "../../api/query/options";
+import { AppAdaptiveDialog } from "../../components/journiv/AppAdaptiveDialog";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
-import { Dialog, DialogClose } from "../../components/ui/dialog";
 import { Skeleton } from "../../components/ui/skeleton";
 
 /**
@@ -128,19 +128,20 @@ export function GoalHistoryDialog({
   const frequency = goal.frequency_type ?? "daily";
 
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={`${goal.title} history`}
       description="Completion for each recent period."
-      className="sm:max-w-lg"
+      footer={
+        <Button variant="secondary" onClick={onClose}>
+          Close
+        </Button>
+      }
     >
-      <section
-        className="max-h-[60vh] overflow-y-auto"
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable history needs a keyboard focus target.
-        tabIndex={0}
-        aria-label="Goal completion history"
-      >
+      {/* The overlay body is already the scroll owner (DESIGN.md §9), so this
+          section only names the region — it must not scroll on its own. */}
+      <section aria-label="Goal completion history">
         {logsResult.isLoading && <HistorySkeleton />}
 
         {logsResult.isError && (
@@ -151,7 +152,9 @@ export function GoalHistoryDialog({
             title="History could not be loaded"
             description="Check your connection and try again."
             action={
-              <Button onClick={() => logsResult.refetch()}>Try again</Button>
+              <Button variant="secondary" onClick={() => logsResult.refetch()}>
+                Try again
+              </Button>
             }
           />
         )}
@@ -191,10 +194,6 @@ export function GoalHistoryDialog({
           </ul>
         )}
       </section>
-
-      <div className="jv-dialog__actions">
-        <DialogClose render={<Button>Close</Button>} />
-      </div>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }

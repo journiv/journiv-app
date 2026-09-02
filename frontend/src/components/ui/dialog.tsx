@@ -5,38 +5,16 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 /**
- * shadcn base-vega Dialog, kept close to upstream. One Journiv convenience: if
- * `title` is passed, `Dialog` renders the full centred shell around `children`
- * so simple confirmations stay one element. Omit `title` for the compositional
- * form (`<Dialog><DialogContent>...`).
+ * shadcn base-vega Dialog, kept at upstream. There is deliberately no Journiv
+ * convenience shell here: a `title` prop that rendered the whole centred dialog
+ * around its children made the non-adaptive primitive the path of least
+ * resistance, and six Library forms took it — presenting a 1300px form as a
+ * centred dialog on a 390x844 phone, where its actions were unreachable. A
+ * substantial modal workflow is `AppAdaptiveDialog`; this stays compositional
+ * so reaching for it is a decision, not a default (DESIGN.md §9, §18).
  */
-function Dialog({
-  title,
-  description,
-  className,
-  ...props
-}: DialogPrimitive.Root.Props & {
-  title?: React.ReactNode;
-  description?: React.ReactNode;
-  className?: string;
-}) {
-  if (title == null) {
-    return <DialogPrimitive.Root data-slot="dialog" {...props} />;
-  }
-  const { children, ...rootProps } = props;
-  return (
-    <DialogPrimitive.Root data-slot="dialog" {...rootProps}>
-      <DialogContent className={className}>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {description != null && (
-            <DialogDescription>{description}</DialogDescription>
-          )}
-        </DialogHeader>
-        {children as React.ReactNode}
-      </DialogContent>
-    </DialogPrimitive.Root>
-  );
+function Dialog({ ...props }: DialogPrimitive.Root.Props) {
+  return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -81,7 +59,7 @@ function DialogContent({
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-lg bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-6 rounded-xl bg-popover p-6 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-md data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className,
         )}
         {...props}

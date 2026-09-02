@@ -109,7 +109,7 @@ export function ImmichPickerDialog({
 
   const footer =
     tab === "device" ? (
-      <Button variant="primary" onClick={chooseDevice}>
+      <Button variant="default" onClick={chooseDevice}>
         Choose files
       </Button>
     ) : usable ? (

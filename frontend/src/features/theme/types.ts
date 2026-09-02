@@ -10,10 +10,13 @@
  */
 
 /** The stock shadcn colour / shadow variables a user (or an imported tweakcn
- *  theme) may set. Font variables are deliberately NOT here — fonts come only
- *  from the bundled-font pickers. `radius` is deliberately NOT here either —
- *  there is no corner-radius personalization control; the shape scale in
- *  tokens.css is four literal values (DESIGN.md §3), not user-configurable. */
+ *  theme) may set — including Journiv's own `--brand` pair, which is what the
+ *  accent picker writes (DESIGN.md §3: `--primary` is neutral, blue is the
+ *  brand accent). Font variables are deliberately NOT here — fonts come only
+ *  from the bundled-font pickers. `radius` is NOT here either: there is no
+ *  corner-radius personalization control, and the whole named scale derives
+ *  from that one value, so letting a pasted theme move it would reshape every
+ *  registry component at once. */
 export const COLOR_VARS = [
   "background",
   "foreground",
@@ -23,6 +26,8 @@ export const COLOR_VARS = [
   "popover-foreground",
   "primary",
   "primary-foreground",
+  "brand",
+  "brand-foreground",
   "secondary",
   "secondary-foreground",
   "muted",
@@ -66,6 +71,21 @@ export const COLOR_VAR_SET: ReadonlySet<string> = new Set(COLOR_VARS);
 export type BundledFont = "dm-sans" | "lora";
 
 export type ThemeTokens = Partial<Record<ColorVar, string>>;
+
+/** `--brand` is only valid with the foreground used on its filled control. */
+export function hasPartialBrandPair(tokens: ThemeTokens): boolean {
+  return (
+    (tokens.brand === undefined) !== (tokens["brand-foreground"] === undefined)
+  );
+}
+
+/** Drops a partial imported brand pair rather than combining it with stored
+ * values, which could create an unreadable accent. */
+export function withoutPartialBrandPair(tokens: ThemeTokens): ThemeTokens {
+  if (!hasPartialBrandPair(tokens)) return tokens;
+  const { brand: _brand, "brand-foreground": _foreground, ...rest } = tokens;
+  return rest;
+}
 
 export interface UserTheme {
   version: 1;

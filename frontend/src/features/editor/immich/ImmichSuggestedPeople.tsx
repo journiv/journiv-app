@@ -1,6 +1,11 @@
 import { Plus } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { useImmichPeopleSuggestions } from "./useImmichPeopleSuggestions";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "../../../components/ui/avatar";
 
 /**
  * "Suggested from Immich" — a quiet strip at the top of the editor's People
@@ -58,21 +63,18 @@ export function ImmichSuggestedPeople({
             disabled={busy}
             onClick={() => onAdd(person.id)}
           >
-            {person.profile_image_url ? (
-              <img
-                className="jv-person__avatar"
-                src={person.profile_image_url}
-                alt=""
-                loading="lazy"
-              />
-            ) : (
-              <span
-                className="jv-person__avatar jv-person__avatar--initial"
-                aria-hidden="true"
-              >
+            <Avatar className="jv-person__avatar" aria-hidden="true">
+              {person.profile_image_url && (
+                <AvatarImage
+                  src={person.profile_image_url}
+                  alt=""
+                  loading="lazy"
+                />
+              )}
+              <AvatarFallback>
                 {(person.name || "?").trim().charAt(0).toUpperCase()}
-              </span>
-            )}
+              </AvatarFallback>
+            </Avatar>
             <span className="jv-truncate">{person.name}</span>
             <Plus aria-hidden="true" size={13} />
           </button>

@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "../../../components/ui/select";
 import { Spinner } from "../../../components/ui/spinner";
+import { SettingsSection } from "../SettingsSection";
 
 const ROLE_ITEMS: Array<{ label: string; value: UserRole }> = [
   { label: "User", value: "user" },
@@ -121,21 +122,34 @@ export function UserForm({
   }
 
   return (
-    <section className="jv-users-form" aria-labelledby="user-form-title">
-      <div className="jv-users-form__heading">
-        <div>
-          <h3 id="user-form-title" className="jv-section-title">
-            {editing ? "Edit user" : "Add user"}
-          </h3>
-          <p className="jv-body">
-            {editing
-              ? "Update this account without leaving Settings."
-              : "Create a local account that signs in with email and password."}
-          </p>
-        </div>
-      </div>
-
-      <form className="jv-users-form__fields" noValidate onSubmit={submit}>
+    <form className="jv-settings__body" noValidate onSubmit={submit}>
+      <SettingsSection
+        title={editing ? "Edit user" : "Add user"}
+        titleId="user-form-title"
+        intro={
+          editing
+            ? "Update this account without leaving Settings."
+            : "Create a local account that signs in with email and password."
+        }
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={saving}
+              onClick={onCancel}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" variant="default" disabled={saving}>
+              {saving && (
+                <Spinner data-icon="inline-start" aria-hidden="true" />
+              )}
+              {saving ? "Saving…" : editing ? "Save changes" : "Create user"}
+            </Button>
+          </>
+        }
+      >
         <FieldGroup>
           <Field data-invalid={touched && Boolean(nameError)}>
             <FieldLabel htmlFor={nameId}>Display name</FieldLabel>
@@ -223,22 +237,7 @@ export function UserForm({
             <AlertDescription>{failedMessage}</AlertDescription>
           </Alert>
         )}
-
-        <div className="jv-users-form__actions">
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={saving}
-            onClick={onCancel}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={saving}>
-            {saving && <Spinner data-icon="inline-start" aria-hidden="true" />}
-            {saving ? "Saving…" : editing ? "Save changes" : "Create user"}
-          </Button>
-        </div>
-      </form>
-    </section>
+      </SettingsSection>
+    </form>
   );
 }

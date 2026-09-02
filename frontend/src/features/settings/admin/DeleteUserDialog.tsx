@@ -48,7 +48,7 @@ export function DeleteUserDialog({
           </Button>
           <Button
             type="button"
-            variant="danger"
+            variant="destructive"
             disabled={!matches || deleting}
             onClick={() => void onConfirm()}
           >

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { Button } from "../../../components/ui/button";
+import { FieldDescription } from "../../../components/ui/field";
 import {
   Combobox,
   ComboboxContent,
@@ -76,9 +77,7 @@ export function TimezoneField({
         </ComboboxContent>
       </Combobox>
       {detected != null && (
-        <p className="jv-settings-field__hint jv-caption">
-          Detected on this device: {detected}
-        </p>
+        <FieldDescription>Detected on this device: {detected}</FieldDescription>
       )}
       {canUseDetected && (
         <Button

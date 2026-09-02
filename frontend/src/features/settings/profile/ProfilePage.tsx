@@ -1,6 +1,7 @@
 import { useId } from "react";
 import { UserRound } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import { FieldError } from "../../../components/ui/field";
 import { Input } from "../../../components/ui/input";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { StatusView } from "../../../components/journiv/StatusView";
@@ -8,6 +9,12 @@ import { useSettingsDirty } from "../SettingsModal";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 import { TimezoneField } from "./TimezoneField";
 import { useProfileForm } from "./useProfileForm";
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "../../../components/ui/avatar";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
 
 function initials(name: string, email: string): string {
   const source = name.trim() || email.trim();
@@ -73,17 +80,23 @@ export function ProfilePage() {
       <SettingsSection
         title="Personal information"
         intro="How you appear in Journiv, and the timezone new moments are stamped with."
+        footer={
+          <Button type="submit" variant="default" disabled={!form.canSave}>
+            {form.saving ? "Saving…" : "Save changes"}
+          </Button>
+        }
       >
         <div className="jv-settings__identity">
-          <span className="jv-settings__avatar" aria-hidden="true">
-            {form.user?.profile_picture_url ? (
-              <img src={form.user.profile_picture_url} alt="" />
-            ) : (
-              initials(form.name, form.email) || (
-                <UserRound size={22} aria-hidden="true" />
-              )
+          <Avatar className="jv-settings__avatar" aria-hidden="true">
+            {form.user?.profile_picture_url && (
+              <AvatarImage src={form.user.profile_picture_url} alt="" />
             )}
-          </span>
+            <AvatarFallback>
+              {initials(form.name, form.email) || (
+                <UserRound aria-hidden="true" />
+              )}
+            </AvatarFallback>
+          </Avatar>
           <div className="jv-settings__identity-text">
             <p className="jv-settings__identity-name jv-label jv-truncate">
               {form.name || "—"}
@@ -108,13 +121,9 @@ export function ProfilePage() {
             aria-describedby={showNameError ? nameErrorId : undefined}
           />
           {showNameError && (
-            <p
-              id={nameErrorId}
-              role="alert"
-              className="jv-settings-field__error jv-caption"
-            >
+            <FieldError id={nameErrorId} role="alert">
               Enter a display name.
-            </p>
+            </FieldError>
           )}
         </SettingsRow>
 
@@ -145,16 +154,10 @@ export function ProfilePage() {
         </p>
       )}
       {form.saved && (
-        <p role="status" className="jv-settings__success jv-body">
-          Profile saved.
-        </p>
+        <Alert role="status">
+          <AlertDescription>Profile saved.</AlertDescription>
+        </Alert>
       )}
-
-      <div className="jv-settings__actions">
-        <Button type="submit" variant="primary" disabled={!form.canSave}>
-          {form.saving ? "Saving…" : "Save changes"}
-        </Button>
-      </div>
     </form>
   );
 }

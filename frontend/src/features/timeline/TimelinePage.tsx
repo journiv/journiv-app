@@ -162,7 +162,7 @@ export function TimelinePage() {
               action={
                 canWriteFromEmpty ? (
                   <Button
-                    variant="primary"
+                    variant="default"
                     nativeButton={false}
                     render={
                       <Link

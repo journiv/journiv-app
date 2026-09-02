@@ -1,11 +1,16 @@
 /* Design tokens.
  *
- * The colour system is stock shadcn "base-vega" (neutral base colour). Only a
- * few values are Journiv's own: the brand `--primary`, and layout / motion
- * constants that shadcn has no notion of. A user theme
- * (`src/features/theme/`) overrides the colour custom properties at runtime via
- * a `<style id="journiv-user-theme">` layer — so nothing here is sacred except
- * the variable NAMES.
+ * The foundation is shadcn **Base Vega** component construction (the registry
+ * configured in `components.json`) coloured by the **TweakCN Minimal Neutral**
+ * theme. Components consume the stock semantic names — `--background`,
+ * `--card`, `--popover`, `--muted`, `--primary`, `--border`, `--ring`,
+ * `--sidebar` … — never a raw colour.
+ *
+ * `--primary` is neutral, exactly as both references have it. Journiv's blue
+ * is `--brand`, and it appears in a short, closed list of places (DESIGN.md
+ * §3). A user theme (`src/features/theme/`) overrides the colour custom
+ * properties at runtime via a `<style id="journiv-user-theme">` layer — so
+ * nothing here is sacred except the variable NAMES.
  *
  * Dark mode is the `.dark` class on <html> (set by `src/app/theme.ts`), matched
  * by `@custom-variant dark` in index.css.
@@ -14,73 +19,97 @@
 :root {
   color-scheme: light;
 
-  /* ---- stock shadcn neutral (light) --------------------------------- */
+  /* ---- Minimal Neutral (light) --------------------------------------- */
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
+  --card: oklch(0.995 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.145 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  /* Darkened from stock base-vega's oklch(0.556 0 0), which measured 4.53:1 on
-     --sidebar — clears AA (4.5:1) but with almost no margin. This lands ~5.2:1
-     on --sidebar / ~5.4:1 on --background. See §3 "Measured contrast". */
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.87 0 0);
+  --secondary-foreground: oklch(0.145 0 0);
+  --muted: oklch(0.95 0 0);
+  /* Minimal Neutral ships oklch(0.556 0 0), which measures ~4.1:1 against its
+     own --muted / --accent (0.95) — under AA, and Journiv puts that exact pair
+     on screen (tags, hovered rows, secondary badges). This is the one colour
+     Journiv knowingly diverges on. See DESIGN.md §3 "Measured contrast". */
   --muted-foreground: oklch(0.52 0 0);
-  --accent: oklch(0.97 0 0);
+  --accent: oklch(0.95 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.95 0 0);
+  --input: oklch(0.97 0 0);
+
+  --chart-1: oklch(0.81 0.1 252);
+  --chart-2: oklch(0.62 0.19 260);
+  --chart-3: oklch(0.55 0.22 263);
+  --chart-4: oklch(0.49 0.22 264);
+  --chart-5: oklch(0.42 0.18 266);
+
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
+  /* The seam between a nav pane and the canvas beside it. Minimal Neutral's
+     dark palette collapses `--sidebar`, `--muted`, `--border` and `--input`
+     all to `oklch(0.269 0 0)`, so a plain `--border` hairline between the
+     Settings nav (`--sidebar`) and its `--muted` canvas is invisible in dark —
+     the two panes have no separation at all. A `color-mix` toward `--foreground`
+     resolves per theme: ~0.918 in light (matching the value Minimal Neutral
+     ships) and ~0.326 in dark, a quiet but real hairline. Lighter than
+     `--line-strong` (22%) — this is structure, not emphasis. */
+  --sidebar-border: color-mix(in oklab, var(--sidebar), var(--foreground) 8%);
   --sidebar-ring: oklch(0.708 0 0);
 
-  /* ---- shape scale (DESIGN.md §3) ------------------------------------ */
-  /* Four literal steps, never calc(). Not user-configurable — there is no
-     corner-radius personalization control. */
-  --radius-xs: 6px; /* chips, inputs, toolbar buttons */
-  --radius-sm: 10px; /* buttons, list rows */
-  --radius-md: 14px; /* cards, popovers, media */
-  --radius-lg: 20px; /* sheets, drawers, dialogs */
+  /* ---- Journiv brand — the one identity colour ----------------------- */
+  /* Hue 269, the same blue the Flutter client ships (#405DE6). Allowed in
+     exactly four places (DESIGN.md §3): the one filled `brand` Button, the
+     focus ring, the selection rail, and links in prose. A user's accent
+     picker rewrites these; that is the point. */
+  --brand: oklch(0.545 0.192 269);
+  --brand-foreground: oklch(0.985 0.003 269);
 
-  /* ---- Journiv brand — the one identity colour --------------------- */
-  /* Hue 269, the same blue the Flutter client ships (#405DE6). A user theme
-     may replace these; that is the point. */
-  --primary: oklch(0.545 0.192 269);
-  --primary-foreground: oklch(0.985 0.003 269);
-  --ring: var(--primary);
+  /* The focus ring is the brand colour: it is the product's single global
+     focus affordance, and Minimal Neutral's neutral ring at Vega's
+     `ring-ring/50` × 3px reads too faint to serve as one. */
+  --ring: var(--brand);
 
-  /* ---- Journiv derived tokens ------------------------------------- */
-  /* Product CSS (reader, editor, timeline, shell) needs a few roles the stock
-     shadcn set does not name. They are DERIVED from the themeable tokens
-     above, so an imported user theme flows through them automatically. */
-  --accent-surface: color-mix(in oklab, var(--primary) 12%, var(--background));
-  --accent-border: color-mix(in oklab, var(--primary) 40%, var(--border));
-  --focus-ring: var(--ring);
+  /* ---- shape ---------------------------------------------------------- */
+  /* Minimal Neutral's root radius. The named steps are Base Vega's derived
+     scale and live in the `@theme inline` block in index.css — that is where
+     `rounded-sm` … `rounded-4xl` get their values. Do not add a literal step
+     here. */
+  --radius: 1rem;
+
+  /* ---- elevation ------------------------------------------------------ */
+  /* Minimal Neutral's shadow scale lives in the `@theme` block in index.css,
+     not here: the Tailwind utility namespace and the custom property share the
+     name `--shadow-*`, so declaring them in both places would be circular.
+     They are still `var(--shadow-xs)` … `var(--shadow-xl)` in scoped CSS. */
+
+  /* ---- Journiv derived roles ----------------------------------------- */
+  /* Only what the stock set does not name. Each is a `color-mix` of a stock
+     token, so an imported user theme flows through it for free. Hover uses
+     `--muted` and selection uses `--accent` directly — those are stock roles
+     and need no alias. */
+
+  /* A border that must read as heavier than a structural hairline: the prose
+     blockquote rule and the reader's note rule. Nothing else. */
   --line-strong: color-mix(in oklab, var(--border), var(--foreground) 22%);
-  --state-hover: color-mix(in oklab, transparent, var(--foreground) 6%);
-  --state-selected: var(--accent-surface);
-  --state-selected-rail: var(--primary);
-  --danger-surface: color-mix(
-    in oklab,
-    var(--destructive) 12%,
-    var(--background)
-  );
-  --danger-border: color-mix(in oklab, var(--destructive) 40%, var(--border));
 
+  /* The destructive tint pair, matching Vega's own `bg-destructive/10` and
+     `border-destructive/40` so a hand-built surface and a `Button
+     variant="destructive"` cannot drift apart. */
+  --danger-surface: color-mix(in oklab, var(--destructive) 10%, transparent);
+  --danger-border: color-mix(in oklab, var(--destructive) 40%, transparent);
+
+  /* Used only for a saved/success role="status" notice (editor autosave-style
+     confirmations). Not a general "positive" accent. */
   --success: oklch(0.55 0.14 150);
 
   /* ---- on-media overlays --------------------------------------------- */
@@ -88,17 +117,8 @@
      surface, so they must not follow light/dark. */
   --overlay-scrim: oklch(0 0 0 / 0.6);
   --text-on-overlay: oklch(1 0 0);
-  --surface-overlay: oklch(0.25 0.007 85 / 0.4);
 
-  /* ---- depth (overlays only) ------------------------------------------ */
-  --shadow-overlay:
-    0 12px 32px oklch(0.25 0.007 85 / 0.1),
-    0 2px 6px oklch(0.25 0.007 85 / 0.06);
-  --shadow-dialog:
-    0 24px 60px oklch(0.25 0.007 85 / 0.18),
-    0 4px 12px oklch(0.25 0.007 85 / 0.08);
-
-  /* ---- spacing rhythm --------------------------------------------------- */
+  /* ---- spacing rhythm ------------------------------------------------- */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -108,7 +128,7 @@
   --space-12: 48px;
   --space-16: 64px;
 
-  /* ---- layout ----------------------------------------------------------- */
+  /* ---- layout --------------------------------------------------------- */
   --nav-width: 244px;
   --list-width-min: 340px;
   --list-width-max: 400px;
@@ -129,45 +149,40 @@
 .dark {
   color-scheme: dark;
 
-  --background: oklch(0.145 0 0);
+  /* Minimal Neutral inverts the surface order in dark: chrome is the lightest
+     tint and content is the deepest, so the reader still reads as the surface
+     furthest from the chrome. Do not "correct" this to match light mode. */
+  --background: oklch(0.205 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
+  --card: oklch(0.165 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
   --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
+  --accent: oklch(0.371 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+
+  --sidebar: oklch(0.269 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* --sidebar-border resolves from the `:root` color-mix; see the note there. */
+  --sidebar-ring: oklch(0.439 0 0);
 
-  --primary: oklch(0.66 0.17 269);
-  --primary-foreground: oklch(0.15 0.01 269);
-  --ring: var(--primary);
+  --brand: oklch(0.66 0.17 269);
+  --brand-foreground: oklch(0.15 0.01 269);
+  --ring: var(--brand);
 
   --success: oklch(0.72 0.14 150);
-  --surface-overlay: oklch(0.12 0.004 85 / 0.62);
-
-  --shadow-overlay:
-    0 12px 32px oklch(0 0 0 / 0.44), 0 2px 6px oklch(0 0 0 / 0.3);
-  --shadow-dialog:
-    0 24px 60px oklch(0 0 0 / 0.55), 0 4px 12px oklch(0 0 0 / 0.35);
 }
