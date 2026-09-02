@@ -98,7 +98,7 @@ export function AppConfirmDialog({
   );
   // `danger` is Journiv's destructive treatment: tinted, never filled, so a
   // destructive confirm never reads as the surface's primary action (§6).
-  const confirmVariant = destructive ? "danger" : "primary";
+  const confirmVariant = destructive ? "destructive" : "default";
   const body = children != null && (
     <div className="jv-overlay__body">{children}</div>
   );

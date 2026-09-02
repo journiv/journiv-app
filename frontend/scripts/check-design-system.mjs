@@ -16,6 +16,11 @@ import { join } from "node:path";
 /** Files that legitimately hold raw values — the token and typography layers. */
 const VALUE_LAYER = [
   "src/styles/tokens.css",
+  // index.css is part of the value layer: it holds the `@theme` block where
+  // Minimal Neutral's shadow scale is declared. That scale cannot live in
+  // tokens.css — the Tailwind utility namespace and the custom property share
+  // the name `--shadow-*`, so bridging them would be self-referential.
+  "src/styles/index.css",
   "src/styles/base.css",
   "src/styles/prose.css",
   "src/styles/fonts.css",
@@ -45,7 +50,7 @@ const RUNTIME_OR_VENDOR_VARS = new Set([
  *  Tailwind's compiler via class names (`bg-primary`, `rounded-md`, …), never
  *  by a textual `var(--color-primary)` in our own code. A dead-token check
  *  that doesn't know this would flag all of them. */
-const THEME_BRIDGE_PREFIX = /^--(color|radius|font)-/;
+const THEME_BRIDGE_PREFIX = /^--(color|radius|font|shadow)-/;
 
 /** The two layout breakpoints (DESIGN.md §9) plus every current
  *  component-level breakpoint, named there. A new *page*-shaped breakpoint
@@ -71,10 +76,7 @@ const ALLOWED_BREAKPOINTS = new Set([
  *  (```--name` <value>`` or ``--name`` <value>``, both used depending on
  *  section). */
 const TOKEN_FACTS = [
-  "radius-xs",
-  "radius-sm",
-  "radius-md",
-  "radius-lg",
+  "radius",
   "bar-height",
   "reader-measure",
   "tap-target",
@@ -278,6 +280,17 @@ function checkDeadTokens() {
   for (const file of cssFiles) {
     for (const m of readFileSync(file, "utf8").matchAll(
       /var\(\s*(--[a-zA-Z0-9-]+)/g,
+    )) {
+      used.add(m[1]);
+    }
+  }
+  // A registry component can read a custom property through Tailwind's own
+  // `py-(--card-spacing)` / `[--card-spacing:…]` syntax rather than `var()`.
+  // That is a real consumer, so scan source files for it too — otherwise
+  // setting a component's own knob from Journiv CSS reads as a dead token.
+  for (const file of sourceFiles) {
+    for (const m of withoutComments(readFileSync(file, "utf8")).matchAll(
+      /[([](--[a-zA-Z0-9-]+)[):\]]/g,
     )) {
       used.add(m[1]);
     }

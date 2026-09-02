@@ -80,16 +80,20 @@
   font-style: normal;
 }
 
+/* A link in prose is one of the four sanctioned brand moments (DESIGN.md §3,
+   rule 4). It used to read `--primary`, which is *neutral* in Minimal
+   Neutral — a near-black link that only underlining told you was a link, and
+   which silently ignored the user's accent colour. */
 .jv-prose.jv-prose a {
-  color: var(--primary);
+  color: var(--brand);
   text-decoration: underline;
   text-decoration-thickness: 1px;
   text-underline-offset: 0.18em;
-  text-decoration-color: color-mix(in oklab, var(--primary) 45%, transparent);
+  text-decoration-color: color-mix(in oklab, var(--brand) 45%, transparent);
 }
 
 .jv-prose.jv-prose a:hover {
-  text-decoration-color: var(--primary);
+  text-decoration-color: var(--brand);
 }
 
 /* Inline media. Never cropped, for the same reason as the gallery: there is no

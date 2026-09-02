@@ -5,6 +5,8 @@ import { useSettingsDirty } from "../SettingsModal";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 import { PersonalizeSection } from "./PersonalizeSection";
 import { useAppearanceForm } from "./useAppearanceForm";
+import { NativeSelect } from "../../../components/ui/native-select";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
 
 export function AppearancePage() {
   const form = useAppearanceForm();
@@ -16,7 +18,11 @@ export function AppearancePage() {
       <StatusView
         title="Appearance couldn’t be loaded"
         description="Check your connection and try again."
-        action={<Button onClick={() => form.query.refetch()}>Try again</Button>}
+        action={
+          <Button variant="secondary" onClick={() => form.query.refetch()}>
+            Try again
+          </Button>
+        }
       />
     );
   return (
@@ -24,35 +30,41 @@ export function AppearancePage() {
       <SettingsSection
         title="Appearance"
         intro="These are account defaults. The sidebar theme control remains a per-device override."
+        footer={
+          <Button
+            variant="default"
+            disabled={!form.dirty || form.mutation.isPending}
+            onClick={() => form.mutation.mutate()}
+          >
+            {form.mutation.isPending ? "Saving…" : "Save changes"}
+          </Button>
+        }
       >
         <SettingsRow label="Account theme" htmlFor="account-theme">
-          <select
+          <NativeSelect
             id="account-theme"
-            className="jv-field"
             value={form.theme}
             onChange={(event) => form.setTheme(event.target.value)}
           >
             <option value="system">System</option>
             <option value="light">Light</option>
             <option value="dark">Dark</option>
-          </select>
+          </NativeSelect>
         </SettingsRow>
         <SettingsRow label="Time format" htmlFor="time-format">
-          <select
+          <NativeSelect
             id="time-format"
-            className="jv-field"
             value={form.timeFormat}
             onChange={(event) => form.setTimeFormat(event.target.value)}
           >
             <option value="system">System</option>
             <option value="twelve_hour">12-hour</option>
             <option value="twenty_four_hour">24-hour</option>
-          </select>
+          </NativeSelect>
         </SettingsRow>
         <SettingsRow label="Week starts on" htmlFor="week-start">
-          <select
+          <NativeSelect
             id="week-start"
-            className="jv-field"
             value={form.weekStart}
             onChange={(event) => form.setWeekStart(Number(event.target.value))}
           >
@@ -63,7 +75,7 @@ export function AppearancePage() {
             <option value={4}>Friday</option>
             <option value={5}>Saturday</option>
             <option value={6}>Sunday</option>
-          </select>
+          </NativeSelect>
         </SettingsRow>
       </SettingsSection>
       {form.mutation.isError && (
@@ -72,19 +84,15 @@ export function AppearancePage() {
         </p>
       )}
       {form.mutation.isSuccess && !form.dirty && (
-        <p className="jv-settings__success">Appearance saved.</p>
+        <Alert role="status">
+          <AlertDescription>Appearance saved.</AlertDescription>
+        </Alert>
       )}
-      <div className="jv-settings__actions">
-        <Button
-          variant="primary"
-          disabled={!form.dirty || form.mutation.isPending}
-          onClick={() => form.mutation.mutate()}
-        >
-          {form.mutation.isPending ? "Saving…" : "Save changes"}
-        </Button>
-      </div>
-
       <PersonalizeSection />
+      {/* UiExperimentSection is intentionally unmounted — the UI-feel A/B
+          framework (src/features/theme/uiExperiment.ts) is kept wired at boot
+          for future use but hidden from Settings. Re-add <UiExperimentSection />
+          here to run another round. */}
     </div>
   );
 }

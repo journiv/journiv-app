@@ -7,6 +7,8 @@ import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { StatusView } from "../../../components/journiv/StatusView";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
+import { NativeSelect } from "../../../components/ui/native-select";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
 
 const SOURCES: Array<{ value: ImportSourceType; label: string }> = [
   { value: "journiv", label: "Journiv" },
@@ -38,11 +40,21 @@ export function ImportPage() {
       <SettingsSection
         title="Import"
         intro="Choose an export archive and its source. Import runs as a background job and reports item progress."
+        footer={
+          canStart ? (
+            <Button
+              variant="default"
+              disabled={!file || upload.isPending}
+              onClick={() => upload.mutate()}
+            >
+              {upload.isPending ? "Uploading…" : "Start import"}
+            </Button>
+          ) : undefined
+        }
       >
         <SettingsRow label="Source" htmlFor="import-source">
-          <select
+          <NativeSelect
             id="import-source"
-            className="jv-field"
             value={source}
             onChange={(event) =>
               setSource(event.target.value as ImportSourceType)
@@ -54,7 +66,7 @@ export function ImportPage() {
                 {item.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </SettingsRow>
         <SettingsRow
           label="Archive"
@@ -70,17 +82,6 @@ export function ImportPage() {
           />
         </SettingsRow>
       </SettingsSection>
-      {canStart && (
-        <div className="jv-settings__actions">
-          <Button
-            variant="primary"
-            disabled={!file || upload.isPending}
-            onClick={() => upload.mutate()}
-          >
-            {upload.isPending ? "Uploading…" : "Start import"}
-          </Button>
-        </div>
-      )}
       {inProgress && job.data && (
         <div role="status">
           <StatusView
@@ -91,13 +92,15 @@ export function ImportPage() {
       )}
       {done && job.data && (
         <>
-          <p className="jv-settings__success">
-            {status === "partial"
-              ? "Import finished with some items skipped. "
-              : "Import complete. "}
-            {job.data.processed_items} of {job.data.total_items} items
-            processed.
-          </p>
+          <Alert role="status">
+            <AlertDescription>
+              {status === "partial"
+                ? "Import finished with some items skipped. "
+                : "Import complete. "}
+              {job.data.processed_items} of {job.data.total_items} items
+              processed.
+            </AlertDescription>
+          </Alert>
           {warningCount > 0 && (
             <p className="jv-settings__alert" role="status">
               {warningCount} imported{" "}

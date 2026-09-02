@@ -8,27 +8,33 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { useId, useMemo, useState } from "react";
-import { ApiError } from "../../api/client/errors";
 import { api } from "../../api/client/api";
+import { ApiError } from "../../api/client/errors";
 import type { TagResponse } from "../../api/generated/types.gen";
 import { queryKeys } from "../../api/query/keys";
 import { tagAnalyticsQuery, tagsQuery } from "../../api/query/options";
+import {
+  AppAdaptiveDialog,
+  useOverlayAutoFocus,
+} from "../../components/journiv/AppAdaptiveDialog";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { LibraryRow } from "../../components/journiv/LibraryRow";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
-import { Dialog, DialogClose } from "../../components/ui/dialog";
-import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
-import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
-import { viewMomentsAction } from "./viewMomentsAction";
+import { Field, FieldGroup, FieldLabel } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
+import { RadioGroup, RadioGroupItem } from "../../components/ui/radio-group";
 import { SearchInput } from "../../components/ui/search-input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { formatDateMedium } from "../../lib/datetime";
 import { usePlusCapability } from "../plus/usePlusCapability";
 import { LibraryWorkspace } from "./LibraryWorkspace";
 import { DistributionBars, Sparkline, StatTiles } from "./tagCharts";
+import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
 import "./tags.css";
+import { NativeSelect } from "../../components/ui/native-select";
 
 type SortKey = "usage" | "name" | "recent";
 
@@ -142,7 +148,7 @@ export function TagsPage() {
               Clean up {unusedCount} unused
             </Button>
           )}
-          <Button variant="primary" onClick={() => setCreating(true)}>
+          <Button variant="default" onClick={() => setCreating(true)}>
             <Plus aria-hidden="true" size={16} />
             New tag
           </Button>
@@ -176,10 +182,10 @@ export function TagsPage() {
           onChange={(event) => setSearch(event.target.value)}
           onClear={() => setSearch("")}
         />
-        <label className="jv-tags__sort">
+        <label className="jv-tags__sort" htmlFor="tags-sort">
           <span className="sr-only">Sort tags</span>
-          <select
-            className="jv-field"
+          <NativeSelect
+            id="tags-sort"
             value={sort}
             onChange={(event) => setSort(event.target.value as SortKey)}
           >
@@ -188,7 +194,7 @@ export function TagsPage() {
                 {option.label}
               </option>
             ))}
-          </select>
+          </NativeSelect>
         </label>
       </div>
 
@@ -202,7 +208,9 @@ export function TagsPage() {
           title="Tags could not be loaded"
           description="Check your connection and try again."
           action={
-            <Button onClick={() => tagsResult.refetch()}>Try again</Button>
+            <Button variant="secondary" onClick={() => tagsResult.refetch()}>
+              Try again
+            </Button>
           }
         />
       )}
@@ -213,7 +221,7 @@ export function TagsPage() {
           title="No tags yet"
           description="Tags are created as you add them to moments. You can also start one here."
           action={
-            <Button variant="primary" onClick={() => setCreating(true)}>
+            <Button variant="default" onClick={() => setCreating(true)}>
               <Plus aria-hidden="true" size={16} />
               New tag
             </Button>
@@ -225,7 +233,11 @@ export function TagsPage() {
         <StatusView
           title="No tags found"
           description={`No tag matches “${search.trim()}”.`}
-          action={<Button onClick={() => setSearch("")}>Clear search</Button>}
+          action={
+            <Button variant="secondary" onClick={() => setSearch("")}>
+              Clear search
+            </Button>
+          }
         />
       )}
 
@@ -460,18 +472,36 @@ function TagNameDialog({
   onSubmit: (name: string) => Promise<unknown>;
 }) {
   const inputId = useId();
+  const formId = useId();
+  const autoFocus = useOverlayAutoFocus();
   const [name, setName] = useState(initial);
   const trimmed = name.trim().toLowerCase();
   const dirty = trimmed.length > 0 && trimmed !== initial;
 
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={title}
       description="Tag names are lowercase and unique."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="default"
+            disabled={!dirty || submitting}
+          >
+            {submitting ? "Saving…" : submitLabel}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -483,33 +513,25 @@ function TagNameDialog({
           }
         }}
       >
-        <label htmlFor={inputId}>
-          <span>Tag name</span>
-          <Input
-            id={inputId}
-            value={name}
-            maxLength={100}
-            autoFocus
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={inputId}>Tag name</FieldLabel>
+            <Input
+              id={inputId}
+              value={name}
+              maxLength={100}
+              autoFocus={autoFocus}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+        </FieldGroup>
         {failed && (
           <p className="jv-library__alert" role="alert">
             The tag could not be saved. Your text is still here.
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!dirty || submitting}
-          >
-            {submitting ? "Saving…" : submitLabel}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }
 
@@ -545,7 +567,7 @@ function MergeTagDialog({
         : undefined;
 
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={`Merge #${source.name} into…`}
@@ -555,6 +577,27 @@ function MergeTagDialog({
               source.usage_count,
             )} move into #${targetTag.name}. #${source.name} is deleted.`
           : "Pick the tag to keep. Every moment on this tag moves to it."
+      }
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            variant="default"
+            disabled={!target || submitting}
+            onClick={async () => {
+              if (!target) return;
+              try {
+                await onSubmit(target);
+              } catch {
+                // Mutation state owns the message; the selection stays.
+              }
+            }}
+          >
+            {submitting ? "Merging…" : "Merge tags"}
+          </Button>
+        </>
       }
     >
       <div className="jv-tag-merge">
@@ -568,51 +611,38 @@ function MergeTagDialog({
         {shown.length === 0 ? (
           <p className="jv-tag-merge__empty jv-caption">No other tags match.</p>
         ) : (
-          <ul className="jv-tag-merge__list">
+          // An exclusive choice over a real list: the registry `RadioGroup`,
+          // not a bare native radio (DESIGN.md §18, composition table).
+          <RadioGroup
+            className="jv-tag-merge__list"
+            name="merge-target"
+            value={target ?? ""}
+            onValueChange={(next) => setTarget(String(next))}
+          >
             {shown.map((tag) => (
-              <li key={tag.id}>
-                <label className="jv-tag-merge__option">
-                  <input
-                    type="radio"
-                    name="merge-target"
-                    checked={target === tag.id}
-                    onChange={() => setTarget(tag.id)}
-                  />
-                  <span className="jv-tag-merge__name jv-truncate">
-                    #{tag.name}
-                  </span>
-                  <span className="jv-caption">
-                    {momentCount(tag.usage_count)}
-                  </span>
-                </label>
-              </li>
+              <FieldLabel
+                key={tag.id}
+                htmlFor={`merge-${tag.id}`}
+                className="jv-tag-merge__option"
+              >
+                <RadioGroupItem id={`merge-${tag.id}`} value={tag.id} />
+                <span className="jv-tag-merge__name jv-truncate">
+                  #{tag.name}
+                </span>
+                <span className="jv-caption">
+                  {momentCount(tag.usage_count)}
+                </span>
+              </FieldLabel>
             ))}
-          </ul>
+          </RadioGroup>
         )}
         {message && (
           <p className="jv-library__alert" role="alert">
             {message}
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button
-            variant="primary"
-            disabled={!target || submitting}
-            onClick={async () => {
-              if (!target) return;
-              try {
-                await onSubmit(target);
-              } catch {
-                // Mutation state owns the message; the selection stays.
-              }
-            }}
-          >
-            {submitting ? "Merging…" : "Merge tags"}
-          </Button>
-        </div>
       </div>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }
 

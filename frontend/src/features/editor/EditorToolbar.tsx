@@ -281,7 +281,7 @@ export function EditorToolbar({
               <DialogClose render={<Button variant="ghost" />}>
                 Cancel
               </DialogClose>
-              <Button type="submit" variant="primary">
+              <Button type="submit" variant="default">
                 Apply
               </Button>
             </div>

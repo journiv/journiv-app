@@ -10,10 +10,13 @@
  */
 
 /** The stock shadcn colour / shadow variables a user (or an imported tweakcn
- *  theme) may set. Font variables are deliberately NOT here — fonts come only
- *  from the bundled-font pickers. `radius` is deliberately NOT here either —
- *  there is no corner-radius personalization control; the shape scale in
- *  tokens.css is four literal values (DESIGN.md §3), not user-configurable. */
+ *  theme) may set — including Journiv's own `--brand` pair, which is what the
+ *  accent picker writes (DESIGN.md §3: `--primary` is neutral, blue is the
+ *  brand accent). Font variables are deliberately NOT here — fonts come only
+ *  from the bundled-font pickers. `radius` is NOT here either: there is no
+ *  corner-radius personalization control, and the whole named scale derives
+ *  from that one value, so letting a pasted theme move it would reshape every
+ *  registry component at once. */
 export const COLOR_VARS = [
   "background",
   "foreground",
@@ -23,6 +26,8 @@ export const COLOR_VARS = [
   "popover-foreground",
   "primary",
   "primary-foreground",
+  "brand",
+  "brand-foreground",
   "secondary",
   "secondary-foreground",
   "muted",

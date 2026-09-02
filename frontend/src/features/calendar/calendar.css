@@ -83,7 +83,7 @@
   gap: 2px;
   aspect-ratio: 1;
   padding: var(--space-1);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   color: var(--muted-foreground);
   text-decoration: none;
@@ -109,7 +109,7 @@
 }
 
 .jv-calendar__cell--filled:hover {
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
 .jv-calendar__cell.is-today .jv-calendar__day {
@@ -125,7 +125,7 @@
 }
 
 .jv-calendar__cell.is-selected {
-  background: var(--state-selected);
+  background: var(--accent);
 }
 
 .jv-calendar__cell.is-selected::before {
@@ -136,7 +136,7 @@
   bottom: var(--space-1);
   width: 3px;
   border-radius: 0 2px 2px 0;
-  background: var(--state-selected-rail);
+  background: var(--brand);
 }
 
 /* ---- selected-day panel --------------------------------------------------- */

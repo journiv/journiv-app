@@ -1,4 +1,6 @@
 import type { ReactNode, Ref } from "react";
+import { cx } from "../../lib/cx";
+import { useCompactViewport } from "../../lib/useCompactViewport";
 import {
   Dialog,
   DialogContent,
@@ -13,11 +15,29 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "../ui/drawer";
-import { cx } from "../../lib/cx";
-import { useCompactViewport } from "../../lib/useCompactViewport";
 import { guardDismissal } from "./overlayDismissal";
 
 export type AppDialogSize = "sm" | "md" | "lg";
+
+/**
+ * Whether the first field of a form in an adaptive overlay should take focus
+ * when the overlay opens.
+ *
+ * In the centred dialog, yes: the pointer is already there, nothing moves, and
+ * it saves a click. In the sheet, no. The sheet opens from a tap, so focusing a
+ * text input happens inside the user gesture and summons the on-screen
+ * keyboard, which eats roughly a third of an already short viewport before the
+ * user has decided they want to type — and on a long form it pushes the surface
+ * out from under them (DESIGN.md §9, §17).
+ *
+ * This lives here rather than in feature code on purpose. §9 forbids feature
+ * code from asking how wide the window is; asking the adaptive-overlay module
+ * "should this field autofocus?" keeps the rule and its one media query in the
+ * same place as the component that owns the presentation switch.
+ */
+export function useOverlayAutoFocus(): boolean {
+  return !useCompactViewport();
+}
 
 /** Regular-presentation width only — the sheet always spans the viewport.
  *  The `sm:` half is not redundant: `DialogContent` ships `sm:max-w-md`, and

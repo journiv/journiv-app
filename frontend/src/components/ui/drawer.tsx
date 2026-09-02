@@ -95,14 +95,6 @@ function DrawerSwipeHandle({
   );
 }
 
-/* Journiv reconciliation (DESIGN.md §18): upstream's four `rounded-*-xl`
- * classes on the popup below are `rounded-*-lg` here. §3 defines four radius
- * steps and
- * deliberately no `--radius-xl`, so `rounded-xl` would resolve to Tailwind's
- * own 12px default and bypass the token scale. `rounded-lg` is `--radius-lg`
- * (20px), the documented radius for sheets, drawers and dialogs. The backdrop
- * treatment is left exactly as upstream so it matches Dialog and AlertDialog
- * (DESIGN.md §3). Nothing else here departs from upstream. */
 function DrawerContent({
   className,
   children,
@@ -128,7 +120,7 @@ function DrawerContent({
           data-snap-points={hasSnapPoints ? "" : undefined}
           className={cn(
             // Base.
-            "group/drawer-popup pointer-events-auto fixed z-50 m-(--drawer-inset,0px) flex h-(--drawer-content-height) max-h-(--drawer-content-max-height,none) min-h-0 w-(--drawer-content-width,auto) transform-[translate3d(var(--translate-x,0px),var(--translate-y,0px),0)_scale(var(--stack-scale))] flex-col bg-popover text-sm text-popover-foreground transition-[transform,height,opacity,filter] duration-450 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform outline-none select-none [interpolate-size:allow-keywords] data-[swipe-direction=down]:rounded-t-lg data-[swipe-direction=down]:border-t data-[swipe-direction=left]:rounded-r-lg data-[swipe-direction=left]:border-r data-[swipe-direction=right]:rounded-l-lg data-[swipe-direction=right]:border-l data-[swipe-direction=up]:rounded-b-lg data-[swipe-direction=up]:border-b",
+            "group/drawer-popup pointer-events-auto fixed z-50 m-(--drawer-inset,0px) flex h-(--drawer-content-height) max-h-(--drawer-content-max-height,none) min-h-0 w-(--drawer-content-width,auto) transform-[translate3d(var(--translate-x,0px),var(--translate-y,0px),0)_scale(var(--stack-scale))] flex-col bg-popover text-sm text-popover-foreground transition-[transform,height,opacity,filter] duration-450 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform outline-none select-none [interpolate-size:allow-keywords] data-[swipe-direction=down]:rounded-t-xl data-[swipe-direction=down]:border-t data-[swipe-direction=left]:rounded-r-xl data-[swipe-direction=left]:border-r data-[swipe-direction=right]:rounded-l-xl data-[swipe-direction=right]:border-l data-[swipe-direction=up]:rounded-b-xl data-[swipe-direction=up]:border-b",
             // Nested.
             "data-nested-drawer-open:overflow-hidden data-nested-drawer-open:brightness-95",
             // Bleed.

@@ -8,11 +8,22 @@ import type {
 import { queryKeys } from "../../../api/query/keys";
 import { AppConfirmDialog } from "../../../components/journiv/AppConfirmDialog";
 import { Button } from "../../../components/ui/button";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+  FieldTitle,
+} from "../../../components/ui/field";
 import { Input } from "../../../components/ui/input";
+import { RadioGroup, RadioGroupItem } from "../../../components/ui/radio-group";
 import { useSettingsDirty } from "../SettingsModal";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 import { immichConnectionState } from "./immichStatus";
 import "./integrations.css";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
 
 const MODE_OPTIONS: {
   value: ImportMode;
@@ -100,6 +111,42 @@ export function ImmichConnectForm({
       <SettingsSection
         title="Immich"
         intro="Connect Journiv to the Immich server this instance provides. Once connected you can attach photos and videos from your Immich library while writing."
+        footer={
+          <>
+            {state.connected && (
+              <Button
+                variant="ghost"
+                onClick={() => sync.mutate()}
+                disabled={sync.isPending || !state.active}
+              >
+                {sync.isPending ? "Syncing…" : "Sync now"}
+              </Button>
+            )}
+            {state.connected && (
+              <Button variant="ghost" onClick={() => setDisconnectOpen(true)}>
+                Disconnect
+              </Button>
+            )}
+            <Button
+              variant="default"
+              disabled={
+                save.isPending ||
+                (state.connected
+                  ? !dirty || (state.hasError && trimmedApiKey.length === 0)
+                  : trimmedApiKey.length === 0)
+              }
+              onClick={() => save.mutate()}
+            >
+              {save.isPending
+                ? state.connected
+                  ? "Saving…"
+                  : "Connecting…"
+                : state.connected
+                  ? "Save settings"
+                  : "Connect"}
+            </Button>
+          </>
+        }
       >
         <SettingsRow label="Server">
           <p className="jv-settings-row__readonly">{baseUrl}</p>
@@ -147,26 +194,37 @@ export function ImmichConnectForm({
         )}
 
         <SettingsRow label="Import mode">
-          <fieldset className="jv-immich-mode">
-            <legend className="sr-only">Import mode</legend>
-            {MODE_OPTIONS.map((option) => (
-              <label key={option.value} className="jv-immich-mode__option">
-                <input
-                  type="radio"
-                  name="immich-import-mode"
-                  value={option.value}
-                  checked={mode === option.value}
-                  onChange={() => setMode(option.value)}
-                />
-                <span className="jv-immich-mode__text">
-                  <span className="jv-immich-mode__label">{option.label}</span>
-                  <span className="jv-immich-mode__description jv-caption">
-                    {option.description}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+          {/* A generic exclusive choice with descriptions: the registry's own
+              `RadioGroup` inside a `FieldSet`, not a hand-skinned native
+              radio (DESIGN.md §18, composition table). */}
+          <FieldSet>
+            <FieldLegend className="sr-only">Import mode</FieldLegend>
+            <RadioGroup
+              name="immich-import-mode"
+              value={mode}
+              onValueChange={(next) =>
+                setMode(next as (typeof MODE_OPTIONS)[number]["value"])
+              }
+            >
+              {MODE_OPTIONS.map((option) => (
+                <FieldLabel
+                  key={option.value}
+                  htmlFor={`immich-${option.value}`}
+                >
+                  <Field orientation="horizontal">
+                    <RadioGroupItem
+                      id={`immich-${option.value}`}
+                      value={option.value}
+                    />
+                    <FieldContent>
+                      <FieldTitle>{option.label}</FieldTitle>
+                      <FieldDescription>{option.description}</FieldDescription>
+                    </FieldContent>
+                  </Field>
+                </FieldLabel>
+              ))}
+            </RadioGroup>
+          </FieldSet>
           {status.album_error && (
             <p className="jv-caption jv-immich-mode__album-error">
               Immich album for linked media couldn’t be prepared:{" "}
@@ -194,45 +252,12 @@ export function ImmichConnectForm({
         </p>
       )}
       {sync.isSuccess && !sync.isPending && (
-        <p className="jv-settings__success">
-          Sync started. New Immich items appear as it runs.
-        </p>
+        <Alert role="status">
+          <AlertDescription>
+            Sync started. New Immich items appear as it runs.
+          </AlertDescription>
+        </Alert>
       )}
-
-      <div className="jv-settings__actions">
-        {state.connected && (
-          <Button
-            variant="ghost"
-            onClick={() => sync.mutate()}
-            disabled={sync.isPending || !state.active}
-          >
-            {sync.isPending ? "Syncing…" : "Sync now"}
-          </Button>
-        )}
-        {state.connected && (
-          <Button variant="ghost" onClick={() => setDisconnectOpen(true)}>
-            Disconnect
-          </Button>
-        )}
-        <Button
-          variant="primary"
-          disabled={
-            save.isPending ||
-            (state.connected
-              ? !dirty || (state.hasError && trimmedApiKey.length === 0)
-              : trimmedApiKey.length === 0)
-          }
-          onClick={() => save.mutate()}
-        >
-          {save.isPending
-            ? state.connected
-              ? "Saving…"
-              : "Connecting…"
-            : state.connected
-              ? "Save settings"
-              : "Connect"}
-        </Button>
-      </div>
 
       <AppConfirmDialog
         open={disconnectOpen}

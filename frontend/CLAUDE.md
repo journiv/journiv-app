@@ -10,7 +10,7 @@ Read [`DESIGN.md`](DESIGN.md) §1–9, §16–18 and §20 first. They are the ru
 that apply to everything: tokens, typography, shape, states, iconography,
 motion, responsive behaviour, accessibility, file placement, and the checklist.
 
-Then read the section for the surface you are touching (§10–§15, §21–§25).
+Then read the section for the surface you are touching (§10–§15, §21–§26).
 Do not skip this because the change looks small — inventing a colour, size,
 spacing value or radius instead of using a token is the single most common way
 this codebase drifts from its own design system.

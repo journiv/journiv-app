@@ -2,14 +2,22 @@
    calm management surface. A future person detail route can split this area
    without coupling the rows to dialog-only CRUD. The row and identity-mark
    primitives (`LibraryRow`, `EntityGlyph`) and the `⋯` menu live in
-   components/journiv so Tags, Moods and Activities inherit them. */
+   components/journiv so Tags, Moods and Activities inherit them.
+
+   Library is chrome, not reading content (DESIGN.md §5): its sections and row
+   panels are `--card` raised off a management canvas. The canvas is
+   `--background`, not `--muted` — this surface carries controls directly on it
+   (the header actions, the search field), and in Minimal Neutral's dark palette
+   `--muted`, `--secondary`, `--border` and `--input` are all `oklch(0.269 0 0)`,
+   so a bare control on `--muted` loses its edge entirely (§3, §5). It occupies
+   the shell's page column but is not the reader, which keeps `--card`. */
 .jv-library {
   grid-column: span 2;
   display: flex;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  background: var(--card);
+  background: var(--background);
 }
 
 /* Header and scrolling body share one measure and one left edge, so the
@@ -115,9 +123,10 @@
 
 /* ---- directory sections -------------------------------------------------
    Each group is a section: colour dot, sentence-case name, a hairline rule,
-   the server count, then an airy grid of people. Whitespace and one rule do
-   the grouping — no boxes, no rail (DESIGN.md §5, §24). The same dot + rule +
-   count device that Journal management uses (§22). */
+   the server count, then a panel of people. The head stays open — no box
+   around the group name — and the entries sit in a bounded panel so a row is
+   recognisable at rest without hovering (DESIGN.md §5, §24). The same dot +
+   rule + count device that Journal management uses (§22). */
 
 .jv-lib-dir {
   margin-top: var(--space-2);
@@ -158,7 +167,7 @@
 }
 
 .jv-lib-section__toggle:hover {
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
 .jv-lib-section__chevron {
@@ -197,9 +206,13 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
   gap: var(--space-1) var(--space-3);
-  margin: var(--space-1) 0 0;
-  padding: 0;
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
   list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
 }
 
 /* Goal rows carry cadence, direction, progress and an optional linked activity;
@@ -245,81 +258,21 @@
 
 /* ---- dialogs (person form, name, checklists, groups manager) -------- */
 
+/* The dialog form's own rhythm: the field group, an optional alert and the
+   action row. The *fields* inside are the registry's `FieldGroup` / `Field` /
+   `FieldLabel` / `FieldSet` — this file no longer restyles a label (§18). */
 .jv-library-form {
   display: grid;
   gap: var(--space-4);
 }
 
-.jv-library-form > label {
-  display: grid;
-  gap: var(--space-2);
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  font-weight: 550;
-}
-
-/* Goal form: paired selects (group, activity, direction, frequency, target,
+/* Goal form: paired fields (group, activity, direction, frequency, target,
    reminder) sit two-up on the reading measure and collapse to one column on
-   compact widths. */
+   compact widths. Product layout, not a re-skin of `Field`. */
 .jv-library-form__columns {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--space-4);
-}
-
-.jv-library-form__columns > label {
-  display: grid;
-  align-content: start;
-  gap: var(--space-2);
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  font-weight: 550;
-}
-
-.jv-library-form__error {
-  color: var(--destructive);
-  font-size: 0.75rem;
-  font-weight: 450;
-}
-
-.jv-library-form__hint {
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-  font-weight: 400;
-  line-height: 1.4;
-}
-
-/* Wins over the `.jv-library-form > label` grid rule at equal specificity by
-   coming later in the file — the checkbox sits inline with its text, not
-   stacked. */
-.jv-library-form > .jv-library-form__check {
-  display: flex;
-  min-height: var(--tap-target);
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding-block: var(--space-1);
-}
-
-.jv-library-form__check input {
-  margin-top: var(--space-1);
-}
-
-.jv-library-form__check > span {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.jv-library-form__check strong {
-  color: var(--foreground);
-  font-size: 0.875rem;
-  font-weight: 550;
-}
-
-.jv-library-form__check small {
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-  font-weight: 400;
 }
 
 .jv-library-form__note {
@@ -370,26 +323,17 @@
   border: 0;
 }
 
-.jv-library-checklist legend {
-  margin-bottom: var(--space-2);
-  padding: 0;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  font-weight: 550;
-}
-
-.jv-library-checklist label {
-  display: flex;
+/* Rows are `Field orientation="horizontal"`; only the scrollable list's own
+   row height and hover belong to Journiv. */
+.jv-library-checklist [data-slot="field"] {
   min-height: 2.25rem;
   align-items: center;
-  gap: var(--space-2);
   padding: 0 var(--space-2);
-  color: var(--muted-foreground);
-  font-size: 0.875rem;
+  border-radius: var(--radius-sm);
 }
 
-.jv-library-checklist label:hover {
-  background: var(--state-hover);
+.jv-library-checklist [data-slot="field"]:hover {
+  background: var(--muted);
 }
 
 .jv-library-checklist--people {
@@ -463,21 +407,6 @@
   margin-bottom: var(--space-1);
 }
 
-.jv-groups-form__group {
-  display: grid;
-  gap: var(--space-2);
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.jv-groups-form__group legend {
-  padding: 0;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  font-weight: 550;
-}
-
 .jv-groups-form__swatches {
   display: flex;
   flex-wrap: wrap;
@@ -496,7 +425,7 @@
 
 .jv-groups-form__swatch--none {
   background: var(--muted);
-  border-color: var(--line-strong);
+  border-color: var(--border);
   border-style: dashed;
 }
 
@@ -506,7 +435,7 @@
 }
 
 .jv-groups-form__swatch:has(input:focus-visible) {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -524,7 +453,7 @@
   height: 34px;
   padding: 0;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   color: var(--entity-accent, var(--muted-foreground));
   background: var(--popover);
   cursor: pointer;
@@ -538,11 +467,11 @@
 
 .jv-groups-form__icon:has(input:checked) {
   border-color: var(--primary);
-  background: var(--accent-surface);
+  background: var(--accent);
 }
 
 .jv-groups-form__icon:has(input:focus-visible) {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
 
@@ -570,19 +499,12 @@
     padding-block: var(--space-4) var(--space-2);
   }
 
+  /* Controls keep their content width and wrap, the way every other Vega
+     button on the surface does. Stretching them to half-width columns made two
+     secondaries read as heavily as the one primary and pushed that primary
+     onto a full-width row of its own below them (DESIGN.md §5, §24). */
   .jv-library__actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-
-  /* A lone action (e.g. Tags with nothing to clean up) fills the row rather
-     than sitting at half width. */
-  .jv-library__actions:not(:has(> * + *)) {
-    grid-template-columns: 1fr;
-  }
-
-  .jv-library__actions [data-slot="button"] {
-    width: 100%;
+    flex-wrap: wrap;
   }
 
   /* One person per row below the two-pane breakpoint. */

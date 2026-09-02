@@ -1,6 +1,8 @@
 import { Link, useSearch } from "@tanstack/react-router";
 import { CalendarDays, Images, List } from "lucide-react";
 import type { ReactNode } from "react";
+import { Button } from "../../components/ui/button";
+import { ButtonGroup } from "../../components/ui/button-group";
 import { cx } from "../../lib/cx";
 
 type ViewMode = "list" | "calendar" | "media";
@@ -13,28 +15,37 @@ const OPTIONS: Array<{ mode: ViewMode; label: string; icon: ReactNode }> = [
   {
     mode: "list",
     label: "List view",
-    icon: <List aria-hidden="true" size={15} />,
+    icon: <List aria-hidden="true" />,
   },
   {
     mode: "calendar",
     label: "Calendar view",
-    icon: <CalendarDays aria-hidden="true" size={15} />,
+    icon: <CalendarDays aria-hidden="true" />,
   },
   {
     mode: "media",
     label: "Media view",
-    icon: <Images aria-hidden="true" size={15} />,
+    icon: <Images aria-hidden="true" />,
   },
 ];
 
 /**
  * Switches the list pane between the Timeline, the Calendar and the Media grid.
  *
- * It only ever changes the `view` search param, so it stays on whatever route
- * is current — a moment open in the reader stays open while the left pane
- * changes, exactly like Day One. Styled as a segmented control (raised surface
- * for the active option, no shadow — DESIGN.md §5), it carries the selected
- * state with colour, a rail and `aria-current`.
+ * Three router `<Link>`s in a stock `ButtonGroup` — base-vega's segmented form
+ * built out of the primitive whose semantics actually match. Each option only
+ * ever changes the `view` search param, so it stays on whatever route is
+ * current: a moment open in the reader stays open while the left pane changes,
+ * exactly like Day One.
+ *
+ * This used to be a `ToggleGroup` with the links slotted into its items, which
+ * asked one element to be a toggle button and a link at the same time. It is
+ * not a distinction on paper: the rendered anchors carried `aria-pressed`,
+ * which ARIA does not allow on `role="link"`, plus a stray `type="button"`,
+ * and the group's roving `tabindex` took two of the three links out of the tab
+ * order in exchange for arrow keys that did not drive navigation. Nothing here
+ * is pressed — one of three destinations is *current*, which is `aria-current`
+ * (DESIGN.md §17).
  */
 export function ListViewSwitch({ className }: { className?: string }) {
   const { view } = useSearch({ strict: false }) as {
@@ -42,29 +53,40 @@ export function ListViewSwitch({ className }: { className?: string }) {
   };
   const current: ViewMode = view ?? "list";
   return (
-    <nav className={cx("jv-view-switch", className)} aria-label="List view">
+    <ButtonGroup
+      className={cx("jv-view-switch", className)}
+      aria-label="List view"
+    >
       {OPTIONS.map((option) => {
         const selected = option.mode === current;
         return (
-          <Link
+          <Button
             key={option.mode}
-            to="."
-            search={(prev: ListViewSearch) => ({
-              ...prev,
-              view: option.mode === "list" ? undefined : option.mode,
-              // The selected day only makes sense inside the calendar.
-              date: option.mode === "calendar" ? prev.date : undefined,
-            })}
-            replace
+            variant="outline"
+            size="icon-sm"
+            // The rendered element is an anchor, so Base UI must not assume
+            // native button semantics for it.
+            nativeButton={false}
             aria-current={selected ? "page" : undefined}
             aria-label={option.label}
             title={option.label}
-            className={cx("jv-view-switch__option", selected && "is-selected")}
+            render={
+              <Link
+                to="."
+                search={(prev: ListViewSearch) => ({
+                  ...prev,
+                  view: option.mode === "list" ? undefined : option.mode,
+                  // The selected day only makes sense inside the calendar.
+                  date: option.mode === "calendar" ? prev.date : undefined,
+                })}
+                replace
+              />
+            }
           >
             {option.icon}
-          </Link>
+          </Button>
         );
       })}
-    </nav>
+    </ButtonGroup>
   );
 }

@@ -14,9 +14,10 @@ body,
   min-height: 100%;
 }
 
+/* The canvas colour is set by the `@layer base` rule in index.css, so there is
+   exactly one place that decides it. */
 body {
   margin: 0;
-  background: var(--sidebar);
   color: var(--foreground);
   font-family: var(--font-sans);
   font-synthesis: none;
@@ -34,9 +35,9 @@ textarea {
 
 /* One focus treatment for the whole product. */
 :where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--focus-ring);
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
 }
 
 img {
@@ -54,8 +55,11 @@ img {
   margin: 0;
 }
 
-/* The reader and the editor MUST both use this role for the entry title. */
+/* The reader and the editor MUST both use this role for the entry title.
+   It follows `--font-reader` (default: `--font-sans`) so the headline matches
+   the prose beneath it when a reader font is chosen (DESIGN.md §4, §25). */
 .jv-entry-title {
+  font-family: var(--font-reader);
   font-size: clamp(1.85rem, 1.35rem + 1.6vw, 2.45rem); /* 30 -> 39px */
   font-weight: 650;
   line-height: 1.14;

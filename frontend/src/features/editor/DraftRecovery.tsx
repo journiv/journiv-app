@@ -98,7 +98,7 @@ export function DraftRecoveryPrompt({
         }
         action={
           <>
-            <Button variant="primary" onClick={onRecover}>
+            <Button variant="default" onClick={onRecover}>
               Recover
             </Button>
             <Button
@@ -151,7 +151,7 @@ export function DraftMediaUnreachable({
         }
         action={
           <>
-            <Button variant="primary" onClick={onRetry}>
+            <Button variant="default" onClick={onRetry}>
               Try again
             </Button>
             <Button

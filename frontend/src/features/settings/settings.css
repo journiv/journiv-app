@@ -2,13 +2,6 @@
    Desktop: a large two-column modal. Compact: a full-screen routed flow.
    One responsive Dialog; the layout switches in CSS, the routes do not. */
 
-.jv-settings-backdrop {
-  position: fixed;
-  z-index: 42;
-  inset: 0;
-  background: var(--surface-overlay);
-}
-
 .jv-settings-popup {
   position: fixed;
   z-index: 43;
@@ -25,10 +18,20 @@
   .jv-settings-popup {
     inset: 50% auto auto 50%;
     width: min(1050px, calc(100vw - 2 * var(--space-8)));
-    height: min(780px, calc(100dvh - 2 * var(--space-8)));
+    /* The height follows the content between a floor and a cap rather than
+       being pinned at the cap. Pinned, a short page (Providers, Appearance)
+       left a tall band of empty canvas under its card, which reads as a broken
+       layout rather than as breathing room. The floor is set so the section nav
+       always fits, so moving between sections does not resize the modal for any
+       page shorter than the nav — which is most of them. */
+    height: auto;
+    min-height: min(600px, calc(100dvh - 2 * var(--space-8)));
+    max-height: min(780px, calc(100dvh - 2 * var(--space-8)));
     border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    box-shadow: var(--shadow-dialog);
+    /* The same radius upstream's `DialogContent` uses — this is a Dialog-class
+       surface, hand-built only because it is a routed application shell. */
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-lg);
     transform: translate(-50%, -50%);
   }
 }
@@ -111,7 +114,13 @@
     display: block;
     overflow-y: auto;
     padding: var(--space-4) var(--space-3);
-    border-right: 1px solid var(--border);
+    /* The seam against the `--muted` content canvas. Not `--border`: in Minimal
+       Neutral's dark palette `--sidebar`, `--muted` and `--border` are the same
+       value, so a `--border` hairline here leaves the nav and the canvas with no
+       separation at all in dark (in light the `--sidebar`/`--muted` fill step
+       carries it). `--sidebar-border` is the token for exactly this seam and
+       reads in both themes (DESIGN.md §3). */
+    border-right: 1px solid var(--sidebar-border);
     background: var(--sidebar);
   }
 }
@@ -123,6 +132,11 @@
 }
 
 .jv-settings-nav__group {
+  display: flex;
+  flex-direction: column;
+}
+
+.jv-settings-nav__items {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -137,13 +151,15 @@
   color: var(--muted-foreground);
 }
 
+/* A nav row carries base-vega's own sidebar-menu treatment; Journiv adds the
+   rail, because selection is never colour alone (DESIGN.md §6). */
 .jv-settings-nav__item {
   position: relative;
   display: flex;
   align-items: center;
   min-height: 34px;
   padding: 0 var(--space-3);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--muted-foreground);
   font-size: 0.8125rem;
   font-weight: 500;
@@ -156,13 +172,12 @@
 
 .jv-settings-nav__item:hover {
   color: var(--foreground);
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
-/* Selection: tint plus a rail, never colour alone (DESIGN.md §6). */
 .jv-settings-nav__item.is-selected {
-  color: var(--foreground);
-  background: var(--state-selected);
+  color: var(--accent-foreground);
+  background: var(--accent);
   font-weight: 600;
 }
 
@@ -175,24 +190,45 @@
   width: 3px;
   height: 18px;
   border-radius: 0 2px 2px 0;
-  background: var(--state-selected-rail);
+  background: var(--brand);
 }
 
-/* Compact: the nav is a full-screen list with roomier rows. */
+/* Compact: the nav is the settings index — a full-screen list of grouped
+   destinations. Each group is a card on the settings canvas, matching the
+   sections the rows lead to (DESIGN.md §23). */
 @media (max-width: 1100px) {
   .jv-settings__content .jv-settings-nav {
-    gap: var(--space-8);
+    gap: var(--space-6);
     padding: var(--space-4) var(--space-4) 0;
+  }
+  /* The panel carries no inner padding and clips to its own radius, so a row's
+     resting and hover surface runs the full width of the card instead of
+     floating inset with a second radius (DESIGN.md §5, "Rows"). */
+  .jv-settings__content .jv-settings-nav__items {
+    gap: 0;
+    overflow: hidden;
+    border-radius: var(--radius-lg);
+    background: var(--card);
+    box-shadow: var(--shadow-xs);
+  }
+  .jv-settings__content .jv-settings-nav__item + .jv-settings-nav__item {
+    border-top: 1px solid var(--border);
   }
   .jv-settings__content .jv-settings-nav__item {
     min-height: var(--tap-target);
-    padding-inline: var(--space-2);
+    padding-inline: var(--space-4);
+    border-radius: 0;
+    color: var(--foreground);
     font-size: 0.9375rem;
+  }
+  /* Flush inside the panel, so the rail sits on the card's own edge. */
+  .jv-settings__content .jv-settings-nav__item.is-selected::before {
+    left: 0;
   }
   .jv-settings__content .jv-settings-nav__item::after {
     content: "";
     position: absolute;
-    right: var(--space-2);
+    right: var(--space-4);
     width: 7px;
     height: 7px;
     border-top: 1.5px solid var(--muted-foreground);
@@ -203,12 +239,15 @@
 
 /* ---- content pane ----------------------------------------------------------- */
 
+/* The settings canvas. Sections are cards raised off it (DESIGN.md §5, §23),
+   so this is `--muted` — the same surface relationship the app shell uses
+   between the page canvas and its panels. */
 .jv-settings__content {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--card);
+  background: var(--muted);
 }
 
 @media (min-width: 1101px) {
@@ -227,81 +266,109 @@
     max(var(--space-8), env(safe-area-inset-bottom));
 }
 
+/* Named so a page inside it can say which box it is measuring. Sections and
+   rows reflow against the content pane's width, never the viewport's — inside
+   a fixed-width modal those two numbers have nothing to do with each other
+   (DESIGN.md §9). */
 .jv-settings__body {
   max-width: 46rem;
+  container: jv-settings-body / inline-size;
 }
 
-/* A short stacked form (password change) reads better with its actions aligned
-   to the fields rather than stranded at the far edge of the pane. */
-.jv-settings__body--narrow {
-  max-width: 26rem;
+/* A data table is not a form: it gets the whole content pane rather than the
+   46rem reading measure, and decides its own column budget from that width
+   (§23, and `users.css`). */
+.jv-settings__body--wide {
+  max-width: none;
+}
+
+/* A whole-pane empty or error state is still a chrome surface, so it is bounded
+   like a section rather than floating on the canvas (DESIGN.md §5). This also
+   keeps the state's own action identifiable: on `--muted` in dark, `--secondary`
+   and `--border` are the same value as the canvas, so a `secondary` button
+   sitting straight on it has no edge at all (§3). */
+.jv-settings__scroll > [data-slot="empty"] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
+}
+
+/* On a phone the page inset and the card padding compete for the same 390px.
+   `--card-spacing` is `Card`'s own knob, so this tightens the card without
+   touching its class string. */
+@media (max-width: 620px) {
+  .jv-settings-section {
+    --card-spacing: var(--space-4);
+  }
 }
 
 /* ---- sections and rows ------------------------------------------------------ */
 
-.jv-settings-section + .jv-settings-section {
-  margin-top: var(--space-12);
+/* Cards, alerts and status blocks all sit on the settings canvas at one
+   rhythm. Section actions live in the card footer, never out here. */
+.jv-settings-section + *,
+* + .jv-settings-section {
+  margin-top: var(--space-6);
 }
 
+/* The heading element only carries semantics — `CardTitle` owns the type. */
 .jv-settings-section__title {
-  margin: 0 0 var(--space-1);
+  margin: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  letter-spacing: inherit;
 }
 
-.jv-settings-section__intro {
-  margin: 0 0 var(--space-6);
-  color: var(--muted-foreground);
+/* Settings rows are flush inside the card and separated by hairlines, so the
+   card content drops its own gap. Sections whose body is not a row list (the
+   provider catalogue, Personalize) keep it. */
+.jv-settings-section
+[data-slot="card-content"]:has(> .jv-settings-row):not(
+  :has(> :not(.jv-settings-row))
+) {
+  gap: 0;
 }
 
-.jv-settings-section__divider {
-  height: 1px;
-  margin-bottom: var(--space-6);
-  background: var(--border);
-}
-
-/* Setting: label + description on the left, control on the right. Paper, not
-   panel — no box per row (DESIGN.md §5, §23). */
+/* Setting: label + description on the left, control on the right. The row is
+   a stock `Item` carrying a `Field`; what stays here is the two-column reflow
+   at the row's own width (§9 — a component breakpoint, not a layout one) and
+   the hairline between rows. */
 .jv-settings-row {
-  display: grid;
-  gap: var(--space-1) var(--space-6);
-  padding: var(--space-4) 0;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-inline: 0;
 }
 
 .jv-settings-row + .jv-settings-row {
   border-top: 1px solid var(--border);
 }
 
-@media (min-width: 620px) {
+/* The row list is flush with the card's horizontal padding. */
+.jv-settings-row {
+  border-radius: 0;
+}
+
+@container jv-settings-body (min-width: 620px) {
   .jv-settings-row {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
-    align-items: start;
+    flex-direction: row;
+    align-items: flex-start;
+    gap: var(--space-6);
   }
   .jv-settings-row__control {
-    grid-column: 2;
-    grid-row: 1 / span 2;
+    flex: 0 0 22rem;
+    max-width: 22rem;
   }
-}
-
-.jv-settings-row__label {
-  margin: 0;
-  color: var(--foreground);
-}
-
-.jv-settings-row__description {
-  margin: 0;
-  color: var(--muted-foreground);
 }
 
 .jv-settings-row__control {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: var(--space-2);
-  min-width: 0;
-}
-
-/* Full-width fields still fill the column; buttons stay content-width. */
-.jv-settings-row__control .jv-field {
   width: 100%;
+  min-width: 0;
 }
 
 .jv-settings-row__readonly {
@@ -311,56 +378,17 @@
   overflow-wrap: anywhere;
 }
 
-/* ---- stacked form (password change) --------------------------------------- */
+/* ---- stacked form (password change) ---------------------------------------
+   The form is a stock `FieldGroup` of `Field`s; all that stays here is the
+   measure — a password field is not more usable at 46rem. */
 
 .jv-settings-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
   max-width: 24rem;
 }
 
-.jv-settings-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.jv-settings-field__hint {
-  margin: 0;
-  color: var(--muted-foreground);
-}
-
-.jv-settings-field__error,
 .jv-settings__alert {
   margin: 0;
   color: var(--destructive);
-}
-
-.jv-settings__notice {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--muted);
-  color: var(--muted-foreground);
-}
-
-.jv-settings__success {
-  margin: 0 0 var(--space-4);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-md);
-  background: var(--accent-surface);
-  color: var(--foreground);
-}
-
-/* ---- actions ------------------------------------------------------------- */
-
-.jv-settings__actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: var(--space-8);
 }
 
 /* ---- identity block ---------------------------------------------------------- */
@@ -372,25 +400,13 @@
   padding-bottom: var(--space-6);
 }
 
+/* A stock `Avatar`; only the identity block's larger size is Journiv's. */
 .jv-settings__avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex: 0 0 auto;
   width: 56px;
   height: 56px;
-  border-radius: 999px;
-  overflow: hidden;
-  background: var(--muted);
-  color: var(--muted-foreground);
   font-size: 1.25rem;
   font-weight: 600;
-}
-
-.jv-settings__avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .jv-settings__identity-text {
@@ -425,106 +441,46 @@
   gap: var(--space-2);
 }
 
-/* A surface may pair a secondary action with its one primary (Integrations:
-   Disconnect + Connect). */
-.jv-settings__actions {
-  gap: var(--space-3);
-}
-
-.jv-settings__success p {
-  margin: 0;
-}
-
-/* ---- checkbox ---------------------------------------------------------------- */
-/* A plain control, sized so the visible box and its label together clear the
-   44px target (DESIGN.md §17). */
-.jv-settings-checkbox {
-  width: 18px;
-  height: 18px;
-  margin: var(--space-1) 0;
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-
-/* ---- support link lists -------------------------------------------------- */
-
-.jv-settings-link-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.jv-settings-link-list li + li {
-  border-top: 1px solid var(--border);
-}
-
-.jv-settings-link-list a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  min-height: var(--tap-target);
-  color: var(--muted-foreground);
-  text-decoration: none;
-}
-
-.jv-settings-link-list a:hover {
-  color: var(--foreground);
-}
-
 /* ---- personalization controls ---------------------------------------- */
 
 .jv-personalize__swatches {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
   margin-bottom: var(--space-2);
 }
 
+/* The dot is 28px because that is the right size for a row of eight colours;
+   the *control* is a full `--tap-target` square around it, so the finger gets
+   44px without the palette turning into eight large blocks (DESIGN.md §7,
+   §17). The swatches sit flush for the same reason — the targets already
+   tile, and a gap between them would only add dead space. */
 .jv-personalize__swatch {
+  display: grid;
+  place-items: center;
+  width: var(--tap-target);
+  height: var(--tap-target);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.jv-personalize__swatch::before {
+  content: "";
   width: 1.75rem;
   height: 1.75rem;
+  background: var(--entity-accent);
   border: 1px solid var(--border);
   border-radius: 999px;
-  cursor: pointer;
   transition: transform var(--duration-fast, 110ms) ease;
 }
 
-.jv-personalize__swatch:hover {
+.jv-personalize__swatch:hover::before {
   transform: scale(1.08);
 }
 
-.jv-personalize__swatch[aria-pressed="true"] {
+.jv-personalize__swatch[aria-pressed="true"]::before {
   outline: 2px solid var(--ring);
   outline-offset: 2px;
-}
-
-.jv-personalize__steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.jv-personalize__step {
-  min-width: 3.25rem;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.jv-personalize__step:hover {
-  background: var(--state-hover);
-  color: var(--foreground);
-}
-
-.jv-personalize__step[aria-pressed="true"] {
-  border-color: var(--ring);
-  background: var(--accent-surface);
-  color: var(--primary);
 }
 
 .jv-personalize__import-actions {

@@ -67,7 +67,7 @@
   overflow: hidden;
   border: 0;
   padding: 0;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--muted);
   color: var(--muted-foreground);
   cursor: pointer;

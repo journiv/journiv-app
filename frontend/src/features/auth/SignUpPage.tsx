@@ -138,7 +138,7 @@ export function SignUpPage() {
         heading="Sign up unavailable"
         lede="Journiv couldn’t check whether this instance accepts new accounts."
       >
-        <Button variant="primary" onClick={() => void instanceConfig.refetch()}>
+        <Button variant="default" onClick={() => void instanceConfig.refetch()}>
           Try again
         </Button>
         <p className="jv-auth__alternate jv-caption">
@@ -185,7 +185,7 @@ export function SignUpPage() {
         lede="This Journiv instance is not accepting new accounts. An administrator can enable sign up in the server configuration and restart Journiv."
       >
         <Link
-          className={buttonVariants({ variant: "primary" })}
+          className={buttonVariants({ variant: "default" })}
           to="/login"
           search={{ returnTo }}
         >
@@ -202,7 +202,7 @@ export function SignUpPage() {
         lede="Your account is ready, but we couldn’t sign you in automatically. Sign in to continue to your journal."
       >
         <Link
-          className={buttonVariants({ variant: "primary" })}
+          className={buttonVariants({ variant: "default" })}
           to="/login"
           search={{ returnTo }}
         >
@@ -312,7 +312,7 @@ export function SignUpPage() {
           </Alert>
         )}
 
-        <Button type="submit" variant="primary" disabled={pending}>
+        <Button type="submit" variant="default" disabled={pending}>
           {pending && <Spinner data-icon="inline-start" aria-hidden />}
           {pending ? "Creating account…" : "Create account"}
         </Button>

@@ -124,11 +124,13 @@
   margin: 0;
 }
 
+/* The one detached object inside the reading column (DESIGN.md §5): an
+   invitation to write, not a piece of the entry. */
 .jv-reader__invitation {
   margin-top: var(--space-8);
   padding: var(--space-2);
   border: 1px dashed var(--border);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
 }
 
 @media (max-width: 860px) {

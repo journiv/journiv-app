@@ -12,6 +12,13 @@ import {
 } from "../../api/query/options";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button, buttonVariants } from "../../components/ui/button";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
 import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
 import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { viewMomentsAction } from "./viewMomentsAction";
@@ -24,6 +31,7 @@ import { MergeTagDialog, TagNameDialog } from "./TagsPage";
 import { Sparkline } from "./tagCharts";
 import "./library.css";
 import "./tags.css";
+import { NativeSelect } from "../../components/ui/native-select";
 
 const RANGES: { days: number; label: string }[] = [
   { days: 30, label: "30 days" },
@@ -139,6 +147,7 @@ export function TagDetailPage() {
           description="This tag may have been deleted or merged."
           action={
             <Button
+              variant="secondary"
               onClick={() =>
                 navigate({ to: "/library/tags", search: { q: "" } })
               }
@@ -153,7 +162,7 @@ export function TagDetailPage() {
 
   const actions = (
     <>
-      <Button variant="primary" onClick={() => setRenaming(true)}>
+      <Button variant="default" onClick={() => setRenaming(true)}>
         Rename
       </Button>
       <AppAdaptiveMenu
@@ -195,170 +204,200 @@ export function TagDetailPage() {
           : ""}
       </p>
 
-      <section className="jv-tag-detail__section" aria-label="Analytics">
-        <div className="jv-tag-detail__section-head">
-          <h2 className="jv-section-title">Usage</h2>
+      {/* A titled group on a management surface: a stock `Card`, header action
+          included — not a hand-built head + rule (DESIGN.md §5, §18). */}
+      <Card
+        className="jv-tag-detail__section"
+        role="region"
+        aria-label="Analytics"
+      >
+        <CardHeader>
+          <CardTitle>
+            <h2 className="jv-tag-detail__section-title">Usage</h2>
+          </CardTitle>
           {plus.isSupporter && (
-            <label className="jv-tag-detail__range">
-              <span className="sr-only">Analysis window</span>
-              <select
-                className="jv-field"
-                value={days}
-                onChange={(event) => setDays(Number(event.target.value))}
+            <CardAction>
+              <label
+                className="jv-tag-detail__range"
+                htmlFor="tag-detail-range"
               >
-                {RANGES.map((range) => (
-                  <option key={range.days} value={range.days}>
-                    {range.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
-        </div>
-
-        {!plus.isSupporter && (
-          <StatusView
-            icon={<Sparkles size={20} />}
-            title={
-              plus.available
-                ? "Tag analytics is part of Journiv Plus"
-                : "Tag analytics is not included in this build"
-            }
-            description={
-              plus.available
-                ? "Supporter licences unlock usage trends, peak months and growth for every tag."
-                : "This Journiv instance was built without the Plus features module."
-            }
-            action={
-              plus.available ? (
-                <a
-                  className={cn(buttonVariants({ variant: "secondary" }))}
-                  href={plus.upgradeUrl}
-                  target="_blank"
-                  rel="noreferrer"
+                <span className="sr-only">Analysis window</span>
+                <NativeSelect
+                  id="tag-detail-range"
+                  value={days}
+                  onChange={(event) => setDays(Number(event.target.value))}
                 >
-                  Learn about Plus
-                </a>
-              ) : undefined
-            }
-          />
-        )}
-
-        {plus.isSupporter && analytics.isLoading && (
-          <div className="jv-tag-detail__analytics">
-            <Skeleton height="2rem" width="100%" />
-            <Skeleton height="0.9rem" width="60%" />
-          </div>
-        )}
-
-        {plus.isSupporter &&
-          analytics.isError &&
-          (isPlusLocked(analytics.error) ? (
+                  {RANGES.map((range) => (
+                    <option key={range.days} value={range.days}>
+                      {range.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+            </CardAction>
+          )}
+        </CardHeader>
+        <CardContent>
+          {!plus.isSupporter && (
             <StatusView
               icon={<Sparkles size={20} />}
-              title="Tag analytics is unavailable"
-              description="The Plus licence for this instance is inactive or could not be verified."
+              title={
+                plus.available
+                  ? "Tag analytics is part of Journiv Plus"
+                  : "Tag analytics is not included in this build"
+              }
+              description={
+                plus.available
+                  ? "Supporter licences unlock usage trends, peak months and growth for every tag."
+                  : "This Journiv instance was built without the Plus features module."
+              }
+              action={
+                plus.available ? (
+                  <a
+                    className={cn(buttonVariants({ variant: "secondary" }))}
+                    href={plus.upgradeUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Learn about Plus
+                  </a>
+                ) : undefined
+              }
             />
-          ) : (
+          )}
+
+          {plus.isSupporter && analytics.isLoading && (
+            <div className="jv-tag-detail__analytics">
+              <Skeleton height="2rem" width="100%" />
+              <Skeleton height="0.9rem" width="60%" />
+            </div>
+          )}
+
+          {plus.isSupporter &&
+            analytics.isError &&
+            (isPlusLocked(analytics.error) ? (
+              <StatusView
+                icon={<Sparkles size={20} />}
+                title="Tag analytics is unavailable"
+                description="The Plus licence for this instance is inactive or could not be verified."
+              />
+            ) : (
+              <StatusView
+                role="alert"
+                tone="danger"
+                icon={<TriangleAlert size={20} />}
+                title="Analytics could not be loaded"
+                description="Check your connection and try again."
+                action={
+                  <Button
+                    variant="secondary"
+                    onClick={() => analytics.refetch()}
+                  >
+                    Try again
+                  </Button>
+                }
+              />
+            ))}
+
+          {plus.isSupporter && analytics.data && (
+            <TagAnalyticsView data={analytics.data} />
+          )}
+        </CardContent>
+      </Card>
+
+      <Card
+        className="jv-tag-detail__section"
+        role="region"
+        aria-label="Recent moments"
+      >
+        <CardHeader>
+          <CardTitle>
+            <h2 className="jv-tag-detail__section-title">Recent moments</h2>
+          </CardTitle>
+          {tag.usage_count > 0 && (
+            <CardAction>
+              <Link
+                className="jv-tag-detail__viewall jv-label"
+                to="/timeline"
+                search={{ q: "", tag: tag.id }}
+              >
+                View all
+              </Link>
+            </CardAction>
+          )}
+        </CardHeader>
+        <CardContent>
+          {moments.isLoading && (
+            <ul className="jv-tag-moments" role="status" aria-label="Loading">
+              {["a", "b", "c"].map((k) => (
+                <li className="jv-tag-moments__row" key={k}>
+                  <Skeleton height="0.85rem" width="30%" />
+                  <Skeleton height="0.9rem" width="70%" />
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {moments.isError && (
             <StatusView
               role="alert"
               tone="danger"
               icon={<TriangleAlert size={20} />}
-              title="Analytics could not be loaded"
-              description="Check your connection and try again."
+              title="Moments could not be loaded"
               action={
-                <Button onClick={() => analytics.refetch()}>Try again</Button>
+                <Button variant="secondary" onClick={() => moments.refetch()}>
+                  Try again
+                </Button>
               }
             />
-          ))}
-
-        {plus.isSupporter && analytics.data && (
-          <TagAnalyticsView data={analytics.data} />
-        )}
-      </section>
-
-      <section className="jv-tag-detail__section" aria-label="Recent moments">
-        <div className="jv-tag-detail__section-head">
-          <h2 className="jv-section-title">Recent moments</h2>
-          {tag.usage_count > 0 && (
-            <Link
-              className="jv-tag-detail__viewall jv-label"
-              to="/timeline"
-              search={{ q: "", tag: tag.id }}
-            >
-              View all
-            </Link>
           )}
-        </div>
 
-        {moments.isLoading && (
-          <ul className="jv-tag-moments" role="status" aria-label="Loading">
-            {["a", "b", "c"].map((k) => (
-              <li className="jv-tag-moments__row" key={k}>
-                <Skeleton height="0.85rem" width="30%" />
-                <Skeleton height="0.9rem" width="70%" />
-              </li>
-            ))}
-          </ul>
-        )}
+          {moments.data && moments.data.length === 0 && (
+            <p className="jv-tag-detail__empty jv-body">
+              No moments carry this tag yet.
+            </p>
+          )}
 
-        {moments.isError && (
-          <StatusView
-            role="alert"
-            tone="danger"
-            icon={<TriangleAlert size={20} />}
-            title="Moments could not be loaded"
-            action={
-              <Button onClick={() => moments.refetch()}>Try again</Button>
-            }
-          />
-        )}
-
-        {moments.data && moments.data.length === 0 && (
-          <p className="jv-tag-detail__empty jv-body">
-            No moments carry this tag yet.
-          </p>
-        )}
-
-        {moments.data && moments.data.length > 0 && (
-          <ul className="jv-tag-moments">
-            {moments.data.map((moment) => {
-              const text =
-                moment.entry?.title?.trim() ||
-                moment.entry?.content_plain_text?.trim() ||
-                moment.note?.trim() ||
-                "No writing yet";
-              const journalId = moment.entry?.journal_id;
-              const body = (
-                <>
-                  <span className="jv-tag-moments__date jv-meta">
-                    {loggedDay(moment.logged_date_tz)}
-                  </span>
-                  <span className="jv-tag-moments__text jv-clamp-2">
-                    {text}
-                  </span>
-                </>
-              );
-              return (
-                <li className="jv-tag-moments__row" key={moment.id}>
-                  {journalId ? (
-                    <Link
-                      className="jv-tag-moments__link"
-                      to="/journals/$journalId/$momentId"
-                      params={{ journalId, momentId: moment.id }}
-                      search={{ q: "" }}
-                    >
-                      {body}
-                    </Link>
-                  ) : (
-                    <span className="jv-tag-moments__link">{body}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
+          {moments.data && moments.data.length > 0 && (
+            <ul className="jv-tag-moments">
+              {moments.data.map((moment) => {
+                const text =
+                  moment.entry?.title?.trim() ||
+                  moment.entry?.content_plain_text?.trim() ||
+                  moment.note?.trim() ||
+                  "No writing yet";
+                const journalId = moment.entry?.journal_id;
+                const body = (
+                  <>
+                    <span className="jv-tag-moments__date jv-meta">
+                      {loggedDay(moment.logged_date_tz)}
+                    </span>
+                    <span className="jv-tag-moments__text jv-clamp-2">
+                      {text}
+                    </span>
+                  </>
+                );
+                return (
+                  <li className="jv-tag-moments__row" key={moment.id}>
+                    {journalId ? (
+                      <Link
+                        className="jv-tag-moments__link"
+                        to="/journals/$journalId/$momentId"
+                        params={{ journalId, momentId: moment.id }}
+                        search={{ q: "" }}
+                      >
+                        {body}
+                      </Link>
+                    ) : (
+                      <span className="jv-tag-moments__link">{body}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       {renaming && (
         <TagNameDialog

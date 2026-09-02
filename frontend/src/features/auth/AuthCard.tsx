@@ -1,6 +1,14 @@
 import type { ReactNode } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../components/ui/card";
 
-/** Shared authentication surface for sign-in, sign-up and OIDC completion. */
+/** Shared authentication surface for sign-in, sign-up and OIDC completion.
+ *  A genuinely detached object, so it is a stock `Card` (DESIGN.md §5). */
 export function AuthCard({
   heading,
   lede,
@@ -14,16 +22,20 @@ export function AuthCard({
 }) {
   return (
     <main className="jv-auth">
-      <div className="jv-auth__card" aria-busy={busy || undefined}>
-        <p className="jv-auth__brand">Journiv</p>
-        <h1 className="jv-display">{heading}</h1>
-        {typeof lede === "string" ? (
-          <p className="jv-auth__lede">{lede}</p>
-        ) : (
-          lede
-        )}
-        {children}
-      </div>
+      <Card className="jv-auth__card" aria-busy={busy || undefined}>
+        <CardHeader>
+          <p className="jv-auth__brand">Journiv</p>
+          <CardTitle>
+            <h1 className="jv-display">{heading}</h1>
+          </CardTitle>
+          {typeof lede === "string" ? (
+            <CardDescription>{lede}</CardDescription>
+          ) : (
+            lede
+          )}
+        </CardHeader>
+        <CardContent>{children}</CardContent>
+      </Card>
     </main>
   );
 }

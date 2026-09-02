@@ -74,7 +74,7 @@ export function LoginPage() {
         heading="Sign in unavailable"
         lede="Journiv couldn’t check the sign-in methods available on this instance."
       >
-        <Button variant="primary" onClick={() => void instanceConfig.refetch()}>
+        <Button variant="default" onClick={() => void instanceConfig.refetch()}>
           Try again
         </Button>
       </AuthCard>
@@ -132,7 +132,7 @@ export function LoginPage() {
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
-        <Button type="submit" variant="primary" disabled={pending}>
+        <Button type="submit" variant="default" disabled={pending}>
           {pending && <Spinner data-icon="inline-start" aria-hidden />}
           {pending ? "Signing in…" : "Sign in"}
         </Button>

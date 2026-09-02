@@ -20,7 +20,7 @@ function Harness({
       onOpenChange={onOpenChange}
       title="Edit journal"
       description="Change this journal's details."
-      footer={<Button variant="primary">Save changes</Button>}
+      footer={<Button variant="default">Save changes</Button>}
       {...props}
     >
       <label htmlFor="jv-title">Title</label>

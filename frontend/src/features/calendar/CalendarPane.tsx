@@ -42,6 +42,7 @@ import {
   yearOptions,
 } from "./calendarGrid";
 import "./calendar.css";
+import { NativeSelect } from "../../components/ui/native-select";
 
 const viewerTimezone = () =>
   Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
@@ -129,9 +130,9 @@ export function CalendarPane() {
             <label className="sr-only" htmlFor="jv-calendar-month">
               Month
             </label>
-            <select
+            <NativeSelect
               id="jv-calendar-month"
-              className="jv-field jv-calendar__select"
+              className="jv-calendar__select"
               value={monthIndex}
               onChange={(event) =>
                 goToMonth(monthKeyOf(year, Number(event.target.value)))
@@ -142,13 +143,13 @@ export function CalendarPane() {
                   {name}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <label className="sr-only" htmlFor="jv-calendar-year">
               Year
             </label>
-            <select
+            <NativeSelect
               id="jv-calendar-year"
-              className="jv-field jv-calendar__select"
+              className="jv-calendar__select"
               value={year}
               onChange={(event) =>
                 goToMonth(monthKeyOf(Number(event.target.value), monthIndex))
@@ -159,7 +160,7 @@ export function CalendarPane() {
                   {option}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
           <span className="sr-only" role="status" aria-live="polite">
             {monthLabel(month)}

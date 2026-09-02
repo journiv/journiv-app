@@ -35,7 +35,7 @@ export function OidcAction({
   return (
     <a
       className={cx(
-        buttonVariants({ variant: primary ? "primary" : "outline" }),
+        buttonVariants({ variant: primary ? "default" : "outline" }),
         "jv-auth__oidc",
       )}
       href={oidcLoginHref()}

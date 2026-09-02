@@ -10,6 +10,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { type CSSProperties, type ReactNode, useId, useState } from "react";
+import { api } from "../../api/client/api";
 import type {
   ActivityCreate,
   ActivityGroupCreate,
@@ -18,17 +19,26 @@ import type {
   ActivityResponse,
   ActivityUpdate,
 } from "../../api/generated/types.gen";
-import { api } from "../../api/client/api";
 import { queryKeys } from "../../api/query/keys";
 import { activitiesQuery, activityGroupsQuery } from "../../api/query/options";
+import {
+  AppAdaptiveDialog,
+  useOverlayAutoFocus,
+} from "../../components/journiv/AppAdaptiveDialog";
+import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
 import { LibraryRow } from "../../components/journiv/LibraryRow";
 import { PageBar } from "../../components/journiv/PageBar";
 import { StatusView } from "../../components/journiv/StatusView";
 import { Button } from "../../components/ui/button";
-import { Dialog, DialogClose } from "../../components/ui/dialog";
-import { AppAdaptiveMenu } from "../../components/journiv/AppAdaptiveMenu";
-import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "../../components/ui/field";
 import { IconButton } from "../../components/ui/icon-button";
 import { Input } from "../../components/ui/input";
 import { SearchInput } from "../../components/ui/search-input";
@@ -40,6 +50,7 @@ import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
 import { viewMomentsAction } from "./viewMomentsAction";
 import "./library.css";
+import { NativeSelect } from "../../components/ui/native-select";
 
 type ActivityFormState =
   | { mode: "create"; groupId: string | null }
@@ -281,9 +292,11 @@ export function ActivitiesPage() {
           </p>
         </div>
         <div className="jv-library__actions">
-          <Button onClick={() => setGroupsManager({})}>Manage groups</Button>
+          <Button variant="secondary" onClick={() => setGroupsManager({})}>
+            Manage groups
+          </Button>
           <Button
-            variant="primary"
+            variant="default"
             onClick={() => setActivityForm({ mode: "create", groupId: null })}
           >
             <Plus aria-hidden="true" size={16} />
@@ -313,6 +326,7 @@ export function ActivitiesPage() {
               description="Check your connection and try again."
               action={
                 <Button
+                  variant="secondary"
                   onClick={() => {
                     activitiesResult.refetch();
                     groupsResult.refetch();
@@ -330,7 +344,7 @@ export function ActivitiesPage() {
               description="Add an activity or create a group to begin organising your Library."
               action={
                 <Button
-                  variant="primary"
+                  variant="default"
                   onClick={() =>
                     setActivityForm({ mode: "create", groupId: null })
                   }
@@ -467,7 +481,10 @@ export function ActivitiesPage() {
                       title="No activities found"
                       description={`No activities or groups match “${search.trim()}”.`}
                       action={
-                        <Button onClick={() => setSearch("")}>
+                        <Button
+                          variant="secondary"
+                          onClick={() => setSearch("")}
+                        >
                           Clear search
                         </Button>
                       }
@@ -617,6 +634,8 @@ function ActivityFormDialog({
   onSubmit: (body: ActivityCreate | ActivityUpdate) => Promise<void>;
 }) {
   const activity = state.mode === "edit" ? state.activity : undefined;
+  const formId = useId();
+  const autoFocus = useOverlayAutoFocus();
   const nameId = useId();
   const groupSelectId = useId();
   const colorName = useId();
@@ -643,13 +662,29 @@ function ActivityFormDialog({
     ({ "--entity-accent": hex }) as CSSProperties;
 
   return (
-    <Dialog
+    <AppAdaptiveDialog
       open
       onOpenChange={(open) => !open && onClose()}
       title={activity ? `Edit ${activity.name}` : "Add activity"}
       description="Choose how this activity appears when you record a moment."
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form={formId}
+            variant="default"
+            disabled={!trimmed || !dirty || submitting}
+          >
+            {submitting ? "Saving…" : activity ? "Save" : "Add activity"}
+          </Button>
+        </>
+      }
     >
       <form
+        id={formId}
         className="jv-library-form"
         onSubmit={async (event) => {
           event.preventDefault();
@@ -667,111 +702,102 @@ function ActivityFormDialog({
           }
         }}
       >
-        <label htmlFor={nameId}>
-          <span>Activity name</span>
-          <Input
-            id={nameId}
-            aria-label="Activity name"
-            value={name}
-            autoFocus
-            onChange={(event) => setName(event.target.value)}
-          />
-        </label>
-        <label htmlFor={groupSelectId}>
-          <span>Group</span>
-          <select
-            id={groupSelectId}
-            className="jv-field"
-            value={selectedGroup}
-            onChange={(event) => setSelectedGroup(event.target.value)}
-          >
-            <option value="">Without a group</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <fieldset className="jv-groups-form__group">
-          <legend>Colour</legend>
-          <div className="jv-groups-form__swatches">
-            <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
-              <input
-                type="radio"
-                name={colorName}
-                className="sr-only"
-                checked={!color}
-                onChange={() => setColor("")}
-              />
-              <span className="sr-only">No colour</span>
-            </label>
-            {ENTITY_COLOR_PRESETS.map((preset) => (
-              <label
-                key={preset.hex}
-                className="jv-groups-form__swatch"
-                style={tint(preset.hex)}
-              >
+        <FieldGroup>
+          <Field>
+            <FieldLabel htmlFor={nameId}>Activity name</FieldLabel>
+            <Input
+              id={nameId}
+              aria-label="Activity name"
+              value={name}
+              autoFocus={autoFocus}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={groupSelectId}>Group</FieldLabel>
+            <NativeSelect
+              id={groupSelectId}
+              value={selectedGroup}
+              onChange={(event) => setSelectedGroup(event.target.value)}
+            >
+              <option value="">Without a group</option>
+              {groups.map((group) => (
+                <option key={group.id} value={group.id}>
+                  {group.name}
+                </option>
+              ))}
+            </NativeSelect>
+          </Field>
+          <FieldSet>
+            <FieldLegend variant="label">Colour</FieldLegend>
+            <div className="jv-groups-form__swatches">
+              <label className="jv-groups-form__swatch jv-groups-form__swatch--none">
                 <input
                   type="radio"
                   name={colorName}
                   className="sr-only"
-                  checked={color.toLowerCase() === preset.hex.toLowerCase()}
-                  onChange={() => setColor(preset.hex)}
+                  checked={!color}
+                  onChange={() => setColor("")}
                 />
-                <span className="sr-only">{preset.label}</span>
+                <span className="sr-only">No colour</span>
               </label>
-            ))}
-          </div>
-        </fieldset>
-        <fieldset className="jv-groups-form__group">
-          <legend>Icon</legend>
-          <div className="jv-groups-form__icons">
-            <label className="jv-groups-form__icon jv-groups-form__icon--none">
-              <input
-                type="radio"
-                name={iconName}
-                className="sr-only"
-                checked={!icon}
-                onChange={() => setIcon("")}
-              />
-              None
-            </label>
-            {JOURNAL_ICONS.map(({ key, label, Icon }) => (
-              <label
-                key={key}
-                className="jv-groups-form__icon"
-                style={color ? tint(color) : undefined}
-              >
+              {ENTITY_COLOR_PRESETS.map((preset) => (
+                <label
+                  key={preset.hex}
+                  className="jv-groups-form__swatch"
+                  style={tint(preset.hex)}
+                >
+                  <input
+                    type="radio"
+                    name={colorName}
+                    className="sr-only"
+                    checked={color.toLowerCase() === preset.hex.toLowerCase()}
+                    onChange={() => setColor(preset.hex)}
+                  />
+                  <span className="sr-only">{preset.label}</span>
+                </label>
+              ))}
+            </div>
+          </FieldSet>
+          <FieldSet>
+            <FieldLegend variant="label">Icon</FieldLegend>
+            <div className="jv-groups-form__icons">
+              <label className="jv-groups-form__icon jv-groups-form__icon--none">
                 <input
                   type="radio"
                   name={iconName}
                   className="sr-only"
-                  checked={icon === key}
-                  onChange={() => setIcon(key)}
+                  checked={!icon}
+                  onChange={() => setIcon("")}
                 />
-                <span className="sr-only">{label}</span>
-                <Icon size={17} aria-hidden="true" />
+                None
               </label>
-            ))}
-          </div>
-        </fieldset>
+              {JOURNAL_ICONS.map(({ key, label, Icon }) => (
+                <label
+                  key={key}
+                  className="jv-groups-form__icon"
+                  style={color ? tint(color) : undefined}
+                >
+                  <input
+                    type="radio"
+                    name={iconName}
+                    className="sr-only"
+                    checked={icon === key}
+                    onChange={() => setIcon(key)}
+                  />
+                  <span className="sr-only">{label}</span>
+                  <Icon size={17} aria-hidden="true" />
+                </label>
+              ))}
+            </div>
+          </FieldSet>
+        </FieldGroup>
         {failed && (
           <p className="jv-library__alert" role="alert">
             The activity could not be saved. Your changes are still here.
           </p>
         )}
-        <div className="jv-dialog__actions">
-          <DialogClose render={<Button>Cancel</Button>} />
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={!trimmed || !dirty || submitting}
-          >
-            {submitting ? "Saving…" : activity ? "Save" : "Add activity"}
-          </Button>
-        </div>
       </form>
-    </Dialog>
+    </AppAdaptiveDialog>
   );
 }

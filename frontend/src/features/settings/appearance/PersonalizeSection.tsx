@@ -1,6 +1,17 @@
-import { useEffect, useId, useState } from "react";
+import { type CSSProperties, useEffect, useId, useState } from "react";
 import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { NativeSelect } from "../../../components/ui/native-select";
 import { Textarea } from "../../../components/ui/textarea";
+import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "../../../components/ui/toggle-group";
+import {
+  ACCENT_PRESETS,
+  accentSwatch,
+  isAccentActive,
+} from "../../theme/accent";
 import { exportThemeCss } from "../../theme/exportThemeCss";
 import { FONT_OPTIONS } from "../../theme/fonts";
 import { parseThemeCss, ThemeParseError } from "../../theme/parseThemeCss";
@@ -8,31 +19,21 @@ import type { BundledFont } from "../../theme/types";
 import { usePersonalization } from "../../theme/usePersonalization";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 
-/** A small preset palette; the text input accepts any CSS colour. */
-const ACCENT_PRESETS = [
-  { label: "Journiv blue", value: "oklch(0.545 0.192 269)" },
-  { label: "Indigo", value: "oklch(0.51 0.23 277)" },
-  { label: "Violet", value: "oklch(0.54 0.24 293)" },
-  { label: "Teal", value: "oklch(0.6 0.13 195)" },
-  { label: "Green", value: "oklch(0.58 0.15 150)" },
-  { label: "Amber", value: "oklch(0.7 0.17 65)" },
-  { label: "Rose", value: "oklch(0.6 0.22 15)" },
-  { label: "Slate", value: "oklch(0.45 0.03 260)" },
-];
-
 const SIZE_STEPS = [0.92, 0.96, 1, 1.08, 1.18];
 
 export function PersonalizeSection() {
   const p = usePersonalization();
   const accentId = useId();
-  const [accentText, setAccentText] = useState(p.theme.light.primary ?? "");
+  const [accentText, setAccentText] = useState(p.theme.light.brand ?? "");
+  const [accentError, setAccentError] = useState<string | null>(null);
   const [importText, setImportText] = useState("");
   const [importNote, setImportNote] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
 
   useEffect(() => {
-    setAccentText(p.theme.light.primary ?? "");
-  }, [p.theme.light.primary]);
+    setAccentText(p.theme.light.brand ?? "");
+    setAccentError(null);
+  }, [p.theme.light.brand]);
 
   const currentScale = p.theme.editorFontScale ?? 1;
 
@@ -61,40 +62,62 @@ export function PersonalizeSection() {
       title="Personalize"
       intro="Colour, fonts and reading size for this device. Import a shadcn or tweakcn theme, or reset to the Journiv defaults."
     >
-      <SettingsRow label="Accent colour" htmlFor={accentId}>
+      <SettingsRow
+        label="Accent colour"
+        htmlFor={accentId}
+        description="Used for the brand button, the selection rail, the focus ring and links in prose. Light and dark get different lightnesses of the same hue so text on the accent stays readable in both."
+      >
         <div className="jv-personalize__swatches">
           {ACCENT_PRESETS.map((preset) => (
             <button
-              key={preset.value}
+              key={preset.label}
               type="button"
               className="jv-personalize__swatch"
-              style={{ background: preset.value }}
+              style={
+                { "--entity-accent": accentSwatch(preset) } as CSSProperties
+              }
               aria-label={preset.label}
-              aria-pressed={p.theme.light.primary === preset.value}
+              aria-pressed={isAccentActive(p.theme, preset)}
               onClick={() => {
-                setAccentText(preset.value);
-                p.setAccent(preset.value);
+                setAccentError(null);
+                setAccentText(preset.light.brand ?? "");
+                p.setAccentPair(preset);
               }}
             />
           ))}
         </div>
-        <input
+        <Input
           id={accentId}
-          className="jv-field"
           placeholder="oklch(0.55 0.19 269) or #4a5bd6"
           value={accentText}
+          aria-invalid={accentError != null}
           onChange={(event) => setAccentText(event.target.value)}
           onBlur={() => {
-            const v = accentText.trim();
-            if (v) p.setAccent(v);
+            const value = accentText.trim();
+            if (!value) {
+              setAccentError("Enter an accent colour.");
+              return;
+            }
+            // A colour we cannot measure is refused rather than applied: this
+            // one token is a link colour and a focus ring, so an unreadable
+            // value is a real accessibility failure, not a taste question.
+            setAccentError(
+              p.setAccent(value)
+                ? null
+                : "Use an oklch() colour, an rgb() colour or a hex value like #4a5bd6.",
+            );
           }}
         />
+        {accentError && (
+          <p className="jv-settings__alert" role="alert">
+            {accentError}
+          </p>
+        )}
       </SettingsRow>
 
       <SettingsRow label="System font" htmlFor="personalize-system-font">
-        <select
+        <NativeSelect
           id="personalize-system-font"
-          className="jv-field"
           value={p.theme.systemFont ?? "dm-sans"}
           onChange={(event) =>
             p.setSystemFont(event.target.value as BundledFont)
@@ -105,7 +128,7 @@ export function PersonalizeSection() {
               {font.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </SettingsRow>
 
       <SettingsRow
@@ -113,9 +136,8 @@ export function PersonalizeSection() {
         htmlFor="personalize-editor-font"
         description="Used in the reader and editor. May differ from the system font."
       >
-        <select
+        <NativeSelect
           id="personalize-editor-font"
-          className="jv-field"
           value={p.theme.editorFont ?? "dm-sans"}
           onChange={(event) =>
             p.setEditorFont(event.target.value as BundledFont)
@@ -126,26 +148,31 @@ export function PersonalizeSection() {
               {font.label}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </SettingsRow>
 
       <SettingsRow
         label="Text size"
         description="Reader and editor prose only."
       >
-        <div className="jv-personalize__steps">
+        <ToggleGroup
+          spacing={0}
+          variant="outline"
+          size="sm"
+          aria-label="Text size"
+          value={SIZE_STEPS.filter(
+            (scale) => Math.abs(currentScale - scale) < 0.001,
+          ).map(String)}
+          onValueChange={([next]) => {
+            if (next) p.setEditorFontScale(Number(next));
+          }}
+        >
           {SIZE_STEPS.map((scale) => (
-            <button
-              key={scale}
-              type="button"
-              className="jv-personalize__step"
-              aria-pressed={Math.abs(currentScale - scale) < 0.001}
-              onClick={() => p.setEditorFontScale(scale)}
-            >
+            <ToggleGroupItem key={scale} value={String(scale)}>
               {Math.round(scale * 100)}%
-            </button>
+            </ToggleGroupItem>
           ))}
-        </div>
+        </ToggleGroup>
       </SettingsRow>
 
       <SettingsRow

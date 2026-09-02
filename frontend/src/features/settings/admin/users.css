@@ -1,30 +1,6 @@
 /* Administration → Users. A calm, responsive directory inside the existing
    Settings scroll owner; the page does not add a nested scroll region. */
 
-.jv-users,
-.jv-users-form {
-  max-width: 46rem;
-}
-
-.jv-users__heading,
-.jv-users-form__heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-6);
-  margin-bottom: var(--space-6);
-}
-
-.jv-users__heading .jv-settings-section__intro,
-.jv-users-form__heading p {
-  margin: var(--space-1) 0 0;
-  color: var(--muted-foreground);
-}
-
-.jv-users__heading [data-slot="button"] {
-  flex: 0 0 auto;
-}
-
 .jv-users__toolbar {
   display: flex;
   align-items: center;
@@ -46,10 +22,19 @@
   margin-bottom: var(--space-4);
 }
 
-/* Keep the shadcn container's horizontal scroll as a safety net on very
-   narrow viewports where a long name or provider still overflows. */
+/* The table's column budget is decided by the box the table actually sits in,
+   not by the viewport (DESIGN.md §9). Inside the settings modal that box is
+   roughly 730px at *every* desktop width — 1050px of modal, less the 220px
+   nav, the scroll padding and the card's own `--card-spacing` — so a viewport
+   query at 1440 happily laid six columns into it and let the last two run off
+   the end. Worse, the scroll below is an overlay scrollbar on macOS, so the
+   overflow read as a clip rather than as something scrollable.
+
+   This is the shadcn table container, which is exactly the width the table has
+   to fit, so the queries below measure the right thing. Its `overflow-x: auto`
+   stays as a last-resort safety net for a very long name; it is not the plan. */
 .jv-users [data-slot="table-container"] {
-  overflow-x: auto;
+  container: jv-users-table / inline-size;
 }
 
 .jv-users-table [data-slot="table-row"] {
@@ -92,17 +77,29 @@
 }
 
 .jv-users__email,
-.jv-users__providers,
+.jv-users__auth,
+.jv-users__last-fallback,
 .jv-users__created {
   color: var(--muted-foreground);
 }
 
 .jv-users__email,
-.jv-users__providers {
-  max-width: 17rem;
+.jv-users__auth,
+.jv-users__last-fallback {
+  max-width: 15rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.jv-users__providers {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The Last active column's content, shown only where that column is dropped. */
+.jv-users__last-fallback {
+  display: none;
 }
 
 .jv-users-table__actions {
@@ -151,54 +148,29 @@
   gap: var(--space-2);
 }
 
-.jv-users-form__fields {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  max-width: 24rem;
-}
-
 .jv-users-form__select {
   width: 100%;
 }
 
-.jv-users-form__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--space-3);
-}
-
-@media (max-width: 860px) {
-  .jv-users-table__auth,
+/* Inside the settings modal this container is about 730px wide above 1101px
+   (1050px of modal less the 220px nav, the scroll padding and the card's own
+   `--card-spacing`) and about 930px below it, where the modal goes full-bleed
+   and the nav collapses. Measured, not estimated. Five columns fit both; the
+   sixth — Authentication — wanted ~950px, which is why it now lives inside the
+   User cell instead of having a column (UsersPage.tsx). What is left drops in
+   priority order, and Last active reappears as a caption under the name so no
+   fact leaves the screen. */
+@container jv-users-table (max-width: 620px) {
   .jv-users-table__last {
     display: none;
   }
+
+  .jv-users__last-fallback {
+    display: block;
+  }
 }
 
-@media (max-width: 620px) {
-  .jv-users__heading {
-    align-items: stretch;
-    flex-direction: column;
-    gap: var(--space-4);
-  }
-
-  .jv-users__heading [data-slot="button"] {
-    align-self: flex-start;
-  }
-
-  .jv-users__toolbar {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .jv-users__toolbar [data-slot="input"] {
-    min-width: 0;
-  }
-
-  .jv-users__count {
-    margin-left: 0;
-  }
-
+@container jv-users-table (max-width: 470px) {
   .jv-users-table__role {
     display: none;
   }
@@ -215,7 +187,22 @@
     padding-inline: 0;
   }
 
-  .jv-users__email {
+  .jv-users__email,
+  .jv-users__auth,
+  .jv-users__last-fallback {
     max-width: 9rem;
+  }
+}
+
+/* The toolbar is not in the table container, so its own reflow is still the
+   card's width. */
+@container jv-settings-body (max-width: 560px) {
+  .jv-users__toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .jv-users__count {
+    margin-left: 0;
   }
 }

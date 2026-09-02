@@ -3,7 +3,7 @@
   place-items: center;
   min-height: 100vh;
   padding: var(--space-6);
-  background: var(--sidebar);
+  background: var(--muted);
 }
 
 @supports (height: 100dvh) {
@@ -12,18 +12,14 @@
   }
 }
 
+/* A stock `Card`; only its measure is Journiv's. */
 .jv-auth__card {
   width: 100%;
   max-width: 22rem;
-  padding: var(--space-8);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow-overlay);
 }
 
 .jv-auth__brand {
-  margin: 0 0 var(--space-6);
+  margin: 0;
   font-size: 0.875rem;
   font-weight: 680;
   letter-spacing: -0.02em;
@@ -31,7 +27,7 @@
 }
 
 .jv-auth__lede {
-  margin: var(--space-2) 0 var(--space-6);
+  margin: 0;
   color: var(--muted-foreground);
   font-size: 0.875rem;
 }
@@ -77,7 +73,7 @@
 }
 
 .jv-auth__alternate a:hover {
-  color: var(--primary);
+  color: var(--brand);
 }
 
 @media (max-width: 860px) {

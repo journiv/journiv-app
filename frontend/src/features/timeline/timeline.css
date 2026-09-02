@@ -91,18 +91,18 @@
   gap: var(--space-3);
   width: 100%;
   padding: var(--space-3);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: inherit;
   text-decoration: none;
   transition: background-color var(--duration-fast) var(--ease);
 }
 
 .jv-moment:hover {
-  background: var(--state-hover);
+  background: var(--muted);
 }
 
 .jv-moment.is-selected {
-  background: var(--state-selected);
+  background: var(--accent);
 }
 
 .jv-moment.is-selected::before {
@@ -113,7 +113,7 @@
   bottom: var(--space-2);
   width: 3px;
   border-radius: 0 2px 2px 0;
-  background: var(--state-selected-rail);
+  background: var(--brand);
 }
 
 .jv-moment__body {
@@ -156,7 +156,7 @@
   flex: 0 0 auto;
   width: 68px;
   height: 68px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--muted);
 }
@@ -172,7 +172,7 @@
   right: 4px;
   bottom: 4px;
   padding: 0 5px;
-  border-radius: var(--radius-xs);
+  border-radius: var(--radius-sm);
   background: var(--overlay-scrim);
   color: var(--text-on-overlay);
   font-size: 0.6875rem;

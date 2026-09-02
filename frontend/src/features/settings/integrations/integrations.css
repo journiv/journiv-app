@@ -1,44 +1,6 @@
-/* Immich integration form — the import-mode radio group and its notices. */
-
-.jv-immich-mode {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.jv-immich-mode__option {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: var(--space-2);
-  align-items: start;
-  cursor: pointer;
-}
-
-.jv-immich-mode__option input[type="radio"] {
-  width: 18px;
-  height: 18px;
-  margin-top: var(--space-1);
-  accent-color: var(--primary);
-  cursor: pointer;
-}
-
-.jv-immich-mode__text {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.jv-immich-mode__label {
-  color: var(--foreground);
-  font-weight: 500;
-}
-
-.jv-immich-mode__description {
-  margin: 0;
-}
+/* Immich integration form. The import-mode choice is the registry
+   `RadioGroup` + `FieldSet`; the skin that used to live here (a sized native
+   radio with `accent-color`) is gone — see DESIGN.md §18. */
 
 .jv-immich-mode__album-error {
   margin-top: var(--space-2);
@@ -99,12 +61,12 @@
 }
 
 .jv-integrations-row__guide:hover {
-  background: var(--state-hover);
+  background: var(--muted);
   color: var(--foreground);
 }
 
 /* The "more coming" row is informational — no hover affordance, quieter text. */
-.jv-integrations-row--soon .jv-lib-row__title {
+.jv-integrations-row--soon [data-slot="item-title"] {
   color: var(--muted-foreground);
   font-weight: 500;
 }
@@ -114,8 +76,11 @@
 }
 
 /* Narrow: let the status pill + info control drop onto their own line below the
-   name rather than crushing the title. Covers both row variants — the grid
-   (unlinked provider) and the flex `--link` (linked provider). 620px matches
+   name rather than crushing the title. The wrapped line is indented to the
+   row's text column — `Item size="sm"` inline padding, the 32px tile and the
+   item gap — so it still reads as part of that provider's row rather than as a
+   loose control under the card. Covers both row variants: the grid (unlinked
+   provider) and the flex `--link` (linked provider). 620px matches
    settings.css's row-layout switch. */
 @media (max-width: 620px) {
   .jv-integrations-row.jv-lib-row {
@@ -124,6 +89,7 @@
   }
   .jv-integrations-row.jv-lib-row--link {
     flex-wrap: wrap;
+    padding-bottom: var(--space-2);
   }
   .jv-integrations-row.jv-lib-row--link .jv-lib-row__hit {
     flex: 1 1 100%;
@@ -131,6 +97,7 @@
   .jv-integrations-list .jv-lib-row__actions {
     grid-column: 1 / -1;
     justify-content: flex-start;
+    padding-left: calc(var(--space-3) + var(--space-8) + var(--space-2));
   }
 }
 
@@ -149,7 +116,7 @@
 }
 
 .jv-status-pill__dot--ok {
-  background: var(--primary);
+  background: var(--success);
 }
 
 .jv-status-pill__dot--warn {

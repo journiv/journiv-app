@@ -17,6 +17,7 @@ import {
   DrawerTrigger,
 } from "../ui/drawer";
 import { IconButton } from "../ui/icon-button";
+import { Item, ItemContent, ItemMedia } from "../ui/item";
 import { cx } from "../../lib/cx";
 import { useCompactViewport } from "../../lib/useCompactViewport";
 
@@ -113,51 +114,62 @@ export function AppAdaptiveMenu({
               );
               const content = (
                 <>
-                  {Icon && <Icon aria-hidden="true" size={17} />}
-                  {action.label}
+                  {Icon && (
+                    <ItemMedia>
+                      <Icon aria-hidden="true" />
+                    </ItemMedia>
+                  )}
+                  <ItemContent>{action.label}</ItemContent>
                 </>
               );
 
               if (action.kind === "link" && !action.disabled) {
                 return (
-                  <Link
+                  <Item
                     key={action.id}
-                    {...action.link}
+                    size="sm"
                     className={className}
-                    onClick={() => setOpen(false)}
+                    render={
+                      <Link {...action.link} onClick={() => setOpen(false)} />
+                    }
                   >
                     {content}
-                  </Link>
+                  </Item>
                 );
               }
               if (action.kind === "link") {
                 // Disabled: render the row inert rather than as a live link.
                 return (
-                  <button
+                  <Item
                     key={action.id}
-                    type="button"
+                    size="sm"
                     className={className}
-                    disabled
+                    render={<button type="button" disabled />}
                   >
                     {content}
-                  </button>
+                  </Item>
                 );
               }
               return (
-                <button
+                <Item
                   key={action.id}
-                  type="button"
+                  size="sm"
                   className={className}
-                  disabled={action.disabled}
-                  onClick={() => {
-                    // Close first: most of these open a confirmation, and the
-                    // sheet must be on its way out before that mounts.
-                    setOpen(false);
-                    action.onSelect();
-                  }}
+                  render={
+                    <button
+                      type="button"
+                      disabled={action.disabled}
+                      onClick={() => {
+                        // Close first: most of these open a confirmation, and
+                        // the sheet must be on its way out before that mounts.
+                        setOpen(false);
+                        action.onSelect();
+                      }}
+                    />
+                  }
                 >
                   {content}
-                </button>
+                </Item>
               );
             })}
           </div>

@@ -60,7 +60,11 @@ function ImmichIntegrationDetail() {
         <StatusView
           title="Integrations couldn’t be loaded"
           description="Instance capabilities are unavailable."
-          action={<Button onClick={() => config.refetch()}>Try again</Button>}
+          action={
+            <Button variant="secondary" onClick={() => config.refetch()}>
+              Try again
+            </Button>
+          }
         />
       </>
     );
@@ -72,7 +76,11 @@ function ImmichIntegrationDetail() {
         <StatusView
           title="Integration status couldn’t be loaded"
           description="Check your connection and try again."
-          action={<Button onClick={() => status.refetch()}>Try again</Button>}
+          action={
+            <Button variant="secondary" onClick={() => status.refetch()}>
+              Try again
+            </Button>
+          }
         />
       </>
     );

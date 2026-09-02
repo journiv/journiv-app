@@ -18,14 +18,14 @@ import type {
 } from "../../../api/generated/types.gen";
 import { queryKeys } from "../../../api/query/keys";
 import { adminUsersQuery, currentUserQuery } from "../../../api/query/options";
-import { StatusView } from "../../../components/journiv/StatusView";
-import { Alert, AlertDescription } from "../../../components/ui/alert";
-import { Badge } from "../../../components/ui/badge";
-import { Button } from "../../../components/ui/button";
 import {
   AppAdaptiveMenu,
   type AppMenuAction,
 } from "../../../components/journiv/AppAdaptiveMenu";
+import { StatusView } from "../../../components/journiv/StatusView";
+import { Alert, AlertDescription } from "../../../components/ui/alert";
+import { Badge } from "../../../components/ui/badge";
+import { Button } from "../../../components/ui/button";
 import {
   Empty,
   EmptyContent,
@@ -46,6 +46,7 @@ import {
   TableRow,
 } from "../../../components/ui/table";
 import { useSettingsDirty } from "../SettingsModal";
+import { SettingsSection } from "../SettingsSection";
 import { DeleteUserDialog } from "./DeleteUserDialog";
 import { UserForm, type UserFormValues } from "./UserForm";
 import "./users.css";
@@ -276,287 +277,302 @@ export function UsersPage() {
     );
 
   return (
-    <section className="jv-users" aria-labelledby="users-title">
-      <div className="jv-users__heading">
-        <div>
-          <h3
-            id="users-title"
-            className="jv-settings-section__title jv-section-title"
+    // `jv-users` is the query container for the table's column budget, and the
+    // wide measure is because this is a data table rather than a form
+    // (DESIGN.md §9, §23).
+    <div className="jv-settings__body jv-settings__body--wide jv-users">
+      <SettingsSection
+        title="Users"
+        titleId="users-title"
+        intro="Create accounts and manage access to this Journiv instance."
+        action={
+          <Button
+            type="button"
+            variant="default"
+            onClick={() => {
+              setFormFailure(undefined);
+              setEditor({ kind: "create" });
+            }}
           >
-            Users
-          </h3>
-          <p className="jv-settings-section__intro jv-body">
-            Create accounts and manage access to this Journiv instance.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="primary"
-          onClick={() => {
-            setFormFailure(undefined);
-            setEditor({ kind: "create" });
-          }}
-        >
-          <UserPlus data-icon="inline-start" />
-          Add user
-        </Button>
-      </div>
+            <UserPlus data-icon="inline-start" />
+            Add user
+          </Button>
+        }
+      >
+        {usersQuery.isLoading ? (
+          <UsersSkeleton />
+        ) : usersQuery.isError ? (
+          <StatusView
+            tone="danger"
+            role="alert"
+            title="We couldn’t load users"
+            description="Something went wrong reaching the server."
+            action={
+              <Button
+                variant="secondary"
+                onClick={() => void usersQuery.refetch()}
+              >
+                Try again
+              </Button>
+            }
+          />
+        ) : (
+          <>
+            <div className="jv-users__toolbar">
+              <SearchInput
+                label="Search users"
+                placeholder="Search by name, email, role or provider…"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(0);
+                }}
+                onClear={() => {
+                  setSearch("");
+                  setPage(0);
+                }}
+              />
+              <p className="jv-users__count jv-meta">
+                {filtered.length}{" "}
+                {filtered.length === 1 ? "account" : "accounts"}
+              </p>
+            </div>
 
-      {usersQuery.isLoading ? (
-        <UsersSkeleton />
-      ) : usersQuery.isError ? (
-        <StatusView
-          tone="danger"
-          role="alert"
-          title="We couldn’t load users"
-          description="Something went wrong reaching the server."
-          action={
-            <Button
-              variant="secondary"
-              onClick={() => void usersQuery.refetch()}
-            >
-              Try again
-            </Button>
-          }
-        />
-      ) : (
-        <>
-          <div className="jv-users__toolbar">
-            <SearchInput
-              label="Search users"
-              placeholder="Search by name, email, role or provider…"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(0);
-              }}
-              onClear={() => {
-                setSearch("");
-                setPage(0);
-              }}
-            />
-            <p className="jv-users__count jv-meta">
-              {filtered.length} {filtered.length === 1 ? "account" : "accounts"}
-            </p>
-          </div>
+            {actionFailure && (
+              <Alert variant="destructive">
+                <AlertDescription>{actionFailure}</AlertDescription>
+              </Alert>
+            )}
 
-          {actionFailure && (
-            <Alert variant="destructive">
-              <AlertDescription>{actionFailure}</AlertDescription>
-            </Alert>
-          )}
-
-          {visibleUsers.length ? (
-            <>
-              <Table className="jv-users-table">
-                <TableCaption className="sr-only">
-                  Accounts with their role, status, authentication and last
-                  activity
-                </TableCaption>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead className="jv-users-table__role">Role</TableHead>
-                    <TableHead className="jv-users-table__status">
-                      Status
-                    </TableHead>
-                    <TableHead className="jv-users-table__auth">
-                      Authentication
-                    </TableHead>
-                    <TableHead className="jv-users-table__last">
-                      Last active
-                    </TableHead>
-                    <TableHead className="jv-users-table__actions">
-                      <span className="sr-only">Actions</span>
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {visibleUsers.map((user) => {
-                    const isCurrent = user.id === currentUser.data?.id;
-                    const isLastActiveAdmin =
-                      user.role === "admin" &&
-                      user.is_active &&
-                      activeAdminCount <= 1;
-                    return (
-                      <TableRow key={user.id}>
-                        <TableCell className="jv-users-table__user">
-                          <span className="jv-users-table__user-content">
-                            <span
-                              className="jv-users__avatar jv-caption"
-                              aria-hidden="true"
-                            >
-                              {initials(user.name, user.email)}
-                            </span>
-                            <span className="jv-users__identity">
-                              <span className="jv-users__name">
-                                {user.name}
-                                {isCurrent && (
-                                  <Badge variant="ghost">You</Badge>
-                                )}
-                              </span>
-                              <span className="jv-users__email">
-                                {user.email}
-                              </span>
-                            </span>
-                          </span>
-                        </TableCell>
-                        <TableCell className="jv-users-table__role">
-                          <Badge
-                            variant={
-                              user.role === "admin" ? "outline" : "secondary"
-                            }
-                          >
-                            {user.role === "admin" ? "Administrator" : "User"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="jv-users-table__status">
-                          <Badge
-                            variant={user.is_active ? "secondary" : "outline"}
-                          >
-                            {user.is_active ? "Active" : "Inactive"}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="jv-users-table__auth">
-                          <span className="jv-users-table__cell-stack">
-                            <span>{authLabel(user)}</span>
-                            {user.linked_providers?.length ? (
+            {visibleUsers.length ? (
+              <>
+                <Table className="jv-users-table">
+                  <TableCaption className="sr-only">
+                    Accounts with their role, status and last activity; each row
+                    also carries the account's email and sign-in method
+                  </TableCaption>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>User</TableHead>
+                      <TableHead className="jv-users-table__role">
+                        Role
+                      </TableHead>
+                      <TableHead className="jv-users-table__status">
+                        Status
+                      </TableHead>
+                      <TableHead className="jv-users-table__last">
+                        Last active
+                      </TableHead>
+                      <TableHead className="jv-users-table__actions">
+                        <span className="sr-only">Actions</span>
+                      </TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {visibleUsers.map((user) => {
+                      const isCurrent = user.id === currentUser.data?.id;
+                      const isLastActiveAdmin =
+                        user.role === "admin" &&
+                        user.is_active &&
+                        activeAdminCount <= 1;
+                      return (
+                        <TableRow key={user.id}>
+                          <TableCell className="jv-users-table__user">
+                            <span className="jv-users-table__user-content">
                               <span
-                                className="jv-users__providers jv-caption"
-                                title={user.linked_providers.join(", ")}
+                                className="jv-users__avatar jv-caption"
+                                aria-hidden="true"
                               >
-                                {user.linked_providers
-                                  .map(providerLabel)
-                                  .join(", ")}
+                                {initials(user.name, user.email)}
                               </span>
-                            ) : null}
-                          </span>
-                        </TableCell>
-                        <TableCell className="jv-users-table__last">
-                          <span className="jv-users-table__cell-stack">
-                            {user.last_login_at ? (
-                              <time dateTime={user.last_login_at}>
-                                {accountDate(user.last_login_at)}
-                              </time>
-                            ) : (
-                              <span>Never</span>
-                            )}
-                            <span className="jv-users__created jv-caption">
-                              Created {accountDate(user.created_at)}
+                              <span className="jv-users__identity">
+                                <span className="jv-users__name">
+                                  {user.name}
+                                  {isCurrent && (
+                                    <Badge variant="ghost">You</Badge>
+                                  )}
+                                </span>
+                                <span className="jv-users__email">
+                                  {user.email}
+                                </span>
+                                {/* Authentication lives here rather than in a
+                                    column of its own: the settings modal never
+                                    gives this table more than about 1000px, and
+                                    six columns want ~950px of that, so the
+                                    column could only ever have existed in a
+                                    sliver of widths (users.css). */}
+                                <span className="jv-users__auth jv-caption">
+                                  {authLabel(user)}
+                                  {user.linked_providers?.length ? (
+                                    <>
+                                      {" · "}
+                                      <span
+                                        className="jv-users__providers"
+                                        title={user.linked_providers.join(", ")}
+                                      >
+                                        {user.linked_providers
+                                          .map(providerLabel)
+                                          .join(", ")}
+                                      </span>
+                                    </>
+                                  ) : null}
+                                </span>
+                                {/* The Last active column's content, shown only
+                                    at the widths where that column is dropped.
+                                    `display: none` keeps the duplicate out of
+                                    the accessibility tree. */}
+                                <span className="jv-users__last-fallback jv-caption">
+                                  {user.last_login_at
+                                    ? `Last active ${accountDate(user.last_login_at)}`
+                                    : "Never signed in"}
+                                </span>
+                              </span>
                             </span>
-                          </span>
-                        </TableCell>
-                        <TableCell className="jv-users-table__actions">
-                          <AppAdaptiveMenu
-                            label={`${user.name} actions`}
-                            align="end"
-                            actions={[
-                              {
-                                kind: "command",
-                                id: "edit",
-                                label: "Edit",
-                                icon: Pencil,
-                                onSelect: () => {
-                                  setFormFailure(undefined);
-                                  setEditor({ kind: "edit", user });
+                          </TableCell>
+                          <TableCell className="jv-users-table__role">
+                            <Badge
+                              variant={
+                                user.role === "admin" ? "outline" : "secondary"
+                              }
+                            >
+                              {user.role === "admin" ? "Administrator" : "User"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="jv-users-table__status">
+                            <Badge
+                              variant={user.is_active ? "secondary" : "outline"}
+                            >
+                              {user.is_active ? "Active" : "Inactive"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="jv-users-table__last">
+                            <span className="jv-users-table__cell-stack">
+                              {user.last_login_at ? (
+                                <time dateTime={user.last_login_at}>
+                                  {accountDate(user.last_login_at)}
+                                </time>
+                              ) : (
+                                <span>Never</span>
+                              )}
+                              <span className="jv-users__created jv-caption">
+                                Created {accountDate(user.created_at)}
+                              </span>
+                            </span>
+                          </TableCell>
+                          <TableCell className="jv-users-table__actions">
+                            <AppAdaptiveMenu
+                              label={`${user.name} actions`}
+                              align="end"
+                              actions={[
+                                {
+                                  kind: "command",
+                                  id: "edit",
+                                  label: "Edit",
+                                  icon: Pencil,
+                                  onSelect: () => {
+                                    setFormFailure(undefined);
+                                    setEditor({ kind: "edit", user });
+                                  },
                                 },
-                              },
-                              // Your own account cannot be deactivated or
-                              // deleted from this row.
-                              ...(isCurrent
-                                ? []
-                                : ([
-                                    {
-                                      kind: "command",
-                                      id: "active",
-                                      label: user.is_active
-                                        ? "Deactivate"
-                                        : "Activate",
-                                      icon: user.is_active ? UserX : UserCheck,
-                                      disabled:
-                                        statusUserId === user.id ||
-                                        isLastActiveAdmin,
-                                      onSelect: () => void setActive(user),
-                                    },
-                                    {
-                                      kind: "command",
-                                      id: "delete",
-                                      label: "Delete",
-                                      icon: Trash2,
-                                      destructive: true,
-                                      separatorBefore: true,
-                                      disabled: isLastActiveAdmin,
-                                      onSelect: () => {
-                                        setDeleteFailure(undefined);
-                                        setDeleteTarget(user);
+                                // Your own account cannot be deactivated or
+                                // deleted from this row.
+                                ...(isCurrent
+                                  ? []
+                                  : ([
+                                      {
+                                        kind: "command",
+                                        id: "active",
+                                        label: user.is_active
+                                          ? "Deactivate"
+                                          : "Activate",
+                                        icon: user.is_active
+                                          ? UserX
+                                          : UserCheck,
+                                        disabled:
+                                          statusUserId === user.id ||
+                                          isLastActiveAdmin,
+                                        onSelect: () => void setActive(user),
                                       },
-                                    },
-                                  ] satisfies AppMenuAction[])),
-                            ]}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                                      {
+                                        kind: "command",
+                                        id: "delete",
+                                        label: "Delete",
+                                        icon: Trash2,
+                                        destructive: true,
+                                        separatorBefore: true,
+                                        disabled: isLastActiveAdmin,
+                                        onSelect: () => {
+                                          setDeleteFailure(undefined);
+                                          setDeleteTarget(user);
+                                        },
+                                      },
+                                    ] satisfies AppMenuAction[])),
+                              ]}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
 
-              {filtered.length > PAGE_SIZE && (
-                <div className="jv-users__pagination">
-                  <p className="jv-meta">
-                    {safePage * PAGE_SIZE + 1}–
-                    {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
-                    {filtered.length}
-                  </p>
-                  <div>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={safePage === 0}
-                      onClick={() =>
-                        setPage((current) => Math.max(0, current - 1))
-                      }
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={safePage + 1 >= pageCount}
-                      onClick={() => setPage((current) => current + 1)}
-                    >
-                      Next
-                    </Button>
+                {filtered.length > PAGE_SIZE && (
+                  <div className="jv-users__pagination">
+                    <p className="jv-meta">
+                      {safePage * PAGE_SIZE + 1}–
+                      {Math.min((safePage + 1) * PAGE_SIZE, filtered.length)} of{" "}
+                      {filtered.length}
+                    </p>
+                    <div>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={safePage === 0}
+                        onClick={() =>
+                          setPage((current) => Math.max(0, current - 1))
+                        }
+                      >
+                        Previous
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={safePage + 1 >= pageCount}
+                        onClick={() => setPage((current) => current + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <UsersRound aria-hidden="true" />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {search ? "No matching users" : "No users"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {search
-                    ? "Try another name, email, role or provider."
-                    : "Create the first account for this instance."}
-                </EmptyDescription>
-              </EmptyHeader>
-              {search && (
-                <EmptyContent>
-                  <Button variant="secondary" onClick={() => setSearch("")}>
-                    Clear search
-                  </Button>
-                </EmptyContent>
-              )}
-            </Empty>
-          )}
-        </>
-      )}
+                )}
+              </>
+            ) : (
+              <Empty>
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <UsersRound aria-hidden="true" />
+                  </EmptyMedia>
+                  <EmptyTitle>
+                    {search ? "No matching users" : "No users"}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {search
+                      ? "Try another name, email, role or provider."
+                      : "Create the first account for this instance."}
+                  </EmptyDescription>
+                </EmptyHeader>
+                {search && (
+                  <EmptyContent>
+                    <Button variant="secondary" onClick={() => setSearch("")}>
+                      Clear search
+                    </Button>
+                  </EmptyContent>
+                )}
+              </Empty>
+            )}
+          </>
+        )}
+      </SettingsSection>
 
       {deleteTarget && (
         <DeleteUserDialog
@@ -570,6 +586,6 @@ export function UsersPage() {
           onConfirm={deleteUser}
         />
       )}
-    </section>
+    </div>
   );
 }

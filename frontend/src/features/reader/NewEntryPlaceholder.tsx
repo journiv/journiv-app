@@ -34,7 +34,7 @@ export function NewEntryPlaceholder() {
   return (
     <div className="selected-view">
       <div className="reader-copy">
-        <Button className="back-button" onClick={cancel}>
+        <Button variant="secondary" className="back-button" onClick={cancel}>
           <ArrowLeft aria-hidden="true" size={17} />
           Cancel
         </Button>

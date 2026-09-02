@@ -272,7 +272,7 @@ export function ImmichPeopleImportDialog({
                 Retry failed
               </Button>
             )}
-            <Button variant="primary" onClick={close}>
+            <Button variant="default" onClick={close}>
               Done
             </Button>
           </>
@@ -327,7 +327,7 @@ export function ImmichPeopleImportDialog({
             Cancel
           </Button>
           <Button
-            variant="primary"
+            variant="default"
             disabled={readyItems.length === 0 || incompleteCount > 0}
             onClick={() => startImport()}
           >
@@ -365,7 +365,12 @@ export function ImmichPeopleImportDialog({
               title={listError(peopleList.error).title}
               description={listError(peopleList.error).description}
               action={
-                <Button onClick={() => peopleList.refetch()}>Try again</Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => peopleList.refetch()}
+                >
+                  Try again
+                </Button>
               }
             />
           ) : peopleList.isLoading ? (

@@ -57,21 +57,61 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Radius scale: literal tokens from tokens.css (DESIGN.md §3), aliased here
-     so Tailwind's `rounded-*` utilities resolve to them. Never calc(). There
-     is no `--radius-xl` step — a component that needs the largest radius
-     uses `rounded-lg`. */
-  --radius-xs: var(--radius-xs);
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
+  /* Journiv's brand accent (DESIGN.md §3). Not a stock shadcn role — it exists
+     so the four sanctioned blue moments can be expressed as `bg-brand` /
+     `text-brand-foreground` rather than an arbitrary value. */
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+
+  /* Base Vega's derived radius scale, rooted at Minimal Neutral's
+     `--radius: 1rem` (tokens.css). calc() is how this scale is built — the
+     named steps must stay in fixed proportion, or upstream's `rounded-md`
+     button and `rounded-xl` dialog stop meaning what the registry intends. */
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Minimal Neutral's elevation scale. This is a plain `@theme` block, not
+   `@theme inline`, and not tokens.css: the utility namespace and the custom
+   property share the name `--shadow-*`, so bridging them the way the
+   `--color-*` map does would emit a self-referential
+   `--shadow-xs: var(--shadow-xs)`. Declaring the literals here lets Tailwind
+   own them, emit them to `:root`, and still resolve `var(--shadow-*)` in
+   scoped CSS. The user-theme `<style>` layer is appended to <head> after this
+   bundle, so an imported theme still overrides them.
+
+   DESIGN.md §5 says which step each role uses: `xs` resting controls, `sm`
+   grouped/detached surfaces, `md` popovers and menus, `lg` dialogs and
+   drawers. Minimal Neutral uses one shadow colour and opacity in both themes;
+   in dark, `--border` does the work of separating surfaces. */
+@theme {
+  --shadow-2xs: 0 1px 3px 0 oklch(0 0 0 / 0.05);
+  --shadow-xs: 0 1px 3px 0 oklch(0 0 0 / 0.05);
+  --shadow-sm:
+    0 1px 3px 0 oklch(0 0 0 / 0.1), 0 1px 2px -1px oklch(0 0 0 / 0.1);
+  --shadow-md:
+    0 1px 3px 0 oklch(0 0 0 / 0.1), 0 2px 4px -1px oklch(0 0 0 / 0.1);
+  --shadow-lg:
+    0 1px 3px 0 oklch(0 0 0 / 0.1), 0 4px 6px -1px oklch(0 0 0 / 0.1);
+  --shadow-xl:
+    0 1px 3px 0 oklch(0 0 0 / 0.1), 0 8px 10px -1px oklch(0 0 0 / 0.1);
 }
 
 @layer base {
   * {
     @apply border-border outline-ring/50;
   }
+  /* The one deviation from base-vega's own reset, and it is the canvas
+     decision itself: `body` is the application ground the panes lift off, not
+     a page surface. `--muted` is what the Minimal Neutral reference sits on,
+     and the only MN token that reads as a real canvas tint in light mode.
+     Every surface that is a page paints its own background (DESIGN.md §5). */
   body {
-    @apply bg-background text-foreground;
+    @apply bg-muted text-foreground;
   }
 }

@@ -1,5 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { PersonSummaryResponse } from "../../api/generated/types.gen";
+import { Avatar, AvatarFallback, AvatarImage } from "../ui/avatar";
+import { Badge } from "../ui/badge";
 
 /** People and tags are deliberately different objects. A person has a face and
  *  a name; a tag is a word. Never render them with the same chip.
@@ -16,34 +18,27 @@ export function PersonChip({
   const initial = (person.name || "?").trim().charAt(0).toUpperCase();
   const inner = (
     <>
-      {person.profile_image_url ? (
-        <img
-          className="jv-person__avatar"
-          src={person.profile_image_url}
-          alt=""
-          loading="lazy"
-        />
-      ) : (
-        <span
-          className="jv-person__avatar jv-person__avatar--initial"
-          aria-hidden="true"
-        >
-          {initial}
-        </span>
-      )}
+      <Avatar className="jv-person__avatar" aria-hidden="true">
+        {person.profile_image_url && (
+          <AvatarImage src={person.profile_image_url} alt="" loading="lazy" />
+        )}
+        <AvatarFallback>{initial}</AvatarFallback>
+      </Avatar>
       <span className="jv-truncate">{person.name}</span>
     </>
   );
   return to ? (
-    <Link
+    <Badge
+      variant="outline"
       className="jv-person jv-person--link"
-      to="/timeline"
-      search={{ q: "", ...to }}
+      render={<Link to="/timeline" search={{ q: "", ...to }} />}
     >
       {inner}
-    </Link>
+    </Badge>
   ) : (
-    <span className="jv-person">{inner}</span>
+    <Badge variant="outline" className="jv-person">
+      {inner}
+    </Badge>
   );
 }
 
@@ -55,14 +50,13 @@ export function TagChip({ name, to }: { name: string; to?: { tag: string } }) {
     </>
   );
   return to ? (
-    <Link
-      className="jv-tag jv-tag--link"
-      to="/timeline"
-      search={{ q: "", ...to }}
+    <Badge
+      variant="secondary"
+      render={<Link to="/timeline" search={{ q: "", ...to }} />}
     >
       {inner}
-    </Link>
+    </Badge>
   ) : (
-    <span className="jv-tag">{inner}</span>
+    <Badge variant="secondary">{inner}</Badge>
   );
 }

@@ -33,6 +33,7 @@ import { groupJournals } from "../../lib/journalOrder";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { cx } from "../../lib/cx";
 import "./shell.css";
+import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 
 /** Most journals the rail shows before it defers the rest to "All journals". */
 const SIDEBAR_MAX = 8;
@@ -62,9 +63,11 @@ export function AppSidebar({
       <div className="jv-nav__brand">Journiv</div>
 
       {/* Styled as a button, never as a nav item: it must not pick up the
-          selected-route treatment. That regression made it unreadable before. */}
+          selected-route treatment. That regression made it unreadable before.
+          This is the product's one filled brand control (DESIGN.md §3, brand
+          use #1) — writing is the thing Journiv exists for. */}
       <Button
-        variant="primary"
+        variant="brand"
         className="jv-nav__new"
         nativeButton={false}
         render={
@@ -311,41 +314,46 @@ const THEMES: Array<{ mode: ThemeMode; label: string; icon: ReactNode }> = [
   {
     mode: "light",
     label: "Light theme",
-    icon: <Sun aria-hidden="true" size={15} />,
+    icon: <Sun aria-hidden="true" />,
   },
   {
     mode: "dark",
     label: "Dark theme",
-    icon: <Moon aria-hidden="true" size={15} />,
+    icon: <Moon aria-hidden="true" />,
   },
   {
     mode: "system",
     label: "Match system theme",
-    icon: <Monitor aria-hidden="true" size={15} />,
+    icon: <Monitor aria-hidden="true" />,
   },
 ];
 
 function ThemeControl() {
   const theme = useTheme();
   return (
-    <fieldset className="jv-theme-control">
-      <legend className="sr-only">Theme</legend>
+    <ToggleGroup
+      spacing={0}
+      variant="outline"
+      size="sm"
+      className="jv-theme-control"
+      aria-label="Theme"
+      value={[theme.mode]}
+      onValueChange={([next]) => {
+        // A group with one selectable option never emits an empty value here,
+        // but guard anyway: deselecting the current theme means nothing.
+        if (next) theme.set(next as ThemeMode);
+      }}
+    >
       {THEMES.map((option) => (
-        <button
+        <ToggleGroupItem
           key={option.mode}
-          type="button"
-          className={cx(
-            "jv-theme-control__option",
-            theme.mode === option.mode && "is-selected",
-          )}
-          aria-pressed={theme.mode === option.mode}
+          value={option.mode}
           aria-label={option.label}
           title={option.label}
-          onClick={() => theme.set(option.mode)}
         >
           {option.icon}
-        </button>
+        </ToggleGroupItem>
       ))}
-    </fieldset>
+    </ToggleGroup>
   );
 }
