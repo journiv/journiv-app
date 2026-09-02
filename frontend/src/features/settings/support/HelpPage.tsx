@@ -17,41 +17,45 @@ export function HelpPage() {
         intro="Find guidance or report a problem to the Journiv project."
       >
         <ItemGroup>
-          <Item
-            size="sm"
-            render={
-              <a
-                href="https://github.com/journiv/journiv-app"
-                target="_blank"
-                rel="noreferrer"
-              />
-            }
-          >
-            <ItemContent>
-              <ItemTitle>Journiv project</ItemTitle>
-            </ItemContent>
-            <ItemActions>
-              <ExternalLink aria-hidden="true" />
-            </ItemActions>
-          </Item>
+          <li className="list-none">
+            <Item
+              size="sm"
+              render={
+                <a
+                  href="https://github.com/journiv/journiv-app"
+                  target="_blank"
+                  rel="noreferrer"
+                />
+              }
+            >
+              <ItemContent>
+                <ItemTitle>Journiv project</ItemTitle>
+              </ItemContent>
+              <ItemActions>
+                <ExternalLink aria-hidden="true" />
+              </ItemActions>
+            </Item>
+          </li>
           <ItemSeparator />
-          <Item
-            size="sm"
-            render={
-              <a
-                href="https://github.com/journiv/journiv-app/issues"
-                target="_blank"
-                rel="noreferrer"
-              />
-            }
-          >
-            <ItemContent>
-              <ItemTitle>Report an issue</ItemTitle>
-            </ItemContent>
-            <ItemActions>
-              <ExternalLink aria-hidden="true" />
-            </ItemActions>
-          </Item>
+          <li className="list-none">
+            <Item
+              size="sm"
+              render={
+                <a
+                  href="https://github.com/journiv/journiv-app/issues"
+                  target="_blank"
+                  rel="noreferrer"
+                />
+              }
+            >
+              <ItemContent>
+                <ItemTitle>Report an issue</ItemTitle>
+              </ItemContent>
+              <ItemActions>
+                <ExternalLink aria-hidden="true" />
+              </ItemActions>
+            </Item>
+          </li>
         </ItemGroup>
       </SettingsSection>
     </div>

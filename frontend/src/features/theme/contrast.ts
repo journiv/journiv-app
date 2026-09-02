@@ -9,8 +9,9 @@
  * property, which is why this lives here and not in `lib/color.ts`.
  *
  * WCAG 2.1 relative luminance is defined on sRGB, so everything converts to
- * linear sRGB first. Out-of-gamut oklch values are clipped per channel, which
- * is what a browser paints anyway.
+ * linear sRGB first. Out-of-gamut OKLCH is gamut-mapped by reducing chroma at
+ * constant lightness and hue before it is measured, rather than clipping RGB
+ * channels. That gives the contrast code the same in-gamut colour it emits.
  */
 
 export interface Oklch {
@@ -22,7 +23,7 @@ export interface Oklch {
   h: number;
 }
 
-/** oklch -> linear-light sRGB, clipped to gamut. */
+/** oklch -> linear-light sRGB. */
 function oklchToLinearSrgb({ l, c, h }: Oklch): [number, number, number] {
   const rad = (h * Math.PI) / 180;
   const a = c * Math.cos(rad);
@@ -34,7 +35,30 @@ function oklchToLinearSrgb({ l, c, h }: Oklch): [number, number, number] {
     4.0767416621 * l_ - 3.3077115913 * m_ + 0.2309699292 * s_,
     -1.2684380046 * l_ + 2.6097574011 * m_ - 0.3413193965 * s_,
     -0.0041960863 * l_ - 0.7034186147 * m_ + 1.707614701 * s_,
-  ].map((v) => Math.min(1, Math.max(0, v))) as [number, number, number];
+  ];
+}
+
+function isSrgbInGamut(color: Oklch): boolean {
+  return oklchToLinearSrgb(color).every(
+    (channel) => Number.isFinite(channel) && channel >= 0 && channel <= 1,
+  );
+}
+
+/** Maps OKLCH to sRGB using CSS Color's constant-lightness, constant-hue
+ * chroma reduction. The binary search keeps emitted accent tokens in gamut,
+ * so their measured and rendered colours are the same. */
+export function gamutMapToSrgb(color: Oklch): Oklch {
+  if (color.l <= 0 || color.l >= 1) return { ...color, c: 0 };
+  if (isSrgbInGamut(color)) return color;
+
+  let low = 0;
+  let high = color.c;
+  for (let i = 0; i < 24; i++) {
+    const c = (low + high) / 2;
+    if (isSrgbInGamut({ ...color, c })) low = c;
+    else high = c;
+  }
+  return { ...color, c: low };
 }
 
 function linearSrgbToOklch([r, g, b]: [number, number, number]): Oklch {
@@ -117,7 +141,7 @@ export function parseAccentColor(value: string): Oklch | null {
 
 /** WCAG 2.1 relative luminance of an oklch colour. */
 export function relativeLuminance(color: Oklch): number {
-  const [r, g, b] = oklchToLinearSrgb(color);
+  const [r, g, b] = oklchToLinearSrgb(gamutMapToSrgb(color));
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
 

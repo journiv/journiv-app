@@ -1,7 +1,7 @@
 import { Link, useSearch } from "@tanstack/react-router";
 import { CalendarDays, Images, List } from "lucide-react";
 import type { ReactNode } from "react";
-import { Button } from "../../components/ui/button";
+import { buttonVariants } from "../../components/ui/button";
 import { ButtonGroup } from "../../components/ui/button-group";
 import { cx } from "../../lib/cx";
 
@@ -60,31 +60,24 @@ export function ListViewSwitch({ className }: { className?: string }) {
       {OPTIONS.map((option) => {
         const selected = option.mode === current;
         return (
-          <Button
+          <Link
             key={option.mode}
-            variant="outline"
-            size="icon-sm"
-            // The rendered element is an anchor, so Base UI must not assume
-            // native button semantics for it.
-            nativeButton={false}
+            data-slot="button"
+            className={buttonVariants({ variant: "outline", size: "icon-sm" })}
             aria-current={selected ? "page" : undefined}
             aria-label={option.label}
             title={option.label}
-            render={
-              <Link
-                to="."
-                search={(prev: ListViewSearch) => ({
-                  ...prev,
-                  view: option.mode === "list" ? undefined : option.mode,
-                  // The selected day only makes sense inside the calendar.
-                  date: option.mode === "calendar" ? prev.date : undefined,
-                })}
-                replace
-              />
-            }
+            to="."
+            search={(prev: ListViewSearch) => ({
+              ...prev,
+              view: option.mode === "list" ? undefined : option.mode,
+              // The selected day only makes sense inside the calendar.
+              date: option.mode === "calendar" ? prev.date : undefined,
+            })}
+            replace
           >
             {option.icon}
-          </Button>
+          </Link>
         );
       })}
     </ButtonGroup>

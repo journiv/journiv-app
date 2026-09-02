@@ -115,7 +115,7 @@ export function AppAdaptiveMenu({
               const content = (
                 <>
                   {Icon && (
-                    <ItemMedia>
+                    <ItemMedia variant="icon">
                       <Icon aria-hidden="true" />
                     </ItemMedia>
                   )}

@@ -2,7 +2,11 @@ import { useCallback, useState } from "react";
 import { type AccentPair, accentPair } from "./accent";
 import { applyUserTheme } from "./applyUserTheme";
 import { clearUserTheme, readUserTheme, writeUserTheme } from "./themeStorage";
-import type { BundledFont, UserTheme } from "./types";
+import {
+  type BundledFont,
+  type UserTheme,
+  withoutPartialBrandPair,
+} from "./types";
 
 /**
  * Live-preview personalization state. Every setter applies the `<style>` layer
@@ -65,10 +69,12 @@ export function usePersonalization() {
 
   const importTheme = useCallback(
     (parsed: { light: UserTheme["light"]; dark: UserTheme["dark"] }) => {
+      const light = withoutPartialBrandPair(parsed.light);
+      const dark = withoutPartialBrandPair(parsed.dark);
       commit({
         ...theme,
-        light: { ...theme.light, ...parsed.light },
-        dark: { ...theme.dark, ...parsed.dark },
+        light: { ...theme.light, ...light },
+        dark: { ...theme.dark, ...dark },
       });
     },
     [theme, commit],

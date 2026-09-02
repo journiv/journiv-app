@@ -28,6 +28,7 @@
     minmax(var(--list-width-min), var(--list-width-max))
     minmax(0, 1fr);
   --jv-seam: color-mix(in oklab, var(--border), transparent 60%);
+
   border: 1px solid color-mix(in oklab, var(--border), transparent 45%);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);

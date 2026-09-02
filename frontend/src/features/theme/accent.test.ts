@@ -111,6 +111,22 @@ describe("a typed accent colour", () => {
     expect(oklch(pair.dark.brand).l).toBeGreaterThan(oklch(pair.light.brand).l);
   });
 
+  it("gamut-maps an extreme OKLCH colour before checking its contrast", () => {
+    const pair = accentPair("oklch(0.01 0.23 180)");
+    expect(pair).not.toBeNull();
+    if (!pair) return;
+
+    for (const theme of ["light", "dark"] as const) {
+      const brand = oklch(pair[theme].brand);
+      expect(
+        contrastRatio(brand, oklch(pair[theme]["brand-foreground"])),
+      ).toBeGreaterThanOrEqual(AA);
+      for (const surface of CHECKS[theme]) {
+        expect(contrastRatio(brand, surface.color)).toBeGreaterThanOrEqual(AA);
+      }
+    }
+  });
+
   it("refuses a colour it cannot measure rather than applying it", () => {
     expect(accentPair("rebeccapurple")).toBeNull();
     expect(accentPair("var(--primary)")).toBeNull();

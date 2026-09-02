@@ -1,7 +1,10 @@
 import { ChevronLeft, Pencil, Plus, Trash2 } from "lucide-react";
 import { type CSSProperties, useId, useState } from "react";
 import { EntityGlyph } from "../../components/journiv/EntityGlyph";
-import { AppAdaptiveDialog } from "../../components/journiv/AppAdaptiveDialog";
+import {
+  AppAdaptiveDialog,
+  useOverlayAutoFocus,
+} from "../../components/journiv/AppAdaptiveDialog";
 import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { Button } from "../../components/ui/button";
 import {
@@ -222,6 +225,7 @@ function GroupForm({
   onClose: () => void;
   onSubmit: (body: LibraryGroupCreateInput) => Promise<void>;
 }) {
+  const autoFocus = useOverlayAutoFocus();
   const editing = Boolean(group);
   const formId = useId();
   const nameId = useId();
@@ -292,7 +296,7 @@ function GroupForm({
               aria-label="Group name"
               value={name}
               maxLength={100}
-              autoFocus
+              autoFocus={autoFocus}
               onChange={(event) => setName(event.target.value)}
             />
           </Field>

@@ -72,6 +72,21 @@ export type BundledFont = "dm-sans" | "lora";
 
 export type ThemeTokens = Partial<Record<ColorVar, string>>;
 
+/** `--brand` is only valid with the foreground used on its filled control. */
+export function hasPartialBrandPair(tokens: ThemeTokens): boolean {
+  return (
+    (tokens.brand === undefined) !== (tokens["brand-foreground"] === undefined)
+  );
+}
+
+/** Drops a partial imported brand pair rather than combining it with stored
+ * values, which could create an unreadable accent. */
+export function withoutPartialBrandPair(tokens: ThemeTokens): ThemeTokens {
+  if (!hasPartialBrandPair(tokens)) return tokens;
+  const { brand: _brand, "brand-foreground": _foreground, ...rest } = tokens;
+  return rest;
+}
+
 export interface UserTheme {
   version: 1;
   /** Colour / radius / shadow overrides for light mode (`:root`). */

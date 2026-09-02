@@ -1,4 +1,4 @@
-import { COLOR_VAR_SET, type ThemeTokens } from "./types";
+import { COLOR_VAR_SET, hasPartialBrandPair, type ThemeTokens } from "./types";
 
 export type ParseResult = {
   light: ThemeTokens;
@@ -223,6 +223,17 @@ export function parseThemeCss(input: string): ParseResult {
   const notes: string[] = [];
 
   walk(topLevelBlocks(css), light, dark, notes);
+
+  for (const [mode, tokens] of [
+    ["light", light],
+    ["dark", dark],
+  ] as const) {
+    if (hasPartialBrandPair(tokens)) {
+      notes.push(`Ignored partial --brand pair in ${mode} mode.`);
+      delete tokens.brand;
+      delete tokens["brand-foreground"];
+    }
+  }
 
   if (Object.keys(light).length === 0 && Object.keys(dark).length === 0) {
     throw new ThemeParseError(

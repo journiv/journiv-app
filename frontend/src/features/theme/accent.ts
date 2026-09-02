@@ -1,6 +1,7 @@
 import {
   contrastRatio,
   formatOklch,
+  gamutMapToSrgb,
   type Oklch,
   parseAccentColor,
 } from "./contrast";
@@ -59,12 +60,14 @@ function meets(theme: "light" | "dark", color: Oklch): boolean {
  * lightness. Returns the input unchanged when it is already safe.
  */
 function clampToBand(theme: "light" | "dark", color: Oklch): Oklch {
-  if (meets(theme, color)) return color;
+  const mapped = gamutMapToSrgb(color);
+  if (meets(theme, mapped)) return mapped;
   const step = theme === "light" ? -0.005 : 0.005;
   for (let i = 1; i <= 200; i++) {
     const candidate = { ...color, l: color.l + step * i };
     if (candidate.l < 0 || candidate.l > 1) break;
-    if (meets(theme, candidate)) return candidate;
+    const mappedCandidate = gamutMapToSrgb(candidate);
+    if (meets(theme, mappedCandidate)) return mappedCandidate;
   }
   // Only reachable for a chroma so high that no lightness works; a fully
   // desaturated fallback always does.
