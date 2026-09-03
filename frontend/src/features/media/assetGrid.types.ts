@@ -2,7 +2,7 @@
  * The provider-agnostic contract behind {@link AssetGridPicker}.
  *
  * The Immich asset picker in the entry editor is the first consumer. A later
- * milestone (people / face import — see `frontend-immich-v2.md` DESIGN.md) reuses the
+ * milestone (people / face import — see `docs/features/library.md`) reuses the
  * same shell with a person-thumbnail source and the `person` tile variant, so
  * nothing here may reference Immich, entries, or people directly.
  */
