@@ -1,6 +1,6 @@
 # Journiv React frontend
 
-These instructions apply to `journiv-backend/frontend`: the active React,
+These instructions apply to `frontend/`: the active React,
 TypeScript, Vite, Tailwind, and shadcn frontend.
 
 ## Context loading
