@@ -77,7 +77,7 @@ export function usePasswordForm() {
     },
     dirty,
     // Invalid input does not disable the button — submitting surfaces the field
-    // errors instead (DESIGN.md §16), as in the journal form.
+    // errors instead (DESIGN.md), as in the journal form.
     canSubmit: dirty && !mutation.isPending,
     submitting: mutation.isPending,
     failed: mutation.isError,

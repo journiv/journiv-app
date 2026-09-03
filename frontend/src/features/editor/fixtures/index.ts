@@ -34,7 +34,7 @@ export const CANONICAL_DELTA_FIXTURES = [
  * profile still rejects every embed, so `CANONICAL_DELTA_FIXTURES` must keep
  * asserting that. These prove the reader and the cross-runtime round trip.
  *
- * Persisted form is a bare media id — never a signed URL. See DESIGN.md §13.
+ * Persisted form is a bare media id — never a signed URL. See docs/features/reader.md.
  */
 export const CANONICAL_MEDIA_FIXTURES = [
   ["inline image", inlineImage],

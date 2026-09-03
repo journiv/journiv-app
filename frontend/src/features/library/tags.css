@@ -1,4 +1,4 @@
-/* Tags-specific content inside the shared Library shells (DESIGN.md §24). The
+/* Tags-specific content inside the shared Library shells (docs/features/library.md). The
    list and detail *shells* (span-2 layout, header, breadcrumb bar, scroll
    owner) live in `LibraryWorkspace` / `LibraryDetailView` + library.css; this
    file styles only what is unique to Tags: the search / sort row, the insights
@@ -55,7 +55,7 @@
   margin: 0;
 }
 
-/* Stat tiles are detached objects, so they carry a card surface (§5). */
+/* Stat tiles are detached objects, so they carry a card surface (DESIGN.md). */
 .jv-tag-stats__tile {
   display: flex;
   flex-direction: column;

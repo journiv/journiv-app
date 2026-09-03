@@ -80,7 +80,7 @@
   font-style: normal;
 }
 
-/* A link in prose is one of the four sanctioned brand moments (DESIGN.md §3,
+/* A link in prose is one of the four sanctioned brand moments (DESIGN.md,
    rule 4). It used to read `--primary`, which is *neutral* in Minimal
    Neutral — a near-black link that only underlining told you was a link, and
    which silently ignored the user's accent colour. */
@@ -97,7 +97,7 @@
 }
 
 /* Inline media. Never cropped, for the same reason as the gallery: there is no
-   full-image viewer yet. See DESIGN.md §13. */
+   full-image viewer yet. See docs/features/reader.md. */
 .jv-prose.jv-prose video,
 .jv-prose.jv-prose .jv-prose__video {
   display: block;

@@ -26,7 +26,7 @@ interface AppMenuActionBase {
   id: string;
   label: string;
   /** The action's own icon. A destructive action keeps its own glyph — the
-   *  destructive treatment is colour, not an icon override (DESIGN.md §17). */
+   *  destructive treatment is colour, not an icon override (DESIGN.md). */
   icon?: LucideIcon;
   disabled?: boolean;
   /** Draws a hairline above this action, opening a new group. */
@@ -62,7 +62,7 @@ export interface AppAdaptiveMenuProps {
 
 /**
  * An overflow / context command menu, presented as the viewport requires
- * (DESIGN.md §9, "Adaptive overlays"):
+ * (DESIGN.md, "Adaptive overlays"):
  *
  *     <= 860px   Drawer (bottom action sheet)
  *     >  860px   DropdownMenu anchored to the trigger

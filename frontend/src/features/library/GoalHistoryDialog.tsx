@@ -19,8 +19,8 @@ import { Skeleton } from "../../components/ui/skeleton";
  * Each row is one evaluated period, newest first: a status mark, the period
  * label (shaped by the goal's cadence), and the count / target plus whether the
  * period was logged automatically or by hand. No primary action — the surface's
- * one primary stays "Add goal" on the page behind it (DESIGN.md §24, and the
- * Details-popover precedent in §14).
+ * one primary stays "Add goal" on the page behind it (docs/features/library.md, and the
+ * Details-popover precedent in docs/features/editor.md).
  */
 
 type StatusTone = {
@@ -139,7 +139,7 @@ export function GoalHistoryDialog({
         </Button>
       }
     >
-      {/* The overlay body is already the scroll owner (DESIGN.md §9), so this
+      {/* The overlay body is already the scroll owner (DESIGN.md), so this
           section only names the region — it must not scroll on its own. */}
       <section aria-label="Goal completion history">
         {logsResult.isLoading && <HistorySkeleton />}

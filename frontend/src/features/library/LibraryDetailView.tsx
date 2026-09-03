@@ -10,7 +10,7 @@ import {
 import "./library.css";
 
 /**
- * The shared Library detail shell (DESIGN.md §24). Opening an item from a
+ * The shared Library detail shell (docs/features/library.md). Opening an item from a
  * `LibraryWorkspace` pushes to this view on the same route area — a wide page,
  * not a third pane. A breadcrumb bar (`Section / Item`) is the title and the
  * back affordance at every width, matching a marketplace-style push flow; the

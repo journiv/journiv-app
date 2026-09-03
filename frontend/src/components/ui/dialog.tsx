@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils";
  * resistance, and six Library forms took it — presenting a 1300px form as a
  * centred dialog on a 390x844 phone, where its actions were unreachable. A
  * substantial modal workflow is `AppAdaptiveDialog`; this stays compositional
- * so reaching for it is a decision, not a default (DESIGN.md §9, §18).
+ * so reaching for it is a decision, not a default (DESIGN.md, docs/architecture/frontend.md).
  */
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;

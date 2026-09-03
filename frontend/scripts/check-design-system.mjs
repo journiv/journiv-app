@@ -6,7 +6,7 @@
  * This is a STATIC, source-level guard. It parses .css/.ts/.tsx files and
  * DESIGN.md's own prose — it never launches a browser. Rendered/runtime
  * properties (contrast as actually painted, computed styles, visual
- * regressions) are Playwright's job, not this script's — see DESIGN.md §19.
+ * regressions) are Playwright's job, not this script's — see e2e/README.md.
  *
  * Run via `npm run lint:design`, `npm test` or `npm run verify`.
  */
@@ -27,17 +27,17 @@ const VALUE_LAYER = [
   "src/styles/util.css",
 ];
 
-/** The one sanctioned data-palette exception (DESIGN.md §3) — literal hex
+/** The one sanctioned data-palette exception (DESIGN.md) — literal hex
  *  arrays that are content a user picks, not a piece of Journiv's theme. */
 const DATA_PALETTE_FILES = ["src/lib/journalColors.ts"];
 
-/** Registry components kept close to upstream (DESIGN.md §18) are exempt from
+/** Registry components kept close to upstream (docs/architecture/frontend.md) are exempt from
  *  the arbitrary-Tailwind-value check — re-skinning them to avoid a bracketed
  *  value would violate the "don't rewrite a registry component" rule. */
 const REGISTRY_DIR = "src/components/ui/";
 
 /** CSS custom properties that are legitimately never `--name: value;`
- *  declared in any stylesheet: set inline from API data by JS (DESIGN.md §3),
+ *  declared in any stylesheet: set inline from API data by JS (DESIGN.md),
  *  or owned by a vendor (base-ui) whose CSS we don't author. */
 const RUNTIME_OR_VENDOR_VARS = new Set([
   "--journal-accent",
@@ -52,10 +52,10 @@ const RUNTIME_OR_VENDOR_VARS = new Set([
  *  that doesn't know this would flag all of them. */
 const THEME_BRIDGE_PREFIX = /^--(color|radius|font|shadow)-/;
 
-/** The two layout breakpoints (DESIGN.md §9) plus every current
+/** The two layout breakpoints (DESIGN.md) plus every current
  *  component-level breakpoint, named there. A new *page*-shaped breakpoint
  *  must be one of the two layout widths; a new *component* breakpoint must be
- *  added here and named in DESIGN.md §9 — this check is a "confirm and
+ *  added here and named in DESIGN.md — this check is a "confirm and
  *  document" gate, not a ban. */
 const ALLOWED_BREAKPOINTS = new Set([
   "860px",
@@ -139,7 +139,7 @@ const lineChecks = [
     pattern: /(#[0-9a-fA-F]{3,8}\b|\brgba?\(|\bhsla?\(|\boklch\(|\boklab\()/,
     fix:
       `Use an existing semantic token, or add one to src/styles/tokens.css and\n` +
-      `document it in DESIGN.md §3. Raw values belong only in:\n` +
+      `document it in DESIGN.md. Raw values belong only in:\n` +
       `  ${VALUE_LAYER.join("\n  ")}`,
   },
   {
@@ -148,13 +148,13 @@ const lineChecks = [
     pattern: /font-size:\s*[0-9.]+px/,
     fix:
       `A px font-size ignores the reader's browser text scaling. Use rem or em,\n` +
-      `or a role class from src/styles/base.css (DESIGN.md §4).`,
+      `or a role class from src/styles/base.css (DESIGN.md).`,
   },
   {
     name: "!important outside the reduced-motion reset",
     files: cssFiles.filter((file) => file !== "src/styles/base.css"),
     pattern: /!important/,
-    fix: `!important is sanctioned only for the reduced-motion reset (DESIGN.md §8).`,
+    fix: `!important is sanctioned only for the reduced-motion reset (DESIGN.md).`,
   },
   {
     name: "hard-coded colour in an inline style",
@@ -181,7 +181,7 @@ const lineChecks = [
     fix:
       `A bracketed Tailwind colour utility (e.g. bg-[#405DE6]) bypasses every\n` +
       `token. Use the semantic Tailwind class (bg-primary, text-muted-foreground,\n` +
-      `…) that already resolves through index.css's --color-* map (DESIGN.md §3).`,
+      `…) that already resolves through index.css's --color-* map (DESIGN.md).`,
   },
   {
     name: "arbitrary spacing or font-size Tailwind value",
@@ -189,7 +189,7 @@ const lineChecks = [
     pattern:
       /\b(?:m|p)[trblxy]?-\[[0-9.]+(?:px|rem|em)\]|\bgap(?:-x|-y)?-\[[0-9.]+(?:px|rem|em)\]|\btext-\[[0-9.]+(?:px|rem|em)\]/,
     fix:
-      `DESIGN.md §3: "Do not write mt-[13px]." Use the spacing scale\n` +
+      `DESIGN.md: "Do not write mt-[13px]." Use the spacing scale\n` +
       `(--space-1…--space-16 / gap-1, gap-2, …) or a typographic role class from\n` +
       `src/styles/base.css instead of a bracketed pixel/rem value.`,
   },
@@ -258,7 +258,7 @@ function checkUndefinedCustomProperties() {
       `(${[...RUNTIME_OR_VENDOR_VARS].join(", ")}). A typo here silently\n` +
       `resolves to nothing — the browser drops the whole declaration — so it\n` +
       `never throws and rarely gets noticed in review. Fix the name, or add it\n` +
-      `to tokens.css and document it in DESIGN.md §3.`,
+      `to tokens.css and document it in DESIGN.md.`,
   );
 }
 
@@ -339,7 +339,7 @@ function checkDesignMdLinks() {
 /** A page-shaped breakpoint at a width nobody has named is exactly how "one
  *  breakpoint system" quietly became seven. This does not forbid a new
  *  component breakpoint — it forces it to be named in ALLOWED_BREAKPOINTS
- *  (and, by the same change, in DESIGN.md §9) rather than added silently. */
+ *  (and, by the same change, in DESIGN.md) rather than added silently. */
 function checkBreakpoints() {
   const violations = [];
   for (const file of cssFiles) {
@@ -359,12 +359,12 @@ function checkBreakpoints() {
   return report(
     "unlisted breakpoint",
     violations,
-    `DESIGN.md §9 names exactly two layout breakpoints (860px, 1100px/1101px)\n` +
+    `DESIGN.md names exactly two layout breakpoints (860px, 1100px/1101px)\n` +
       `plus a fixed list of component-level ones. A new *page*-shaped\n` +
       `breakpoint (a pane restructuring) must be one of the two layout widths.\n` +
       `A new *component* breakpoint (one control reflowing at its own width) is\n` +
       `fine — add it to ALLOWED_BREAKPOINTS in this script and name it in\n` +
-      `DESIGN.md §9's component-breakpoint list.`,
+      `DESIGN.md's component-breakpoint list.`,
   );
 }
 

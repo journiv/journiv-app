@@ -101,7 +101,7 @@
 }
 
 /* Row controls reflow at their own container width, independent of the
- * overlay's 860px primitive boundary (DESIGN.md §9). */
+ * overlay's 860px primitive boundary (DESIGN.md). */
 @container (max-width: 34rem) {
   .jv-immich-people-import__row {
     flex-wrap: wrap;

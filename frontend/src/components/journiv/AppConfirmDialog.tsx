@@ -39,7 +39,7 @@ export interface AppConfirmDialogProps {
 
 /**
  * A simple yes/no confirmation, presented as the viewport requires
- * (DESIGN.md §9, "Adaptive overlays"):
+ * (DESIGN.md, "Adaptive overlays"):
  *
  *     <= 860px   Drawer (confirmation sheet)
  *     >  860px   AlertDialog (centred)
@@ -50,7 +50,7 @@ export interface AppConfirmDialogProps {
  * shared dialog store and never becomes an `alertdialog`. Forcing the role by
  * hand would claim assertive-announcement behaviour the primitive does not
  * implement, which serves a screen-reader user worse than an honest `dialog`.
- * What *does* hold on both branches is the behaviour DESIGN.md §17 asks for:
+ * What *does* hold on both branches is the behaviour DESIGN.md asks for:
  * an accessible name from the title, a description, a real focus trap, an
  * inert background, and focus returned to the trigger on close.
  *
@@ -97,7 +97,7 @@ export function AppConfirmDialog({
     </>
   );
   // `danger` is Journiv's destructive treatment: tinted, never filled, so a
-  // destructive confirm never reads as the surface's primary action (§6).
+  // destructive confirm never reads as the surface's primary action (DESIGN.md).
   const confirmVariant = destructive ? "destructive" : "default";
   const body = children != null && (
     <div className="jv-overlay__body">{children}</div>

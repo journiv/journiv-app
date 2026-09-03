@@ -7,7 +7,7 @@ type Tone = "ok" | "warn" | "muted";
 
 /**
  * The at-a-glance connection state for a catalogue row. A dot **plus** a label
- * — never colour alone (DESIGN.md §6). Derives from the same pure
+ * — never colour alone (DESIGN.md). Derives from the same pure
  * `immichConnectionState` the detail form uses.
  */
 export function IntegrationStatusPill({

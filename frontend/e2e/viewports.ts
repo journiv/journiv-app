@@ -1,8 +1,8 @@
-/** The canonical viewports. DESIGN.md §20 requires 1440 / 1024 / 390 for manual
+/** The canonical viewports. AGENTS.md requires 1440 / 1024 / 390 for manual
  *  review; these are the same three widths, so an E2E failure and a design
  *  review talk about the same layouts.
  *
- *  Each maps onto one of the three layout bands in DESIGN.md §9. Picking a width
+ *  Each maps onto one of the three layout bands in DESIGN.md. Picking a width
  *  from this file rather than inventing one is what keeps "mobile" meaning the
  *  same thing in every spec.
  */

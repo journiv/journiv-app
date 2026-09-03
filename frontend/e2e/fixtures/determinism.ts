@@ -41,7 +41,7 @@ export type ThemeMode = "light" | "dark";
  *   - pin the theme, so a test never inherits the CI machine's
  *     `prefers-color-scheme`;
  *   - clear personalization, so a stray accent colour or font scale from a
- *     previous run cannot bleed into a comparison (DESIGN.md §19 names this as a
+ *     previous run cannot bleed into a comparison (e2e/README.md names this as a
  *     precondition for deterministic capture);
  *   - seed the auth session when there is one.
  *

@@ -5,7 +5,7 @@ import type { MoodResponse } from "../api/generated/types.gen";
 /**
  * Resolve a mood id to its record. Mirrors `useJournalLookup` — the mood list is
  * small and cached, so id -> mood is cheap. Mood colour is the only hue a mood
- * contributes; render it as a dot, never as a valence scale (DESIGN.md §21.6).
+ * contributes; render it as a dot, never as a valence scale (docs/known-gaps.md).
  */
 export function useMoodLookup() {
   const moods = useQuery(moodsQuery());

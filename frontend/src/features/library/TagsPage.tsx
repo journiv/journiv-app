@@ -612,7 +612,7 @@ function MergeTagDialog({
           <p className="jv-tag-merge__empty jv-caption">No other tags match.</p>
         ) : (
           // An exclusive choice over a real list: the registry `RadioGroup`,
-          // not a bare native radio (DESIGN.md §18, composition table).
+          // not a bare native radio (docs/architecture/frontend.md, composition table).
           <RadioGroup
             className="jv-tag-merge__list"
             name="merge-target"

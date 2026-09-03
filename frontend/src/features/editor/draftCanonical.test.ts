@@ -142,7 +142,7 @@ describe("canonicalizeDeltaForDraft", () => {
   it("keeps an in-flight upload placeholder out of the stored draft", () => {
     // Defence in depth: `getContents()` already strips these, but a draft must
     // never carry one even if a caller hands us a raw document. An interrupted
-    // upload is lost and reattached by design (DESIGN.md §21.14).
+    // upload is lost and reattached by design (docs/known-gaps.md).
     const {
       delta: canonical,
       omittedTransientUploads,

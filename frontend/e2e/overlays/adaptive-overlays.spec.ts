@@ -2,7 +2,7 @@ import { VIEWPORTS } from "../viewports";
 import { expect, test } from "../fixtures/test";
 
 /**
- * The adaptive overlay contract (DESIGN.md §9, "Adaptive overlays"):
+ * The adaptive overlay contract (DESIGN.md, "Adaptive overlays"):
  *
  *     interaction                 <= 860px             > 860px
  *     form / substantial modal    Drawer               Dialog
@@ -16,7 +16,7 @@ import { expect, test } from "../fixtures/test";
  *
  * Branches are told apart by role where roles differ (alertdialog vs dialog,
  * menu vs dialog) and by rendered geometry where they do not — a form dialog is
- * a `dialog` in both presentations. No CSS-structural selectors (README §9).
+ * a `dialog` in both presentations. No CSS-structural selectors (README DESIGN.md).
  */
 
 /**
@@ -24,7 +24,7 @@ import { expect, test } from "../fixtures/test";
  * The Drawer animates in over ~450ms (transform + height), so a single
  * `boundingBox()` right after `toBeVisible()` can measure the surface
  * mid-flight. `expect.poll` retries until it settles — a retrying assertion,
- * never a sleep (e2e/README.md §10).
+ * never a sleep (e2e/README.md docs/domain/moments.md).
  */
 type Box = { x: number; y: number; width: number; height: number };
 

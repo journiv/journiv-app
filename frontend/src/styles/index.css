@@ -57,7 +57,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Journiv's brand accent (DESIGN.md §3). Not a stock shadcn role — it exists
+  /* Journiv's brand accent (DESIGN.md). Not a stock shadcn role — it exists
      so the four sanctioned blue moments can be expressed as `bg-brand` /
      `text-brand-foreground` rather than an arbitrary value. */
   --color-brand: var(--brand);
@@ -85,7 +85,7 @@
    scoped CSS. The user-theme `<style>` layer is appended to <head> after this
    bundle, so an imported theme still overrides them.
 
-   DESIGN.md §5 says which step each role uses: `xs` resting controls, `sm`
+   DESIGN.md says which step each role uses: `xs` resting controls, `sm`
    grouped/detached surfaces, `md` popovers and menus, `lg` dialogs and
    drawers. Minimal Neutral uses one shadow colour and opacity in both themes;
    in dark, `--border` does the work of separating surfaces. */
@@ -110,7 +110,7 @@
      decision itself: `body` is the application ground the panes lift off, not
      a page surface. `--muted` is what the Minimal Neutral reference sits on,
      and the only MN token that reads as a real canvas tint in light mode.
-     Every surface that is a page paints its own background (DESIGN.md §5). */
+     Every surface that is a page paints its own background (DESIGN.md). */
   body {
     @apply bg-muted text-foreground;
   }

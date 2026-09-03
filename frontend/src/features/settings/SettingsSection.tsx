@@ -18,7 +18,7 @@ import { Item, ItemContent, ItemActions } from "../../components/ui/item";
 import { cx } from "../../lib/cx";
 
 /**
- * A titled group of settings, as a stock `Card` (DESIGN.md §5, §23). Settings
+ * A titled group of settings, as a stock `Card` (DESIGN.md, docs/features/settings.md). Settings
  * is application chrome, not reading content: a group of controls is a real
  * object and gets the standard Vega card — a raised `--card` panel on the
  * `--muted` settings canvas. The no-card rule applies to entries and the

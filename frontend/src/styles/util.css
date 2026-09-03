@@ -5,7 +5,7 @@
  * There is deliberately no field skin here. A native control that cannot use
  * the shadcn primitive (e.g. a 400-option <select>) wears `Input`'s own class
  * string via `cn()` instead, so the two can never drift apart — see
- * `TimezoneField` and DESIGN.md §18. */
+ * `TimezoneField` and docs/architecture/frontend.md. */
 
 /* Right-aligned button row inside a Dialog body (forms that nest their own
  * actions rather than using DialogFooter). */

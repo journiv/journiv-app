@@ -1,6 +1,6 @@
 /* Immich integration form. The import-mode choice is the registry
    `RadioGroup` + `FieldSet`; the skin that used to live here (a sized native
-   radio with `accent-color`) is gone — see DESIGN.md §18. */
+   radio with `accent-color`) is gone — see docs/architecture/frontend.md. */
 
 .jv-immich-mode__album-error {
   margin-top: var(--space-2);
@@ -8,7 +8,7 @@
 }
 
 /* ---- provider catalogue -------------------------------------------------- */
-/* A list of providers, built on the shared `LibraryRow` (DESIGN.md §24). Rows
+/* A list of providers, built on the shared `LibraryRow` (docs/features/library.md). Rows
    link to their detail route; the trailing slot carries live status, not a
    hover-only menu, so it opts out of the Library list's reveal-on-hover. */
 
@@ -38,7 +38,7 @@
 }
 
 /* Info control — a real link (opens the public setup guide in a new tab), sized
-   to the 44px touch target with an invisible hit area (DESIGN.md §17). */
+   to the 44px touch target with an invisible hit area (DESIGN.md). */
 .jv-integrations-row__guide {
   position: relative;
   display: inline-flex;
@@ -102,7 +102,7 @@
 }
 
 /* ---- status pill ------------------------------------------------------------ */
-/* Dot plus label — never colour alone (DESIGN.md §6). */
+/* Dot plus label — never colour alone (DESIGN.md). */
 
 .jv-status-pill {
   gap: var(--space-1);

@@ -52,7 +52,7 @@ import {
  * The Flutter client stores Material Symbols names in the same backend field, so
  * a value written there will not match a key here. That is expected: an
  * unrecognised value falls back to the plain colour dot on both clients. See
- * DESIGN.md §7.
+ * DESIGN.md.
  */
 export const JOURNAL_ICONS: ReadonlyArray<{
   key: string;

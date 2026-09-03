@@ -166,7 +166,7 @@ function PersonListItem({
               onSelect: actions.onMerge,
             },
             // Destructive, but archiving is not deleting: it keeps its own
-            // Archive glyph (DESIGN.md §17).
+            // Archive glyph (DESIGN.md).
             {
               kind: "command",
               id: "archive",
@@ -186,7 +186,7 @@ function PersonListItem({
 /** A directory section: an open head — colour dot, sentence-case name, hairline
  *  rule, server count — over a panel holding the grid of people. The head
  *  carries the grouping; the panel gives the rows an edge so one is
- *  recognisable at rest (DESIGN.md §5, §24). */
+ *  recognisable at rest (DESIGN.md, docs/features/library.md). */
 function GroupSection({
   title,
   quiet,
@@ -263,7 +263,7 @@ export function PeoplePage() {
 
   // "Import from Immich" is shown only when the instance provides an Immich
   // server and the integration is currently connected — otherwise the control
-  // would open a dialog that can only say "reconnect" (DESIGN §23: dead links
+  // would open a dialog that can only say "reconnect" (docs/features/settings.md: dead links
   // are not rendered). The status query is gated on the config so a
   // non-Immich instance makes no integration call.
   const instanceConfig = useQuery(instanceConfigQuery());

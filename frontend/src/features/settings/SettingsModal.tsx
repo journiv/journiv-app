@@ -35,8 +35,8 @@ import "./settings.css";
 export type SettingsSection = "index" | SettingsNavItem["id"];
 
 /** Above this width Settings is a centred modal; at or below it is a
- *  full-screen routed flow (DESIGN.md §23). Matches the app's own
- *  persistent-pane breakpoint (DESIGN.md §9). */
+ *  full-screen routed flow (docs/features/settings.md). Matches the app's own
+ *  persistent-pane breakpoint (DESIGN.md). */
 export const SETTINGS_DESKTOP_QUERY = "(min-width: 1101px)";
 
 const DISCARD_PROMPT = "Discard your unsaved changes?";
@@ -148,7 +148,7 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
             <Dialog.Title className="sr-only">Settings</Dialog.Title>
             <div className="jv-settings">
               {/* The modal's own header — a flex sibling above the one scroll
-                  owner, never sticky (DESIGN.md §9). One close control. */}
+                  owner, never sticky (DESIGN.md). One close control. */}
               <div className="jv-settings__topbar">
                 {section !== "index" && (
                   <IconButton

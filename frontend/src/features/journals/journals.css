@@ -1,11 +1,11 @@
 /* The Journals management pane: create, rename, recolour, favourite, reorder,
-   archive and delete. This is chrome, not reading content (DESIGN.md §5), so
+   archive and delete. This is chrome, not reading content (DESIGN.md), so
    it is composed the way Settings is — a management canvas carrying a panel of
    rows, roomier than a Timeline row. The canvas stays `--background` (the list
    column's own surface): this pane carries the New journal control directly on
    it, and a `--muted` canvas would erase that control's edge in dark, where
    Minimal Neutral gives `--muted`, `--secondary`, `--border` and `--input` the
-   same value (§3, §5). The panel below is what provides the separation. */
+   same value (DESIGN.md, DESIGN.md). The panel below is what provides the separation. */
 
 .jv-journals__header {
   flex: 0 0 auto;
@@ -39,7 +39,7 @@
 }
 
 /* Journals are objects being managed, so the list is a panel raised off that
-   canvas — the same card relationship Settings uses (DESIGN.md §5, §22). */
+   canvas — the same card relationship Settings uses (DESIGN.md, docs/features/journals.md). */
 .jv-jlist {
   list-style: none;
   margin: 0;
@@ -111,7 +111,7 @@
 }
 
 /* The counts lead; "Last entry …" gets its own line so the date is never
-   clipped mid-word (DESIGN.md §5). Each line truncates on its own if it must. */
+   clipped mid-word (DESIGN.md). Each line truncates on its own if it must. */
 .jv-jrow__last {
   color: var(--muted-foreground);
 }

@@ -279,7 +279,7 @@ export function UsersPage() {
   return (
     // `jv-users` is the query container for the table's column budget, and the
     // wide measure is because this is a data table rather than a form
-    // (DESIGN.md §9, §23).
+    // (DESIGN.md, docs/features/settings.md).
     <div className="jv-settings__body jv-settings__body--wide jv-users">
       <SettingsSection
         title="Users"

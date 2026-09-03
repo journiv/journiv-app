@@ -1,7 +1,7 @@
 /* Shared virtualized selection grid — the Immich asset picker today, the
  * people picker in a later milestone. Column count is set inline from the
  * container's measured width (useVirtualGrid), so there are no media queries
- * here: the grid reflows at its own width (DESIGN.md §9). */
+ * here: the grid reflows at its own width (DESIGN.md). */
 
 .jv-asset-picker {
   display: flex;

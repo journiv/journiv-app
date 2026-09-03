@@ -50,12 +50,12 @@ export function AppSidebar({
 }) {
   const { journals, isLoading, isError, refetch } = useJournalLookup();
   const navigate = useNavigate();
-  // Where Settings was opened from, so closing it returns here (DESIGN.md §23).
+  // Where Settings was opened from, so closing it returns here (docs/features/settings.md).
   const fromHref = useRouterState({ select: (state) => state.location.href });
   // The rail lists active journals in the canonical order — favourites sort to
   // the top, so favouriting re-orders rather than hiding anything. Only a long
   // list is truncated, and "All journals" always covers the rest (and is the
-  // one route to archived journals). See DESIGN.md §22.
+  // one route to archived journals). See docs/features/journals.md.
   const { active } = groupJournals(journals);
   const railJournals = active.slice(0, SIDEBAR_MAX);
 
@@ -65,7 +65,7 @@ export function AppSidebar({
 
       {/* Styled as a button, never as a nav item: it must not pick up the
           selected-route treatment. That regression made it unreadable before.
-          This is the product's one filled brand control (DESIGN.md §3, brand
+          This is the product's one filled brand control (DESIGN.md, brand
           use #1) — writing is the thing Journiv exists for. */}
       <Button
         variant="brand"

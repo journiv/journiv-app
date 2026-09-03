@@ -1,10 +1,10 @@
 /**
- * Small, tokened data marks for the Tags workspace (DESIGN.md §24). Journiv has
+ * Small, tokened data marks for the Tags workspace (docs/features/library.md). Journiv has
  * no chart library and does not want one — these are the minimum needed to make
  * tag analytics legible: a stat-tile row, a horizontal distribution bar set and
  * a single-series sparkline. One series only, drawn in `--chart-1`; tracks in
  * `--border`; every label a typographic role. Feature-local until a second
- * surface needs them (DESIGN.md §18).
+ * surface needs them (docs/architecture/frontend.md).
  */
 import { useId } from "react";
 

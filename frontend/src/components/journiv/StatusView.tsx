@@ -13,7 +13,7 @@ type StatusTone = "neutral" | "danger";
 
 /**
  * Journiv's single pattern for empty, error and "nothing selected" states
- * (DESIGN.md §16). Built on the stock `Empty`; what this adds is the product
+ * (DESIGN.md). Built on the stock `Empty`; what this adds is the product
  * contract around it — every state gets a short title and, where an action is
  * possible, exactly one action. Bare sentences floating in a pane are not an
  * acceptable state.

@@ -5,7 +5,7 @@ import { instanceConfigQuery } from "../../api/query/options";
  * This instance's Journiv Plus capability, read from `GET /instance/config`
  * (the same query the capability-aware Settings pages use). It lets a Plus-only
  * surface decide what to render WITHOUT calling a protected endpoint and
- * interpreting its 403/503 — see DESIGN.md §24 "Tags".
+ * interpreting its 403/503 — see docs/features/library.md "Tags".
  *
  * Three outcomes matter:
  *  - `isSupporter`  → render the Plus feature.

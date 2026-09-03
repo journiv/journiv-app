@@ -1,4 +1,4 @@
-/* Settings — a contextual overlay over Journiv (DESIGN.md §23).
+/* Settings — a contextual overlay over Journiv (docs/features/settings.md).
    Desktop: a large two-column modal. Compact: a full-screen routed flow.
    One responsive Dialog; the layout switches in CSS, the routes do not. */
 
@@ -56,7 +56,7 @@
 
 /* ---- top bar ------------------------------------------------------------- */
 /* The modal's header at every width: a flex sibling above the scroll owner,
-   never sticky (DESIGN.md §9). Exactly one close control. */
+   never sticky (DESIGN.md). Exactly one close control. */
 
 .jv-settings__topbar {
   display: flex;
@@ -119,7 +119,7 @@
        value, so a `--border` hairline here leaves the nav and the canvas with no
        separation at all in dark (in light the `--sidebar`/`--muted` fill step
        carries it). `--sidebar-border` is the token for exactly this seam and
-       reads in both themes (DESIGN.md §3). */
+       reads in both themes (DESIGN.md). */
     border-right: 1px solid var(--sidebar-border);
     background: var(--sidebar);
   }
@@ -143,7 +143,7 @@
 }
 
 /* Quiet hierarchy label — communicates real grouping, not a dashboard eyebrow
-   (DESIGN.md §4, §23). Sentence case, muted, no letterspacing. */
+   (DESIGN.md, docs/features/settings.md). Sentence case, muted, no letterspacing. */
 .jv-settings-nav__label {
   margin: 0 var(--space-2) var(--space-1);
   font-size: 0.75rem;
@@ -152,7 +152,7 @@
 }
 
 /* A nav row carries base-vega's own sidebar-menu treatment; Journiv adds the
-   rail, because selection is never colour alone (DESIGN.md §6). */
+   rail, because selection is never colour alone (DESIGN.md). */
 .jv-settings-nav__item {
   position: relative;
   display: flex;
@@ -195,7 +195,7 @@
 
 /* Compact: the nav is the settings index — a full-screen list of grouped
    destinations. Each group is a card on the settings canvas, matching the
-   sections the rows lead to (DESIGN.md §23). */
+   sections the rows lead to (docs/features/settings.md). */
 @media (max-width: 1100px) {
   .jv-settings__content .jv-settings-nav {
     gap: var(--space-6);
@@ -203,7 +203,7 @@
   }
   /* The panel carries no inner padding and clips to its own radius, so a row's
      resting and hover surface runs the full width of the card instead of
-     floating inset with a second radius (DESIGN.md §5, "Rows"). */
+     floating inset with a second radius (DESIGN.md, "Rows"). */
   .jv-settings__content .jv-settings-nav__items {
     gap: 0;
     overflow: hidden;
@@ -239,7 +239,7 @@
 
 /* ---- content pane ----------------------------------------------------------- */
 
-/* The settings canvas. Sections are cards raised off it (DESIGN.md §5, §23),
+/* The settings canvas. Sections are cards raised off it (DESIGN.md, docs/features/settings.md),
    so this is `--muted` — the same surface relationship the app shell uses
    between the page canvas and its panels. */
 .jv-settings__content {
@@ -257,7 +257,7 @@
 }
 
 /* The one scroll owner in the modal. The top bar is a flex sibling above it,
-   never sticky (DESIGN.md §9). */
+   never sticky (DESIGN.md). */
 .jv-settings__scroll {
   flex: 1;
   min-height: 0;
@@ -269,7 +269,7 @@
 /* Named so a page inside it can say which box it is measuring. Sections and
    rows reflow against the content pane's width, never the viewport's — inside
    a fixed-width modal those two numbers have nothing to do with each other
-   (DESIGN.md §9). */
+   (DESIGN.md). */
 .jv-settings__body {
   max-width: 46rem;
   container: jv-settings-body / inline-size;
@@ -277,16 +277,16 @@
 
 /* A data table is not a form: it gets the whole content pane rather than the
    46rem reading measure, and decides its own column budget from that width
-   (§23, and `users.css`). */
+   (docs/features/settings.md, and `users.css`). */
 .jv-settings__body--wide {
   max-width: none;
 }
 
 /* A whole-pane empty or error state is still a chrome surface, so it is bounded
-   like a section rather than floating on the canvas (DESIGN.md §5). This also
+   like a section rather than floating on the canvas (DESIGN.md). This also
    keeps the state's own action identifiable: on `--muted` in dark, `--secondary`
    and `--border` are the same value as the canvas, so a `secondary` button
-   sitting straight on it has no edge at all (§3). */
+   sitting straight on it has no edge at all (DESIGN.md). */
 .jv-settings__scroll > [data-slot="empty"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -332,7 +332,7 @@
 
 /* Setting: label + description on the left, control on the right. The row is
    a stock `Item` carrying a `Field`; what stays here is the two-column reflow
-   at the row's own width (§9 — a component breakpoint, not a layout one) and
+   at the row's own width (DESIGN.md — a component breakpoint, not a layout one) and
    the hairline between rows. */
 .jv-settings-row {
   align-items: flex-start;
@@ -451,8 +451,8 @@
 
 /* The dot is 28px because that is the right size for a row of eight colours;
    the *control* is a full `--tap-target` square around it, so the finger gets
-   44px without the palette turning into eight large blocks (DESIGN.md §7,
-   §17). The swatches sit flush for the same reason — the targets already
+   44px without the palette turning into eight large blocks (DESIGN.md,
+   DESIGN.md). The swatches sit flush for the same reason — the targets already
    tile, and a gap between them would only add dead space. */
 .jv-personalize__swatch {
   display: grid;

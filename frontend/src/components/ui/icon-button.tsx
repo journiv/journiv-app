@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * Journiv wrapper over the stock base-vega Button for icon-only controls
- * (DESIGN.md §7). Two guarantees shadcn's bare `size="icon"` does not give:
+ * (DESIGN.md). Two guarantees shadcn's bare `size="icon"` does not give:
  *
  *  - an accessible name is REQUIRED (`label` → `aria-label` + `title`);
  *  - the touch target is always >= 44px (`--tap-target`) via an invisible

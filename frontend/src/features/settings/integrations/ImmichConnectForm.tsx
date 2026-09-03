@@ -196,7 +196,7 @@ export function ImmichConnectForm({
         <SettingsRow label="Import mode">
           {/* A generic exclusive choice with descriptions: the registry's own
               `RadioGroup` inside a `FieldSet`, not a hand-skinned native
-              radio (DESIGN.md §18, composition table). */}
+              radio (docs/architecture/frontend.md, composition table). */}
           <FieldSet>
             <FieldLegend className="sr-only">Import mode</FieldLegend>
             <RadioGroup

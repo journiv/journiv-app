@@ -7,7 +7,7 @@ import type { InlineMediaKind } from "./deltaProfile";
  * The Delta value carries ONLY an upload id. The local object URL, the file
  * name and the live status live in a side registry keyed by that id, so a
  * `blob:` URL can never reach a document — not through `getContents()`, not
- * through a draft, not through a save. See DESIGN.md §14.
+ * through a draft, not through a save. See docs/features/editor.md.
  *
  * The id is also how an upload that finishes later decides whether it still has
  * somewhere to go: if the placeholder is gone (removed, or undone while the

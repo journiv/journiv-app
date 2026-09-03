@@ -110,7 +110,7 @@
 /* ---- tags and people ---------------------------------------------------
    Both are stock `Badge`s — a tag is `secondary`, a person is `outline` with
    an `Avatar` inside it, because a person has a face and a tag is a word
-   (DESIGN.md §24). Only the person chip's shape is Journiv's: it has to grow
+   (docs/features/library.md). Only the person chip's shape is Journiv's: it has to grow
    to fit an avatar, which a stock badge does not. */
 
 .jv-person {
@@ -209,7 +209,7 @@
 
 /* ---- Library row -------------------------------------------------------
    The row is a stock `Item`. Only the stretched-link composition and the
-   rest-hidden `⋯` are Journiv's (DESIGN.md §6, §24). */
+   rest-hidden `⋯` are Journiv's (DESIGN.md, docs/features/library.md). */
 
 .jv-lib-row {
   min-height: 3.25rem;
@@ -227,7 +227,7 @@
 /* The resting surface belongs to the row, not to the link inside it. Hovering
    anywhere on the row — including the trailing `⋯` and any control that wraps
    onto its own line at narrow widths — highlights the whole row, so the
-   affordance always matches the hit area (DESIGN.md §5, "Rows"). */
+   affordance always matches the hit area (DESIGN.md, "Rows"). */
 .jv-lib-row--link:hover {
   background: var(--muted);
 }
@@ -252,7 +252,7 @@
 }
 
 /* The `⋯` rests hidden and appears on hover or keyboard focus, so a list at
-   rest is just people (DESIGN.md §1, §6 "Secondary row actions").
+   rest is just people (DESIGN.md, DESIGN.md "Secondary row actions").
  *
  * This is not a violation of "interactive things look interactive at rest":
  * the row's own action — opening the person — is what has to read as
@@ -280,7 +280,7 @@
   }
 }
 
-/* ---- Adaptive overlays (DESIGN.md §9, "Adaptive overlays") --------------
+/* ---- Adaptive overlays (DESIGN.md, "Adaptive overlays") --------------
  * Header / body / footer, with the body as the single scroll owner so the
  * title and the actions can never scroll out of reach. Mounted by
  * AppAdaptiveDialog, AppConfirmDialog and AppAdaptiveMenu.
@@ -342,7 +342,7 @@
 /* ---- Action sheet rows (AppAdaptiveMenu, compact branch) ----------------
  * The rows themselves are stock `Item`s; only the thumb-sized target and the
  * destructive tone are Journiv's, because a Drawer row is a touch target
- * before it is a list row (DESIGN.md §9, §17). */
+ * before it is a list row (DESIGN.md, DESIGN.md). */
 
 .jv-sheet-actions {
   display: flex;
@@ -360,7 +360,7 @@
   cursor: not-allowed;
 }
 
-/* Destructive keeps its own icon (§17) — colour is never the only signal. */
+/* Destructive keeps its own icon (DESIGN.md) — colour is never the only signal. */
 .jv-sheet-action--destructive {
   color: var(--destructive);
 }
@@ -380,7 +380,7 @@
  * A `ButtonGroup` of three router links (ListViewSwitch). The current view is
  * marked with `aria-current="page"` rather than a toggle's pressed state, so
  * the selected fill keys off that — the same neutral `--muted` a segmented
- * ToggleGroup paints, because selection is never blue (DESIGN.md §3).
+ * ToggleGroup paints, because selection is never blue (DESIGN.md).
  */
 
 .jv-view-switch [aria-current="page"] {
@@ -392,7 +392,7 @@
    device and too small for a thumb. The three segments sit flush, so the
    `IconButton` trick of projecting a 44px hit area past the visual box would
    make neighbours overlap and mis-fire — here the control itself grows, and
-   only where the pointer is coarse (DESIGN.md §7). */
+   only where the pointer is coarse (DESIGN.md). */
 @media (pointer: coarse) {
   .jv-view-switch [data-slot="button"] {
     width: var(--tap-target);

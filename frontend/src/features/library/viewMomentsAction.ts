@@ -12,7 +12,7 @@ export type MomentScopeParam =
 /**
  * "View moments" — the standard leading action in a Library entity's ⋯ menu
  * (People, Tags, Activities, Goals, Moods). It opens the Timeline scoped to
- * that entity (DESIGN.md §24), so every entity reaches its moments the same
+ * that entity (docs/features/library.md), so every entity reaches its moments the same
  * way.
  *
  * This is an action *descriptor*, not a rendered menu item: `AppAdaptiveMenu`

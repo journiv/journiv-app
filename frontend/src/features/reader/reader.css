@@ -124,7 +124,7 @@
   margin: 0;
 }
 
-/* The one detached object inside the reading column (DESIGN.md §5): an
+/* The one detached object inside the reading column (DESIGN.md): an
    invitation to write, not a piece of the entry. */
 .jv-reader__invitation {
   margin-top: var(--space-8);

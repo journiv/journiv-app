@@ -16,7 +16,7 @@ import "./integrations.css";
 
 /**
  * The provider catalogue — one `LibraryRow` per known integration, each linking
- * to its detail route (DESIGN.md §23). A provider the instance has not enabled
+ * to its detail route (docs/features/settings.md). A provider the instance has not enabled
  * stays listed but unlinked, with a "Not available" pill. A trailing muted row
  * sets the expectation that more providers are coming.
  *

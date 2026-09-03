@@ -7,7 +7,7 @@ import { JOURNAL_COLORS } from "./journalColors";
  * one translation; `MomentMeta` re-exports it as `moodColor` for its callers.
  * Returns `undefined` (not a guessed colour) when there is no usable value, so
  * `JournalDot`-style fallbacks (`var(--entity-accent, var(--line-strong))`)
- * take over. See DESIGN.md §3.
+ * take over. See DESIGN.md.
  */
 export function colorFromArgb(value?: number | null): string | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;

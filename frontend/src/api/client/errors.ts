@@ -60,7 +60,7 @@ export function isNotFound(caught: unknown): boolean {
   return caught instanceof ApiError && caught.status === 404;
 }
 
-/** The entry moved underneath this edit; see DESIGN.md §14, "Concurrent edits". */
+/** The entry moved underneath this edit; see docs/features/editor.md, "Concurrent edits". */
 export function isConflict(caught: unknown): boolean {
   return caught instanceof ApiError && caught.status === 409;
 }

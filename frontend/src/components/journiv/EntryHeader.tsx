@@ -18,7 +18,7 @@ import { JournalBadge } from "./JournalBadge";
  * field. When it is omitted this component renders the date as the <h1>.
  *
  * `dateControl` is likewise a slot: the editor passes an interactive control
- * that edits the Moment's `logged_at_utc` (DESIGN.md §14); the reader passes
+ * that edits the Moment's `logged_at_utc` (docs/features/editor.md); the reader passes
  * nothing and the date/time renders as plain text.
  */
 export function EntryHeader({

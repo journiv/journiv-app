@@ -4,7 +4,7 @@ import { cx } from "../../lib/cx";
 import { resolveJournalIcon } from "../../lib/journalIcons";
 
 /**
- * A Library entity's identity mark, mirroring `JournalDot` (DESIGN.md §7) for
+ * A Library entity's identity mark, mirroring `JournalDot` (DESIGN.md) for
  * the entities whose colour arrives as either a Flutter ARGB integer (person,
  * activity, mood and goal groups) or a validated six-digit hex string
  * (activities).
@@ -16,7 +16,7 @@ import { resolveJournalIcon } from "../../lib/journalIcons";
  * the plain dot. Colour is the one hue allowed into the chrome.
  *
  * The hue enters as an inline `--entity-accent`, exactly as `--journal-accent`
- * and `--mood-accent` do (DESIGN.md §3); it is never written to a stylesheet.
+ * and `--mood-accent` do (DESIGN.md); it is never written to a stylesheet.
  */
 export function EntityGlyph({
   colorValue,

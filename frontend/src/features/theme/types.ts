@@ -1,5 +1,5 @@
 /**
- * User personalization model (DESIGN.md §25).
+ * User personalization model (docs/features/personalization.md).
  *
  * A `UserTheme` is a set of stock shadcn CSS custom-property values plus the two
  * font choices and the reader text-size scale. We store the *structured* values,
@@ -11,7 +11,7 @@
 
 /** The stock shadcn colour / shadow variables a user (or an imported tweakcn
  *  theme) may set — including Journiv's own `--brand` pair, which is what the
- *  accent picker writes (DESIGN.md §3: `--primary` is neutral, blue is the
+ *  accent picker writes (DESIGN.md: `--primary` is neutral, blue is the
  *  brand accent). Font variables are deliberately NOT here — fonts come only
  *  from the bundled-font pickers. `radius` is NOT here either: there is no
  *  corner-radius personalization control, and the whole named scale derives

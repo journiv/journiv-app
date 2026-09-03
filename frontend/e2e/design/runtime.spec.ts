@@ -49,7 +49,7 @@ test.describe("runtime design", () => {
      base-vega gives a resting `outline` control a `shadow-xs`, and an earlier
      version of DESIGN.md ("no shadow outside overlays") deleted it from four
      upstream components, so nothing looked interactive until you hovered it.
-     See DESIGN.md §5. */
+     See DESIGN.md. */
   test("RD-003 a resting outline control carries base-vega's shadow", async ({
     page,
   }) => {
@@ -66,7 +66,7 @@ test.describe("runtime design", () => {
 
   /* `--muted-foreground` on `--muted` is the pair Minimal Neutral itself fails
      (~4.1:1), and Journiv puts it on screen in tags, hovered rows and
-     secondary badges — hence the one documented colour divergence (§26). */
+     secondary badges — hence the one documented colour divergence (docs/features/authentication.md). */
   test("RD-004 metadata stays legible on a muted surface", async ({ page }) => {
     await page.goto("/timeline");
     await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();

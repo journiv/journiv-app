@@ -11,7 +11,7 @@ import { cx } from "../../lib/cx";
  * When the Journal also carries a recognised `icon` (see `journalIcons`), the
  * glyph is drawn in that same hue in place of the dot. An unrecognised icon
  * value (for example a Material Symbols name written by the Flutter client)
- * falls back to the plain dot. See DESIGN.md §7.
+ * falls back to the plain dot. See DESIGN.md.
  */
 export function JournalDot({
   journal,

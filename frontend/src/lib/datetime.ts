@@ -117,7 +117,7 @@ export function formatDayMedium(utc: string, timezone: string) {
 /**
  * A short absolute date ("17 August 2026") in the viewer's timezone. For
  * journal-level aggregates such as `last_entry_at`, which — unlike a Moment —
- * have no timezone of their own, so the ambiguity rules in §12 do not apply.
+ * have no timezone of their own, so the ambiguity rules in docs/domain/moments.md do not apply.
  */
 export function formatDateMedium(utc: string) {
   return new Intl.DateTimeFormat(undefined, {
