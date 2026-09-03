@@ -86,6 +86,31 @@ docker run -d \
 
 **For complete installation guide see [installation guide](https://journiv.com/docs/installation).**
 
+### Web interfaces
+
+The production container serves both compiled frontends from the same FastAPI
+origin and public port:
+
+```text
+/              React frontend (primary)
+/legacy/       Flutter frontend (temporary legacy interface)
+/api/v1/*      FastAPI API
+/pub/*         Public publishing routes
+/docs          FastAPI docs when enabled
+/openapi.json  FastAPI OpenAPI schema
+```
+
+React is the default Journiv interface from this release onward. The Flutter
+interface remains available temporarily at `/legacy/` for users who need to
+switch back during the transition and may be removed in a future release.
+
+Upgrades from versions where Flutter owned `/` are handled by a narrowly scoped
+retirement worker at `/flutter_service_worker.js`. It replaces only the old
+root Flutter worker, removes the standard `flutter-app-*` caches, unregisters
+itself, and reloads a controlled window. React also performs a one-time check
+for that exact root registration. Other service-worker registrations are left
+untouched, preserving a path for future React PWA support.
+
 ## Demo
 Want to just try a [demo](https://demo.almostadatacenter.com)?
 (Thanks to [JasonFieldz](https://github.com/JasonFieldz) for hosting a demo instance).

@@ -76,6 +76,17 @@ coverage/
 integration_test/
 
 # ===============================================================
+# REACT / VITE FRONTEND
+# ===============================================================
+
+# Dependencies and local build/test output are recreated in the Node stage.
+frontend/node_modules/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.vite/
+
+# ===============================================================
 # DART MIGRATOR (bin/)
 # ===============================================================
 

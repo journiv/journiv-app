@@ -2,22 +2,19 @@
 Main FastAPI application for Journiv.
 """
 
-import logging
-import mimetypes
 import socket
 import time
 from contextlib import asynccontextmanager
-from datetime import timedelta
 from pathlib import Path
 from typing import Any, cast
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.staticfiles import StaticFiles
 
@@ -46,6 +43,7 @@ from app.core.exceptions import (
 from app.core.http_client import close_http_client
 from app.core.logging_config import log_error, log_info, log_warning, setup_logging
 from app.core.rate_limiting import limiter, rate_limit_exceeded_handler
+from app.frontend import frontend_router
 from app.middleware.csp_middleware import create_csp_middleware
 from app.middleware.request_logging import RequestLoggingMiddleware, request_id_ctx
 from app.plus import plus_public_router
@@ -116,11 +114,23 @@ app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
     description="A self-hosted private journal app with mood tracking, prompts, and analytics",
-    openapi_url=f"{settings.api_v1_prefix}/openapi.json" if docs_enabled else None,
+    openapi_url="/openapi.json" if docs_enabled else None,
     docs_url="/docs" if docs_enabled else None,
     redoc_url="/redoc" if docs_enabled else None,
     lifespan=lifespan,
 )
+
+
+# Expose the conventional root OpenAPI URL wherever the schema is served, and
+# keep the historical /api/v1 alias working. Both stay off in production so the
+# API surface is not enumerable there, matching /docs and /redoc. The React
+# client is generated from a committed openapi.json at build time and never
+# fetches either URL at runtime.
+if docs_enabled:
+
+    @app.get(f"{settings.api_v1_prefix}/openapi.json", include_in_schema=False)
+    async def legacy_openapi_json():
+        return JSONResponse(app.openapi())
 
 # -----------------------------------------------------------------------------
 # Middleware Configuration
@@ -395,89 +405,9 @@ else:
         f"Media directory {media_path} does not exist. File uploads may not work properly."
     )
 
-# -----------------------------------------------------------------------------
-# Flutter Web SPA Mount (with smart cache-busting and security checks)
-# -----------------------------------------------------------------------------
-
-log = logging.getLogger("uvicorn")
-WEB_BUILD_PATH = Path(__file__).resolve().parent.parent / "web"
-
-if WEB_BUILD_PATH.exists():
-    ONE_WEEK = int(timedelta(weeks=1).total_seconds())
-
-    def serve_static_file(file_path: Path, cache: bool = True) -> FileResponse:
-        """Serve static files with sensible caching headers."""
-        if not file_path.exists():
-            raise HTTPException(status_code=404)
-
-        # Entry points, manifests, and orchestrators are ALWAYS fetched fresh
-        if not cache:
-            cache_header = "no-cache, no-store, must-revalidate, max-age=0"
-        else:
-            cache_header = f"public, max-age={ONE_WEEK}"
-
-        headers = {"Cache-Control": cache_header}
-        return FileResponse(
-            file_path, headers=headers, media_type=mimetypes.guess_type(file_path)[0]
-        )
-
-    @app.get("/manifest.json", include_in_schema=False)
-    async def manifest():
-        return serve_static_file(WEB_BUILD_PATH / "manifest.json", cache=False)
-
-    @app.get("/flutter_service_worker.js", include_in_schema=False)
-    async def service_worker():
-        return serve_static_file(
-            WEB_BUILD_PATH / "flutter_service_worker.js", cache=False
-        )
-
-    @app.get("/flutter_bootstrap.js", include_in_schema=False)
-    async def bootstrap_script():
-        """Ensure the main Flutter bootstrapper is never cached by the browser."""
-        return serve_static_file(WEB_BUILD_PATH / "flutter_bootstrap.js", cache=False)
-
-    @app.get("/icons/{icon_name}", include_in_schema=False)
-    async def icons(icon_name: str):
-        return serve_static_file(WEB_BUILD_PATH / "icons" / icon_name)
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    async def serve_spa(full_path: str, request: Request):
-        """Serve Flutter Web SPA with proper fallback routing for path-based URLs."""
-        # Exclude API and media routes
-        if full_path.startswith(("api/", "media/")):
-            raise HTTPException(status_code=404)
-
-        # Prevent Path Traversal: Resolve absolute paths and enforce containment
-        resolved_web_build_path = WEB_BUILD_PATH.resolve()
-        file_path = (WEB_BUILD_PATH / full_path).resolve()
-
-        # Enforce that file_path is strictly inside resolved_web_build_path before processing
-        if not file_path.is_relative_to(resolved_web_build_path):
-            raise HTTPException(status_code=404)
-
-        # Try to serve the requested file (for static assets like JS, CSS, images)
-        if file_path.is_file():
-            # Double check that no hidden bootstrapper variations escape caching rules
-            is_bootstrapper = full_path.endswith(
-                (
-                    "service_worker.js",
-                    "flutter_service_worker.js",
-                    "flutter_bootstrap.js",
-                )
-            )
-            return serve_static_file(file_path, cache=not is_bootstrapper)
-
-        # For all other routes (including /oidc-finish, /login, etc.), serve index.html
-        # This enables Flutter Web's path-based routing
-        index_file = WEB_BUILD_PATH / "index.html"
-        if index_file.exists():
-            return serve_static_file(index_file, cache=False)
-
-        log.error("Flutter web index.html not found.")
-        return JSONResponse(
-            status_code=404,
-            content={"error": "not_found", "message": "Frontend not found"},
-        )
+# Frontend routes are registered last. The router itself also denies every
+# backend-owned namespace, so route isolation does not depend on ordering alone.
+app.include_router(frontend_router)
 
 
 # -----------------------------------------------------------------------------

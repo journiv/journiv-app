@@ -10,6 +10,7 @@ export default defineConfig(({ mode }) => {
   const backendProxy = env.JOURNIV_BACKEND_PROXY_URL ?? "http://127.0.0.1:8000";
 
   return {
+    base: "/",
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: { "@": srcDir },

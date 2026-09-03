@@ -106,6 +106,9 @@ jobs:
       # P0/P1 set rather than adding a second job.
       - name: Run Playwright smoke suite
         working-directory: frontend
+        env:
+          JOURNIV_E2E_BASE_URL: http://127.0.0.1:8000
+          JOURNIV_E2E_SKIP_WEBSERVER: "1"
         run: npm run test:e2e
 
       - name: Upload Playwright report

@@ -1,5 +1,19 @@
 # =========================
-# Stage 1: Python Builder
+# Stage 1: React Builder
+# =========================
+FROM node:24-bookworm-slim AS react-builder
+
+WORKDIR /frontend
+
+# Keep dependency installation cacheable and use the committed lockfile.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+COPY frontend/ ./
+RUN npm run build
+
+# =========================
+# Stage 2: Python Builder
 # =========================
 FROM python:3.12-slim-bookworm AS builder
 
@@ -32,7 +46,7 @@ ENV UV_SYSTEM_PYTHON=1
 RUN uv sync --locked --no-editable --no-install-project
 
 # =========================
-# Stage 2: Runtime
+# Stage 3: Runtime
 # =========================
 FROM python:3.12-slim-bookworm AS runtime
 
@@ -43,7 +57,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
   PYTHONPATH=/app \
   PATH=/opt/venv/bin:/root/.local/bin:$PATH \
   ENVIRONMENT=production \
-  LOG_LEVEL=INFO
+  LOG_LEVEL=INFO \
+  REACT_WEB_BUILD_PATH=/opt/journiv/react-web \
+  LEGACY_WEB_BUILD_PATH=/opt/journiv/legacy-web
 
 WORKDIR /app
 
@@ -84,8 +100,11 @@ COPY scripts/prompts.json scripts/prompts.json
 COPY scripts/docker-entrypoint.sh scripts/docker-entrypoint.sh
 COPY journiv-admin journiv-admin
 
-# Copy prebuilt Flutter web app
-COPY web/ web/
+# Copy both compiled SPAs. React is built in this Dockerfile; Flutter remains
+# the intentionally tracked release artifact produced by journiv-frontend's
+# build_web.sh with --base-href /legacy/.
+COPY --from=react-builder /frontend/dist/ /opt/journiv/react-web/
+COPY web/ /opt/journiv/legacy-web/
 
 # Copy license
 COPY LICENSE.md .
@@ -97,7 +116,7 @@ RUN adduser --disabled-password --gecos "" --uid 1000 appuser \
   && chmod -R a+rX /opt/venv \
   && chmod o+x /usr/local/bin/python3.12 /usr/local/bin/python3 \
   && chmod -R a+rwX /data \
-  && chown -R appuser:appuser /app /data /opt/venv
+  && chown -R appuser:appuser /app /data /opt/venv /opt/journiv
 
 USER appuser
 
