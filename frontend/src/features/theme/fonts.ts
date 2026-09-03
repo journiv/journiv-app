@@ -4,7 +4,7 @@ import type { BundledFont } from "./types";
  * Bundled font registry. DM Sans ships in the main CSS bundle; every other
  * family is loaded on demand (on selection, or on load when a stored theme
  * names it) so an unused face never costs the PWA anything. No remote fonts —
- * a self-hosted Journiv makes no external requests (DESIGN.md §13 privacy).
+ * a self-hosted Journiv makes no external requests (docs/features/reader.md privacy).
  */
 
 type FontEntry = {

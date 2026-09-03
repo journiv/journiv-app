@@ -109,7 +109,7 @@ describe("QuillSurface", () => {
 
   it("round-trips inline media without gaining newlines, unlike flutter_quill", () => {
     // flutter_quill grows a newline after every video embed on each load; see
-    // DESIGN.md §21. Quill JS must not, or the web client would corrupt
+    // docs/known-gaps.md. Quill JS must not, or the web client would corrupt
     // documents on its own.
     const signed = "/api/v1/media/media-1/signed?sig=a";
     const source = {

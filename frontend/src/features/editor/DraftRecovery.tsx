@@ -19,7 +19,7 @@ import type { DraftStatus } from "./useLocalDraft";
  * When the draft was last written, in the reader's own timezone.
  *
  * `modifiedAt` is a local event with no timezone of its own — unlike a Moment,
- * whose date is rendered where it happened (DESIGN.md §12) — so the viewer's
+ * whose date is rendered where it happened (docs/domain/moments.md) — so the viewer's
  * zone is the right one here.
  */
 function writtenWhen(record: EditorDraftV1) {
@@ -122,7 +122,7 @@ export function DraftRecoveryPrompt({
  * The editor stays closed on purpose. Opening it would mean opening a document
  * whose photos are missing — and pressing Done on that document would tell the
  * backend to delete them, because a save removes media the Delta dropped
- * (DESIGN.md §14). The writing is shown here instead, so nothing feels lost
+ * (docs/features/editor.md). The writing is shown here instead, so nothing feels lost
  * while the connection is out.
  */
 export function DraftMediaUnreachable({

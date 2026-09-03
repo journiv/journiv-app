@@ -110,7 +110,7 @@ describe("AppConfirmDialog", () => {
     });
     const cancel = screen.getByRole("button", { name: "Cancel" });
 
-    // The design contract (§6): `danger` is tinted destructive text, never the
+    // The design contract (DESIGN.md): `danger` is tinted destructive text, never the
     // filled primary. Asserting the treatment, not a whole class string.
     expect(confirm.className).toContain("text-destructive");
     expect(cancel.className).not.toContain("text-destructive");

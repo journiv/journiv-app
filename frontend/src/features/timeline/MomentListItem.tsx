@@ -45,7 +45,7 @@ export function MomentListItem({
   month?: string;
   date?: string;
   /** Keeps an entity scope (`?person=…`, `?tag=…`, …) mounted when the row
-   *  opens the reader beside the scoped list (DESIGN.md §24). */
+   *  opens the reader beside the scoped list (docs/features/library.md). */
   scopeSearch?: Record<string, string>;
 }) {
   const kind = momentKind(moment);

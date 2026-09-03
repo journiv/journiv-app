@@ -6,7 +6,7 @@ import type { JournalColor } from "../api/generated/types.gen";
  * (journiv-backend/app/models/enums.py) exactly, so the picker can only offer
  * what `POST /journals` will accept. Like a mood's colour, a journal's colour
  * is API-provided data that `JournalDot` passes straight to `--journal-accent`;
- * it never enters a stylesheet. See DESIGN.md §3.
+ * it never enters a stylesheet. See DESIGN.md.
  */
 export const JOURNAL_COLORS: ReadonlyArray<{
   value: JournalColor;

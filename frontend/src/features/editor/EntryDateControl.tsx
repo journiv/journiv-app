@@ -26,7 +26,7 @@ const Calendar = lazy(() =>
 );
 
 /**
- * The editor's editable version of the `EntryHeader` date line (DESIGN.md §14).
+ * The editor's editable version of the `EntryHeader` date line (docs/features/editor.md).
  * The reader passes nothing to `EntryHeader.dateControl` and keeps a plain
  * `<p>`; only the editor mounts this.
  *

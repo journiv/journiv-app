@@ -476,7 +476,7 @@ def seed(api: Api, media_dir: Path) -> None:
         created += 1
     print(f"  {created} moments created")
 
-    # --- sparse Moment scenarios from DESIGN.md §10 ----------------------
+    # --- sparse Moment scenarios from frontend/docs/domain/moments.md -----
     print("Sparse Moments…")
     current = api.request("GET", "/moments?limit=200&include_empty=true")["items"]
     notes = {(m.get("note") or "").strip() for m in current}

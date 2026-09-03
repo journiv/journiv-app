@@ -6,7 +6,7 @@ import { useShell } from "../shell/AppShell";
 import "./library.css";
 
 /**
- * The shared Library list shell (DESIGN.md §24). Every Library section — People,
+ * The shared Library list shell (docs/features/library.md). Every Library section — People,
  * Tags, Moods, Activities, Goals — is a wide workspace spanning the shell's two
  * content columns: a compact `PageBar` for navigation, a header carrying the
  * title and the surface's one primary action above the single scroll owner,

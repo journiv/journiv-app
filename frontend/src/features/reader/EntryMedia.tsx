@@ -12,7 +12,7 @@ import type { MomentMediaState } from "./useMomentMedia";
 /**
  * The Moment's media gallery, rendered between the entry header and the prose.
  *
- * Design rules (DESIGN.md §13):
+ * Design rules (docs/features/reader.md):
  * - `alt_text` is ALT TEXT. It goes in the `alt` attribute. Journiv has no
  *   caption field, so nothing is rendered under an image.
  * - Photographs are NEVER cropped. There is no full-image viewer yet, so a
@@ -134,7 +134,7 @@ function MediaItem({
   if (item.media_type === "video") {
     return (
       <div {...frame}>
-        {/* PROVISIONAL: verified against images only. See DESIGN.md §21. */}
+        {/* PROVISIONAL: verified against images only. See docs/known-gaps.md. */}
         {/* biome-ignore lint/a11y/useMediaCaption: Journiv has no caption or
             subtitle field on media, so there is nothing to attach a <track> to. */}
         <video
@@ -152,7 +152,7 @@ function MediaItem({
   if (item.media_type === "audio") {
     return (
       <div className="jv-media__audio">
-        {/* PROVISIONAL: verified against images only. See DESIGN.md §21. */}
+        {/* PROVISIONAL: verified against images only. See docs/features/reader.md. */}
         {/* biome-ignore lint/a11y/useMediaCaption: no caption field exists. */}
         <audio
           className="jv-media__element"

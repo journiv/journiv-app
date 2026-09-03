@@ -1,5 +1,5 @@
 /**
- * The colour maths behind the accent picker (DESIGN.md §3, §25).
+ * The colour maths behind the accent picker (DESIGN.md, docs/features/personalization.md).
  *
  * Journiv's accent is `--brand`, and `--brand` is not decoration: it is a
  * filled button's background, the selection rail, the focus ring, and the

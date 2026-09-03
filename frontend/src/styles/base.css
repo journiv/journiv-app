@@ -57,7 +57,7 @@ img {
 
 /* The reader and the editor MUST both use this role for the entry title.
    It follows `--font-reader` (default: `--font-sans`) so the headline matches
-   the prose beneath it when a reader font is chosen (DESIGN.md §4, §25). */
+   the prose beneath it when a reader font is chosen (DESIGN.md, docs/features/personalization.md). */
 .jv-entry-title {
   font-family: var(--font-reader);
   font-size: clamp(1.85rem, 1.35rem + 1.6vw, 2.45rem); /* 30 -> 39px */

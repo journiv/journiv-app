@@ -108,7 +108,7 @@ type View =
 
 /**
  * Library → People · "Import from Immich". One adaptive overlay, three in-place
- * views (browse → importing → results — they swap, never stack, DESIGN §24).
+ * views (browse → importing → results — they swap, never stack, docs/features/library.md).
  * State lives in this caller above `AppAdaptiveDialog`, so crossing 860px does
  * not discard browse edits. The
  * browse list is a plain infinite-scroll list rather than the virtualized

@@ -2,7 +2,7 @@
 
 /* The application canvas is `body` (`--muted`, index.css). The shell is one
    rounded, bordered surface sitting on it, with the panes flush inside it
-   (DESIGN.md §5).
+   (DESIGN.md).
 
    The outer border is `--border`, which in Minimal Neutral's light palette is
    the same value as the canvas — so the shell's edge is carried by
@@ -10,7 +10,7 @@
    between the two tokens; do not "fix" it by inventing a darker edge.
 
    `--jv-seam` is the pane divider — a *faded* `--border`, not a full hairline.
-   An A/B test (DESIGN.md §25) compared hard `--border` seams, these faded
+   An A/B test (docs/features/personalization.md) compared hard `--border` seams, these faded
    seams and a no-frame "airy" split; the faded seams read as the calmest
    without the panes losing their edges. Softer than `--sidebar-border` (the
    Settings-nav seam) on purpose: this one only has to quiet a division, not
@@ -98,7 +98,7 @@
 
 /* A nav row carries the same treatment as base-vega's own sidebar menu button
    (`Item`-shaped: radius, muted hover, accent when active). Journiv adds the
-   rail, because selection is never colour alone (DESIGN.md §6). */
+   rail, because selection is never colour alone (DESIGN.md). */
 .jv-nav__item {
   position: relative;
   display: flex;
@@ -216,7 +216,7 @@
    nav that reads as a fill step in light (`--muted` 0.95 vs `--sidebar` 0.985)
    but vanishes in dark, where Minimal Neutral collapses `--muted` and `--sidebar`
    to the same `oklch(0.269 0 0)` — so you cannot tell which mode is active.
-   `--accent` is the product's selection role (DESIGN.md §17) and lifts off
+   `--accent` is the product's selection role (DESIGN.md) and lifts off
    `--sidebar` in both themes (dark `--accent` 0.371). */
 .jv-theme-control [aria-pressed="true"] {
   color: var(--accent-foreground);

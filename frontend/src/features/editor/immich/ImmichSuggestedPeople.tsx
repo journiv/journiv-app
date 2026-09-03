@@ -11,10 +11,10 @@ import {
  * "Suggested from Immich" — a quiet strip at the top of the editor's People
  * section. When the moment holds Immich media, Immich's face index is asked
  * which sync-enabled people appear in it; each match is an add-chip. It never
- * writes on its own (DESIGN §2.6) — a tap runs the section's own
+ * writes on its own (DESIGN.md) — a tap runs the section's own
  * `setMomentPeople`. A fetch failure is not a failed user action, so it shows a
  * quiet caption with a retry, never a `role="alert"` (the reader-media
- * precedent, §13).
+ * precedent, docs/features/reader.md).
  */
 export function ImmichSuggestedPeople({
   momentId,

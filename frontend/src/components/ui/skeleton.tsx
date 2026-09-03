@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
  * shadcn base-vega Skeleton. Journiv keeps two conveniences over upstream: a
  * decorative `<span aria-hidden>` (valid inside headings / inline flow) and
  * optional `width` / `height` for shape-matching without an arbitrary class at
- * every call site (DESIGN.md §16).
+ * every call site (DESIGN.md).
  */
 function Skeleton({
   className,

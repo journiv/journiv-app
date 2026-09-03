@@ -7,7 +7,7 @@ import { Badge } from "../ui/badge";
  *  a name; a tag is a word. Never render them with the same chip.
  *
  *  When `to` is given the chip is a link to the Timeline scoped to that entity
- *  (DESIGN.md §24) — used at the reader foot, never in the editor. */
+ *  (docs/features/library.md) — used at the reader foot, never in the editor. */
 export function PersonChip({
   person,
   to,

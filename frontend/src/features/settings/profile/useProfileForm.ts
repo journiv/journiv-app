@@ -11,7 +11,7 @@ export type ProfileFormState = ReturnType<typeof useProfileForm>;
 
 /**
  * Profile edit state. Initialises from the shared current-user and user-settings
- * queries (no private copy of either — DESIGN.md §23), tracks dirtiness, and on
+ * queries (no private copy of either — docs/features/settings.md), tracks dirtiness, and on
  * save writes only what changed: `name` via `PUT /users/me`, `time_zone` via
  * `PUT /users/me/settings`. Entered values survive a failed save; a successful
  * save re-seeds from the server and updates the sidebar via cache invalidation.
@@ -102,7 +102,7 @@ export function useProfileForm() {
     touched,
     saving: mutation.isPending,
     // Invalid does not disable Save — clicking it surfaces the field error
-    // instead, the same pattern as the journal form (DESIGN.md §16).
+    // instead, the same pattern as the journal form (DESIGN.md).
     canSave: dirty && !mutation.isPending,
     saved: saved && !dirty,
     failed: mutation.isError,

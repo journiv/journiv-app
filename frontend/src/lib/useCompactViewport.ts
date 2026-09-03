@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 
-/** DESIGN.md §9's compact boundary — at or below this width the app is one
+/** DESIGN.md's compact boundary — at or below this width the app is one
  *  pane per screen, and an adaptive overlay presents as a Drawer. */
 export const COMPACT_QUERY = "(max-width: 860px)";
 
@@ -25,9 +25,9 @@ function getSnapshot() {
 }
 
 /**
- * `true` at or below 860px — the compact / one-pane band (DESIGN.md §9).
+ * `true` at or below 860px — the compact / one-pane band (DESIGN.md).
  *
- * §9 forbids JS breakpoint state for *layout*, and that has not changed: every
+ * DESIGN.md forbids JS breakpoint state for *layout*, and that has not changed: every
  * pane, grid and reflow in Journiv is still CSS. This hook exists for the one
  * thing CSS cannot express — which *primitive* an adaptive overlay mounts
  * (Drawer vs Dialog / AlertDialog / DropdownMenu). A CSS-only switch would need

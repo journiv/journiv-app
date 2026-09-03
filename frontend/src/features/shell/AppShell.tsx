@@ -46,7 +46,7 @@ export function AppShell() {
     (match) => match.staticData?.pane === "detail",
   );
   // Same declarative read for the Settings overlay: a `staticData.settings`
-  // route means "open the Settings modal on this section" (DESIGN.md §23).
+  // route means "open the Settings modal on this section" (docs/features/settings.md).
   const settingsSection = matches
     .map((match) => match.staticData?.settings)
     .find((value): value is SettingsSection => Boolean(value));

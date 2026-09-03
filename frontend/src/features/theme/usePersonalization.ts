@@ -23,7 +23,7 @@ export function usePersonalization() {
   }, []);
 
   /** The accent picker moves Journiv's brand colour, not `--primary`.
-   *  `--primary` is neutral in both references (DESIGN.md §3); the blue a user
+   *  `--primary` is neutral in both references (DESIGN.md); the blue a user
    *  chooses is the identity accent, so it lands on `--brand`.
    *
    *  An accent is always a light/dark *pair* with its own foregrounds. Writing

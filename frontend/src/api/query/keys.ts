@@ -1,6 +1,6 @@
 export type MomentFilters = {
   journal_id?: string;
-  /** Entity scope — at most one is set at a time (DESIGN.md §24 "View
+  /** Entity scope — at most one is set at a time (docs/features/library.md "View
    *  moments"). Each resolves to the matching `GET /moments` filter: a single
    *  id passed as the backend's repeatable list param, or `goal_id` directly. */
   person_id?: string;

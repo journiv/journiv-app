@@ -20,7 +20,7 @@ import {
 
 /**
  * "All moments associated with X" — the one surface behind every entity's
- * "View moments" (DESIGN.md §24). The journal-scoped Timeline was already this
+ * "View moments" (docs/features/library.md). The journal-scoped Timeline was already this
  * pattern; this generalises it to a person, tag, activity, mood or goal, chosen
  * by a single URL search param that rides the list and reader routes.
  *

@@ -8,7 +8,7 @@ import {
 } from "../../components/ui/card";
 
 /** Shared authentication surface for sign-in, sign-up and OIDC completion.
- *  A genuinely detached object, so it is a stock `Card` (DESIGN.md §5). */
+ *  A genuinely detached object, so it is a stock `Card` (DESIGN.md). */
 export function AuthCard({
   heading,
   lede,

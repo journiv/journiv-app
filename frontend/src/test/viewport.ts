@@ -3,7 +3,7 @@
  *
  * jsdom implements no layout, so its own `matchMedia` reports `matches: false`
  * for every query and never fires a change event. That is fine until something
- * *chooses behaviour* from a media query — the adaptive overlays (DESIGN.md §9)
+ * *chooses behaviour* from a media query — the adaptive overlays (DESIGN.md)
  * pick their primitive from `(max-width: 860px)`, and Settings picks its
  * presentation from `(min-width: 1101px)`. Against the stock stub those tests
  * silently only ever exercise one branch.
@@ -13,7 +13,7 @@
  * unmatched, as it was before.
  */
 
-/** Every test file starts here — the desktop band (DESIGN.md §9, > 1100px). */
+/** Every test file starts here — the desktop band (DESIGN.md, > 1100px). */
 export const DEFAULT_TEST_VIEWPORT_WIDTH = 1440;
 
 let width = DEFAULT_TEST_VIEWPORT_WIDTH;

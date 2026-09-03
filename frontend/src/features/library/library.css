@@ -4,12 +4,12 @@
    primitives (`LibraryRow`, `EntityGlyph`) and the `⋯` menu live in
    components/journiv so Tags, Moods and Activities inherit them.
 
-   Library is chrome, not reading content (DESIGN.md §5): its sections and row
+   Library is chrome, not reading content (DESIGN.md): its sections and row
    panels are `--card` raised off a management canvas. The canvas is
    `--background`, not `--muted` — this surface carries controls directly on it
    (the header actions, the search field), and in Minimal Neutral's dark palette
    `--muted`, `--secondary`, `--border` and `--input` are all `oklch(0.269 0 0)`,
-   so a bare control on `--muted` loses its edge entirely (§3, §5). It occupies
+   so a bare control on `--muted` loses its edge entirely (DESIGN.md, DESIGN.md). It occupies
    the shell's page column but is not the reader, which keeps `--card`. */
 .jv-library {
   grid-column: span 2;
@@ -23,7 +23,7 @@
 /* Header and scrolling body share one measure and one left edge, so the
    heading, search field and group list all line up. The header (with the one
    primary action) sits above the scroll owner and stays put; matches Journals
-   (§22). */
+   (docs/features/journals.md). */
 .jv-library__header,
 .jv-library__body {
   width: 100%;
@@ -78,9 +78,9 @@
 
 /* ---- detail view (push navigation) ---------------------------------------
    Opening a Library item swaps the workspace for `LibraryDetailView` on the
-   same span-2 area (DESIGN.md §24). A breadcrumb bar is the title and the way
+   same span-2 area (docs/features/library.md). A breadcrumb bar is the title and the way
    back at every width; it is a flex sibling above the one scroll owner, never
-   sticky over content (§9). */
+   sticky over content (DESIGN.md). */
 
 .jv-library__bar {
   flex: 0 0 auto;
@@ -125,8 +125,8 @@
    Each group is a section: colour dot, sentence-case name, a hairline rule,
    the server count, then a panel of people. The head stays open — no box
    around the group name — and the entries sit in a bounded panel so a row is
-   recognisable at rest without hovering (DESIGN.md §5, §24). The same dot +
-   rule + count device that Journal management uses (§22). */
+   recognisable at rest without hovering (DESIGN.md, docs/features/library.md). The same dot +
+   rule + count device that Journal management uses (docs/features/journals.md). */
 
 .jv-lib-dir {
   margin-top: var(--space-2);
@@ -260,7 +260,7 @@
 
 /* The dialog form's own rhythm: the field group, an optional alert and the
    action row. The *fields* inside are the registry's `FieldGroup` / `Field` /
-   `FieldLabel` / `FieldSet` — this file no longer restyles a label (§18). */
+   `FieldLabel` / `FieldSet` — this file no longer restyles a label (docs/architecture/frontend.md). */
 .jv-library-form {
   display: grid;
   gap: var(--space-4);
@@ -502,7 +502,7 @@
   /* Controls keep their content width and wrap, the way every other Vega
      button on the surface does. Stretching them to half-width columns made two
      secondaries read as heavily as the one primary and pushed that primary
-     onto a full-width row of its own below them (DESIGN.md §5, §24). */
+     onto a full-width row of its own below them (DESIGN.md, docs/features/library.md). */
   .jv-library__actions {
     flex-wrap: wrap;
   }

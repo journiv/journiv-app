@@ -40,7 +40,7 @@ export function chunkRows<T>(items: T[], columns: number): T[][] {
  * Row-virtualizes a square-tile grid inside `scrollRef`.
  *
  * - Column count follows the container's real width (ResizeObserver), never a
- *   media query — DESIGN.md §9 calls this "a component reflowing at its own
+ *   media query — DESIGN.md calls this "a component reflowing at its own
  *   width", which is allowed and needs no page breakpoint.
  * - Reaching the last couple of rows pulls the next page. This replaces a
  *   separate IntersectionObserver sentinel: the virtualizer already knows which

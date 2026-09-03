@@ -9,7 +9,7 @@ import {
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 
 /**
- * Control for the UI-feel A/B experiment (DESIGN.md §25, `uiExperiment.ts`).
+ * Control for the UI-feel A/B experiment (docs/features/personalization.md, `uiExperiment.ts`).
  *
  * DORMANT: not currently mounted in `AppearancePage`. Round 2 adopted
  * `panes: soft` (now the shell.css default) and kept `comfort` / `hover` at

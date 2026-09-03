@@ -16,7 +16,7 @@ import { cx } from "../../lib/cx";
  * directories; Tags uses it for its flat card grid.
  *
  * The row itself is a stock `Item`. What is Journiv's is `rowLink` (Library
- * push-navigation, DESIGN.md §24): pass a router `<Link>` and the leading +
+ * push-navigation, docs/features/library.md): pass a router `<Link>` and the leading +
  * text become one stretched link, with the `actions` slot staying clickable on
  * top of it — and the `⋯` resting hidden until hover or focus, so a list at
  * rest is just people.

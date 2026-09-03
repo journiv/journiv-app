@@ -28,9 +28,9 @@ export type AppDialogSize = "sm" | "md" | "lg";
  * text input happens inside the user gesture and summons the on-screen
  * keyboard, which eats roughly a third of an already short viewport before the
  * user has decided they want to type — and on a long form it pushes the surface
- * out from under them (DESIGN.md §9, §17).
+ * out from under them (DESIGN.md, DESIGN.md).
  *
- * This lives here rather than in feature code on purpose. §9 forbids feature
+ * This lives here rather than in feature code on purpose. DESIGN.md forbids feature
  * code from asking how wide the window is; asking the adaptive-overlay module
  * "should this field autofocus?" keeps the rule and its one media query in the
  * same place as the component that owns the presentation switch.
@@ -59,7 +59,7 @@ export interface AppAdaptiveDialogProps {
   /** Keeps the accessible name while hiding the title visually. */
   titleVisuallyHidden?: boolean;
   children: ReactNode;
-  /** The action row. Exactly one primary action (DESIGN.md §6). */
+  /** The action row. Exactly one primary action (DESIGN.md). */
   footer?: ReactNode;
   /** Regular-presentation width. There is deliberately no `full`. */
   size?: AppDialogSize;
@@ -73,7 +73,7 @@ export interface AppAdaptiveDialogProps {
 
 /**
  * A form or other substantial modal workflow, presented as the viewport
- * requires (DESIGN.md §9, "Adaptive overlays"):
+ * requires (DESIGN.md, "Adaptive overlays"):
  *
  *     <= 860px   Drawer (bottom sheet)
  *     >  860px   Dialog (centred)

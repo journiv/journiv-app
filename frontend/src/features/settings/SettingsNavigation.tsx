@@ -5,8 +5,8 @@ import { SETTINGS_NAV } from "./settingsNav";
 /**
  * The Settings section list. One component for both surfaces: the fixed left
  * column of the desktop modal and the full-screen list on compact widths
- * (DESIGN.md §23). Selection is by route match, never pathname parsing
- * (DESIGN.md §9), and is shown with a tint plus a rail and `aria-current`.
+ * (docs/features/settings.md). Selection is by route match, never pathname parsing
+ * (DESIGN.md), and is shown with a tint plus a rail and `aria-current`.
  */
 export function SettingsNavigation({
   onNavigate,
@@ -24,7 +24,7 @@ export function SettingsNavigation({
           <p className="jv-settings-nav__label">{group.label}</p>
           {/* The items are wrapped separately from the label so the compact
               settings index can card the destinations and leave the group
-              label on the canvas above them (DESIGN.md §23). */}
+              label on the canvas above them (docs/features/settings.md). */}
           <div className="jv-settings-nav__items">
             {group.items.map((item) => {
               const selected = Boolean(matchRoute({ to: item.to }));

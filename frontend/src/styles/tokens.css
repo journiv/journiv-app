@@ -8,7 +8,7 @@
  *
  * `--primary` is neutral, exactly as both references have it. Journiv's blue
  * is `--brand`, and it appears in a short, closed list of places (DESIGN.md
- * §3). A user theme (`src/features/theme/`) overrides the colour custom
+ * DESIGN.md). A user theme (`src/features/theme/`) overrides the colour custom
  * properties at runtime via a `<style id="journiv-user-theme">` layer — so
  * nothing here is sacred except the variable NAMES.
  *
@@ -34,7 +34,7 @@
   /* Minimal Neutral ships oklch(0.556 0 0), which measures ~4.1:1 against its
      own --muted / --accent (0.95) — under AA, and Journiv puts that exact pair
      on screen (tags, hovered rows, secondary badges). This is the one colour
-     Journiv knowingly diverges on. See DESIGN.md §3 "Measured contrast". */
+     Journiv knowingly diverges on. See DESIGN.md "Measured contrast". */
   --muted-foreground: oklch(0.52 0 0);
   --accent: oklch(0.95 0 0);
   --accent-foreground: oklch(0.205 0 0);
@@ -68,7 +68,7 @@
 
   /* ---- Journiv brand — the one identity colour ----------------------- */
   /* Hue 269, the same blue the Flutter client ships (#405DE6). Allowed in
-     exactly four places (DESIGN.md §3): the one filled `brand` Button, the
+     exactly four places (DESIGN.md): the one filled `brand` Button, the
      focus ring, the selection rail, and links in prose. A user's accent
      picker rewrites these; that is the point. */
   --brand: oklch(0.545 0.192 269);
@@ -136,7 +136,7 @@
   --reader-measure: 68ch;
   --reader-gutter: clamp(24px, 5vw, 64px);
   --tap-target: 44px;
-  /* Tallest an adaptive dialog may grow (DESIGN.md §9, "Adaptive overlays").
+  /* Tallest an adaptive dialog may grow (DESIGN.md, "Adaptive overlays").
      `svh`, not `vh`: on iOS Safari `vh` measures the *largest* viewport, so a
      `vh`-tall dialog puts its footer under the browser chrome. */
   --overlay-max-height: 85svh;

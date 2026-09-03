@@ -277,7 +277,7 @@ describe("Settings routing and modal", () => {
 
   it("opens from the current route and closes back to it", async () => {
     // Compact: /settings stays on the section list rather than redirecting to
-    // Profile (DESIGN.md §23). Pinned explicitly — this used to depend on the
+    // Profile (docs/features/settings.md). Pinned explicitly — this used to depend on the
     // jsdom matchMedia stub matching nothing.
     setTestViewportWidth(860);
     const view = await renderRoute("/timeline/moment-1?q=rain");

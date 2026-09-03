@@ -12,7 +12,7 @@ import {
  * A live editor document carries SIGNED media URLs, not media ids. The backend
  * stores `{ insert: { image: "<uuid>" } }` but hydrates on read, so the client
  * always receives `/api/v1/media/<uuid>/signed?uid=..&exp=..&sig=..` — a
- * user-scoped, expiring credential. DESIGN.md §21.14 forbids persisting one.
+ * user-scoped, expiring credential. docs/known-gaps.md forbids persisting one.
  *
  * So a draft stores the DURABLE form — the bare media UUID, which is exactly
  * what the database itself holds — and recovery resolves those ids back to
@@ -92,7 +92,7 @@ export type CanonicalizeResult = {
    * In-flight upload placeholders left out on purpose.
    *
    * A placeholder is TRANSIENT: it stands for bytes still travelling, and there
-   * is no durable id to keep. DESIGN.md §21.14 is explicit that an upload
+   * is no durable id to keep. docs/known-gaps.md is explicit that an upload
    * interrupted by a reload is lost and must be reattached, and that no fake
    * completed embed may be synthesised. So omitting it is correct — but it is
    * not invisible. The count is carried so the editor can say plainly that an
@@ -192,7 +192,7 @@ export function canonicalizeDeltaForDraft(
     if (!id) {
       // Real media the entry holds, with no durable id to keep — a legacy or
       // imported source the backend never mapped. Persisting the URL is exactly
-      // what DESIGN.md §21.14 forbids, and persisting the document without it
+      // what docs/known-gaps.md forbids, and persisting the document without it
       // would be a lossy copy. Neither is acceptable, so the draft is unsafe.
       unsupportedEmbeds += 1;
       continue;

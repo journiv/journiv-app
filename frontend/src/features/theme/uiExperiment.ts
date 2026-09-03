@@ -1,5 +1,5 @@
 /**
- * DORMANT UI-feel A/B experiment layer (DESIGN.md §25).
+ * DORMANT UI-feel A/B experiment layer (docs/features/personalization.md).
  *
  * Round 2 of the "does Journiv feel modern" review. Three independent axes,
  * each a response to a specific piece of feedback:
@@ -23,13 +23,13 @@
  * Injected as `<style id="journiv-ui-experiment">`, appended to <head> AFTER
  * the user-theme layer so the experiment wins while active. It reaches into
  * `src/components/ui/*` rendered output through `[data-slot]` selectors rather
- * than editing those files (§18) — which is exactly why this is a throwaway
+ * than editing those files (docs/architecture/frontend.md) — which is exactly why this is a throwaway
  * layer. Raw values live here in JS so the static design guard, which only
  * scans `.css`, stays green. `uiExperimentCss(UI_DEFAULT)` is `""`, so the
  * dormant framework adds nothing to the page.
  *
  * When there is no foreseeable next experiment: delete this module, its test,
- * `UiExperimentSection`, the `main.tsx` wiring and the DESIGN.md §25 subsection.
+ * `UiExperimentSection`, the `main.tsx` wiring and the docs/features/personalization.md subsection.
  */
 
 export type UiComfort = "default" | "roomy";
@@ -59,7 +59,7 @@ const STORAGE_KEY = "journiv.uiExperiment";
 // "Soften the primitives": a friendlier root radius (the whole named scale
 // re-derives from it, index.css `@theme inline`) and text fields that are not
 // cramped. Only the field controls move — buttons keep base-vega's compact
-// sizing (DESIGN.md §7).
+// sizing (DESIGN.md).
 const ROOMY = `
 :root {
   --radius: 1.25rem;
@@ -116,7 +116,7 @@ const PANES_HARD = `
 // "Negative space as the separator": no shell frame, no inner borders, no
 // shadow — the panes are held
 // apart by a strip of the --muted canvas and their own tint. This is the
-// composition §5 says was tried and rejected; the axis exists to look at it
+// composition DESIGN.md says was tried and rejected; the axis exists to look at it
 // again, not to endorse it.
 const PANES_AIRY = `
 .jv-shell {

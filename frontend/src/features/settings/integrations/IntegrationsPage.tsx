@@ -17,7 +17,7 @@ import "./integrations.css";
  * `/settings/integrations/immich` is the Immich detail. Both carry
  * `staticData.settings: "integrations"`, so the modal chrome and the "Providers"
  * nav item are unchanged across the drill-down — only this pane swaps
- * (DESIGN.md §23). An unknown provider sub-route is redirected to the catalogue
+ * (docs/features/settings.md). An unknown provider sub-route is redirected to the catalogue
  * by the router, so anything that reaches here that is not the Immich detail is
  * the catalogue.
  */

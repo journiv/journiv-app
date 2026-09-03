@@ -1,5 +1,5 @@
 /* Header controls for the editor's adaptive "Add media" overlay. The shared
- * overlay owns sizing, scrolling and the fixed action row (DESIGN.md §9). */
+ * overlay owns sizing, scrolling and the fixed action row (DESIGN.md). */
 
 .jv-immich-picker__tabs {
   display: inline-flex;

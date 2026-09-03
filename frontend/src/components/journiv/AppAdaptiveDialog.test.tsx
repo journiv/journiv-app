@@ -6,7 +6,7 @@ import { setTestViewportWidth } from "../../test/viewport";
 import { AppAdaptiveDialog } from "./AppAdaptiveDialog";
 import { Button } from "../ui/button";
 
-/** DESIGN.md §9: <= 860px is compact, > 860px is regular. */
+/** DESIGN.md: <= 860px is compact, > 860px is regular. */
 const COMPACT = 390;
 const REGULAR = 1440;
 

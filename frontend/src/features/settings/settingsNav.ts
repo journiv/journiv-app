@@ -1,5 +1,5 @@
 /**
- * The Settings information architecture as data (DESIGN.md §23).
+ * The Settings information architecture as data (docs/features/settings.md).
  *
  * A future page is: add a route in `src/app/router`, add an entry here, build
  * the page. Nothing in the modal, the responsive behaviour, the active state or
@@ -39,7 +39,7 @@ export type SettingsNavItem = {
 };
 
 export type SettingsNavGroup = {
-  /** Quiet hierarchy label (sentence case — DESIGN.md §4). */
+  /** Quiet hierarchy label (sentence case — DESIGN.md). */
   label: string;
   items: SettingsNavItem[];
   /** Administration is visible only after the shared current-user query says

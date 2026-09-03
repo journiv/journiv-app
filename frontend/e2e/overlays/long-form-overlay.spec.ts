@@ -4,7 +4,7 @@ import { VIEWPORTS } from "../viewports";
 /**
  * The longest form in the product — Library → Goals → "Add goal", ten fields
  * plus a colour swatch grid and an icon grid — against the adaptive overlay
- * contract (DESIGN.md §9).
+ * contract (DESIGN.md).
  *
  * This exists because that form used to be a plain centred `Dialog`. At
  * 390×844 it laid out at roughly 1300px tall, so it overflowed the viewport

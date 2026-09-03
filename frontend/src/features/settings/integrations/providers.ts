@@ -2,7 +2,7 @@ import { Image as ImageIcon, type LucideIcon } from "lucide-react";
 
 /**
  * The integration catalogue as data — one entry per provider Journiv can talk
- * to. There is no list-providers endpoint (see DESIGN.md §23), so the frontend
+ * to. There is no list-providers endpoint (see docs/features/settings.md), so the frontend
  * owns this registry; `immich` is the only real provider today. Adding one is:
  * a detail route under `/settings/integrations/`, an entry here, a page.
  *

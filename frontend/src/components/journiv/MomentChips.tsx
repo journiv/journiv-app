@@ -6,7 +6,7 @@ import { PersonChip, TagChip } from "./PersonChip";
  * People and tags for a Moment, rendered identically in the reader and the
  * editor so that reading and writing show the same metadata the same way.
  *
- * People and tags are deliberately NOT `MomentMeta` (DESIGN.md §11): a person
+ * People and tags are deliberately NOT `MomentMeta` (docs/domain/moments.md): a person
  * has a face and a name, a tag is a word, and they never share a chip. This
  * component only displays them — editing lives in the editor's Details popover.
  *
@@ -21,7 +21,7 @@ export function MomentChips({
   moment: MomentResponse | undefined;
   className?: string;
   /** Render each chip as a link to the Timeline scoped to that person or tag
-   *  (DESIGN.md §24). The reader sets this; the editor never does — a chip you
+   *  (docs/features/library.md). The reader sets this; the editor never does — a chip you
    *  are editing is not a navigation target. */
   scopeLinks?: boolean;
 }) {

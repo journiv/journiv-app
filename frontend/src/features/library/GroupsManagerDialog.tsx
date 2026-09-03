@@ -51,7 +51,7 @@ function countLabel(count: number, singular: string, plural: string) {
 /**
  * One dialog, three views: the group list (rename / recolour / delete each,
  * plus New group), the appearance form, and a delete confirmation. Views swap
- * in place — no stacked large modals (DESIGN.md §22). Entity assignment is not
+ * in place — no stacked large modals (docs/features/journals.md). Entity assignment is not
  * edited here: People owns many-to-many membership on each person, while an
  * Activity / Goal / Mood chooses its single optional group in its own form.
  */

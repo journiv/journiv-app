@@ -299,7 +299,7 @@
 
 /* The link dialog uses the shared `.jv-dialog` primitive — defined in
    components/ui/ui.css (with its compact-width bottom-sheet override) since the
-   Journals feature now uses it too. See DESIGN.md §18. */
+   Journals feature now uses it too. See docs/architecture/frontend.md. */
 
 /* ---- moment details popover ----------------------------------------------
    Metadata editing (mood, location, weather, people, tags), opened from the
@@ -560,7 +560,7 @@
 /* ---- entry date & time control ------------------------------------------
    The editable date line in `EntryHeader` (editor only; the reader keeps a
    plain <p>). The trigger sits where the date text was and reads the same,
-   with a hover affordance and a small glyph. See DESIGN.md §14. */
+   with a hover affordance and a small glyph. See docs/features/editor.md. */
 
 .jv-date-control__trigger {
   display: inline-flex;

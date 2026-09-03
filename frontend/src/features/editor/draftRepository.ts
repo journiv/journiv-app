@@ -19,7 +19,7 @@ import type { DurableDraftDelta } from "./draftCanonical";
  * If this file ever needs to match a URL, the boundary has been broken.
  */
 
-/** The record the plan specifies (build plan §6), plus the protection count. */
+/** The record the plan specifies (build plan DESIGN.md), plus the protection count. */
 export interface EditorDraftV1 {
   /** `${userId}:entry:${id}` | `${userId}:moment:${id}` | `${userId}:new:${id}` */
   key: string;

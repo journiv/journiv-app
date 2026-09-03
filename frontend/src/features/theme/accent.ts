@@ -8,7 +8,7 @@ import {
 import type { ThemeTokens } from "./types";
 
 /**
- * The accent model (DESIGN.md §3, §25).
+ * The accent model (DESIGN.md, docs/features/personalization.md).
  *
  * An accent is a *pair*, never a single colour. Writing one brand value into
  * both themes and leaving `--brand-foreground` at its default is the bug this

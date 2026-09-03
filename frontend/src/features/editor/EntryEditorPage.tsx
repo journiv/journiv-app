@@ -760,7 +760,7 @@ function EntryEditorForm({
   /**
    * Persisting a date/time change. For an existing Moment this is an immediate
    * write — the same model the Details popover uses for metadata (DESIGN.md
-   * §14), so it does not mark the form dirty. For a new entry that already has
+   * docs/features/editor.md), so it does not mark the form dirty. For a new entry that already has
    * a draft Moment (media / details were added) the draft Moment is updated in
    * place; a new entry with no Moment yet only updates local state and the
    * eventual `createMoment` carries the value.
@@ -1093,7 +1093,7 @@ function EntryEditorForm({
             </p>
           )}
 
-          {/* Same metadata, same rendering as the reader (DESIGN.md §11). */}
+          {/* Same metadata, same rendering as the reader (docs/domain/moments.md). */}
           <MomentChips moment={momentForDisplay} />
         </div>
       </div>

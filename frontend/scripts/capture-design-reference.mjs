@@ -181,7 +181,7 @@ async function main() {
     };
   })()`);
 
-  // Named after the canonical Moment scenarios in DESIGN.md §10, so the
+  // Named after the canonical Moment scenarios in docs/domain/moments.md, so the
   // reference set always covers both sparse and rich Moments.
   const scenes = [
     { name: "01-timeline", url: `${BASE}/timeline` },
@@ -215,7 +215,7 @@ async function main() {
     },
     { name: "09-editor-new", url: `${BASE}/timeline/new` },
     { name: "10-empty-search", url: `${BASE}/timeline?q=zzzznothingmatches` },
-    // Settings overlay (DESIGN.md §23): the desktop capture shows the two-column
+    // Settings overlay (docs/features/settings.md): the desktop capture shows the two-column
     // modal, the mobile capture the full-screen routed page.
     { name: "12-settings-profile", url: `${BASE}/settings/profile` },
     { name: "13-settings-security", url: `${BASE}/settings/security` },

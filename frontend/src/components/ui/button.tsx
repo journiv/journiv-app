@@ -1,6 +1,6 @@
 /**
  * shadcn base-vega Button, kept at upstream. The one Journiv addition is the
- * `brand` variant — see the comment on it, and DESIGN.md §3 / §6.
+ * `brand` variant — see the comment on it, and DESIGN.md.
  */
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
@@ -14,7 +14,7 @@ const buttonVariants = cva(
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/80",
         /**
-         * Journiv's one filled brand control (DESIGN.md §3, brand use #1):
+         * Journiv's one filled brand control (DESIGN.md, brand use #1):
          * the top-level "New entry" action. Blue is deliberately rare — do not
          * reach for this variant anywhere else. Everything that is merely the
          * primary action on its own surface uses `default`.

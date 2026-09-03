@@ -1,5 +1,5 @@
 /**
- * `dismissible` for the adaptive overlays (DESIGN.md §9, "Adaptive overlays").
+ * `dismissible` for the adaptive overlays (DESIGN.md, "Adaptive overlays").
  *
  * None of Base UI's `Dialog.Root`, `AlertDialog.Root` or `Drawer.Root` has a
  * `dismissible` prop — Journiv's is implemented here rather than forwarded.

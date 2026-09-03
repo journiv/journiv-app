@@ -21,7 +21,7 @@ applyTheme(readTheme());
 // Personalization layer (colour / font / text size) — a <style> we render from
 // the stored structured theme. Applied after applyTheme so there is no flash.
 applyUserTheme(readUserTheme());
-// TEMPORARY: UI-feel A/B experiment layer (DESIGN.md §25). Softened primitives
+// TEMPORARY: UI-feel A/B experiment layer (docs/features/personalization.md). Softened primitives
 // and pane separation, toggled from Settings → Appearance. Appended after the
 // user theme so it wins while active. Remove with uiExperiment.ts.
 applyUiExperiment(readUiExperiment());

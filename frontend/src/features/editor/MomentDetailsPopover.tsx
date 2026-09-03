@@ -35,7 +35,7 @@ import { Input } from "../../components/ui/input";
 /**
  * Editing for the metadata the reader shows via `MomentMeta` and `MomentChips`:
  * mood, location, weather, people and tags. Lives in the editor toolbar's Insert
- * group as a single "Details" control (DESIGN.md §14) because five separate
+ * group as a single "Details" control (docs/features/editor.md) because five separate
  * toolbar buttons would crowd the bar.
  *
  * Every write needs a server `moment_id`. A brand-new entry has none until the

@@ -45,7 +45,7 @@ const OPTIONS: Array<{ mode: ViewMode; label: string; icon: ReactNode }> = [
  * and the group's roving `tabindex` took two of the three links out of the tab
  * order in exchange for arrow keys that did not drive navigation. Nothing here
  * is pressed — one of three destinations is *current*, which is `aria-current`
- * (DESIGN.md §17).
+ * (DESIGN.md).
  */
 export function ListViewSwitch({ className }: { className?: string }) {
   const { view } = useSearch({ strict: false }) as {

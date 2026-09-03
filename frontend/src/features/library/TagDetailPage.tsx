@@ -58,7 +58,7 @@ function isPlusLocked(error: unknown): boolean {
 }
 
 /** The moment's own calendar day, formatted without shifting it into the
- *  viewer's zone (DESIGN.md §12). */
+ *  viewer's zone (docs/domain/moments.md). */
 function loggedDay(dateTz: string): string {
   return new Intl.DateTimeFormat(undefined, {
     day: "numeric",
@@ -205,7 +205,7 @@ export function TagDetailPage() {
       </p>
 
       {/* A titled group on a management surface: a stock `Card`, header action
-          included — not a hand-built head + rule (DESIGN.md §5, §18). */}
+          included — not a hand-built head + rule (DESIGN.md, docs/architecture/frontend.md). */}
       <Card
         className="jv-tag-detail__section"
         role="region"

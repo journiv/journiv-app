@@ -90,7 +90,7 @@ function JournalsIndex() {
 }
 
 /** The inert Journiv view painted behind the Settings modal. Settings is an
- *  overlay with real routes (DESIGN.md §23): the route renders the ordinary
+ *  overlay with real routes (docs/features/settings.md): the route renders the ordinary
  *  Timeline workspace and `AppShell` mounts the modal on top when a
  *  `staticData.settings` route matches. */
 function SettingsBackground() {
@@ -140,7 +140,7 @@ const asId = (v: unknown): string | undefined =>
  * calendar or grid keeps that view mounted beside it.
  *
  * `person` / `tag` / `activity` / `mood` / `goal` scope the list to moments
- * associated with one Library entity (DESIGN.md §24). At most one is meaningful
+ * associated with one Library entity (docs/features/library.md). At most one is meaningful
  * at a time; `useMomentScope` reads the first one set. They ride the reader
  * routes too, so opening a moment keeps the scope mounted beside it.
  */
@@ -282,7 +282,7 @@ const timelineMomentRoute = createRoute({
   component: ReaderDetail,
 });
 /** Settings routes. Real URLs, rendered as a centred modal on desktop and a
- *  full-screen flow on compact widths (DESIGN.md §23). `/settings` redirects to
+ *  full-screen flow on compact widths (docs/features/settings.md). `/settings` redirects to
  *  Profile on desktop and shows the section list on compact — the one place a
  *  single `matchMedia` read at navigation time is allowed (it is not reactive
  *  breakpoint state). The incoming `state.settingsFrom` is carried through the
@@ -345,7 +345,7 @@ const settingsTagsRedirectRoute = createRoute({
 });
 /** The list and the detail are both wide workspaces spanning the two content
  *  columns; opening a tag *pushes* to the detail (marketplace-style), it does
- *  not open a third pane (DESIGN.md §24). So neither route carries `detailPane`
+ *  not open a third pane (docs/features/library.md). So neither route carries `detailPane`
  *  and each renders one component. */
 const libraryTagsRoute = createRoute({
   getParentRoute: () => protectedRoute,
@@ -416,7 +416,7 @@ const settingsIntegrationsRoute = createRoute({
 });
 /** The provider detail drill-down. Same `settings` section as the catalogue, so
  *  the modal chrome and the "Providers" nav item are unchanged across the
- *  drill-down — only the content pane swaps (DESIGN.md §23). A single-segment
+ *  drill-down — only the content pane swaps (docs/features/settings.md). A single-segment
  *  param, not a splat, so route matching stays unaffected elsewhere. Only
  *  `immich` is a real provider; an unknown or removed one (a stale bookmark) is
  *  redirected to the catalogue rather than 404ing. */
@@ -547,7 +547,7 @@ declare module "@tanstack/react-router" {
   interface StaticDataRouteOption {
     pane?: "detail";
     /** Which Settings surface this route shows. `AppShell` reads it to mount
-     *  the Settings modal without parsing the pathname (DESIGN.md §23). */
+     *  the Settings modal without parsing the pathname (docs/features/settings.md). */
     settings?:
       | "index"
       | "profile"

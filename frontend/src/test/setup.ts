@@ -73,7 +73,7 @@ installMatchMediaStub();
 // container with ResizeObserver and could use IntersectionObserver for its
 // load-more sentinel; without these, importing that code throws before a single
 // assertion runs. The stubs are inert — layout-driven behaviour is verified by
-// unit-testing the pure helpers and by Playwright, per DESIGN.md §19.
+// unit-testing the pure helpers and by Playwright, per e2e/README.md.
 if (typeof globalThis.ResizeObserver !== "function") {
   Object.defineProperty(globalThis, "ResizeObserver", {
     configurable: true,

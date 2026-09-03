@@ -10,7 +10,7 @@ import Quill from "quill";
  * These blots deliberately keep the STANDARD Delta keys (`video`, `audio`), so
  * the persisted document stays byte-compatible with flutter_quill's
  * BlockEmbed.video / BlockEmbed.audio. Nothing here changes the wire format; it
- * only changes how the DOM is produced. See DESIGN.md §13.
+ * only changes how the DOM is produced. See docs/features/reader.md.
  *
  * Registration happens once at module load. Import this module before any Quill
  * instance is constructed.

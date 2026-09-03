@@ -23,7 +23,7 @@
 }
 
 /* The table's column budget is decided by the box the table actually sits in,
-   not by the viewport (DESIGN.md §9). Inside the settings modal that box is
+   not by the viewport (DESIGN.md). Inside the settings modal that box is
    roughly 730px at *every* desktop width — 1050px of modal, less the 220px
    nav, the scroll padding and the card's own `--card-spacing` — so a viewport
    query at 1440 happily laid six columns into it and let the last two run off
