@@ -28,7 +28,7 @@ and nearby tests.
 | Engineering architecture | `architecture/` |
 | Shared domain semantics | `domain/` |
 | Feature behaviour | `features/` |
-| E2E harness rules | `e2e/README.md` |
+| E2E harness rules | [`../e2e/README.md`](../e2e/README.md) |
 | Feature-specific gaps | that feature document |
 | Cross-cutting blockers | `known-gaps.md` |
 
