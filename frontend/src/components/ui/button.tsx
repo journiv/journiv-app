@@ -1,6 +1,6 @@
 /**
  * shadcn base-vega Button, kept at upstream. The one Journiv addition is the
- * `brand` variant — see the comment on it, and DESIGN.md / DESIGN.md.
+ * `brand` variant — see the comment on it, and DESIGN.md.
  */
 import { Button as ButtonPrimitive } from "@base-ui/react/button";
 import { cva, type VariantProps } from "class-variance-authority";
