@@ -1,9 +1,10 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, History } from "lucide-react";
 import { SettingsSection } from "../SettingsSection";
 import {
   Item,
   ItemActions,
   ItemContent,
+  ItemDescription,
   ItemGroup,
   ItemSeparator,
   ItemTitle,
@@ -53,6 +54,20 @@ export function HelpPage() {
               </ItemContent>
               <ItemActions>
                 <ExternalLink aria-hidden="true" />
+              </ItemActions>
+            </Item>
+          </li>
+          <ItemSeparator />
+          <li className="list-none">
+            <Item size="sm" render={<a href="/legacy/" />}>
+              <ItemContent>
+                <ItemTitle>Use legacy interface</ItemTitle>
+                <ItemDescription>
+                  Temporarily switch back to the previous Journiv interface.
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <History aria-hidden="true" />
               </ItemActions>
             </Item>
           </li>

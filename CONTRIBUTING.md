@@ -40,6 +40,7 @@ Before you begin, ensure you have:
 ### Quick Start
 
 1. **Fork and clone the repository**
+
    ```bash
    git clone https://github.com/YOUR_USERNAME/journiv-app.git
    cd journiv-app
@@ -48,6 +49,7 @@ Before you begin, ensure you have:
 2. **Choose your development approach**
 
    **Option A: Docker (Recommended)**
+
    ```bash
    # Start with SQLite (recommended for quick development)
    docker compose -f docker-compose.dev.sqlite.yml up -d
@@ -57,6 +59,7 @@ Before you begin, ensure you have:
    ```
 
    **Option B: Local Development**
+
    ```bash
    # Install dependencies
    uv sync --group dev
@@ -73,7 +76,8 @@ Before you begin, ensure you have:
    ```
 
 3. **Access the application**
-   - Frontend: http://localhost:8000
+   - React frontend: http://localhost:8000
+   - Legacy Flutter frontend: http://localhost:8000/legacy/
    - Interactive API Docs: http://localhost:8000/docs
    - Alternative Docs: http://localhost:8000/redoc
    - Health Check: http://localhost:8000/api/v1/health
@@ -93,6 +97,7 @@ nano .env
 ```
 
 **Key environment variables for development:**
+
 ```bash
 # Database (local development uses relative paths)
 DATABASE_URL=sqlite:///./journiv.db
@@ -115,11 +120,13 @@ LOG_DIR=./logs
 ### Database Options
 
 **SQLite (Default)**
+
 - Zero configuration required
 - Perfect for development and single-user setups
 - Database automatically created on first run
 
 **PostgreSQL (Optional)**
+
 - For multi-user production-like testing
 - Requires PostgreSQL service running
 - Use `docker-compose.dev.yml` for PostgreSQL development
@@ -144,7 +151,6 @@ journiv-backend/
 │   ├── models/                   # SQLModel database models
 │   ├── schemas/                  # Pydantic request/response schemas
 │   ├── services/                 # Business logic layer
-│   ├── web/                      # Flutter web app (PWA)
 │   └── main.py                   # FastAPI application entry
 ├── alembic/                      # Database migrations
 │   ├── versions/                 # Migration files
@@ -158,6 +164,8 @@ journiv-backend/
 │   ├── fresh_migration.sh        # Regenerate migrations (uv)
 │   ├── test.sh                   # Test runner (uv sync + uv run pytest)
 │   └── prompts.json              # Seed data
+├── frontend/                     # React/Vite primary frontend source
+├── web/                          # Tracked Flutter legacy build artifact
 ├── pyproject.toml                # Project and dependencies (uv)
 ├── uv.lock                       # Locked dependencies
 ├── docker-compose.yml            # Production compose
@@ -172,6 +180,24 @@ journiv-backend/
 ```
 
 ### Architecture Overview
+
+Production uses one FastAPI process and one public port. The Docker build
+compiles `frontend/` with Vite and copies that output alongside the tracked
+Flutter web release:
+
+```text
+/              React SPA (including direct nested-route fallback)
+/legacy/       Flutter SPA (temporary; built with --base-href /legacy/)
+/api/v1/*      FastAPI API
+/pub/*         Backend publishing routes
+/media/*       Backend media routes
+/openapi.json  OpenAPI schema
+```
+
+Missing static assets return 404 rather than SPA HTML. Backend namespaces are
+explicitly excluded from the root fallback in addition to being registered
+first. Normal React development still uses `npm run dev` from `frontend/`; a
+backend-only test run does not rebuild either UI.
 
 Journiv follows a **service layer architecture** with clear separation of concerns:
 
@@ -220,6 +246,7 @@ git checkout -b fix/bug-description
 ```
 
 **Branch naming conventions:**
+
 - `feature/` - New features
 - `fix/` - Bug fixes
 - `docs/` - Documentation updates
@@ -281,6 +308,7 @@ git commit -m "feat: add timezone support for users"
 ```
 
 **Conventional commit format:**
+
 ```
 <type>: <description>
 
@@ -290,6 +318,7 @@ git commit -m "feat: add timezone support for users"
 ```
 
 **Types:**
+
 - `feat:` - New feature
 - `fix:` - Bug fix
 - `docs:` - Documentation only
@@ -300,6 +329,7 @@ git commit -m "feat: add timezone support for users"
 - `chore:` - Maintenance (dependencies, build, CI/CD)
 
 **Examples:**
+
 ```bash
 feat: add password reset functionality
 fix: resolve JWT expiration edge case
@@ -307,7 +337,6 @@ docs: update API authentication guide
 test: add integration tests for journal endpoints
 refactor: extract tag validation to separate function
 ```
-
 
 ## API Documentation Standards
 
@@ -348,6 +377,7 @@ async def endpoint_name(
 ### Examples by Endpoint Type
 
 #### **GET Endpoint (Simple)**
+
 ```python
 @router.get(
     "/users/{user_id}",
@@ -365,6 +395,7 @@ async def get_user(
 ```
 
 #### **GET Endpoint (List with Filters)**
+
 ```python
 @router.get(
     "/entries",
@@ -387,6 +418,7 @@ async def list_entries(
 ```
 
 #### **POST Endpoint (Create)**
+
 ```python
 @router.post(
     "/journals",
@@ -407,6 +439,7 @@ async def create_journal(
 ```
 
 #### **PUT Endpoint (Update with Side Effects)**
+
 ```python
 @router.put(
     "/me",
@@ -431,6 +464,7 @@ async def update_current_user(
 ```
 
 #### **DELETE Endpoint**
+
 ```python
 @router.delete(
     "/entries/{entry_id}",
@@ -455,29 +489,31 @@ async def delete_entry(
 
 Use consistent status codes across the API:
 
-| Code | Usage | Example |
-|------|-------|---------|
-| **200** | Successful GET, PUT, DELETE (with body) | User retrieved |
-| **201** | Successful POST (created) | Journal created |
-| **204** | Successful DELETE (no body) | Entry deleted |
-| **400** | Client error (validation, business logic) | Invalid password |
-| **401** | Not authenticated | Missing/invalid token |
-| **403** | Authenticated but forbidden | Not resource owner |
-| **404** | Resource not found | Journal doesn't exist |
-| **409** | Conflict (duplicate) | Email already registered |
-| **422** | Unprocessable entity (Pydantic validation) | Auto-generated |
-| **500** | Server error | Database connection failed |
+| Code    | Usage                                      | Example                    |
+| ------- | ------------------------------------------ | -------------------------- |
+| **200** | Successful GET, PUT, DELETE (with body)    | User retrieved             |
+| **201** | Successful POST (created)                  | Journal created            |
+| **204** | Successful DELETE (no body)                | Entry deleted              |
+| **400** | Client error (validation, business logic)  | Invalid password           |
+| **401** | Not authenticated                          | Missing/invalid token      |
+| **403** | Authenticated but forbidden                | Not resource owner         |
+| **404** | Resource not found                         | Journal doesn't exist      |
+| **409** | Conflict (duplicate)                       | Email already registered   |
+| **422** | Unprocessable entity (Pydantic validation) | Auto-generated             |
+| **500** | Server error                               | Database connection failed |
 
 ---
 
 ### Tools & Automation
 
 #### **FastAPI Auto-Documentation**
+
 - Swagger UI: http://localhost:8000/docs
 - ReDoc: http://localhost:8000/redoc
 - OpenAPI JSON: http://localhost:8000/openapi.json
 
 #### **Type Hints as Documentation**
+
 ```python
 # This is self-documenting:
 async def create_entry(
@@ -509,6 +545,7 @@ tests/
 ### Running Tests
 
 **Using the test script (recommended):**
+
 ```bash
 ./scripts/test.sh                  # All tests with coverage
 ./scripts/test.sh --markers unit   # Unit tests only
@@ -518,6 +555,7 @@ tests/
 ```
 
 **Using uv run pytest directly:**
+
 ```bash
 uv run pytest
 uv run pytest -m unit
@@ -528,6 +566,7 @@ uv run pytest -n auto -v -x
 ```
 
 **Using Docker:**
+
 ```bash
 docker compose -f docker-compose.dev.sqlite.yml run app pytest
 docker compose -f docker-compose.dev.sqlite.yml run app pytest --cov=app
@@ -536,6 +575,7 @@ docker compose -f docker-compose.dev.sqlite.yml run app pytest --cov=app
 ### Writing Tests
 
 **Unit Tests** - Test individual functions/services:
+
 ```python
 def test_create_user_success(session: Session):
     user_data = UserCreate(email="test@example.com", password="password123")
@@ -545,6 +585,7 @@ def test_create_user_success(session: Session):
 ```
 
 **Integration Tests** - Test complete API flows:
+
 ```python
 def test_create_journal_endpoint(client: TestClient, auth_headers: dict):
     journal_data = {"name": "My Journal", "description": "Test journal"}
@@ -558,11 +599,13 @@ def test_create_journal_endpoint(client: TestClient, auth_headers: dict):
 **Target:** Maintain at least 70% test coverage for all new code.
 
 Coverage reports are generated in:
+
 - **Terminal**: Summary statistics
 - **HTML**: `htmlcov/index.html` (detailed file-by-file report)
 - **XML**: `coverage.xml` (for CI/CD integration)
 
 **Best practices:**
+
 - Write tests alongside new features
 - Cover both success and error paths
 - Test edge cases and boundary conditions
@@ -601,6 +644,7 @@ When you need to regenerate migrations from scratch during development:
 ```
 
 This script runs `uv sync` then:
+
 1. Deletes the SQLite database file
 2. Removes all existing migration files
 3. Generates a fresh initial migration (`uv run alembic revision --autogenerate`)
@@ -642,6 +686,7 @@ from app.services.user_service import user_service
 Ensure your pull request meets these requirements:
 
 1. **All tests pass**
+
    ```bash
    ./scripts/test.sh
    # or: uv run pytest && uv run pytest --cov=app
@@ -673,20 +718,24 @@ Ensure your pull request meets these requirements:
 
 ```markdown
 ## Description
+
 Brief description of changes
 
 ## Type of Change
+
 - [ ] Bug fix
 - [ ] New feature
 - [ ] Breaking change
 - [ ] Documentation update
 
 ## Testing
+
 - [ ] Tests pass locally
 - [ ] New tests added for new functionality
 - [ ] Manual testing completed
 
 ## Checklist
+
 - [ ] Code follows project style guidelines
 - [ ] Self-review completed
 - [ ] Documentation updated
@@ -704,6 +753,7 @@ Your pull request will go through these stages:
 5. **Approval and merge** - Approved PRs are merged to main branch
 
 **Review tips:**
+
 - Respond to feedback promptly
 - Be open to suggestions and improvements
 - Keep PRs focused on a single feature/fix
@@ -714,16 +764,19 @@ Your pull request will go through these stages:
 Need assistance or have questions?
 
 **Development Questions:**
+
 - **GitHub Discussions**: Ask questions and get help from the community
 - **GitHub Issues**: Report bugs or request features
 - **Documentation**: Check [README.md](README.md) for setup and usage
 
 **Technical Resources:**
+
 - **API Docs**: http://localhost:8000/docs (when running locally)
 - **Project Structure**: See [Project Structure](#project-structure) section
 - **Architecture Guide**: See [Architecture Overview](#architecture-overview)
 
 **Community:**
+
 - **Discord**: Join our [community server](https://discord.gg/CuEJ8qft46)
 - **Email**: journiv@protonmail.com
 

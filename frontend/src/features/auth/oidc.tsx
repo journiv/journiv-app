@@ -25,6 +25,16 @@ export function oidcLoginHref() {
   return `${apiBaseUrl().replace(/\/$/, "")}/api/v1/auth/oidc/login`;
 }
 
+export function oidcLogoutHref() {
+  return `${apiBaseUrl().replace(/\/$/, "")}/api/v1/auth/oidc/logout`;
+}
+
+export function startOidcLogout(
+  navigate: (href: string) => void = (href) => window.location.assign(href),
+) {
+  navigate(oidcLogoutHref());
+}
+
 export function OidcAction({
   returnTo,
   primary = false,

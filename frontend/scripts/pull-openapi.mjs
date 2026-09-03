@@ -1,8 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-const url =
-  process.env.OPENAPI_URL ?? "http://localhost:8000/api/v1/openapi.json";
+const url = process.env.OPENAPI_URL ?? "http://localhost:8000/openapi.json";
 const output = resolve(import.meta.dirname, "..", "openapi", "openapi.json");
 
 try {

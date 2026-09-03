@@ -32,6 +32,7 @@ import { JournalDot } from "../../components/journiv/JournalBadge";
 import { groupJournals } from "../../lib/journalOrder";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { cx } from "../../lib/cx";
+import { startOidcLogout } from "../auth/oidc";
 import "./shell.css";
 import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 
@@ -198,8 +199,10 @@ export function AppSidebar({
           <IconButton
             label="Log out"
             onClick={() => {
+              const useSingleSignOut = user?.is_oidc_user === true;
               sessionStore.clear();
               onNavigate?.();
+              if (useSingleSignOut) startOidcLogout();
             }}
           >
             <LogOut aria-hidden="true" size={16} />

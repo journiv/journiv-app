@@ -12,6 +12,7 @@ import {
   applyUiExperiment,
   readUiExperiment,
 } from "./features/theme/uiExperiment";
+import { retireRootFlutterWorker } from "./app/retireRootFlutterWorker";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing application root");
@@ -24,6 +25,7 @@ applyUserTheme(readUserTheme());
 // and pane separation, toggled from Settings → Appearance. Appended after the
 // user theme so it wins while active. Remove with uiExperiment.ts.
 applyUiExperiment(readUiExperiment());
+void retireRootFlutterWorker();
 
 createRoot(root).render(
   <StrictMode>

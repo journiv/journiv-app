@@ -1,9 +1,10 @@
 """
 OIDC authentication endpoints.
 """
+
 import uuid
 from typing import Annotated
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -20,6 +21,33 @@ from app.schemas.auth import LoginResponse, OidcTicketExchangeRequest
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/auth/oidc", tags=["authentication"])
+
+REACT_FRONTEND = "react"
+LEGACY_FRONTEND = "legacy"
+
+
+def _request_frontend(request: Request) -> str:
+    """Identify the initiating UI without accepting an arbitrary redirect."""
+    referer = request.headers.get("referer")
+    if not referer:
+        return REACT_FRONTEND
+
+    parsed = urlparse(referer)
+    if parsed.scheme != request.url.scheme or parsed.netloc != request.url.netloc:
+        return REACT_FRONTEND
+    if parsed.path == "/legacy" or parsed.path.startswith("/legacy/"):
+        return LEGACY_FRONTEND
+    return REACT_FRONTEND
+
+
+def _frontend_url(request: Request, frontend: str, path: str) -> str:
+    """Build one of the two fixed same-origin frontend destinations."""
+    if settings.domain_name:
+        base_url = f"{settings.domain_scheme}://{settings.domain_name}"
+    else:
+        base_url = str(request.base_url).rstrip("/")
+    prefix = "/legacy" if frontend == LEGACY_FRONTEND else ""
+    return f"{base_url}{prefix}{path}"
 
 
 def register_oidc_provider():
@@ -38,6 +66,7 @@ def register_oidc_provider():
                     )
 
                 import ssl
+
                 # Create unverified SSL context for httpx
                 ssl_context = ssl.create_default_context()
                 ssl_context.check_hostname = False
@@ -74,7 +103,7 @@ register_oidc_provider()
     responses={
         302: {"description": "Redirect to the OIDC provider authorization endpoint"},
         404: {"description": "OIDC authentication is not enabled"},
-    }
+    },
 )
 async def oidc_login(request: Request):
     """
@@ -83,7 +112,9 @@ async def oidc_login(request: Request):
     Redirects to the OIDC provider's authorization endpoint with PKCE challenge.
     """
     if not settings.oidc_enabled:
-        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+        raise HTTPException(
+            status_code=404, detail="OIDC authentication is not enabled"
+        )
 
     # Generate state, nonce, and PKCE challenge
     state = uuid.uuid4().hex
@@ -93,8 +124,12 @@ async def oidc_login(request: Request):
     # Store state, nonce, and verifier in cache with 180 second TTL
     request.app.state.cache.set(
         f"oidc:{state}",
-        {"nonce": nonce, "verifier": verifier},
-        ex=180
+        {
+            "nonce": nonce,
+            "verifier": verifier,
+            "frontend": _request_frontend(request),
+        },
+        ex=180,
     )
 
     # Build redirect and authorize
@@ -117,14 +152,15 @@ async def oidc_login(request: Request):
     status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     responses={
         307: {"description": "Redirect to the SPA with a one-time login ticket"},
-        400: {"description": "Invalid or expired state parameter, token exchange failed, invalid nonce, or missing OIDC claims"},
+        400: {
+            "description": "Invalid or expired state parameter, token exchange failed, invalid nonce, or missing OIDC claims"
+        },
         403: {"description": "User provisioning failed"},
         404: {"description": "OIDC authentication is not enabled"},
-    }
+    },
 )
 async def oidc_callback(
-    request: Request,
-    session: Annotated[Session, Depends(get_session)]
+    request: Request, session: Annotated[Session, Depends(get_session)]
 ):
     """
     OIDC callback endpoint.
@@ -133,7 +169,9 @@ async def oidc_callback(
     validates the ID token, and creates a Journiv session with access and refresh tokens.
     """
     if not settings.oidc_enabled:
-        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+        raise HTTPException(
+            status_code=404, detail="OIDC authentication is not enabled"
+        )
 
     # Verify state parameter
     state = request.query_params.get("state")
@@ -141,7 +179,9 @@ async def oidc_callback(
 
     if not state or not cached_data:
         log_error(f"Invalid or expired OIDC state: {state}")
-        raise HTTPException(status_code=400, detail="Invalid or expired state parameter")
+        raise HTTPException(
+            status_code=400, detail="Invalid or expired state parameter"
+        )
 
     try:
         # Exchange authorization code for tokens
@@ -151,7 +191,9 @@ async def oidc_callback(
         )
     except OAuthError as exc:
         log_error(f"OIDC token exchange failed: {exc.error}")
-        raise HTTPException(status_code=400, detail=f"OIDC authentication failed: {exc.error}") from None
+        raise HTTPException(
+            status_code=400, detail=f"OIDC authentication failed: {exc.error}"
+        ) from None
 
     # Extract claims from ID token or userinfo
     token.get("id_token")
@@ -163,11 +205,15 @@ async def oidc_callback(
             claims = await oauth.journiv_oidc.userinfo(token=token)
         except Exception as exc:
             log_error(f"Failed to fetch OIDC userinfo: {exc}")
-            raise HTTPException(status_code=400, detail="Failed to retrieve user information") from None
+            raise HTTPException(
+                status_code=400, detail="Failed to retrieve user information"
+            ) from None
 
     # Verify nonce if present
     if claims.get("nonce") and claims["nonce"] != cached_data["nonce"]:
-        log_error(f"OIDC nonce mismatch: expected {cached_data['nonce']}, got {claims.get('nonce')}")
+        log_error(
+            f"OIDC nonce mismatch: expected {cached_data['nonce']}, got {claims.get('nonce')}"
+        )
         raise HTTPException(status_code=400, detail="Invalid nonce")
 
     # Extract user information
@@ -179,14 +225,22 @@ async def oidc_callback(
 
     if not subject:
         log_error("OIDC claims missing 'sub' field")
-        raise HTTPException(status_code=400, detail="Invalid OIDC claims: missing subject")
+        raise HTTPException(
+            status_code=400, detail="Invalid OIDC claims: missing subject"
+        )
 
     # If oidc_require_verified_email is True (default), then Require email to be verified by the IDP before allowing account linking/login
-    if settings.oidc_require_verified_email and email and not claims.get('email_verified', False):
-        log_error(f"OIDC login failed: Email {email} not verified by identity provider.", subject=subject)
+    if (
+        settings.oidc_require_verified_email
+        and email
+        and not claims.get("email_verified", False)
+    ):
+        log_error(
+            f"OIDC login failed: Email {email} not verified by identity provider.",
+            subject=subject,
+        )
         raise HTTPException(
-            status_code=403,
-            detail="Email not verified by identity provider"
+            status_code=403, detail="Email not verified by identity provider"
         )
 
     # Normalize email to lowercase immediately after security checks
@@ -204,8 +258,7 @@ async def oidc_callback(
     if not is_first and settings.disable_signup:
         # Check if external identity already exists (User is already OIDC-linked)
         statement = select(ExternalIdentity).where(
-            ExternalIdentity.issuer == issuer,
-            ExternalIdentity.subject == subject
+            ExternalIdentity.issuer == issuer, ExternalIdentity.subject == subject
         )
         external_identity = session.exec(statement).first()
 
@@ -231,9 +284,12 @@ async def oidc_callback(
                 issuer=issuer,
                 subject=subject,
                 user_email=email,
-                oidc_auto_provision=settings.oidc_auto_provision
+                oidc_auto_provision=settings.oidc_auto_provision,
             )
-            raise HTTPException(status_code=403, detail="Sign up is disabled and your account is not registered")
+            raise HTTPException(
+                status_code=403,
+                detail="Sign up is disabled and your account is not registered",
+            )
 
     try:
         # First user always gets provisioned as admin (bootstrap override)
@@ -245,7 +301,7 @@ async def oidc_callback(
             email=email,
             name=name,
             picture=picture,
-            auto_provision=is_first or settings.oidc_auto_provision
+            auto_provision=is_first or settings.oidc_auto_provision,
         )
     except Exception as exc:
         log_error(f"Failed to provision user from OIDC: {exc}")
@@ -267,7 +323,7 @@ async def oidc_callback(
         "time_zone": timezone,
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "updated_at": user.updated_at.isoformat() if user.updated_at else None,
-        "is_oidc_user": True  # Flag to indicate this user logged in via OIDC
+        "is_oidc_user": True,  # Flag to indicate this user logged in via OIDC
     }
 
     # Create one-time login ticket (60 second TTL)
@@ -277,27 +333,25 @@ async def oidc_callback(
         {
             "access_token": access_token,
             "refresh_token": refresh_token,
-            "user": user_payload
+            "user": user_payload,
         },
-        ex=60
+        ex=60,
     )
 
     log_user_action(
         user.email,
         "logged in via OIDC",
-        request_id=getattr(request.state, 'request_id', None)
+        request_id=getattr(request.state, "request_id", None),
     )
 
-    # Redirect to SPA with ticket
-    # Use DOMAIN_SCHEME and DOMAIN_NAME from settings instead of request.base_url
-    # This ensures correct scheme (https) when running behind reverse proxy
-    # Uses path-based routing (no hash) to keep navigation in same browser tab
-    if not settings.domain_name:
-        # Fallback to request.base_url if domain_name not configured
-        base_url = str(request.base_url).rstrip("/")
-        finish_url = f"{base_url}/oidc-finish?ticket={ticket}"
-    else:
-        finish_url = f"{settings.domain_scheme}://{settings.domain_name}/oidc-finish?ticket={ticket}"
+    # The validated state carries only one of two fixed UI targets. React is the
+    # default; a flow initiated from /legacy/ returns to Flutter so its separate
+    # browser session store can exchange the one-time ticket itself.
+    finish_url = _frontend_url(
+        request,
+        cached_data.get("frontend", REACT_FRONTEND),
+        f"/oidc-finish?ticket={ticket}",
+    )
 
     log_info(f"OIDC login successful for {user.email}, redirecting to {finish_url}")
 
@@ -310,7 +364,7 @@ async def oidc_callback(
     responses={
         400: {"description": "Invalid or expired ticket"},
         404: {"description": "OIDC authentication is not enabled"},
-    }
+    },
 )
 async def oidc_exchange(request: Request, body: OidcTicketExchangeRequest):
     """
@@ -322,7 +376,9 @@ async def oidc_exchange(request: Request, body: OidcTicketExchangeRequest):
     expired ticket is a 400.
     """
     if not settings.oidc_enabled:
-        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+        raise HTTPException(
+            status_code=404, detail="OIDC authentication is not enabled"
+        )
 
     ticket = body.ticket
 
@@ -340,7 +396,7 @@ async def oidc_exchange(request: Request, body: OidcTicketExchangeRequest):
         access_token=ticket_data["access_token"],
         refresh_token=ticket_data["refresh_token"],
         token_type="bearer",
-        user=ticket_data["user"]
+        user=ticket_data["user"],
     )
 
 
@@ -349,7 +405,7 @@ async def oidc_exchange(request: Request, body: OidcTicketExchangeRequest):
     responses={
         404: {"description": "OIDC authentication is not enabled"},
         500: {"description": "OIDC logout failed"},
-    }
+    },
 )
 async def oidc_logout(request: Request):
     """
@@ -359,38 +415,41 @@ async def oidc_logout(request: Request):
     then redirects back to Journiv's post-logout page.
     """
     if not settings.oidc_enabled:
-        raise HTTPException(status_code=404, detail="OIDC authentication is not enabled")
+        raise HTTPException(
+            status_code=404, detail="OIDC authentication is not enabled"
+        )
 
     try:
         # Get provider metadata
         metadata = oauth.journiv_oidc.server_metadata
         end_session_endpoint = metadata.get("end_session_endpoint")
 
-        # Build post-logout redirect URI (where provider redirects back after logout)
-        # Use DOMAIN_SCHEME and DOMAIN_NAME from settings instead of request.base_url
-        # This ensures correct scheme (https) when running behind reverse proxy
-        # Uses path-based routing (no hash) to keep navigation in same browser tab
-        if not settings.domain_name:
-            # Fallback to request.base_url if domain_name not configured
-            base_url = str(request.base_url).rstrip("/")
-            post_logout_redirect_uri = f"{base_url}/login?logout=success"
-        else:
-            post_logout_redirect_uri = f"{settings.domain_scheme}://{settings.domain_name}/login?logout=success"
+        # Keep React as the normal destination while allowing the temporary
+        # legacy UI to complete its own logout journey.
+        post_logout_redirect_uri = _frontend_url(
+            request,
+            _request_frontend(request),
+            "/login?logout=success",
+        )
 
         if end_session_endpoint:
             # Properly encode query parameters for OIDC logout URL
             # Include client_id for proper OIDC logout flow (required by some providers)
-            logout_params = urlencode({
-                "post_logout_redirect_uri": post_logout_redirect_uri,
-                "client_id": settings.oidc_client_id
-            })
+            logout_params = urlencode(
+                {
+                    "post_logout_redirect_uri": post_logout_redirect_uri,
+                    "client_id": settings.oidc_client_id,
+                }
+            )
             logout_url = f"{end_session_endpoint}?{logout_params}"
 
             log_info(f"Redirecting to OIDC provider logout: {logout_url}")
             return RedirectResponse(url=logout_url)
         else:
             # Provider doesn't support end_session_endpoint, just redirect to login
-            log_info("OIDC provider doesn't support end_session_endpoint, performing local logout")
+            log_info(
+                "OIDC provider doesn't support end_session_endpoint, performing local logout"
+            )
             return RedirectResponse(url=post_logout_redirect_uri)
 
     except Exception as exc:

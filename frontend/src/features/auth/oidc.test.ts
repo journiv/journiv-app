@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { oidcLoginHref, oidcReturnToStore } from "./oidc";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  oidcLoginHref,
+  oidcLogoutHref,
+  oidcReturnToStore,
+  startOidcLogout,
+} from "./oidc";
 import { safeReturnTo } from "./returnTo";
 
 describe("OIDC navigation state", () => {
@@ -20,5 +25,12 @@ describe("OIDC navigation state", () => {
     expect(oidcReturnToStore.read()).toBe("/timeline");
     expect(safeReturnTo("/\\evil.example/steal")).toBe("/timeline");
     expect(oidcLoginHref()).toBe("/api/v1/auth/oidc/login");
+  });
+
+  it("uses the backend SSO endpoint for OIDC logout", () => {
+    const navigate = vi.fn();
+    startOidcLogout(navigate);
+    expect(oidcLogoutHref()).toBe("/api/v1/auth/oidc/logout");
+    expect(navigate).toHaveBeenCalledWith("/api/v1/auth/oidc/logout");
   });
 });
