@@ -49,6 +49,23 @@ general accent for badges, controls, charts, hover states, or selected
 backgrounds. User personalization may change the brand pair but must retain
 readable light and dark foregrounds.
 
+### The identity mark
+
+The logo is a distinct thing from that accent. `BrandMark`
+([src/components/journiv/BrandMark.tsx](src/components/journiv/BrandMark.tsx)) —
+a Georgia-Italic `j` in an asymmetric rounded tile — is the product's fixed
+identity: the tile is the literal hex `#405DE6` and the glyph is white, baked
+into the SVG, and it stays that colour in dark mode and under every user
+accent. `--brand` / `--brand-foreground` are the *customisable* UI accent and
+must never colour the mark; equally the mark's raw hex must not appear anywhere
+else. It sits in the sidebar next to the "Journiv" wordmark (which carries the
+name, so the SVG is `aria-hidden`), and centred and enlarged above the heading
+on the auth card, where it stands alone and takes an `aria-label` instead. The
+same geometry ships as `public/favicon.svg`,
+`public/favicon.ico` and `public/apple-touch-icon.png`; regenerate all three
+together if it ever changes. This is not a PWA install contract — there is no
+web app manifest or maskable icon yet.
+
 The only extra roles are line-strong, danger-surface, danger-border, success,
 and theme-independent on-media values. They derive from semantic roles where
 possible so imported themes flow through. Journal, mood, and entity colours are
