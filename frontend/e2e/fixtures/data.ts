@@ -3,10 +3,12 @@ import {
   bulkAddTagsToMomentApiV1MomentsMomentIdTagsPost,
   createJournalApiV1JournalsPost,
   createMomentApiV1MomentsPost,
+  getAllMoodsApiV1MoodsGet,
 } from "@/api/generated";
 import type {
   JournalResponse,
   MomentResponse,
+  MoodResponse,
 } from "@/api/generated/types.gen";
 import { FROZEN_NOW } from "./determinism";
 
@@ -69,6 +71,9 @@ export class DataFactory {
     body?: string;
     /** Defaults to the suite's frozen clock so the moment lands on "today". */
     loggedAt?: Date;
+    /** Log a primary mood on the moment. The backend requires the primary mood
+     *  to also be in the moment's mood set, so this sets both. */
+    primaryMoodId?: string;
   }): Promise<MomentResponse> {
     const body = options.body ?? this.label("body text");
     const result = await createMomentApiV1MomentsPost({
@@ -76,6 +81,12 @@ export class DataFactory {
       body: {
         logged_at_utc: (options.loggedAt ?? FROZEN_NOW).toISOString(),
         logged_timezone: TEST_TIMEZONE,
+        ...(options.primaryMoodId
+          ? {
+              primary_mood_id: options.primaryMoodId,
+              mood_activity: [{ mood_id: options.primaryMoodId }],
+            }
+          : {}),
         entry: {
           journal_id: options.journalId,
           title: options.title ?? this.label("Entry"),
@@ -84,6 +95,12 @@ export class DataFactory {
       },
     });
     return unwrap(result, "POST /api/v1/moments");
+  }
+
+  /** The user's mood set (seeded on account creation). */
+  async moods(): Promise<MoodResponse[]> {
+    const result = await getAllMoodsApiV1MoodsGet({ client: this.client });
+    return unwrap(result, "GET /api/v1/moods/");
   }
 
   /** Attaches tags to a moment, creating any that do not exist. */

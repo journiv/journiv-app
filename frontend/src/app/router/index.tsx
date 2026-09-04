@@ -46,6 +46,9 @@ const TagsPage = lazy(async () => ({
 const TagDetailPage = lazy(async () => ({
   default: (await import("../../features/library/TagDetailPage")).TagDetailPage,
 }));
+const InsightsPage = lazy(async () => ({
+  default: (await import("../../features/insights/InsightsPage")).InsightsPage,
+}));
 
 function DetailLoading({ label }: { label: string }) {
   return (
@@ -367,6 +370,34 @@ const libraryTagRoute = createRoute({
     </Suspense>
   ),
 });
+/** Insights is a wide analysis workspace like Library, but read-only: one
+ *  component, no detail pane, no `Workspace`. `tab` selects the Overview / Mood /
+ *  Journals panel; `period` is the shared "Trend period" for the range-based
+ *  charts. Both ride in the URL so a tab switch keeps the period and a link is
+ *  shareable (docs/features/insights.md). */
+const INSIGHTS_PERIODS = [7, 30, 90, 365] as const;
+type InsightsPeriod = (typeof INSIGHTS_PERIODS)[number];
+const insightsSearch = (
+  search: Record<string, unknown>,
+): { tab: "overview" | "mood" | "journals"; period: InsightsPeriod } => ({
+  tab:
+    search.tab === "mood" || search.tab === "journals"
+      ? search.tab
+      : "overview",
+  period: INSIGHTS_PERIODS.includes(search.period as InsightsPeriod)
+    ? (search.period as InsightsPeriod)
+    : 30,
+});
+const insightsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/insights",
+  validateSearch: insightsSearch,
+  component: () => (
+    <Suspense fallback={<DetailLoading label="Loading Insights…" />}>
+      <InsightsPage />
+    </Suspense>
+  ),
+});
 const settingsPeopleRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings/journaling/people",
@@ -514,6 +545,7 @@ const routeTree = rootRoute.addChildren([
     settingsTagsRedirectRoute,
     libraryTagsRoute,
     libraryTagRoute,
+    insightsRoute,
     settingsPeopleRoute,
     settingsMoodsRoute,
     settingsActivitiesRoute,

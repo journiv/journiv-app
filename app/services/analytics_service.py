@@ -126,13 +126,17 @@ class AnalyticsService:
         if not streak:
             return None
 
-        self._update_entry_stats(user_id, streak)
-
+        # `_recalculate_streak_metadata` calls `session.expire_all()`, which
+        # discards any unflushed attribute writes on `streak`. Recalculate the
+        # streak dates first, then the entry totals, so the total_entries /
+        # total_words / average writes survive to the commit below.
         streaks = self._recalculate_streak_metadata(user_id)
         streak.current_streak = streaks['current_streak']
         streak.longest_streak = streaks['longest_streak']
         streak.last_entry_date = streaks['last_entry_date']
         streak.streak_start_date = streaks['streak_start_date']
+
+        self._update_entry_stats(user_id, streak)
 
         try:
             self.session.add(streak)
@@ -144,6 +148,28 @@ class AnalyticsService:
             raise
 
         log_info(f"Writing streak stats recalculated for user {user_id}")
+        return streak
+
+    def refresh_entry_totals(self, user_id: uuid.UUID) -> Optional[WritingStreak]:
+        """Recompute only the cached entry counters (total_entries, total_words,
+        average_words_per_entry) from the current entries and persist them.
+
+        The streak dates cannot change from an entry's content or draft flag, so
+        this is the lightweight counterpart to `recalculate_writing_streak_stats`
+        for edits that only change word counts or publish state.
+        """
+        streak = self.get_writing_streak(user_id)
+        if not streak:
+            return None
+        self._update_entry_stats(user_id, streak)
+        try:
+            self.session.add(streak)
+            self.session.commit()
+            self.session.refresh(streak)
+        except SQLAlchemyError as exc:
+            self.session.rollback()
+            log_error(exc)
+            raise
         return streak
 
     def _update_entry_stats(self, user_id: uuid.UUID, streak: WritingStreak):

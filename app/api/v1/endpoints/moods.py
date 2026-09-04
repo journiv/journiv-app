@@ -23,6 +23,7 @@ from app.schemas.mood import (
     MoodResponse,
     MoodUpdate,
 )
+from app.schemas.mood_analytics import MoodStatistics, MoodStreak
 from app.schemas.mood_group import (
     MoodGroupCreate,
     MoodGroupMoodReorderRequest,
@@ -349,7 +350,8 @@ async def delete_mood_group(
 
 @router.get(
     "/analytics/statistics",
-    response_model=Dict[str, Any],
+    response_model=MoodStatistics,
+    response_model_exclude_none=True,
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
@@ -382,7 +384,8 @@ async def get_mood_statistics(
 
 @router.get(
     "/analytics/streak",
-    response_model=Dict[str, Any],
+    response_model=MoodStreak,
+    response_model_exclude_none=True,
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},

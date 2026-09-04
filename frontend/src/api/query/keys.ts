@@ -106,6 +106,17 @@ export const queryKeys = {
     ["tags", id, "analytics", days] as const,
   /** Moments carrying one tag — the tag detail pane's preview list. */
   tagMoments: (id: string) => ["tags", id, "moments"] as const,
+  /** Insights analytics. One prefix so an entry/mood mutation can drop the
+   *  whole surface in a single `invalidateQueries`. */
+  insights: ["insights"] as const,
+  writingStreak: ["insights", "writing-streak"] as const,
+  writingPatterns: (days: number) =>
+    ["insights", "writing-patterns", days] as const,
+  productivity: ["insights", "productivity"] as const,
+  journalAnalytics: ["insights", "journals"] as const,
+  moodStatistics: (start: string, end: string) =>
+    ["insights", "mood", "statistics", start, end] as const,
+  moodStreak: ["insights", "mood", "streak"] as const,
   mediaFormats: ["media-formats"] as const,
   moments: (filters: MomentFilters) =>
     ["moments", normalizeMomentFilters(filters)] as const,

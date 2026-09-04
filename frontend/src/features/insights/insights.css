@@ -1,0 +1,171 @@
+/* Insights is a read-only analysis workspace. It reuses the Library workspace
+   shell (`.jv-library` — span-2 canvas, compact PageBar, one scroll owner) and
+   only adds the layout inside that scroll: a non-sticky summary row, one row
+   holding the tab strip and the Trend-period control, and sized chart panels.
+   Tokens only; the one component breakpoint (520px) is already sanctioned for
+   stat grids (DESIGN.md, scripts/check-design-system.mjs). */
+
+.jv-insights {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* ---- summary strip (top of page, never sticky) ------------------------- */
+
+.jv-insights__summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+}
+
+/* Each figure is a detached object, so it carries a resting border
+   (DESIGN.md). Not a Card: a Card is a titled group, this is a single value. */
+.jv-insights__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.jv-insights__stat-value {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- tab strip + trend-period row ----------------------------------- */
+
+/* The tab strip and the Trend-period control (or, on Journals, the static
+   "All time" note) share one row: tabs left, control right, centre-aligned.
+   Each half wraps to its own line on a narrow canvas. */
+.jv-insights__tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.jv-insights__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding-top: var(--space-4);
+}
+
+/* The label + select pair on the right of the tab row. */
+.jv-insights__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-insights__toolbar-label {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.jv-insights__all-time {
+  color: var(--muted-foreground);
+}
+
+/* ---- chart panels ---------------------------------------------------- */
+
+.jv-insights__figure {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-insights__chart {
+  block-size: 16rem;
+  inline-size: 100%;
+}
+
+.jv-insights__chart--short {
+  block-size: 12rem;
+}
+
+/* ---- distribution bars --------------------------------------------------
+   Not a chart-library mark: a labelled horizontal bar set. label · track ·
+   percentage, one row per mood category. */
+.jv-insights__bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.jv-insights__bar-row {
+  display: grid;
+  grid-template-columns: 5rem 1fr 3rem;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-insights__bar-label {
+  color: var(--muted-foreground);
+}
+
+.jv-insights__bar-track {
+  block-size: 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  overflow: hidden;
+}
+
+.jv-insights__bar-fill {
+  display: block;
+  block-size: 100%;
+  min-inline-size: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.jv-insights__bar-value {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}
+
+/* ---- productivity + journals ---------------------------------------- */
+
+.jv-insights__metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+}
+
+.jv-insights__journal-link {
+  color: var(--brand);
+}
+
+.jv-insights__journal-link:hover {
+  text-decoration: underline;
+}
+
+.jv-insights__delta--up {
+  color: var(--success);
+}
+
+.jv-insights__delta--down {
+  color: var(--destructive);
+}
+
+@media (max-width: 520px) {
+  .jv-insights__summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .jv-insights__metrics {
+    grid-template-columns: 1fr;
+  }
+}

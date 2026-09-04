@@ -612,6 +612,7 @@ function EntryEditorForm({
         queryKey: queryKeys.moment(savedMomentId),
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.insights });
     },
     [keepLocally, moment, queryClient],
   );
@@ -723,6 +724,7 @@ function EntryEditorForm({
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: queryKeys.allMoments }),
         queryClient.invalidateQueries({ queryKey: queryKeys.journals }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
         queryClient.invalidateQueries({
           queryKey: queryKeys.moment(savedMoment.id),
         }),
@@ -779,6 +781,7 @@ function EntryEditorForm({
       queryClient.setQueryData(queryKeys.moment(updated.id), updated);
       void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
       void queryClient.invalidateQueries({ queryKey: queryKeys.journals });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.insights });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.moment(updated.id),
       });

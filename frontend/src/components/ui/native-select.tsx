@@ -15,6 +15,15 @@ import { cn } from "@/lib/utils";
  * upstream instead, or don't.
  *
  * Reach for the real `Select` when you need grouping, icons or check marks.
+ *
+ * `className` styles the control's *wrapper*, not the raw `<select>`. The
+ * chevron is an absolutely-positioned sibling whose containing block is that
+ * wrapper, so the wrapper must be the box that sizes the control — otherwise a
+ * width override (`w-auto`, a scoped width) shrinks the `<select>` while the
+ * chevron stays pinned to a full-width wrapper and drifts off to the right.
+ * Layout/width classes therefore belong on the wrapper; the `<select>` itself
+ * always fills it. This mirrors the registry `SelectTrigger`, where the outer
+ * trigger carries the className and the icon is its child.
  */
 function NativeSelect({
   className,
@@ -25,7 +34,7 @@ function NativeSelect({
   size?: "sm" | "default";
 }) {
   return (
-    <div className="relative flex w-full items-center">
+    <div className={cn("relative flex w-full items-center", className)}>
       <select
         data-slot="native-select"
         data-size={size}
@@ -38,7 +47,6 @@ function NativeSelect({
           // of padding is less than the 24px line box — which cut the
           // descenders off every value. The control centres its own text.
           "py-0",
-          className,
         )}
         {...props}
       >

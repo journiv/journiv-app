@@ -4934,6 +4934,356 @@ export type OidcTicketExchangeRequest = {
 };
 
 /**
+ * AnalyticsDashboard
+ *
+ * ``GET /analytics/dashboard`` response.
+ */
+export type AnalyticsDashboard = {
+    writing_streak: WritingStreakAnalytics;
+    writing_patterns: WritingPatterns;
+    productivity: ProductivityMetrics;
+    journals: JournalAnalytics;
+    summary: DashboardSummary;
+};
+
+/**
+ * DashboardSummary
+ *
+ * The ``summary`` block of :class:`AnalyticsDashboard`.
+ */
+export type DashboardSummary = {
+    /**
+     * Total Journals
+     */
+    total_journals: number;
+    /**
+     * Total Entries
+     */
+    total_entries: number;
+    /**
+     * Current Streak
+     */
+    current_streak: number;
+    /**
+     * Longest Streak
+     */
+    longest_streak: number;
+};
+
+/**
+ * EntriesByDayPoint
+ *
+ * One day of writing activity in :class:`WritingPatterns`.
+ */
+export type EntriesByDayPoint = {
+    /**
+     * Date
+     */
+    date: string;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Total Words
+     */
+    total_words: number;
+};
+
+/**
+ * JournalAnalytics
+ *
+ * ``GET /analytics/journals`` response.
+ */
+export type JournalAnalytics = {
+    /**
+     * Journals
+     */
+    journals: Array<JournalAnalyticsRow>;
+};
+
+/**
+ * JournalAnalyticsRow
+ *
+ * Per-journal totals in :class:`JournalAnalytics`.
+ */
+export type JournalAnalyticsRow = {
+    /**
+     * Journal Id
+     */
+    journal_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Total Words
+     */
+    total_words: number;
+    /**
+     * Last Entry
+     */
+    last_entry?: string | null;
+};
+
+/**
+ * MoodCount
+ *
+ * One mood and its log count.
+ */
+export type MoodCount = {
+    /**
+     * Mood
+     */
+    mood: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * MoodDailyTrend
+ *
+ * Per-day count of mood logs in one category.
+ */
+export type MoodDailyTrend = {
+    /**
+     * Date
+     */
+    date: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * MoodDateRange
+ *
+ * The analysed window echoed back in :class:`MoodStatistics`.
+ */
+export type MoodDateRange = {
+    /**
+     * Start Date
+     */
+    start_date: string;
+    /**
+     * End Date
+     */
+    end_date: string;
+};
+
+/**
+ * MoodPatternPoint
+ *
+ * Moments carrying a primary mood on a given day.
+ */
+export type MoodPatternPoint = {
+    /**
+     * Date
+     */
+    date: string;
+    /**
+     * Mood Count
+     */
+    mood_count: number;
+};
+
+/**
+ * MoodStatistics
+ *
+ * ``GET /moods/analytics/statistics`` response.
+ */
+export type MoodStatistics = {
+    /**
+     * Total Logs
+     */
+    total_logs: number;
+    date_range: MoodDateRange;
+    /**
+     * Mood Distribution
+     */
+    mood_distribution: {
+        [key: string]: number;
+    };
+    most_frequent_mood?: MostFrequentMood | null;
+    /**
+     * Mood Counts
+     */
+    mood_counts: Array<MoodCount>;
+    /**
+     * Daily Trends
+     */
+    daily_trends: Array<MoodDailyTrend>;
+};
+
+/**
+ * MoodStreak
+ *
+ * ``GET /moods/analytics/streak`` response.
+ *
+ * ``get_mood_streak`` always returns the two counters (0 when nothing is
+ * logged); only ``last_logged_date`` can be absent.
+ */
+export type MoodStreak = {
+    /**
+     * Current Streak
+     */
+    current_streak: number;
+    /**
+     * Total Days Logged
+     */
+    total_days_logged: number;
+    /**
+     * Last Logged Date
+     */
+    last_logged_date?: string | null;
+};
+
+/**
+ * MostFrequentMood
+ *
+ * The single most-logged mood in the analysed window.
+ */
+export type MostFrequentMood = {
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * ProductivityMetrics
+ *
+ * ``GET /analytics/productivity`` response.
+ */
+export type ProductivityMetrics = {
+    /**
+     * Current Month Entries
+     */
+    current_month_entries: number;
+    /**
+     * Current Month Words
+     */
+    current_month_words: number;
+    /**
+     * Entry Growth Percentage
+     */
+    entry_growth_percentage: number;
+    /**
+     * Average Daily Entries
+     */
+    average_daily_entries: number;
+    /**
+     * Average Words Per Day
+     */
+    average_words_per_day: number;
+};
+
+/**
+ * TopTagCount
+ *
+ * A tag and how often it was used in the analysed window.
+ */
+export type TopTagCount = {
+    /**
+     * Tag Name
+     */
+    tag_name: string;
+    /**
+     * Usage Count
+     */
+    usage_count: number;
+};
+
+/**
+ * WritingPatterns
+ *
+ * ``GET /analytics/writing-patterns`` response.
+ */
+export type WritingPatterns = {
+    /**
+     * Period Days
+     */
+    period_days: number;
+    /**
+     * Entries By Day
+     */
+    entries_by_day: Array<EntriesByDayPoint>;
+    /**
+     * Mood Patterns
+     */
+    mood_patterns: Array<MoodPatternPoint>;
+    /**
+     * Top Tags
+     */
+    top_tags: Array<TopTagCount>;
+};
+
+/**
+ * WritingStreakAnalytics
+ *
+ * ``GET /analytics/writing-streak`` response.
+ *
+ * ``get_writing_analytics`` always returns the counters (0 when the user has
+ * written nothing), so they are required; only the two dates can be absent
+ * (dropped by ``response_model_exclude_none``). No field defaults, so the
+ * generated OpenAPI schema does not depend on how a Pydantic version
+ * serialises ``0.0``.
+ */
+export type WritingStreakAnalytics = {
+    /**
+     * Current Streak
+     */
+    current_streak: number;
+    /**
+     * Longest Streak
+     */
+    longest_streak: number;
+    /**
+     * Total Entries
+     */
+    total_entries: number;
+    /**
+     * Total Words
+     */
+    total_words: number;
+    /**
+     * Average Words Per Entry
+     */
+    average_words_per_entry: number;
+    /**
+     * Last Entry Date
+     */
+    last_entry_date?: string | null;
+    /**
+     * Streak Start Date
+     */
+    streak_start_date?: string | null;
+};
+
+/**
  * ImmichImportJobResponse
  *
  * Response schema for import job status mapping to unified ImportJob.
@@ -8064,13 +8414,9 @@ export type GetMoodStatisticsApiV1MoodsAnalyticsStatisticsGetError = GetMoodStat
 
 export type GetMoodStatisticsApiV1MoodsAnalyticsStatisticsGetResponses = {
     /**
-     * Response Get Mood Statistics Api V1 Moods Analytics Statistics Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: MoodStatistics;
 };
 
 export type GetMoodStatisticsApiV1MoodsAnalyticsStatisticsGetResponse = GetMoodStatisticsApiV1MoodsAnalyticsStatisticsGetResponses[keyof GetMoodStatisticsApiV1MoodsAnalyticsStatisticsGetResponses];
@@ -8101,13 +8447,9 @@ export type GetMoodStreakApiV1MoodsAnalyticsStreakGetError = GetMoodStreakApiV1M
 
 export type GetMoodStreakApiV1MoodsAnalyticsStreakGetResponses = {
     /**
-     * Response Get Mood Streak Api V1 Moods Analytics Streak Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: MoodStreak;
 };
 
 export type GetMoodStreakApiV1MoodsAnalyticsStreakGetResponse = GetMoodStreakApiV1MoodsAnalyticsStreakGetResponses[keyof GetMoodStreakApiV1MoodsAnalyticsStreakGetResponses];
@@ -9729,13 +10071,9 @@ export type GetWritingStreakApiV1AnalyticsWritingStreakGetError = GetWritingStre
 
 export type GetWritingStreakApiV1AnalyticsWritingStreakGetResponses = {
     /**
-     * Response Get Writing Streak Api V1 Analytics Writing Streak Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: WritingStreakAnalytics;
 };
 
 export type GetWritingStreakApiV1AnalyticsWritingStreakGetResponse = GetWritingStreakApiV1AnalyticsWritingStreakGetResponses[keyof GetWritingStreakApiV1AnalyticsWritingStreakGetResponses];
@@ -9775,13 +10113,9 @@ export type GetWritingPatternsApiV1AnalyticsWritingPatternsGetError = GetWriting
 
 export type GetWritingPatternsApiV1AnalyticsWritingPatternsGetResponses = {
     /**
-     * Response Get Writing Patterns Api V1 Analytics Writing Patterns Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: WritingPatterns;
 };
 
 export type GetWritingPatternsApiV1AnalyticsWritingPatternsGetResponse = GetWritingPatternsApiV1AnalyticsWritingPatternsGetResponses[keyof GetWritingPatternsApiV1AnalyticsWritingPatternsGetResponses];
@@ -9816,13 +10150,9 @@ export type GetProductivityMetricsApiV1AnalyticsProductivityGetError = GetProduc
 
 export type GetProductivityMetricsApiV1AnalyticsProductivityGetResponses = {
     /**
-     * Response Get Productivity Metrics Api V1 Analytics Productivity Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: ProductivityMetrics;
 };
 
 export type GetProductivityMetricsApiV1AnalyticsProductivityGetResponse = GetProductivityMetricsApiV1AnalyticsProductivityGetResponses[keyof GetProductivityMetricsApiV1AnalyticsProductivityGetResponses];
@@ -9857,13 +10187,9 @@ export type GetJournalAnalyticsApiV1AnalyticsJournalsGetError = GetJournalAnalyt
 
 export type GetJournalAnalyticsApiV1AnalyticsJournalsGetResponses = {
     /**
-     * Response Get Journal Analytics Api V1 Analytics Journals Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: JournalAnalytics;
 };
 
 export type GetJournalAnalyticsApiV1AnalyticsJournalsGetResponse = GetJournalAnalyticsApiV1AnalyticsJournalsGetResponses[keyof GetJournalAnalyticsApiV1AnalyticsJournalsGetResponses];
@@ -9903,13 +10229,9 @@ export type GetAnalyticsDashboardApiV1AnalyticsDashboardGetError = GetAnalyticsD
 
 export type GetAnalyticsDashboardApiV1AnalyticsDashboardGetResponses = {
     /**
-     * Response Get Analytics Dashboard Api V1 Analytics Dashboard Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: AnalyticsDashboard;
 };
 
 export type GetAnalyticsDashboardApiV1AnalyticsDashboardGetResponse = GetAnalyticsDashboardApiV1AnalyticsDashboardGetResponses[keyof GetAnalyticsDashboardApiV1AnalyticsDashboardGetResponses];

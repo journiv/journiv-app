@@ -223,6 +223,56 @@ export const tagMomentsQuery = (tagId: string) =>
     queryFn: () => api.tagMoments(tagId),
     staleTime: 60_000,
   });
+
+/**
+ * Insights analytics (Insights feature). All six are free (not Plus-gated).
+ * A short `staleTime` keeps a revisit after writing an entry roughly current
+ * even before the mutation-side `queryKeys.insights` invalidation lands;
+ * `retry: 1` because a transient failure here is a pane-level StatusView, not a
+ * spinner loop.
+ */
+export const writingStreakQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.writingStreak,
+    queryFn: () => api.writingStreak(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+export const writingPatternsQuery = (days: number) =>
+  queryOptions({
+    queryKey: queryKeys.writingPatterns(days),
+    queryFn: () => api.writingPatterns(days),
+    staleTime: 60_000,
+    retry: 1,
+  });
+export const productivityQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.productivity,
+    queryFn: () => api.productivityMetrics(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+export const journalAnalyticsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.journalAnalytics,
+    queryFn: () => api.journalAnalytics(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+export const moodStatisticsQuery = (start: string, end: string) =>
+  queryOptions({
+    queryKey: queryKeys.moodStatistics(start, end),
+    queryFn: () => api.moodStatistics(start, end),
+    staleTime: 60_000,
+    retry: 1,
+  });
+export const moodStreakQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.moodStreak,
+    queryFn: () => api.moodStreak(),
+    staleTime: 60_000,
+    retry: 1,
+  });
 /**
  * Accepted media formats. Server configuration, so it is cached hard — the
  * picker must reflect the backend's limits, never its own guess.

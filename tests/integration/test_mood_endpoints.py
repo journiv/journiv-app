@@ -82,7 +82,12 @@ def test_mood_lists_support_filters_and_analytics(
     )
     assert stats_response.status_code == 200
     stats = stats_response.json()
-    assert isinstance(stats, dict)
+    # The moment above set only `primary_mood_id` (no mood/activity link row),
+    # which is the sole path the journal editor uses. It must still be counted.
+    assert stats["total_logs"] >= 1
+    assert any(row["mood"] == mood["name"] for row in stats["mood_counts"])
+    assert stats["most_frequent_mood"]["count"] >= 1
+    assert any(trend["date"] == log_date for trend in stats["daily_trends"])
 
     streak_response = api_client.request(
         "GET", "/moods/analytics/streak", token=api_user.access_token

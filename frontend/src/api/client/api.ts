@@ -47,6 +47,7 @@ import {
   getImportJobStatusApiV1MediaImportJobsJobIdGet,
   getImportStatusApiV1ImportJobIdGet,
   getInstanceConfigApiV1InstanceConfigGet,
+  getJournalAnalyticsApiV1AnalyticsJournalsGet,
   getLicenseInfoApiV1InstanceLicenseInfoGet,
   getMediaLibraryApiV1MediaGet,
   getMomentApiV1MomentsMomentIdGet,
@@ -55,8 +56,11 @@ import {
   getMomentsApiV1MomentsGet,
   getMomentsByTagApiV1TagsTagIdMomentsGet,
   getMoodGroupsApiV1MoodsGroupsGet,
+  getMoodStatisticsApiV1MoodsAnalyticsStatisticsGet,
+  getMoodStreakApiV1MoodsAnalyticsStreakGet,
   getPeopleApiV1PeopleGet,
   getPersonGroupsApiV1PeopleGroupsGet,
+  getProductivityMetricsApiV1AnalyticsProductivityGet,
   getStatusApiV1IntegrationsProviderStatusGet,
   getSupportedFormatsApiV1MediaFormatsGet,
   getTagAnalyticsApiV1TagsAnalyticsGet,
@@ -64,6 +68,8 @@ import {
   getUserJournalsApiV1JournalsGet,
   getUserTagsApiV1TagsGet,
   getVersionInfoApiV1InstanceVersionInfoGet,
+  getWritingPatternsApiV1AnalyticsWritingPatternsGet,
+  getWritingStreakApiV1AnalyticsWritingStreakGet,
   importFromImmichAsyncApiV1MediaImportFromImmichAsyncPost,
   importImmichPeopleApiV1IntegrationsImmichPeopleImportPost,
   listAssetsApiV1IntegrationsProviderAssetsGet,
@@ -451,6 +457,33 @@ export const api = {
         query: { days },
       }),
     ),
+  /**
+   * Insights analytics (Insights feature). Unlike tag analytics these are not
+   * Plus-gated — every account can read them.
+   */
+  writingStreak: () =>
+    data(getWritingStreakApiV1AnalyticsWritingStreakGet(options())),
+  /** Writing activity over the last `days` (1–365). */
+  writingPatterns: (days: number) =>
+    data(
+      getWritingPatternsApiV1AnalyticsWritingPatternsGet({
+        ...options(),
+        query: { days },
+      }),
+    ),
+  productivityMetrics: () =>
+    data(getProductivityMetricsApiV1AnalyticsProductivityGet(options())),
+  journalAnalytics: () =>
+    data(getJournalAnalyticsApiV1AnalyticsJournalsGet(options())),
+  /** Mood statistics for a `YYYY-MM-DD` date window (inclusive). */
+  moodStatistics: (start_date: string, end_date: string) =>
+    data(
+      getMoodStatisticsApiV1MoodsAnalyticsStatisticsGet({
+        ...options(),
+        query: { start_date, end_date },
+      }),
+    ),
+  moodStreak: () => data(getMoodStreakApiV1MoodsAnalyticsStreakGet(options())),
   /** Every active activity. The endpoint is paginated, so Library must walk
    *  all pages instead of silently dropping everything after the first page. */
   activities: async () => {

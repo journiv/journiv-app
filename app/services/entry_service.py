@@ -562,6 +562,23 @@ class EntryService:
         # Draft -> published transition is treated as finalize.
         if was_draft and not entry.is_draft:
             self._run_entry_side_effects(entry, user_id, skip_moment_sync=True)
+        elif not was_draft and entry.is_draft:
+            # Removing a published entry can change both its totals and the
+            # dates that define the current and longest writing streaks.
+            try:
+                from app.services.analytics_service import AnalyticsService
+                AnalyticsService(self.session).recalculate_writing_streak_stats(user_id)
+            except Exception as exc:
+                log_warning(f"Failed to recalculate writing streak stats after drafting entry: {exc}")
+        elif not entry.is_draft and entry_data.content_delta is not None:
+            # A published entry's body changed, so its word_count may have too.
+            # Keep the cached writing-streak totals in step (the finalize branch
+            # above already covers the draft -> published case).
+            try:
+                from app.services.analytics_service import AnalyticsService
+                AnalyticsService(self.session).refresh_entry_totals(user_id)
+            except Exception as exc:
+                log_warning(f"Failed to refresh writing streak totals after entry edit: {exc}")
 
         log_info(f"Entry updated for user {user_id}: {entry.id}")
         return entry
