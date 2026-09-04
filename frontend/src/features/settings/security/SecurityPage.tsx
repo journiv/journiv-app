@@ -19,6 +19,7 @@ import { useSettingsDirty } from "../SettingsModal";
 import { SettingsSection } from "../SettingsSection";
 import { usePasswordForm } from "./usePasswordForm";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
+import { AccountDeletionSection } from "./AccountDeletionSection";
 
 function SecuritySkeleton() {
   return (
@@ -156,9 +157,7 @@ function PasswordForm({ email }: { email: string }) {
         )}
       </SettingsSection>
 
-      {/* Danger zone — account deletion (`DELETE /users/me`) belongs here in a
-          later iteration behind a typed confirmation. Deliberately not built
-          now (out of scope); this is only the reserved location. */}
+      <AccountDeletionSection />
     </form>
   );
 }
@@ -175,6 +174,7 @@ function OidcNotice({ ssoEnabled }: { ssoEnabled: boolean }) {
           </AlertDescription>
         </Alert>
       </SettingsSection>
+      <AccountDeletionSection />
     </div>
   );
 }

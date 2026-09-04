@@ -15,6 +15,7 @@ vi.mock("../../../api/client/api", () => ({
     userSettings: vi.fn(),
     instanceConfig: vi.fn(),
     updateMe: vi.fn(),
+    deleteMe: vi.fn(),
     journals: vi.fn(),
     moments: vi.fn(),
   },
@@ -61,6 +62,9 @@ beforeEach(() => {
     },
   });
   vi.mocked(api.updateMe).mockResolvedValue(passwordUser);
+  vi.mocked(api.deleteMe).mockResolvedValue({
+    message: "User account deleted successfully",
+  });
   vi.mocked(api.journals).mockResolvedValue([]);
   vi.mocked(api.moments).mockResolvedValue({ items: [] });
 });
@@ -99,6 +103,7 @@ describe("Settings · Security", () => {
     expect(await view.findByText(/identity provider/i)).toBeTruthy();
     expect(view.queryByLabelText("New password")).toBeNull();
     expect(view.queryByRole("button", { name: "Change password" })).toBeNull();
+    expect(view.getByRole("button", { name: "Delete account" })).toBeTruthy();
   });
 
   it("rejects a weak new password and a mismatch before calling the API", async () => {
@@ -188,5 +193,51 @@ describe("Settings · Security", () => {
       { ...window.sessionStorage },
     ]);
     expect(dump).not.toContain("brand-new-2");
+  });
+
+  it("requires DELETE before permanently deleting the account", async () => {
+    const view = await renderSecurity();
+    await userEvent.click(view.getByRole("button", { name: "Delete account" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Delete your account?",
+    });
+    const confirmation = within(dialog).getByLabelText(
+      /Type DELETE to confirm/,
+    );
+    const remove = within(dialog).getByRole("button", {
+      name: "Delete account",
+    });
+    expect((remove as HTMLButtonElement).disabled).toBe(true);
+
+    await userEvent.type(confirmation, "delete");
+    expect((remove as HTMLButtonElement).disabled).toBe(true);
+    expect(api.deleteMe).not.toHaveBeenCalled();
+
+    await userEvent.clear(confirmation);
+    await userEvent.type(confirmation, "DELETE");
+    expect((remove as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("keeps the confirmation open when deletion cannot be confirmed", async () => {
+    vi.mocked(api.deleteMe).mockRejectedValueOnce(new Error("offline"));
+    const view = await renderSecurity();
+    await userEvent.click(view.getByRole("button", { name: "Delete account" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Delete your account?",
+    });
+    await userEvent.type(
+      within(dialog).getByLabelText(/Type DELETE to confirm/),
+      "DELETE",
+    );
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete account" }),
+    );
+
+    await waitFor(() => expect(api.deleteMe).toHaveBeenCalledTimes(1));
+    expect(
+      await within(dialog).findByText(/couldn’t confirm that your account/i),
+    ).toBeTruthy();
+    expect(sessionStore.read()).not.toBeNull();
   });
 });

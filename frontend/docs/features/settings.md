@@ -39,7 +39,11 @@ confirmation only for actual confirmation.
 - Profile uses current-user and user-settings queries for display name and
   timezone; email and avatar remain read-only until API support exists.
 - Security is capability-aware: local accounts can change password, OIDC users
-  see provider guidance. Account deletion is not designed or stubbed.
+  see provider guidance. Every account type can permanently delete itself via
+  `DELETE /users/me`; deletion requires the exact typed `DELETE` confirmation,
+  clears the local session only after a success response, then returns to login.
+  An uncertain request stays open with an honest retry/sign-in message because
+  a failed response is not proof that deletion did not complete.
 - Appearance writes account theme defaults, time format, and first day together.
   It does not silently replace the existing per-device sidebar theme override.
 - Integrations is catalogue then detail, both routed. The frontend registry
@@ -59,6 +63,5 @@ confirmation only for actual confirmation.
   icons have no backend contract.
 - Admin user pagination exposes neither a total nor continuation token, so the
   complete collection is fetched before local search/paging.
-- Version administration, license registration/reset, and account deletion
-  remain intentionally undesigned; do not render dead links.
-
+- Version administration and license registration/reset remain intentionally
+  undesigned; do not render dead links.

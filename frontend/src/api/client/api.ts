@@ -19,6 +19,7 @@ import {
   createUserApiV1AdminUsersPost,
   deleteActivityApiV1ActivitiesActivityIdDelete,
   deleteActivityGroupApiV1ActivityGroupsGroupIdDelete,
+  deleteCurrentUserApiV1UsersMeDelete,
   deleteEntryApiV1EntriesEntryIdDelete,
   deleteGoalCategoryApiV1GoalCategoriesCategoryIdDelete,
   deleteGoalPermanentlyApiV1GoalsGoalIdDelete,
@@ -180,6 +181,8 @@ export const api = {
       }),
     ),
   me: () => data(getCurrentUserInfoApiV1UsersMeGet(options())),
+  /** Permanently deletes the signed-in account and all data it owns. */
+  deleteMe: () => data(deleteCurrentUserApiV1UsersMeDelete(options())),
   /**
    * Updates the signed-in user. `name` and `profile_picture_url` are profile
    * edits; `current_password` + `new_password` together are a password change
