@@ -11,19 +11,21 @@ Sending nothing keeps the old last-write-wins behaviour, so existing clients —
 the Flutter app among them — are unaffected.
 """
 import uuid
-from datetime import timedelta
+from datetime import date, timedelta
 
 import pytest
 from sqlmodel import Session, create_engine
 
 from app.core.exceptions import ConcurrentModificationError
 from app.core.time_utils import ensure_utc
+from app.models.analytics import WritingStreak
 from app.models.base import BaseModel
 from app.models.entry import Entry
 from app.models.journal import Journal
 from app.models.moment import Moment
 from app.models.user import User
 from app.schemas.entry import EntryUpdate, QuillDelta
+from app.services.analytics_service import AnalyticsService
 from app.services.entry_service import EntryService
 
 
@@ -90,6 +92,44 @@ def test_matching_version_is_accepted():
         service.update_entry(
             entry.id, user.id, EntryUpdate(title="Third", expected_updated_at=opened_at)
         )
+
+
+def test_drafting_published_entry_recalculates_writing_streak():
+    session = _session()
+    user, entry = _fixtures(session)
+    entry.word_count = 1
+    entry.moment.logged_date_tz = date.today()
+
+    earlier_moment = Moment(
+        user_id=user.id,
+        logged_date_tz=date.today() - timedelta(days=1),
+    )
+    session.add(earlier_moment)
+    session.flush()
+    session.add(
+        Entry(
+            user_id=user.id,
+            journal_id=entry.journal_id,
+            moment_id=earlier_moment.id,
+            content_delta={"ops": [{"insert": "two\n"}]},
+            word_count=1,
+        )
+    )
+    session.add(WritingStreak(user_id=user.id))
+    session.commit()
+
+    streak = AnalyticsService(session).recalculate_writing_streak_stats(user.id)
+    assert streak is not None
+    assert streak.current_streak == 2
+
+    updated = EntryService(session).update_entry(
+        entry.id, user.id, EntryUpdate(is_draft=True)
+    )
+
+    session.refresh(streak)
+    assert updated.is_draft is True
+    assert streak.current_streak == 1
+    assert streak.total_entries == 1
 
 
 def test_stale_version_is_refused_and_nothing_is_written():

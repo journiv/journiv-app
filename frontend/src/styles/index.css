@@ -12,6 +12,10 @@
 @import "./base.css" layer(base);
 @import "./prose.css";
 @import "./util.css";
+/* Conforms Base Vega segmented-control selected states to Journiv's accent
+   selection role — unlayered on purpose so it beats the Tailwind utility
+   layer without `!important`. Must stay after the Tailwind import. */
+@import "./selection.css";
 @import "../components/journiv/journiv.css";
 
 /* Dark mode is the `.dark` class on <html>, set by src/app/theme.ts. */

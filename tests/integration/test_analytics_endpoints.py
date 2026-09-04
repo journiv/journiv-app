@@ -319,3 +319,90 @@ def test_writing_patterns_rejects_invalid_days(api_client: JournivApiClient, api
         params={"days": 400},
     )
     assert response.status_code == 422
+
+
+def test_writing_streak_totals_track_the_react_editor_entry_flow(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    journal_factory,
+):
+    """`/analytics/writing-streak` totals must stay accurate as the React editor
+    creates and edits entries through `POST`/`PUT /moments`.
+
+    Regression: `recalculate_writing_streak_stats` ran `_update_entry_stats`
+    before `_recalculate_streak_metadata`, whose `session.expire_all()` then
+    discarded the unflushed `total_entries` / `total_words` writes — so any
+    entry whose logged date fell *before* the current `last_entry_date` (the
+    normal case when backfilling) left the cached totals stuck at their earlier
+    value while `current_streak` kept advancing. Editing a published entry's
+    body never refreshed the totals at all.
+    """
+    token = api_user.access_token
+    journal = journal_factory(title="Editor flow")
+    utc_date = utc_now().date()
+
+    # Dates deliberately non-monotonic and ending on the *most* backdated entry —
+    # the case the existing coverage misses because its last write is the newest.
+    plan = [
+        (utc_date, 40),
+        (utc_date - timedelta(days=1), 55),
+        (utc_date - timedelta(days=5), 30),
+        (utc_date - timedelta(days=3), 25),
+        (utc_date - timedelta(days=8), 60),
+    ]
+    created: list[dict] = []
+    for logged_date, words in plan:
+        created.append(
+            api_client.create_entry_with_moment(
+                token,
+                journal_id=journal["id"],
+                title=f"Entry {logged_date.isoformat()}",
+                content=_content_with_words(words),
+                logged_date=logged_date.isoformat(),
+                logged_timezone="UTC",
+            )
+        )
+
+    expected_entries = len(plan)
+    expected_words = sum(words for _, words in plan)
+
+    data = api_client.request(
+        "GET", "/analytics/writing-streak", token=token
+    ).json()
+    assert data["total_entries"] == expected_entries
+    assert data["total_words"] == expected_words
+    assert data["average_words_per_entry"] == round(
+        expected_words / expected_entries, 2
+    )
+    # Streak semantics are unchanged: only today and yesterday are consecutive.
+    assert data["current_streak"] == 2
+
+    # The React editor's save path for an existing entry: PUT /moments with
+    # entry_update. Growing the body must move total_words.
+    edited = created[2]
+    new_words = 200
+    api_client.request(
+        "PUT",
+        f"/moments/{edited['moment_id']}",
+        token=token,
+        json={
+            "entry_update": {
+                "journal_id": journal["id"],
+                "content_delta": {
+                    "ops": [{"insert": _content_with_words(new_words) + "\n"}]
+                },
+                "is_draft": False,
+            }
+        },
+        expected=(200,),
+    )
+
+    expected_words += new_words - plan[2][1]
+    after = api_client.request(
+        "GET", "/analytics/writing-streak", token=token
+    ).json()
+    assert after["total_entries"] == expected_entries
+    assert after["total_words"] == expected_words
+    assert after["average_words_per_entry"] == round(
+        expected_words / expected_entries, 2
+    )

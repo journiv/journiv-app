@@ -105,6 +105,7 @@ export function ReaderPage() {
         }),
         queryClient.invalidateQueries({ queryKey: queryKeys.journals }),
         queryClient.invalidateQueries({ queryKey: queryKeys.tags }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
         queryClient.invalidateQueries({
           queryKey: queryKeys.moment(momentId),
           refetchType: "none",

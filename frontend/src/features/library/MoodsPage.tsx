@@ -200,6 +200,8 @@ export function MoodsPage() {
     await Promise.all([
       qc.invalidateQueries({ queryKey: queryKeys.moods }),
       qc.invalidateQueries({ queryKey: queryKeys.moodGroups }),
+      // A rename or category change shifts mood Insights labels/grouping.
+      qc.invalidateQueries({ queryKey: queryKeys.insights }),
     ]);
   };
   const createMood = useMutation({

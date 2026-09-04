@@ -35,6 +35,12 @@ vi.mock("../../api/client/api", () => ({
     login: vi.fn(),
     instanceConfig: vi.fn(),
     refresh: vi.fn(),
+    writingStreak: vi.fn(),
+    writingPatterns: vi.fn(),
+    productivityMetrics: vi.fn(),
+    journalAnalytics: vi.fn(),
+    moodStatistics: vi.fn(),
+    moodStreak: vi.fn(),
   },
 }));
 
@@ -151,6 +157,38 @@ beforeEach(() => {
     },
   });
   vi.mocked(api.updateMoment).mockResolvedValue(moment);
+  vi.mocked(api.writingStreak).mockResolvedValue({
+    current_streak: 3,
+    longest_streak: 9,
+    total_entries: 40,
+    total_words: 8000,
+    average_words_per_entry: 200,
+  });
+  vi.mocked(api.writingPatterns).mockResolvedValue({
+    period_days: 30,
+    entries_by_day: [],
+    mood_patterns: [],
+    top_tags: [],
+  });
+  vi.mocked(api.productivityMetrics).mockResolvedValue({
+    current_month_entries: 4,
+    current_month_words: 800,
+    entry_growth_percentage: 0,
+    average_daily_entries: 0.5,
+    average_words_per_day: 40,
+  });
+  vi.mocked(api.journalAnalytics).mockResolvedValue({ journals: [] });
+  vi.mocked(api.moodStatistics).mockResolvedValue({
+    total_logs: 0,
+    date_range: { start_date: "2026-07-25", end_date: "2026-08-24" },
+    mood_distribution: {},
+    mood_counts: [],
+    daily_trends: [],
+  });
+  vi.mocked(api.moodStreak).mockResolvedValue({
+    current_streak: 0,
+    total_days_logged: 0,
+  });
 });
 
 async function renderRoute(path: string) {
@@ -644,6 +682,20 @@ describe("Phase B routes", () => {
     await screen.findByRole("heading", { name: "Welcome back" });
     expect(sessionStore.read()).toBeNull();
     expect(view.router.state.location.pathname).toBe("/login");
+  });
+
+  it("resolves /insights to the Insights workspace with default tab and period", async () => {
+    const view = await renderRoute("/insights");
+
+    expect(
+      await screen.findByRole("heading", { name: "Insights", level: 1 }),
+    ).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Overview" })).toBeTruthy();
+    await waitFor(() =>
+      expect(vi.mocked(api.writingPatterns)).toHaveBeenCalledWith(30),
+    );
+    expect(view.router.state.location.search.tab).toBe("overview");
+    expect(view.router.state.location.search.period).toBe(30);
   });
 
   it("renders the calendar in the list pane for ?view=calendar", async () => {

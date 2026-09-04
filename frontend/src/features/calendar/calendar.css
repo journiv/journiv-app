@@ -15,9 +15,14 @@
   gap: var(--space-2);
 }
 
+/* `className` on NativeSelect styles its wrapper; the weight has to be set on
+   the inner native control, which does not inherit it on every engine. */
 .jv-calendar__picker .jv-calendar__select {
   width: auto;
   min-width: 0;
+}
+
+.jv-calendar__picker .jv-calendar__select select {
   font-weight: 600;
 }
 

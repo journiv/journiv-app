@@ -16,6 +16,7 @@ and nearby tests.
 | Journals | [`features/journals.md`](features/journals.md) |
 | Settings or integrations | [`features/settings.md`](features/settings.md) |
 | Library: People, Tags, Goals, Moods, Activities, or Immich people | [`features/library.md`](features/library.md) |
+| Insights: writing/mood analytics, streaks, the `/insights` workspace | [`features/insights.md`](features/insights.md) |
 | personalization/theme import | [`features/personalization.md`](features/personalization.md) |
 | login, signup, or OIDC | [`features/authentication.md`](features/authentication.md) |
 | an unresolved issue | the relevant document's **Known gaps**, then [`known-gaps.md`](known-gaps.md) only if cross-cutting |

@@ -17,7 +17,7 @@ from app.core.exceptions import (
 from app.core.logging_config import log_error
 from app.core.time_utils import utc_now
 from app.models.enums import MoodCategory
-from app.models.moment import Moment, MomentMoodActivity
+from app.models.moment import Moment
 from app.models.mood import Mood
 from app.models.mood_group import MoodGroup, MoodGroupLink
 
@@ -350,7 +350,17 @@ class MoodService:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
     ) -> Dict[str, Any]:
-        """Get mood statistics for a user based on moments."""
+        """Get mood statistics for a user based on moments.
+
+        A moment's mood is its ``primary_mood_id`` — the value the journal
+        editor and the metadata popover write. The Daylio-style multi-mood
+        ``moment_mood_activity`` link rows are a secondary path that ordinary
+        journaling never creates, so counting them here (as this once did) left
+        the statistics empty for every editor-only user. This now reads
+        ``primary_mood_id`` like ``get_mood_streak`` and the writing-pattern
+        analytics do; one mood per moment keeps ``total_logs`` equal to the
+        number of mood-tagged moments and the distribution denominator honest.
+        """
         if not end_date:
             end_date = utc_now().date()
         if not start_date:
@@ -361,18 +371,19 @@ class MoodService:
                 select(
                     Mood.name,
                     Mood.category,
-                    func.count(MomentMoodActivity.id).label("count"),
+                    func.count(Moment.id).label("count"),
                 )
-                .join(MomentMoodActivity, Mood.id == MomentMoodActivity.mood_id)
-                .join(Moment, Moment.id == MomentMoodActivity.moment_id)
+                .select_from(Moment)
+                .join(Mood, Mood.id == Moment.primary_mood_id)
                 .where(
                     col(Moment.user_id) == user_id,
+                    col(Moment.primary_mood_id).is_not(None),
                     col(Mood.is_active).is_(True),
                     col(Moment.logged_date_tz) >= start_date,
                     col(Moment.logged_date_tz) <= end_date,
                 )
                 .group_by(Mood.name, Mood.category)
-                .order_by(func.count(MomentMoodActivity.id).desc())
+                .order_by(func.count(Moment.id).desc())
             )
         )
 
@@ -381,12 +392,14 @@ class MoodService:
                 select(
                     col(Moment.logged_date_tz).label("date"),
                     Mood.category,
-                    func.count(MomentMoodActivity.id).label("count"),
+                    func.count(Moment.id).label("count"),
                 )
-                .join(MomentMoodActivity, Moment.id == MomentMoodActivity.moment_id)
-                .join(Mood, Mood.id == MomentMoodActivity.mood_id)
+                .select_from(Moment)
+                .join(Mood, Mood.id == Moment.primary_mood_id)
                 .where(
                     col(Moment.user_id) == user_id,
+                    col(Moment.primary_mood_id).is_not(None),
+                    col(Mood.is_active).is_(True),
                     col(Moment.logged_date_tz) >= start_date,
                     col(Moment.logged_date_tz) <= end_date,
                 )

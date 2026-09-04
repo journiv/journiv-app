@@ -201,6 +201,22 @@ selection as surface plus rail plus aria-current; documented Journiv extra
 roles; and non-themeable radius. Any new divergence needs a concrete product
 reason and belongs here, not as a feature-local visual fork.
 
+## Data visualization
+
+Charts render through the Base Vega `Chart` primitive
+([src/components/ui/chart.tsx](src/components/ui/chart.tsx)), which wraps
+Recharts. Recharts is the drawing implementation only: a chart's colours come
+from `--chart-1…5` (single series) or existing semantic roles (categorical
+series) via the `ChartConfig` `color` field, never raw values; axes, grid and
+tooltip inherit the primitive's token wiring; and every chart ships an
+equivalent visually-hidden table or text summary. Keep chart code
+feature-local until a second feature needs the same mark. The small tokened
+SVG marks in the Library workspace
+([src/features/library/tagCharts.tsx](src/features/library/tagCharts.tsx))
+remain valid for a one- or two-mark aside where a full chart would be
+overweight. Insights owns the feature contract for the analytics surface
+([docs/features/insights.md](docs/features/insights.md)).
+
 ## Verification
 
 Run npm run verify for frontend changes. The design guard is static: it checks

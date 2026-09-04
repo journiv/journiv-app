@@ -27,6 +27,14 @@ Use scoped feature CSS for durable product layout driven by tokens. Tailwind is
 appropriate for local one-off layout; do not mechanically rewrite working CSS
 into utilities.
 
+`src/styles/selection.css` is the one place a registry primitive's *palette* is
+overridden rather than left close to upstream: Base Vega signals a selected
+tab/toggle by swapping `--muted` / `--background` / `--input`, which Minimal
+Neutral collapses to one value (invisible selection, worst in dark). It conforms
+those states to DESIGN.md's accent selection role in a single unlayered
+stylesheet so every current and future picker inherits it — do not re-patch this
+per feature.
+
 ## Routing and responsive model
 
 The router's route metadata, not pathname parsing, determines pane behaviour.
@@ -49,6 +57,14 @@ After a backend API contract change, restart the backend, run `npm run api:pull`
 ensure the committed one-line `openapi/openapi.json` is current, run
 `npm run api:generate`, and commit the generated client with the specification.
 Do not infer endpoints from Markdown.
+
+`api:pull` must run against a **Plus-enabled** backend: `openapi/openapi.json`
+includes the `/api/v1/plus/*`, `/pub/*` and `/api/v1/oembed` routes, whose
+schemas come from the proprietary `app.plus.plus_features` binary that is not in
+this repository. A core-only checkout's `app.openapi()` omits those routes and
+must not be used to update the committed specification. Start a Plus-enabled
+backend, run the standard `api:pull` workflow above, re-minify the specification,
+run `api:generate`, and commit both the regenerated specification and client.
 
 `ApiError` preserves HTTP status. Treat an unavailable request as unavailable,
 not as proof that a resource was deleted. Keep user-visible errors human and

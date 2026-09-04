@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 import {
   CalendarDays,
+  ChartNoAxesCombined,
   Clock3,
   Images,
   Library,
@@ -103,6 +104,7 @@ export function AppSidebar({
         >
           Media
         </NavItem>
+        <InsightsNavItem onNavigate={onNavigate} />
       </nav>
 
       <p className="jv-nav__section">Journals</p>
@@ -290,6 +292,27 @@ function JournalNavItem({
     >
       <JournalDot journal={journal} size={15} className="jv-nav__item-dot" />
       <span className="jv-truncate">{journal.title}</span>
+    </Link>
+  );
+}
+
+/** Insights lives in "Views": it is a way of looking at your own writing, not a
+ *  Library entity to manage (docs/features/insights.md). Its own `{ tab, period }`
+ *  search differs from the timeline `NavItem` contract, so it is a small
+ *  standalone link like `AllJournalsItem`. */
+function InsightsNavItem({ onNavigate }: { onNavigate?: () => void }) {
+  const matchRoute = useMatchRoute();
+  const selected = Boolean(matchRoute({ to: "/insights" }));
+  return (
+    <Link
+      to="/insights"
+      search={{ tab: "overview", period: 30 }}
+      onClick={onNavigate}
+      className={cx("jv-nav__item", selected && "is-selected")}
+      aria-current={selected ? "page" : undefined}
+    >
+      <ChartNoAxesCombined aria-hidden="true" size={16} />
+      <span className="jv-truncate">Insights</span>
     </Link>
   );
 }
