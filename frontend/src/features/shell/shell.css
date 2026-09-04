@@ -78,6 +78,8 @@
 }
 
 .jv-nav__brand {
+  display: flex;
+  align-items: center;
   padding: 0 var(--space-2);
   margin-bottom: var(--space-4);
   font-size: 1.0625rem;

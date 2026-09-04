@@ -399,3 +399,26 @@
     height: var(--tap-target);
   }
 }
+
+/* ---- Identity mark ----------------------------------------------------- */
+/* `BrandMark`. The tile colour is baked into the SVG (fixed #405DE6), never a
+   token, so the logo does not follow the themeable `--brand` accent (DESIGN.md,
+   "The identity mark"). The lockup text takes its size, weight and colour from
+   the surrounding brand class (`.jv-nav__brand`, `.jv-auth__brand`) so each
+   surface keeps its own scale; only the wordmark tracking is enforced here. */
+
+.jv-brand-mark {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.jv-brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-brand-lockup__text {
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}

@@ -18,12 +18,18 @@
   max-width: 22rem;
 }
 
+/* The mark leads the card, centred and prominent, above a centred heading and
+   lede (the form fields below stay left-aligned). Overrides the stock
+   `CardHeader` grid, which is left-packed with a 4px gap. */
+.jv-auth__header {
+  justify-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
 .jv-auth__brand {
-  margin: 0;
-  font-size: 0.875rem;
-  font-weight: 680;
-  letter-spacing: -0.02em;
-  color: var(--muted-foreground);
+  display: flex;
+  margin-bottom: var(--space-1);
 }
 
 .jv-auth__lede {

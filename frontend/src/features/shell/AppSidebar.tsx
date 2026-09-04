@@ -29,6 +29,7 @@ import { useTheme, type ThemeMode } from "../../app/theme";
 import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
 import { Skeleton } from "../../components/ui/skeleton";
+import { BrandMark } from "../../components/journiv/BrandMark";
 import { JournalDot } from "../../components/journiv/JournalBadge";
 import { groupJournals } from "../../lib/journalOrder";
 import { useJournalLookup } from "../../lib/useJournalLookup";
@@ -62,7 +63,9 @@ export function AppSidebar({
 
   return (
     <div className="jv-nav">
-      <div className="jv-nav__brand">Journiv</div>
+      <div className="jv-nav__brand">
+        <BrandMark wordmark size={24} />
+      </div>
 
       {/* Styled as a button, never as a nav item: it must not pick up the
           selected-route treatment. That regression made it unreadable before.

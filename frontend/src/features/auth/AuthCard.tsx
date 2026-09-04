@@ -6,6 +6,7 @@ import {
   CardHeader,
   CardTitle,
 } from "../../components/ui/card";
+import { BrandMark } from "../../components/journiv/BrandMark";
 
 /** Shared authentication surface for sign-in, sign-up and OIDC completion.
  *  A genuinely detached object, so it is a stock `Card` (DESIGN.md). */
@@ -23,8 +24,8 @@ export function AuthCard({
   return (
     <main className="jv-auth">
       <Card className="jv-auth__card" aria-busy={busy || undefined}>
-        <CardHeader>
-          <p className="jv-auth__brand">Journiv</p>
+        <CardHeader className="jv-auth__header">
+          <BrandMark size={48} title="Journiv" className="jv-auth__brand" />
           <CardTitle>
             <h1 className="jv-display">{heading}</h1>
           </CardTitle>
