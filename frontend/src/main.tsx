@@ -13,6 +13,7 @@ import {
   readUiExperiment,
 } from "./features/theme/uiExperiment";
 import { retireRootFlutterWorker } from "./app/retireRootFlutterWorker";
+import { Toaster } from "./components/ui/toast";
 
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing application root");
@@ -30,7 +31,9 @@ void retireRootFlutterWorker();
 createRoot(root).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
+      <Toaster>
+        <RouterProvider router={router} />
+      </Toaster>
     </QueryClientProvider>
   </StrictMode>,
 );

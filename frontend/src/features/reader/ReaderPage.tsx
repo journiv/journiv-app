@@ -1,22 +1,30 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
+import { useRef, useState } from "react";
 import {
   ArrowLeft,
+  Download,
   Images,
   NotebookPen,
   Pencil,
+  Trash2,
   TriangleAlert,
 } from "lucide-react";
 import { api } from "../../api/client/api";
 import { entryQuery, momentQuery, promptQuery } from "../../api/query/options";
 import { queryKeys } from "../../api/query/keys";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
+import {
+  AppAdaptiveMenu,
+  type AppMenuAction,
+} from "../../components/journiv/AppAdaptiveMenu";
 import { JournalBadge } from "../../components/journiv/JournalBadge";
 import { MomentChips } from "../../components/journiv/MomentChips";
 import { PageBar } from "../../components/journiv/PageBar";
 import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
 import { Skeleton } from "../../components/ui/skeleton";
+import { toast } from "../../components/ui/toast";
 import { StatusView } from "../../components/journiv/StatusView";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
@@ -28,6 +36,10 @@ import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import { EntryMedia } from "./EntryMedia";
 import { useMomentMedia } from "./useMomentMedia";
 import "./reader.css";
+
+// One stable id so the pending toast can be resolved (closed) on settle rather
+// than lingering next to the outcome.
+const PDF_TOAST_ID = "reader-entry-pdf";
 
 export function ReaderPage() {
   const { momentId, journalId } = useParams({ strict: false }) as {
@@ -48,6 +60,8 @@ export function ReaderPage() {
   const { q = "", view, month, date } = search;
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const isPdfRetryInFlight = useRef(false);
   // Carry the list-pane mode back so Back returns to the calendar or grid the
   // reader was opened from, not the plain list.
   const listSearch = {
@@ -135,6 +149,53 @@ export function ReaderPage() {
       if (!momentSurvived) goBack();
     },
   });
+  const download = useMutation({
+    mutationFn: async (entryId: string) => {
+      const { blob, filename } = await api.downloadEntryPdf(entryId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename ?? "entry.pdf";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    },
+    onMutate: () => {
+      // The action menu closes on select, so its disabled "Downloading PDF…"
+      // item is not on screen while the PDF renders. A pending toast carries
+      // that state instead; the browser's own download is the success signal,
+      // so success just clears this toast.
+      toast.add({
+        id: PDF_TOAST_ID,
+        type: "loading",
+        description: "Preparing your PDF…",
+        timeout: 0,
+      });
+    },
+    onSuccess: () => {
+      toast.close(PDF_TOAST_ID);
+    },
+    onSettled: () => {
+      isPdfRetryInFlight.current = false;
+    },
+    onError: (_error, entryId) => {
+      toast.close(PDF_TOAST_ID);
+      toast.add({
+        type: "error",
+        priority: "high",
+        description: "Couldn’t download PDF. Try again.",
+        actionProps: {
+          children: "Retry",
+          onClick: () => {
+            if (isPdfRetryInFlight.current) return;
+            isPdfRetryInFlight.current = true;
+            download.mutate(entryId);
+          },
+        },
+      });
+    },
+  });
 
   if (moment.isLoading) return <ReaderSkeleton />;
   if (moment.isError || !moment.data) {
@@ -168,6 +229,30 @@ export function ReaderPage() {
   const journal = journals.get(data.entry?.journal_id ?? journalId);
   const hasWriting = Boolean(data.entry);
   const content = entry.data?.content_delta ?? EMPTY_DELTA;
+  const entryActions: AppMenuAction[] = entryId
+    ? [
+        {
+          kind: "command",
+          id: "download-pdf",
+          label: download.isPending ? "Downloading PDF…" : "Download PDF",
+          icon: Download,
+          disabled: download.isPending,
+          onSelect: () => download.mutate(entryId),
+        },
+        {
+          kind: "command",
+          id: "delete-entry",
+          label: "Delete entry…",
+          icon: Trash2,
+          destructive: true,
+          separatorBefore: true,
+          onSelect: () => {
+            remove.reset();
+            setDeleteOpen(true);
+          },
+        },
+      ]
+    : [];
   // Media shown inside the prose must not be repeated in the gallery.
   const inlinePaths = hasWriting
     ? planReaderContent(content).inlinePaths
@@ -184,15 +269,6 @@ export function ReaderPage() {
         title={<JournalBadge journal={journal} />}
         actions={
           <>
-            {entryId && (
-              <DeleteEntryDialog
-                entryTitle={title}
-                deleting={remove.isPending}
-                failed={remove.isError}
-                onConfirm={() => remove.mutate(entryId)}
-                onReset={remove.reset}
-              />
-            )}
             <Button
               variant={hasWriting ? "secondary" : "default"}
               onClick={edit}
@@ -209,9 +285,23 @@ export function ReaderPage() {
                 </>
               )}
             </Button>
+            {entryId && (
+              <AppAdaptiveMenu label="Entry actions" actions={entryActions} />
+            )}
           </>
         }
       />
+
+      {entryId && (
+        <DeleteEntryDialog
+          open={deleteOpen}
+          onOpenChange={setDeleteOpen}
+          entryTitle={title}
+          deleting={remove.isPending}
+          failed={remove.isError}
+          onConfirm={() => remove.mutate(entryId)}
+        />
+      )}
 
       <div className="jv-reader__scroll">
         <div className="jv-reader__column">

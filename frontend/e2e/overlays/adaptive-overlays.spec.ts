@@ -132,7 +132,10 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       });
       await page.goto(`/timeline/${moment.id}`);
 
-      await page.getByRole("button", { name: "Delete entry" }).click();
+      await page.getByRole("button", { name: "Entry actions" }).click();
+      await page
+        .getByRole(compact ? "button" : "menuitem", { name: "Delete entry…" })
+        .click();
 
       if (compact) {
         // Base UI's Drawer never becomes an alertdialog — assert the honest

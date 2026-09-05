@@ -17,11 +17,23 @@ or deleted prompt is quiet supplementary context; it never blocks the Moment.
 Malformed stored content falls back visibly to plain text. An untitled Moment
 uses its date as h1. Reader does not edit metadata.
 
-## Delete Entry
+## Entry actions
 
-The reader shows one direct ghost delete icon immediately before Edit whenever
-the Moment has an Entry. Confirm with AppConfirmDialog and leave the surface
-open with a human error on failure.
+Reader PageBar actions are `Edit` (or `Write`) and, whenever the Moment has an
+Entry, an `Entry actions` overflow menu built from the shared `AppAdaptiveMenu`
+(anchored menu on regular widths, bottom action sheet when compact). The menu
+holds:
+
+- **Download PDF** — downloads the Entry as a PDF (`GET /entries/{entry_id}/pdf`)
+  and starts a browser download. Present only when the Moment has an actual
+  Entry. While the request is in flight the item is disabled; the menu closes on
+  select, so pending state is carried by a transient toast. The browser starting
+  the download is the only success signal. Failure surfaces as a transient error
+  toast with a Retry action that re-runs the same download and keeps the
+  in-flight guard.
+- **Delete entry…** — separated below Download and styled destructive. Opens the
+  existing `AppConfirmDialog` confirmation (open state owned by the reader); the
+  dialog stays open with a human error on failure.
 
 DELETE /entries/{entry_id} deletes writing, not Moment context. Refetch the
 Moment after success; it becomes the matching quick-log kind. If the backend
@@ -60,6 +72,13 @@ media needs one entry refetch because its URLs live in the document.
 
 ## Known gaps
 
+- PDF export (backend follow-up): `GET /entries/{entry_id}/pdf`
+  does not declare its binary `application/pdf` response, so the generated client
+  types the body as `unknown`; the client wrapper parses the Blob defensively as
+  a workaround. The endpoint should declare the response properly.
+- PDF export (backend follow-up): the owned endpoint renders
+  WeasyPrint synchronously inside an `async` handler, blocking the event loop for
+  the whole render. Offload the render (thread pool or worker).
 - Reader PageBar can be visually bare for journal-less quick logs.
 - No full-size media viewer; gallery images must stay uncropped until one exists.
 - Legacy absolute third-party media URLs intentionally fall back to plain text.
