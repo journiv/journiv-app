@@ -363,16 +363,20 @@ class PromptService:
             # the API's `self_discovery` category value.
             statement = statement.where(
                 or_(
-                    Prompt.text.ilike(pattern),
-                    Prompt.category.ilike(pattern),
-                    func.replace(Prompt.category, "_", " ").ilike(pattern),
-                    func.replace(Prompt.category, "_", "-").ilike(pattern),
+                    col(Prompt.text).ilike(pattern),
+                    col(Prompt.category).ilike(pattern),
+                    func.replace(col(Prompt.category), "_", " ").ilike(pattern),
+                    func.replace(col(Prompt.category), "_", "-").ilike(pattern),
                 )
             )
         if min_minutes is not None:
-            statement = statement.where(Prompt.estimated_time_minutes >= min_minutes)
+            statement = statement.where(
+                col(Prompt.estimated_time_minutes) >= min_minutes
+            )
         if max_minutes is not None:
-            statement = statement.where(Prompt.estimated_time_minutes <= max_minutes)
+            statement = statement.where(
+                col(Prompt.estimated_time_minutes) <= max_minutes
+            )
         return statement
 
     def get_all_prompts(
@@ -605,10 +609,10 @@ class PromptService:
         rows = list(
             self.session.exec(
                 select(
-                    Moment.prompt_id,
-                    Moment.logged_date_tz,
-                    Prompt.category,
-                    Prompt.text,
+                    col(Moment.prompt_id),
+                    col(Moment.logged_date_tz),
+                    col(Prompt.category),
+                    col(Prompt.text),
                 )
                 .join(Prompt, col(Moment.prompt_id) == col(Prompt.id))
                 .where(Moment.user_id == user_id)
