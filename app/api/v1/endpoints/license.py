@@ -67,10 +67,16 @@ async def register_license(
                 request_id=getattr(http_request.state, 'request_id', None)
             )
 
+        # Preserve the service's rate-limit signal so the client can show a
+        # cooldown instead of a generic "check the key" message. The response
+        # schema already carries these fields; only the construction here was
+        # dropping them.
         return LicenseRegisterResponse(
             successful=result.get("successful", False),
             signed_license=result.get("signed_license"),
-            error_message=result.get("error_message")
+            error_message=result.get("error_message"),
+            rate_limited=result.get("rate_limited", False),
+            retry_after=result.get("retry_after"),
         )
 
     except HTTPException:

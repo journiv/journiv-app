@@ -35,6 +35,7 @@ import {
   disconnectApiV1IntegrationsProviderDisconnectDelete,
   downloadEntryPdfApiV1EntriesEntryIdPdfGet,
   fetchWeatherApiV1WeatherFetchPost,
+  forceVersionCheckApiV1InstanceVersionCheckPost,
   getActivitiesApiV1ActivitiesGet,
   getActivityGroupsApiV1ActivityGroupsGet,
   getAllMoodsApiV1MoodsGet,
@@ -75,6 +76,7 @@ import {
   getUserJournalsApiV1JournalsGet,
   getUserTagsApiV1TagsGet,
   getVersionInfoApiV1InstanceVersionInfoGet,
+  getVersionCheckEnabledApiV1InstanceVersionCheckEnabledGet,
   getWritingPatternsApiV1AnalyticsWritingPatternsGet,
   getWritingStreakApiV1AnalyticsWritingStreakGet,
   importFromImmichAsyncApiV1MediaImportFromImmichAsyncPost,
@@ -88,6 +90,7 @@ import {
   oidcExchangeApiV1AuthOidcExchangePost,
   refreshTokenApiV1AuthRefreshPost,
   registerApiV1AuthRegisterPost,
+  registerLicenseApiV1InstanceLicenseRegisterPost,
   removePersonProfileImageApiV1PeoplePersonIdProfileImageDelete,
   removeTagFromMomentApiV1MomentsMomentIdTagsTagIdDelete,
   reorderJournalsApiV1JournalsReorderPut,
@@ -114,6 +117,7 @@ import {
   updateSettingsApiV1IntegrationsProviderSettingsPut,
   updateTagApiV1TagsTagIdPut,
   updateUserApiV1AdminUsersUserIdPatch,
+  updateVersionCheckEnabledApiV1InstanceVersionCheckEnabledPut,
   uploadImportApiV1ImportUploadPost,
   uploadPersonProfileImageApiV1PeoplePersonIdProfileImagePost,
 } from "../generated/sdk.gen";
@@ -142,6 +146,7 @@ import type {
   JournalCreate,
   JournalReorderRequest,
   JournalUpdate,
+  LicenseRegisterRequest,
   ListAssetsApiV1IntegrationsProviderAssetsGetData,
   MomentCreate,
   MomentUpdate,
@@ -159,6 +164,7 @@ import type {
   UserSettingsUpdate,
   UserCreate,
   UserUpdate,
+  VersionCheckEnabledUpdate,
   WeatherFetchRequest,
 } from "../generated/types.gen";
 import { configureApiClient } from "./config";
@@ -666,7 +672,22 @@ export const api = {
       }),
     ),
   versionInfo: () => data(getVersionInfoApiV1InstanceVersionInfoGet(options())),
+  forceVersionCheck: () =>
+    data(forceVersionCheckApiV1InstanceVersionCheckPost(options())),
+  versionCheckEnabled: () =>
+    data(getVersionCheckEnabledApiV1InstanceVersionCheckEnabledGet(options())),
+  updateVersionCheckEnabled: (body: VersionCheckEnabledUpdate) =>
+    data(
+      updateVersionCheckEnabledApiV1InstanceVersionCheckEnabledPut({
+        ...options(),
+        body,
+      }),
+    ),
   licenseInfo: () => data(getLicenseInfoApiV1InstanceLicenseInfoGet(options())),
+  registerLicense: (body: LicenseRegisterRequest) =>
+    data(
+      registerLicenseApiV1InstanceLicenseRegisterPost({ ...options(), body }),
+    ),
   integrationStatus: () =>
     data(
       getStatusApiV1IntegrationsProviderStatusGet({

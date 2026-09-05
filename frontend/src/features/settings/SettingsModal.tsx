@@ -28,6 +28,7 @@ import { HelpPage } from "./support/HelpPage";
 import { AboutPage } from "./support/AboutPage";
 import { currentUserQuery } from "../../api/query/options";
 import { UsersPage } from "./admin/UsersPage";
+import { UpdatesLicensePage } from "./admin/UpdatesLicensePage";
 import "./settings.css";
 
 /** The route the modal knows how to show. `AppShell` reads it from route
@@ -117,7 +118,11 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
   // Administration is absent from navigation for ordinary users. A direct
   // deep link is also returned to Profile before the admin query can mount.
   useEffect(() => {
-    if (section === "users" && currentUser.data && !isAdmin) {
+    if (
+      (section === "users" || section === "updatesLicense") &&
+      currentUser.data &&
+      !isAdmin
+    ) {
       navigate({
         to: "/settings/profile",
         search: { q: "" },
@@ -203,6 +208,9 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
                   {section === "appearance" && <AppearancePage />}
                   {section === "integrations" && <IntegrationsPage />}
                   {section === "users" && isAdmin && <UsersPage />}
+                  {section === "updatesLicense" && isAdmin && (
+                    <UpdatesLicensePage />
+                  )}
                   {section === "import" && <ImportPage />}
                   {section === "export" && <ExportPage />}
                   {section === "help" && <HelpPage />}

@@ -348,6 +348,13 @@ const settingsUsersRoute = createRoute({
   staticData: { settings: "users" },
   component: SettingsBackground,
 });
+const settingsUpdatesLicenseRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/settings/admin/updates-license",
+  validateSearch: timelineSearch,
+  staticData: { settings: "updatesLicense" },
+  component: SettingsBackground,
+});
 /** Tags graduated from the legacy `/settings/journaling/*` prefix to its own
  *  Library workspace. Keep the old URL working. */
 const settingsTagsRedirectRoute = createRoute({
@@ -571,6 +578,7 @@ const routeTree = rootRoute.addChildren([
     settingsSecurityRoute,
     settingsAppearanceRoute,
     settingsUsersRoute,
+    settingsUpdatesLicenseRoute,
     settingsTagsRedirectRoute,
     libraryTagsRoute,
     libraryTagRoute,
@@ -616,6 +624,7 @@ declare module "@tanstack/react-router" {
       | "security"
       | "appearance"
       | "users"
+      | "updatesLicense"
       | "integrations"
       | "import"
       | "export"

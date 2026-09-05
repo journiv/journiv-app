@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../auth/session";
 import { api } from "./api";
-import { ApiError, isConflict, isNotFound } from "./errors";
+import { ApiError, isConflict, isNotFound, retryTransient } from "./errors";
 import { resetAuthRefreshForTests } from "./config";
 
 describe("API errors keep the status", () => {
@@ -81,5 +81,25 @@ describe("API errors keep the status", () => {
     expect((caught as ApiError).status).toBeUndefined();
     expect(isNotFound(caught)).toBe(false);
     expect(isConflict(caught)).toBe(false);
+  });
+});
+
+describe("retryTransient", () => {
+  it("retries a failure that never got an answer, up to two attempts", () => {
+    const offline = new ApiError("Failed to fetch");
+    expect(retryTransient(0, offline)).toBe(true);
+    expect(retryTransient(1, offline)).toBe(true);
+    expect(retryTransient(2, offline)).toBe(false);
+  });
+
+  it("retries a 5xx", () => {
+    expect(retryTransient(0, new ApiError("boom", { status: 500 }))).toBe(true);
+    expect(retryTransient(0, new ApiError("down", { status: 503 }))).toBe(true);
+  });
+
+  it("does not retry a 4xx — it is the server's answer", () => {
+    for (const status of [400, 401, 403, 404, 409, 422, 429]) {
+      expect(retryTransient(0, new ApiError("no", { status }))).toBe(false);
+    }
   });
 });

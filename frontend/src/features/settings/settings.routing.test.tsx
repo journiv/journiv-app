@@ -33,7 +33,11 @@ vi.mock("../../api/client/api", () => ({
     activities: vi.fn(),
     goals: vi.fn(),
     versionInfo: vi.fn(),
+    versionCheckEnabled: vi.fn(),
+    updateVersionCheckEnabled: vi.fn(),
+    forceVersionCheck: vi.fn(),
     licenseInfo: vi.fn(),
+    registerLicense: vi.fn(),
     integrationStatus: vi.fn(),
     adminUsers: vi.fn(),
     createAdminUser: vi.fn(),
@@ -142,11 +146,24 @@ beforeEach(() => {
     current_version: "1.0.0",
     install_id: "install-1",
   });
+  vi.mocked(api.versionCheckEnabled).mockResolvedValue({ enabled: true });
+  vi.mocked(api.updateVersionCheckEnabled).mockImplementation(
+    async ({ enabled }) => ({ enabled }),
+  );
+  vi.mocked(api.forceVersionCheck).mockResolvedValue({
+    success: true,
+    message: "Version check completed successfully",
+    version_info: {
+      current_version: "1.0.0",
+      install_id: "install-1",
+    },
+  });
   vi.mocked(api.licenseInfo).mockResolvedValue({
     is_active: false,
     license_type: "lifetime",
     install_id: "install-1",
   });
+  vi.mocked(api.registerLicense).mockResolvedValue({ successful: true });
   vi.mocked(api.integrationStatus).mockResolvedValue({
     provider: "immich",
     status: "disconnected",
@@ -228,6 +245,24 @@ describe("Settings routing and modal", () => {
     ).toBe("page");
   });
 
+  it("shows Updates & license only to admins and mounts its routed page", async () => {
+    vi.mocked(api.me).mockResolvedValue(adminUser);
+    const view = await renderRoute("/settings/admin/updates-license");
+    const dialog = await screen.findByRole("dialog");
+
+    expect(view.router.state.location.pathname).toBe(
+      "/settings/admin/updates-license",
+    );
+    expect(
+      await within(dialog).findByRole("heading", { name: "Version checking" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog)
+        .getByRole("link", { name: "Updates & license" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+  });
+
   it("redirects a non-admin deep link before mounting the admin list", async () => {
     const view = await renderRoute("/settings/admin/users");
 
@@ -236,6 +271,15 @@ describe("Settings routing and modal", () => {
     );
     expect(api.adminUsers).not.toHaveBeenCalled();
     expect(screen.queryByRole("link", { name: "Users" })).toBeNull();
+  });
+
+  it("redirects a non-admin updates and license deep link", async () => {
+    const view = await renderRoute("/settings/admin/updates-license");
+
+    await waitFor(() =>
+      expect(view.router.state.location.pathname).toBe("/settings/profile"),
+    );
+    expect(api.versionCheckEnabled).not.toHaveBeenCalled();
   });
 
   it("switches section from the in-modal navigation without closing", async () => {

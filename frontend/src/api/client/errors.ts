@@ -64,3 +64,19 @@ export function isNotFound(caught: unknown): boolean {
 export function isConflict(caught: unknown): boolean {
   return caught instanceof ApiError && caught.status === 409;
 }
+
+/**
+ * A TanStack Query `retry` predicate that only spins on failures a retry could
+ * actually clear: the request never got an answer (offline, DNS, timeout — no
+ * status) or the server said it broke (5xx). A 4xx is the server's considered
+ * answer — 401/403 capability, 404 absence, 422 validation — and the caller
+ * renders a state from it, so retrying only delays that state. Caps at two
+ * attempts, matching the app's default `retry: 1` budget for transient blips.
+ */
+export function retryTransient(failureCount: number, error: unknown): boolean {
+  if (failureCount >= 2) return false;
+  if (error instanceof ApiError && error.status !== undefined) {
+    return error.status >= 500;
+  }
+  return true;
+}

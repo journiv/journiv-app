@@ -4,6 +4,7 @@ import {
   queryOptions,
 } from "@tanstack/react-query";
 import { api } from "../client/api";
+import { retryTransient } from "../client/errors";
 import {
   normalizeMomentFilters,
   queryKeys,
@@ -111,11 +112,26 @@ export const versionInfoQuery = () =>
   queryOptions({
     queryKey: queryKeys.versionInfo,
     queryFn: () => api.versionInfo(),
+    staleTime: 60_000,
+    // Retry only genuine blips; a 403 (not an admin) is an answer, not a spinner.
+    retry: retryTransient,
+  });
+export const versionCheckEnabledQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.versionCheckEnabled,
+    queryFn: () => api.versionCheckEnabled(),
+    staleTime: 60_000,
+    retry: retryTransient,
   });
 export const licenseInfoQuery = () =>
   queryOptions({
     queryKey: queryKeys.licenseInfo,
     queryFn: () => api.licenseInfo(),
+    staleTime: 60_000,
+    // A 404 is the expected "no license registered" state and a 403/501 is a
+    // capability answer — none should delay the registration form. A 5xx or a
+    // dropped connection still gets the standard couple of retries.
+    retry: retryTransient,
   });
 export const integrationStatusQuery = () =>
   queryOptions({

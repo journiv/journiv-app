@@ -75,6 +75,7 @@ export const queryKeys = {
    *  both. Do not flatten to a sibling key. */
   goalLogs: (id: string) => ["goals", id, "logs"] as const,
   versionInfo: ["instance", "version"] as const,
+  versionCheckEnabled: ["instance", "version", "enabled"] as const,
   licenseInfo: ["instance", "license"] as const,
   integrationStatus: (provider: string) =>
     ["integrations", provider, "status"] as const,

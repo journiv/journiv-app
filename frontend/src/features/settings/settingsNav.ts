@@ -16,6 +16,7 @@ export type SettingsRouteTo =
   | "/settings/security"
   | "/settings/appearance"
   | "/settings/admin/users"
+  | "/settings/admin/updates-license"
   | "/settings/integrations"
   | "/settings/data/import"
   | "/settings/data/export"
@@ -29,6 +30,7 @@ export type SettingsNavItem = {
     | "security"
     | "appearance"
     | "users"
+    | "updatesLicense"
     | "integrations"
     | "import"
     | "export"
@@ -70,7 +72,14 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
   {
     label: "Administration",
     adminOnly: true,
-    items: [{ id: "users", label: "Users", to: "/settings/admin/users" }],
+    items: [
+      { id: "users", label: "Users", to: "/settings/admin/users" },
+      {
+        id: "updatesLicense",
+        label: "Updates & license",
+        to: "/settings/admin/updates-license",
+      },
+    ],
   },
   {
     label: "Data & backup",
