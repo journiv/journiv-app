@@ -205,6 +205,23 @@ describe("PromptBrowser", () => {
     expect(screen.getByText("What did today teach you?")).toBeTruthy();
   });
 
+  it("clears the category when selecting All", async () => {
+    renderBrowser();
+    await screen.findByRole("list", { name: "Prompts" });
+
+    await userEvent.click(screen.getByRole("button", { name: /^Reflection/ }));
+    await waitFor(() => {
+      expect(vi.mocked(api.prompts)).toHaveBeenLastCalledWith(
+        expect.objectContaining({ category: "reflection" }),
+      );
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: /^All/ }));
+    await waitFor(() => {
+      expect(screen.getByText("What are you grateful for today?")).toBeTruthy();
+    });
+  });
+
   it("always offers every supported difficulty level", async () => {
     renderBrowser();
     await screen.findByRole("list", { name: "Prompts" });

@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
@@ -51,6 +51,7 @@ export function SignUpPage() {
   const [accountCreated, setAccountCreated] = useState(false);
   const submittingRef = useRef(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { returnTo } = useSearch({ from: "/signup" });
   const instanceConfig = useQuery({
     ...instanceConfigQuery(),
@@ -94,6 +95,7 @@ export function SignUpPage() {
       });
       registered = true;
       const tokens = await api.login(trimmedEmail, password);
+      queryClient.clear();
       sessionStore.write({
         version: 1,
         accessToken: tokens.access_token,

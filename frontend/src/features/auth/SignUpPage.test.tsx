@@ -7,6 +7,7 @@ import type { InstanceConfigResponse } from "../../api/generated";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { ApiError } from "../../api/client/errors";
+import { queryKeys } from "../../api/query/keys";
 import { createAppQueryClient } from "../../app/queryClient";
 import { createAppRouter } from "../../app/router";
 import { signUpErrorMessage } from "./SignUpPage";
@@ -44,7 +45,7 @@ async function renderSignUp(path = "/signup?returnTo=%2Flogin") {
     </QueryClientProvider>,
   );
   await router.load();
-  return { ...view, router };
+  return { ...view, queryClient, router };
 }
 
 async function completeForm(options?: { password?: string; confirm?: string }) {
@@ -180,6 +181,14 @@ describe("SignUpPage", () => {
 
   it("normalizes supported fields, signs in, stores the session and returns", async () => {
     const view = await renderSignUp();
+    sessionStore.write({
+      version: 1,
+      accessToken: "previous-access",
+      refreshToken: "previous-refresh",
+    });
+    view.queryClient.setQueryData(queryKeys.promptAnalytics, {
+      prompts_answered: 7,
+    });
     const user = await completeForm();
 
     await user.click(screen.getByRole("button", { name: "Create account" }));
@@ -197,6 +206,9 @@ describe("SignUpPage", () => {
       accessToken: "new-access",
       refreshToken: "new-refresh",
     });
+    expect(
+      view.queryClient.getQueryData(queryKeys.promptAnalytics),
+    ).toBeUndefined();
     expect(view.router.state.location.pathname).toBe("/login");
   });
 

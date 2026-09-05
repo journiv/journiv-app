@@ -107,12 +107,10 @@ export function PromptFilters({
           aria-label="Filter by category"
           value={[filters.category ?? ALL]}
           onValueChange={(values) => {
-            // ToggleGroup can briefly retain the All value while it selects a
-            // category. Prefer the most recently selected concrete category.
-            const category = [...values]
-              .reverse()
-              .find((value) => value !== ALL);
-            onChange({ category: category ?? null });
+            const selected = values.at(-1);
+            onChange({
+              category: selected === ALL ? null : (selected ?? null),
+            });
           }}
         >
           <ToggleGroupItem value={ALL}>

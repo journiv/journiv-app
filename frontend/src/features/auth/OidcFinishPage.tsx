@@ -1,4 +1,5 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client/api";
 import { sessionStore } from "../../api/auth/session";
@@ -16,6 +17,7 @@ const completionError =
 export function OidcFinishPage() {
   const { ticket } = useSearch({ from: "/oidc-finish" });
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const started = useRef(false);
   const [error, setError] = useState(ticket ? "" : completionError);
   const returnTo = oidcReturnToStore.read();
@@ -28,6 +30,7 @@ export function OidcFinishPage() {
     void api
       .oidcExchange(ticket)
       .then(async (tokens) => {
+        queryClient.clear();
         sessionStore.write({
           version: 1,
           accessToken: tokens.access_token,
@@ -37,7 +40,7 @@ export function OidcFinishPage() {
         await navigate({ href: returnTo, replace: true });
       })
       .catch(() => setError(completionError));
-  }, [navigate, returnTo, ticket]);
+  }, [navigate, queryClient, returnTo, ticket]);
 
   if (error) {
     return (
