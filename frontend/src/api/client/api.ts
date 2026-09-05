@@ -33,6 +33,7 @@ import {
   deleteUnusedTagsApiV1TagsUnusedDelete,
   deleteUserApiV1AdminUsersUserIdDelete,
   disconnectApiV1IntegrationsProviderDisconnectDelete,
+  downloadEntryPdfApiV1EntriesEntryIdPdfGet,
   fetchWeatherApiV1WeatherFetchPost,
   getActivitiesApiV1ActivitiesGet,
   getActivityGroupsApiV1ActivityGroupsGet,
@@ -168,6 +169,30 @@ const options = () => ({
 });
 const data = <T>(result: Promise<{ data: T }>) =>
   result.then((response) => response.data);
+
+export function filenameFromContentDisposition(value: string | null) {
+  if (!value) return undefined;
+  // RFC 8187 encodes extended parameters as `charset'language'value`; the
+  // language tag is optional, so accept both `UTF-8''...` and `UTF-8'en'...`.
+  const encoded = value.match(
+    /filename\*=UTF-8'(?:[A-Za-z]{1,8}(?:-[A-Za-z0-9]{1,8})*)?'([^;]+)/i,
+  )?.[1];
+  if (encoded) {
+    try {
+      return decodeURIComponent(encoded);
+    } catch {
+      // Fall through to the ASCII filename when a proxy corrupts the extended
+      // parameter. The browser download remains usable either way.
+    }
+  }
+  return value.match(/filename="?([^";]+)"?/i)?.[1];
+}
+
+export type DownloadedPdf = {
+  blob: Blob;
+  filename?: string;
+};
+
 export const api = {
   register: (body: UserCreate) =>
     data(registerApiV1AuthRegisterPost({ ...options(), body })),
@@ -897,6 +922,28 @@ export const api = {
         path: { entry_id },
       }),
     ),
+  /**
+   * The OpenAPI success schema currently says `unknown`, though the endpoint
+   * streams an authenticated `application/pdf` response. Keep the generated
+   * operation and configured client, but explicitly parse that response as a
+   * Blob so the caller can start a browser download and retain its filename.
+   */
+  downloadEntryPdf: async (entry_id: string): Promise<DownloadedPdf> => {
+    const result = await downloadEntryPdfApiV1EntriesEntryIdPdfGet({
+      ...options(),
+      path: { entry_id },
+      parseAs: "blob",
+    });
+    if (!(result.data instanceof Blob)) {
+      throw new Error("The PDF download did not return a file.");
+    }
+    return {
+      blob: result.data,
+      filename: filenameFromContentDisposition(
+        result.response.headers.get("Content-Disposition"),
+      ),
+    };
+  },
   createMoment: (body: MomentCreate) =>
     data(createMomentApiV1MomentsPost({ ...options(), body })),
   updateMoment: (moment_id: string, body: MomentUpdate) =>

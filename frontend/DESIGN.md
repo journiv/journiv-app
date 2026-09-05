@@ -135,6 +135,13 @@ Use StatusView for pane-level empty or error state. A bare sentence, unfiltered
 server error, or silent failed action is not acceptable. Loading skeletons
 mirror the eventual layout.
 
+Transient notifications (toast) report one-shot action outcomes that do not
+invalidate the current screen — a download, a background command. An error that
+prevents viewing or completing the current screen stays inline or pane-level
+with StatusView, never a toast. Error toasts announce assertively (Base UI
+Toast `priority: "high"`) and offer their retry as the toast action where the
+action can be retried.
+
 ## Icons, motion, and accessibility
 
 Use Lucide icons. Icon-only controls use IconButton with a label and a

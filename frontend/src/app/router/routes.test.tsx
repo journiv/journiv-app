@@ -3,11 +3,12 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from ".";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { ApiError } from "../../api/client/errors";
+import { Toaster } from "../../components/ui/toast";
 import type {
   EntryResponse,
   InstanceConfigResponse,
@@ -30,6 +31,7 @@ vi.mock("../../api/client/api", () => ({
     mediaLibrary: vi.fn(),
     entry: vi.fn(),
     deleteEntry: vi.fn(),
+    downloadEntryPdf: vi.fn(),
     tags: vi.fn(),
     createMoment: vi.fn(),
     updateMoment: vi.fn(),
@@ -156,6 +158,10 @@ beforeEach(() => {
   vi.mocked(api.mediaLibrary).mockResolvedValue({ items: [] });
   vi.mocked(api.entry).mockResolvedValue(entry);
   vi.mocked(api.deleteEntry).mockResolvedValue(undefined);
+  vi.mocked(api.downloadEntryPdf).mockResolvedValue({
+    blob: new Blob(["pdf"], { type: "application/pdf" }),
+    filename: "rainy-morning.pdf",
+  });
   vi.mocked(api.tags).mockResolvedValue([]);
   vi.mocked(api.createMoment).mockResolvedValue({
     ...moment,
@@ -218,12 +224,74 @@ async function renderRoute(path: string) {
   const view = render(
     <StrictMode>
       <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
+        <Toaster>
+          <RouterProvider router={router} />
+        </Toaster>
       </QueryClientProvider>
     </StrictMode>,
   );
   await router.load();
   return { ...view, router };
+}
+
+async function openEntryDeleteMenu() {
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Entry actions" }),
+  );
+  await userEvent.click(await screen.findByText("Delete entry…"));
+}
+
+// Restores registered by stubPdfDownloadDom(); run after every test so a stub
+// never leaks into the next one (vi.clearAllMocks in beforeEach clears call
+// data, not spy installation, and jsdom has no URL.createObjectURL to begin
+// with).
+const domRestores: Array<() => void> = [];
+afterEach(() => {
+  for (const restore of domRestores.splice(0)) restore();
+});
+
+/**
+ * Stub the DOM plumbing an anchor-click download reaches for, and register the
+ * teardown. Returns the spies so a test can assert on them.
+ */
+function stubPdfDownloadDom() {
+  const createObjectURL = vi.fn(() => "blob:entry-pdf");
+  const revokeObjectURL = vi.fn();
+  const nativeObjectUrl = Object.getOwnPropertyDescriptor(
+    URL,
+    "createObjectURL",
+  );
+  const nativeRevokeObjectUrl = Object.getOwnPropertyDescriptor(
+    URL,
+    "revokeObjectURL",
+  );
+  Object.defineProperties(URL, {
+    createObjectURL: {
+      configurable: true,
+      writable: true,
+      value: createObjectURL,
+    },
+    revokeObjectURL: {
+      configurable: true,
+      writable: true,
+      value: revokeObjectURL,
+    },
+  });
+  const click = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(() => undefined);
+
+  domRestores.push(() => {
+    click.mockRestore();
+    if (nativeObjectUrl)
+      Object.defineProperty(URL, "createObjectURL", nativeObjectUrl);
+    else Reflect.deleteProperty(URL, "createObjectURL");
+    if (nativeRevokeObjectUrl)
+      Object.defineProperty(URL, "revokeObjectURL", nativeRevokeObjectUrl);
+    else Reflect.deleteProperty(URL, "revokeObjectURL");
+  });
+
+  return { createObjectURL, revokeObjectURL, click };
 }
 
 describe("Phase B routes", () => {
@@ -270,9 +338,7 @@ describe("Phase B routes", () => {
       .mockRejectedValueOnce(new ApiError("Moment not found", { status: 404 }));
     const view = await renderRoute("/timeline/moment-1?q=rain&tag=tag-1");
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Delete entry" }),
-    );
+    await openEntryDeleteMenu();
     let dialog = screen.getByRole("alertdialog");
     expect(
       within(dialog).getByRole("heading", {
@@ -284,9 +350,7 @@ describe("Phase B routes", () => {
     );
     expect(api.deleteEntry).not.toHaveBeenCalled();
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Delete entry" }),
-    );
+    await openEntryDeleteMenu();
     dialog = screen.getByRole("alertdialog");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Delete entry" }),
@@ -313,9 +377,7 @@ describe("Phase B routes", () => {
       .mockResolvedValueOnce(quickLog);
     const view = await renderRoute("/timeline/moment-1?q=rain");
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Delete entry" }),
-    );
+    await openEntryDeleteMenu();
     await userEvent.click(
       within(screen.getByRole("alertdialog")).getByRole("button", {
         name: "Delete entry",
@@ -324,7 +386,7 @@ describe("Phase B routes", () => {
 
     expect(await screen.findByRole("button", { name: "Write" })).toBeTruthy();
     expect(view.router.state.location.pathname).toBe("/timeline/moment-1");
-    expect(screen.queryByRole("button", { name: "Delete entry" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Entry actions" })).toBeNull();
     expect(api.moment).toHaveBeenCalledTimes(2);
   });
 
@@ -332,9 +394,7 @@ describe("Phase B routes", () => {
     vi.mocked(api.deleteEntry).mockRejectedValueOnce(new Error("offline"));
     const view = await renderRoute("/timeline/moment-1");
 
-    await userEvent.click(
-      await screen.findByRole("button", { name: "Delete entry" }),
-    );
+    await openEntryDeleteMenu();
     const dialog = screen.getByRole("alertdialog");
     await userEvent.click(
       within(dialog).getByRole("button", { name: "Delete entry" }),
@@ -347,6 +407,93 @@ describe("Phase B routes", () => {
     ).toBeTruthy();
     expect(view.router.state.location.pathname).toBe("/timeline/moment-1");
     expect(screen.getByRole("alertdialog")).toBeTruthy();
+  });
+
+  it("downloads an entry PDF from the reader action menu", async () => {
+    const { createObjectURL, click } = stubPdfDownloadDom();
+
+    await renderRoute("/timeline/moment-1");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Entry actions" }),
+    );
+    expect(
+      await screen.findByRole("menuitem", { name: "Download PDF" }),
+    ).toBeTruthy();
+    await userEvent.click(
+      screen.getByRole("menuitem", { name: "Download PDF" }),
+    );
+
+    await waitFor(() =>
+      expect(api.downloadEntryPdf).toHaveBeenCalledWith("entry-1"),
+    );
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(click).toHaveBeenCalledTimes(1);
+    expect((click.mock.instances[0] as HTMLAnchorElement).download).toBe(
+      "rainy-morning.pdf",
+    );
+  });
+
+  it("shows a transient toast when a PDF download fails", async () => {
+    vi.mocked(api.downloadEntryPdf).mockRejectedValueOnce(new Error("offline"));
+    await renderRoute("/timeline/moment-1");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Entry actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Download PDF" }),
+    );
+
+    // A high-priority toast announces through a visually-hidden assertive
+    // live region (Base UI keeps the visible surface out of the a11y tree
+    // until focused).
+    expect(
+      within(await screen.findByRole("alert")).getByText(
+        "Couldn’t download PDF. Try again.",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("retries a failed PDF download from the toast action", async () => {
+    const { click } = stubPdfDownloadDom();
+    let resolveRetry: (() => void) | undefined;
+    const pendingRetry = new Promise<void>((resolve) => {
+      resolveRetry = resolve;
+    });
+    vi.mocked(api.downloadEntryPdf)
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockImplementationOnce(async () => {
+        await pendingRetry;
+        return {
+          blob: new Blob(["pdf"], { type: "application/pdf" }),
+          filename: "rainy-morning.pdf",
+        };
+      });
+
+    await renderRoute("/timeline/moment-1");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Entry actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Download PDF" }),
+    );
+
+    // The visible surface of a high-priority toast is aria-hidden until
+    // focused, so reach the action with `hidden`.
+    const toast = await screen.findByRole("alertdialog", { hidden: true });
+    await userEvent.click(
+      within(toast).getByRole("button", { name: "Retry", hidden: true }),
+    );
+    await userEvent.click(
+      within(toast).getByRole("button", { name: "Retry", hidden: true }),
+    );
+
+    expect(api.downloadEntryPdf).toHaveBeenCalledTimes(2);
+    if (!resolveRetry) throw new Error("The retry request did not start.");
+    resolveRetry();
+
+    await waitFor(() => expect(click).toHaveBeenCalledTimes(1));
+    expect(click).toHaveBeenCalledTimes(1);
   });
 
   it("debounces search into the URL and query policy", async () => {
