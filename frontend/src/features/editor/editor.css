@@ -336,163 +336,10 @@
   box-shadow: var(--shadow-lg);
 }
 
-.jv-details {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.jv-details__section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.jv-details__options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.jv-details__option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px var(--space-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--card);
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.jv-details__option[aria-pressed="true"] {
-  border-color: var(--border);
-  background: var(--accent);
-  color: var(--accent-foreground);
-}
-
-.jv-details__row {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
-.jv-details__results {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.jv-details__result {
-  padding: 6px var(--space-2);
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--foreground);
-  font-size: 0.8125rem;
-  text-align: left;
-  cursor: pointer;
-}
-
-.jv-details__result:hover {
-  background: var(--muted);
-}
-
-.jv-details__current {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-}
-
-.jv-details__current .jv-truncate {
-  flex: 1;
-}
-
-.jv-details__people {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 11rem;
-  overflow-y: auto;
-}
-
-.jv-details__person {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  padding: 4px var(--space-1);
-  font-size: 0.8125rem;
-}
-
-.jv-details__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.jv-details__tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  padding: 2px 2px 2px var(--space-2);
-  border-radius: var(--radius-sm);
-  background: var(--muted);
-  color: var(--muted-foreground);
-  font-size: 0.78125rem;
-  font-weight: 500;
-}
-
-.jv-details__error {
-  margin: 0;
-  color: var(--destructive);
-  font-size: 0.78125rem;
-}
-
-/* "Suggested from Immich" — quiet add-chips above the people list. */
-.jv-details__suggest {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.jv-details__suggest-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-}
-
-.jv-details__suggest-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 3px var(--space-2) 3px 3px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: transparent;
-  color: var(--foreground);
-  font-size: 0.8125rem;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-.jv-details__suggest-chip:hover {
-  background: var(--muted);
-}
-
-.jv-details__suggest-chip:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.jv-details__suggest-note {
-  margin: 0;
-}
+/* The metadata field group (`.jv-details`, `.jv-details__*`) moved to
+   components/journiv/momentDetails.css when Quick Log became its second consumer
+   (docs/architecture/frontend.md, docs/features/quicklog.md). Only the popover
+   shell that hosts it in the toolbar stays here. */
 
 @media (max-width: 860px) {
   .jv-details-popover {
@@ -665,4 +512,25 @@
   margin-top: calc(var(--space-1) * -1);
   padding-top: var(--space-3);
   border-top: 1px solid var(--border);
+}
+
+/* "Add to entry" from the attachment tray drops media into the prose; this
+   rings it briefly so the writer sees where it landed. The global
+   reduced-motion reset (base.css) collapses the animation for anyone who asks
+   for less motion — the scroll-into-view and the tray's "Added" state carry the
+   feedback then. */
+.jv-editor .jv-prose__media-flash {
+  outline: 3px solid transparent;
+  outline-offset: 3px;
+  border-radius: var(--radius-md);
+  animation: jv-editor-media-flash 1200ms ease-out;
+}
+
+@keyframes jv-editor-media-flash {
+  from {
+    outline-color: var(--ring);
+  }
+  to {
+    outline-color: transparent;
+  }
 }

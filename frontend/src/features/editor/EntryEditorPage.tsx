@@ -5,7 +5,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { Sparkles, TriangleAlert } from "lucide-react";
+import { Plus, Sparkles, TriangleAlert } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -18,6 +18,7 @@ import { isConflict } from "../../api/client/errors";
 import type {
   JournalResponse,
   MomentCreate,
+  MomentMediaResponse,
   MomentResponse,
   MomentUpdate,
   QuillDelta,
@@ -30,7 +31,6 @@ import {
   integrationStatusQuery,
   journalsQuery,
   mediaFormatsQuery,
-  momentMediaQuery,
   momentQuery,
   promptQuery,
 } from "../../api/query/options";
@@ -39,16 +39,22 @@ import { defaultJournalId } from "../../lib/journalOrder";
 import { uuid } from "../../lib/uuid";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import { MomentChips } from "../../components/journiv/MomentChips";
+import { MomentMediaGallery } from "../../components/journiv/MomentMediaGallery";
 import { PageBar } from "../../components/journiv/PageBar";
-import { Button } from "../../components/ui/button";
-import { Skeleton } from "../../components/ui/skeleton";
 import { StatusView } from "../../components/journiv/StatusView";
+import { useMomentMedia } from "../../components/journiv/useMomentMedia";
+import { Button } from "../../components/ui/button";
+import { IconButton } from "../../components/ui/icon-button";
+import { Skeleton } from "../../components/ui/skeleton";
 import { PromptBanner } from "../prompts/PromptBanner";
 import { PromptPickerDialog } from "../prompts/PromptPickerDialog";
 import { prependPromptHeading } from "../prompts/promptSeed";
+import { prependPlainParagraph } from "./bodySeed";
 import {
   EMPTY_DELTA,
   INLINE_MEDIA_KINDS,
+  type InlineMediaKind,
+  inlineMediaPaths,
   isEditableDocumentDelta,
   JOURNIV_DELTA_FORMATS,
 } from "./deltaProfile";
@@ -59,7 +65,7 @@ import {
 } from "./DraftRecovery";
 import { draftKeyFor } from "./draftRepository";
 import { EntryDateControl } from "./EntryDateControl";
-import { parseSupportedFormats } from "./mediaUpload";
+import { acceptAttribute } from "./mediaUpload";
 import { UPLOAD_BLOT_NAME } from "./uploadPlaceholder";
 import { useDraftRecovery } from "./useDraftRecovery";
 import { type DraftIdentity, useEntryDraft } from "./useEntryDraft";
@@ -76,27 +82,9 @@ import {
 import { isExplicitSaveShortcut } from "./shortcuts";
 import "./editor.css";
 
-/**
- * What the editor can hold: Gate-1 text, inline media, and the client-only
- * upload placeholder. The placeholder is stripped by `getContents()`, so it can
- * never be saved.
- */
-/**
- * Builds the picker filter from the backend's own list, so the frontend can
- * never accept something the server will reject — or hide something it allows.
- * Falls back to broad wildcards while the list is loading: a picker that opens
- * is better than one that filters everything out.
- */
-export function acceptAttribute(value: unknown): string {
-  const formats = parseSupportedFormats(value);
-  const extensions = formats
-    ? [...formats.images, ...formats.videos, ...formats.audio]
-    : [];
-  if (!extensions.length) return "image/*,video/*,audio/*";
-  // Extensions plus wildcards: iOS offers a far better picker when the broad
-  // types are present, while the extensions keep desktop dialogs precise.
-  return [...extensions, "image/*", "video/*", "audio/*"].join(",");
-}
+// `acceptAttribute` moved to ./mediaUpload (Quick Log shares it). Re-exported so
+// existing importers — and editorFormats.test.tsx — keep their import path.
+export { acceptAttribute } from "./mediaUpload";
 
 /**
  * Leaving the editor with writing that never reached the server.
@@ -121,6 +109,17 @@ export const EDITOR_FORMATS = [
   UPLOAD_BLOT_NAME,
 ] as const;
 
+/**
+ * The media kinds the editor can place inline: exactly what `QuillSurface` has
+ * a blot for (`image` is Quill's own; `video`/`audio` are Journiv's, registered
+ * in mediaBlots.ts) and what the document guard admits. A `media_type` outside
+ * this set (`"unknown"`) stays a Moment attachment — never offered "Add to
+ * entry", never inserted.
+ */
+const canInlineMediaKind = (
+  value: MomentMediaResponse["media_type"],
+): boolean => (INLINE_MEDIA_KINDS as readonly string[]).includes(value);
+
 export function EntryEditorPage() {
   const { momentId, journalId } = useParams({ strict: false }) as {
     momentId?: string;
@@ -130,10 +129,12 @@ export function EntryEditorPage() {
     draft: draftParam,
     q = "",
     prompt: promptParam,
+    seedNote: seedNoteParam,
   } = useSearch({ strict: false }) as {
     draft?: string;
     q?: string;
     prompt?: string;
+    seedNote?: boolean;
   };
   const navigate = useNavigate();
   // A prompt to start a NEW entry from (docs/features/prompts.md). It seeds the
@@ -319,10 +320,27 @@ export function EntryEditorPage() {
   // brings its own content and wins; an existing entry is never seeded.
   const promptForEntry =
     !momentId && promptFromParam.data ? promptFromParam.data : null;
+
+  // Quick Log's "Continue as full entry" hands the moment over with its short
+  // text still in `moment.note`; `?seedNote` asks for that text as the opening
+  // paragraph so the writer keeps going from where they left off
+  // (docs/features/quicklog.md). Only when this moment has no entry yet — an
+  // existing entry owns its own body.
+  const noteToSeed =
+    seedNoteParam &&
+    momentId &&
+    moment.data &&
+    !moment.data.entry &&
+    moment.data.note?.trim()
+      ? moment.data.note.trim()
+      : null;
+
   const seededInitialContent =
     promptForEntry && !recovered
       ? prependPromptHeading(serverInitialContent, promptForEntry.text)
-      : serverInitialContent;
+      : noteToSeed && !recovered
+        ? prependPlainParagraph(serverInitialContent, noteToSeed)
+        : serverInitialContent;
 
   return (
     <EntryEditorForm
@@ -384,6 +402,9 @@ export function EntryEditorPage() {
       // Content the reader chose to bring back is unsaved by definition.
       startsDirty={choice === "draft"}
       onDraftStored={rememberDraftInUrl}
+      // The seeded note is now part of the body; the first save clears
+      // `moment.note` in the same request so the reader does not show it twice.
+      seededNote={Boolean(noteToSeed) && !recovered}
     />
   );
 }
@@ -408,6 +429,7 @@ function EntryEditorForm({
   onDraftStored,
   initialPromptId,
   initialPromptText,
+  seededNote = false,
 }: {
   initialContent: QuillDelta;
   initialJournalId: string;
@@ -434,6 +456,9 @@ function EntryEditorForm({
   /** `null` is an explicit recovered removal; undefined uses the server link. */
   initialPromptId?: string | null;
   initialPromptText?: string;
+  /** Quick Log handoff: `moment.note` has been seeded into `initialContent`, so
+   *  the first save must also clear it (docs/features/quicklog.md). */
+  seededNote?: boolean;
 }) {
   const { q = "" } = useSearch({ strict: false }) as { q?: string };
   const navigate = useNavigate();
@@ -512,10 +537,19 @@ function EntryEditorForm({
     enabled: Boolean(draftMomentId),
   });
   const momentForDisplay = moment ?? liveDraftMoment.data;
-  const momentMedia = useQuery({
-    ...momentMediaQuery(momentForDisplay?.id ?? ""),
-    enabled: Boolean(momentForDisplay?.id),
-  });
+  // The Moment's attached media, with signed-URL expiry recovery. Feeds both
+  // the Immich-suggestion gate and the attached-media gallery shown above the
+  // prose when writing about an existing Moment (docs/features/editor.md).
+  const momentMedia = useMomentMedia(
+    momentForDisplay?.id ?? "",
+    Boolean(momentForDisplay?.id),
+  );
+  // Inline media paths from the LIVE document, so an item is dropped from the
+  // attached-media gallery the instant it is placed inline. Seeded from the
+  // starting document; `QuillSurface` reports every change after that.
+  const [inlineMediaPathSet, setInlineMediaPathSet] = useState<
+    ReadonlySet<string>
+  >(() => new Set(inlineMediaPaths(initialContent)));
   const [editorState, setEditorState] = useState<EditorState>({
     formats: {},
     focused: false,
@@ -636,7 +670,7 @@ function EntryEditorForm({
   const hasImmichMedia =
     immichEnabled &&
     (immichMedia.attachments.length > 0 ||
-      momentMedia.data?.some((media) => media.origin?.source === "immich") ===
+      momentMedia.items?.some((media) => media.origin?.source === "immich") ===
         true);
 
   // After an Immich import lands, the moment's Immich asset ids change, so the
@@ -706,6 +740,27 @@ function EntryEditorForm({
     setBodyDirty(true);
     keepLocally();
   }, [keepLocally]);
+
+  /**
+   * Places media already attached to this Moment into the prose. The signed
+   * URL is inserted as-is; the backend maps it back to the media id on save, so
+   * no second MomentMedia row is created. This is NOT session media — it
+   * pre-existed the edit, so it is never tracked for Cancel cleanup. Once the
+   * save persists it inline, later removing it from the prose deletes it
+   * through the normal orphan path, same as any prose media.
+   */
+  const addAttachedMediaToEntry = useCallback(
+    (item: MomentMediaResponse) => {
+      if (!item.signed_url || !canInlineMediaKind(item.media_type)) return;
+      surfaceRef.current?.insertMedia(
+        item.media_type as InlineMediaKind,
+        item.signed_url,
+      );
+      setBodyDirty(true);
+      keepLocally();
+    },
+    [keepLocally],
+  );
 
   const shouldBlock = useCallback(
     ({
@@ -792,6 +847,10 @@ function EntryEditorForm({
       // so finalising it must include that initial link even when it was never
       // changed in this editor. Existing entries still write only a change.
       if (promptDirty || (!moment && promptId)) body.prompt_id = promptId;
+      // Quick Log handoff: the note is now the opening paragraph of the body, so
+      // clear it in the same request the entry is created in — atomic, and a
+      // failed save leaves the note intact (docs/features/quicklog.md).
+      if (seededNote && !hasEntry) body.note = null;
       return api.updateMoment(targetId, body);
     },
     onSuccess: async (savedMoment) => {
@@ -1195,6 +1254,33 @@ function EntryEditorForm({
             onPickDevice={() => fileInputRef.current?.click()}
             onPickImmich={(assets) => void attachFromImmich(assets)}
           />
+          {/* Media attached to an existing Moment, shown as a distinct tray
+              above the prose — not as entry content. "Add to entry" drops an
+              item into the writing (and rings it there); anything left in the
+              tray stays attached to the Moment and keeps showing in the reader
+              gallery (docs/features/editor.md). A kind the editor cannot embed
+              inline shows in the tray without the action. */}
+          {moment && (
+            <MomentMediaGallery
+              variant="tray"
+              moment={moment}
+              media={momentMedia}
+              excludePaths={inlineMediaPathSet}
+              renderItemAction={(item) =>
+                canInlineMediaKind(item.media_type) && item.signed_url ? (
+                  <IconButton
+                    label="Add to entry"
+                    variant="secondary"
+                    size="sm"
+                    disabled={mutation.isPending}
+                    onClick={() => addAttachedMediaToEntry(item)}
+                  >
+                    <Plus aria-hidden="true" size={15} />
+                  </IconButton>
+                ) : null
+              }
+            />
+          )}
           <QuillSurface
             ref={surfaceRef}
             editorId={moment?.entry?.id ?? moment?.id ?? "new-entry"}
@@ -1206,6 +1292,9 @@ function EntryEditorForm({
               keepLocally();
             }}
             onStateChange={setEditorState}
+            onInlineMediaChange={(paths) =>
+              setInlineMediaPathSet(new Set(paths))
+            }
             placeholder="Write about this moment…"
             readOnly={mutation.isPending}
           />

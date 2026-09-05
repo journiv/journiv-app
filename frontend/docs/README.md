@@ -12,6 +12,7 @@ and nearby tests.
 | visual references or browser tests | [`../e2e/README.md`](../e2e/README.md) |
 | Reader or signed media URLs | [`features/reader.md`](features/reader.md) |
 | Editor, drafts, attachments, metadata editing, or Quill | [`features/editor.md`](features/editor.md) |
+| Quick Log: the lightweight capture sheet, `useShell().openQuickLog`, `seedNote` | [`features/quicklog.md`](features/quicklog.md) |
 | Timeline | [`features/timeline.md`](features/timeline.md) and `domain/moments.md` |
 | Journals | [`features/journals.md`](features/journals.md) |
 | Settings or integrations | [`features/settings.md`](features/settings.md) |

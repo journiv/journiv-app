@@ -631,6 +631,54 @@ describe("Phase B routes", () => {
     );
   });
 
+  it("seeds a quick-logged note into the body and clears it on the first save", async () => {
+    const noteMoment: MomentResponse = {
+      id: "moment-note",
+      user_id: user.id,
+      logged_at_utc: now,
+      logged_date_tz: "2026-08-24",
+      logged_timezone: "Europe/Vienna",
+      note: "Overheard a good line on the train",
+    };
+    vi.mocked(api.moment).mockResolvedValue(noteMoment);
+    vi.mocked(api.updateMoment).mockResolvedValue({
+      ...noteMoment,
+      note: null,
+      entry: {
+        id: "entry-note",
+        journal_id: journal.id,
+        moment_id: "moment-note",
+        title: null,
+        content_plain_text: "Overheard a good line on the train",
+        created_at: now,
+        updated_at: now,
+      },
+    });
+
+    const view = await renderRoute("/timeline/moment-note/edit?seedNote=true");
+
+    // The note is now editable body text, not a separate metadata line.
+    expect(
+      await screen.findByText(/Overheard a good line on the train/),
+    ).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("button", { name: "Done" }));
+
+    await waitFor(() =>
+      expect(vi.mocked(api.updateMoment)).toHaveBeenCalledWith(
+        "moment-note",
+        expect.objectContaining({
+          entry_create: expect.objectContaining({ journal_id: journal.id }),
+          // Same request that creates the entry drops the now-duplicated note.
+          note: null,
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(view.router.state.location.pathname).toBe("/timeline/moment-note"),
+    );
+  });
+
   it("keeps Journal context after saving an edit deep link", async () => {
     const view = await renderRoute("/journals/journal-1/moment-1/edit?q=rain");
     const title = await screen.findByLabelText("Entry title");

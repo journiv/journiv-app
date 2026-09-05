@@ -12,6 +12,10 @@ The title is a growing textarea with an optional-title invitation. Toolbar
 controls keep a 30px visual size and 44px targets; pointer-down prevention on
 toolbar buttons preserves the editor selection and must remain.
 
+`/timeline/$momentId/edit` and its journal-scoped twin also take a `seedNote`
+search flag from Quick Log's "Continue as full entry" — see
+[quicklog.md](quicklog.md) for what it does.
+
 The editor date is EntryDateControl: a popover Calendar with native month/year
 selection and time field. A new Entry uses browser timezone and sends UTC plus
 that zone. Editing a Moment preserves its recorded zone and interprets picked
@@ -50,6 +54,42 @@ cannot restore a deleted reference. Cancel aborts active uploads and discards
 this-session draft identity, but keeps attached photos as a media-only Moment.
 Never delete media that existed before the edit.
 
+Media already attached to an existing Moment is shown above the prose by the
+shared `components/journiv/MomentMediaGallery` in `variant="tray"`: a labelled
+panel ("On this moment") of small cropped thumbnail tiles, deliberately *not*
+the reader's full-bleed content treatment, so it never reads as if the photos
+are already in the entry. The editor passes a per-item "Add to entry" control
+(a `+` `IconButton`) through `renderItemAction`.
+
+"Add to entry" calls `QuillSurface.insertMedia` with the item's signed URL — the
+same durable-embed shape an upload produces, which the backend maps back to the
+media id on save (`normalize_delta_media_ids`, which only ever remaps an id
+already on the Moment), so no second media record is created. `insertMedia` also
+scrolls the new embed into view and rings it briefly (`.jv-prose__media-flash`,
+collapsed by the global reduced-motion reset), and re-adds the trailing newline
+a block embed placed at the document end would otherwise leave off. The source
+tile then flips to an "Added" state (dimmed, check badge, no action) rather than
+disappearing, so the before/after is legible; once every addable attachment is
+added the tray collapses to a one-line summary with a Show toggle. Tray dedup is
+by `excludePaths` fed from `QuillSurface.onInlineMediaChange` — in tray mode it
+*marks* rather than *hides* (content mode still hides).
+
+It is not session media: opening or cancelling the editor never deletes it, and
+it stays attached to the Moment (and in the reader gallery) until a save drops it
+from the document. The first save of a note-only Moment is `entry_create` and
+runs no orphan check; a later `entry_update` that no longer references the item
+hits `delete_orphaned_media_for_delta` (old delta sources minus new), which
+deletes the `MomentMedia` row, its file, and decrements `media_count` — the same
+one-way path as any other prose media. Media never inserted is never in a delta,
+so it is never collected. Nothing is inserted automatically — "Write about this
+moment" carries the note, never the media.
+
+"Add to entry" is offered only for `media_type` the editor can embed inline —
+`image` (Quill's own blot), `video` and `audio` (Journiv's, in mediaBlots.ts),
+which is exactly `INLINE_MEDIA_KINDS` and the document guard's allowlist. A
+`media_type: "unknown"` attachment still renders as a tray tile (paperclip
+glyph) and stays on the Moment; it is never offered and never inserted.
+
 The optional Immich path is feature-gated by instance configuration. It uses
 the same draft, placeholder, cancellation, processing-poll, and durable-media
 rules as device upload. The asset endpoint is paged, newest-first, and has no
@@ -85,9 +125,12 @@ ApiError preserves status. Never read an unavailable request as a resource
 absence. Use the shared UUID helper rather than direct crypto.randomUUID so
 plain-HTTP self-hosting remains supported.
 
-Moment details is one popover in the toolbar. It lazily ensures a Moment then
-writes mood, location, weather, people, and tags through their actual
-operations. Header metadata and foot chips refresh after success. Existing
+Moment details is one popover in the toolbar. The field group itself is the
+shared `components/journiv/MomentDetailsPanel` (Quick Log is its second
+consumer — [quicklog.md](quicklog.md)); the editor keeps only the popover shell
+and injects its Immich people-suggestion strip through the panel's
+`renderPeopleSuggestions` slot. It lazily ensures a Moment then writes mood,
+location, weather, people, and tags through their actual operations. Header metadata and foot chips refresh after success. Existing
 Moment metadata writes are immediate and not prose-dirty; new-entry writes are
 dirty so Cancel protects the created draft. Every failed user action reaches the
 screen with a human message.

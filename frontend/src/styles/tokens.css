@@ -56,13 +56,12 @@
   --sidebar-accent: oklch(0.97 0 0);
   --sidebar-accent-foreground: oklch(0.205 0 0);
   /* The seam between a nav pane and the canvas beside it. Minimal Neutral's
-     dark palette collapses `--sidebar`, `--muted`, `--border` and `--input`
-     all to `oklch(0.269 0 0)`, so a plain `--border` hairline between the
-     Settings nav (`--sidebar`) and its `--muted` canvas is invisible in dark —
-     the two panes have no separation at all. A `color-mix` toward `--foreground`
+     dark palette collapses `--sidebar`, `--muted` and `--secondary` to
+     `oklch(0.269 0 0)` (it ships `--border` / `--input` there too — Journiv
+     lifts those, see the `.dark` block). A `color-mix` toward `--foreground`
      resolves per theme: ~0.918 in light (matching the value Minimal Neutral
-     ships) and ~0.326 in dark, a quiet but real hairline. Lighter than
-     `--line-strong` (22%) — this is structure, not emphasis. */
+     ships) and ~0.326 in dark, a quiet but real hairline against `--sidebar`.
+     Lighter than `--line-strong` (22%) — this is structure, not emphasis. */
   --sidebar-border: color-mix(in oklab, var(--sidebar), var(--foreground) 8%);
   --sidebar-ring: oklch(0.708 0 0);
 
@@ -168,8 +167,23 @@
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
+
+  /* Minimal Neutral ships both of these at `oklch(0.269 0 0)` in dark — the
+     exact lightness of `--muted`, `--secondary` and `--sidebar`. A 1px hairline
+     is then ZERO-contrast on any of those chrome surfaces: the nav, `outline` /
+     `secondary` buttons, panel and field dividers, menu/select separators,
+     segmented-control tracks, the switch's off track. "Interactive controls are
+     identifiable at rest" (DESIGN.md #3) silently fails in dark, and every such
+     spot has historically needed its own workaround (`--sidebar-border`,
+     `--jv-seam`, `selection.css`, per-component separator patches). Lifting the
+     two tokens just above that band fixes all of them at once. 0.32 matches the
+     already-shipped `--sidebar-border` (~0.326) and stays far below
+     `--muted-foreground` (0.708), so a border never reads as text. Every fill
+     use of `--border` / `--input` in the app is a divider that wants this
+     contrast; none depend on them matching a surface. Do not "restore" these to
+     0.269 to match upstream — that reintroduces the whole bug class. */
+  --border: oklch(0.32 0 0);
+  --input: oklch(0.32 0 0);
 
   --sidebar: oklch(0.269 0 0);
   --sidebar-foreground: oklch(0.985 0 0);

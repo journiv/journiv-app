@@ -2,14 +2,14 @@
    -------------------------------------------------------------------------
    Base Vega marks the active item of a Tabs / Toggle / ToggleGroup by
    swapping its fill between `--muted`, `--background` and `--input`. The
-   Minimal Neutral palette does not keep those apart:
+   Minimal Neutral palette barely keeps those apart:
 
-     light  --muted == --accent == --border            = oklch(0.95)
-     dark   --muted == --secondary == --border == --input = oklch(0.269)
+     light  --muted == --accent    = oklch(0.95)
+     dark   --muted == --secondary = oklch(0.269)   (--input lifted to 0.32)
 
    so the stock treatment is a ~5% lightness step in light and, in dark,
-   `bg-input/30` over a `bg-muted` track is the same colour over itself — the
-   selected item is invisible. This was already patched feature-locally for
+   `bg-input/30` (~0.32 at 30% alpha) over a `bg-muted` (0.269) track is a
+   step too faint to read as a selection. This was already patched feature-locally for
    the sidebar nav and the theme toggle (src/features/shell/shell.css); this
    file fixes it once at the primitive level so every current and future
    picker built from these primitives inherits a legible selection.

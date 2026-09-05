@@ -70,6 +70,22 @@ export type SupportedMediaFormats = {
   audio: string[];
 };
 
+/**
+ * Builds a file-picker `accept` string from the backend's own format list, so
+ * the frontend can never offer something the server will reject — or hide
+ * something it allows. Falls back to broad wildcards while the list is loading:
+ * a picker that opens is better than one that filters everything out. Shared by
+ * the editor's inline media picker and the Quick Log sheet.
+ */
+export function acceptAttribute(value: unknown): string {
+  const formats = parseSupportedFormats(value);
+  const extensions = formats
+    ? [...formats.images, ...formats.videos, ...formats.audio]
+    : [];
+  if (!extensions.length) return "image/*,video/*,audio/*";
+  return extensions.join(",");
+}
+
 export function parseSupportedFormats(
   value: unknown,
 ): SupportedMediaFormats | null {

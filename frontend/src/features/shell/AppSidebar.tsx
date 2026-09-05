@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Settings,
   Sun,
+  Zap,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import type {
@@ -35,6 +36,7 @@ import { groupJournals } from "../../lib/journalOrder";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { cx } from "../../lib/cx";
 import { startOidcLogout } from "../auth/oidc";
+import { useShell } from "./shellContext";
 import "./shell.css";
 import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 
@@ -52,6 +54,7 @@ export function AppSidebar({
 }) {
   const { journals, isLoading, isError, refetch } = useJournalLookup();
   const navigate = useNavigate();
+  const shell = useShell();
   // Where Settings was opened from, so closing it returns here (docs/features/settings.md).
   const fromHref = useRouterState({ select: (state) => state.location.href });
   // The rail lists active journals in the canonical order — favourites sort to
@@ -81,6 +84,21 @@ export function AppSidebar({
       >
         <Plus aria-hidden="true" size={16} />
         New entry
+      </Button>
+
+      {/* The quieter sibling of "New entry": a lightweight capture that opens
+          the Quick Log sheet rather than routing anywhere (docs/features/quicklog.md).
+          Outline, not brand — writing a full entry stays the emphasised action. */}
+      <Button
+        variant="outline"
+        className="jv-nav__quick-log"
+        onClick={() => {
+          onNavigate?.();
+          shell.openQuickLog();
+        }}
+      >
+        <Zap aria-hidden="true" size={16} />
+        Quick log
       </Button>
 
       <nav className="jv-nav__group" aria-label="Views">

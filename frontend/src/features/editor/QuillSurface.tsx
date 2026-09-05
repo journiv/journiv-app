@@ -12,6 +12,7 @@ import type { InlineMediaKind } from "./deltaProfile";
 import {
   cloneDelta,
   INLINE_MEDIA_KINDS,
+  inlineMediaPaths,
   isQuillDocumentDelta,
   isReaderDocumentDelta,
   JOURNIV_DELTA_FORMATS,
@@ -39,6 +40,14 @@ export interface QuillSurfaceHandle {
    * in-editor picker (docs/features/prompts.md).
    */
   seedPromptHeading(text: string): void;
+  /**
+   * Inserts a durable media embed at the caret, on its own line. Used to place
+   * media that is already attached to the Moment (the editor's attached-media
+   * gallery, docs/features/editor.md) into the prose — the source is a signed
+   * `/api/v1/media/<id>/signed?…` URL the backend maps back to the id on save,
+   * so no new media record is created.
+   */
+  insertMedia(kind: InlineMediaKind, source: string): void;
   /** Swaps a placeholder for durable media. False when it is no longer there. */
   replacePlaceholder(
     uploadId: string,
@@ -78,6 +87,11 @@ export type InlineFormat = "bold" | "italic" | "underline" | "strike";
 export type LineFormat = "header" | "list" | "blockquote";
 export type LineFormatValue = 1 | 2 | 3 | "bullet" | "ordered" | true;
 
+/** Transient class + lifetime for the "just added from the tray" ring
+ *  (styled in editor.css, honoured-down by prefers-reduced-motion there). */
+const MEDIA_FLASH_CLASS = "jv-prose__media-flash";
+const MEDIA_FLASH_MS = 1200;
+
 export type EditorState = {
   formats: Record<string, unknown>;
   focused: boolean;
@@ -98,6 +112,13 @@ type QuillSurfaceProps = {
   editorId: string;
   onUserChange?: () => void;
   onStateChange?: (state: EditorState) => void;
+  /**
+   * The document's inline media, as stable `/api/v1/media/<id>/signed` paths in
+   * document order, whenever it changes. The editor uses this to hide media
+   * from its attached-media gallery the moment it is placed inline
+   * (docs/features/editor.md).
+   */
+  onInlineMediaChange?: (paths: string[]) => void;
   placeholder?: string;
   readOnly?: boolean;
   ariaLabel?: string;
@@ -174,6 +195,7 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       editorId,
       onUserChange,
       onStateChange,
+      onInlineMediaChange,
       placeholder,
       readOnly = false,
       ariaLabel,
@@ -212,8 +234,10 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
     filesRef.current = onFiles;
     const userChangeRef = useRef(onUserChange);
     const stateChangeRef = useRef(onStateChange);
+    const inlineMediaChangeRef = useRef(onInlineMediaChange);
     userChangeRef.current = onUserChange;
     stateChangeRef.current = onStateChange;
+    inlineMediaChangeRef.current = onInlineMediaChange;
 
     const withSelection = useCallback(
       (
@@ -283,6 +307,47 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           );
           quill.setSelection(trimmed.length + 1, 0, "silent");
           quill.focus();
+        },
+        insertMedia: (kind, source) => {
+          const quill = quillRef.current;
+          if (!quill) return;
+          const range = quill.getSelection() ?? lastRangeRef.current;
+          // Media reads better on its own line, so break the paragraph first
+          // when the caret is mid-sentence. "user" source so the editor marks
+          // the body dirty and the local draft is kept — the same path an
+          // upload takes when it swaps its placeholder for a durable embed.
+          let at = Math.min(
+            Math.max(range?.index ?? quill.getLength(), 0),
+            quill.getLength(),
+          );
+          if (at > 0 && quill.getText(at - 1, 1) !== "\n") {
+            quill.insertText(at, "\n", "user");
+            at += 1;
+          }
+          quill.insertEmbed(at, kind, source, "user");
+          // A block embed (video/audio) placed at the very end of the document
+          // leaves it without the trailing newline the document guard requires;
+          // an inline image keeps its paragraph's. Restore it only when needed.
+          const lastInsert = quill.getContents().ops?.at(-1)?.insert;
+          if (typeof lastInsert !== "string" || !lastInsert.endsWith("\n")) {
+            quill.insertText(quill.getLength(), "\n", "user");
+          }
+          quill.setSelection(at + 1, 0, "silent");
+          quill.focus();
+          // Make the result unmistakable: bring the new embed into view and
+          // ring it briefly. Without this, "Add to entry" can land a photo
+          // off-screen and feel like it did nothing.
+          const placed = [
+            ...quill.root.querySelectorAll("img, video, audio"),
+          ].find((element) => element.getAttribute("src") === source);
+          if (placed instanceof HTMLElement) {
+            placed.scrollIntoView({ block: "center" });
+            placed.classList.add(MEDIA_FLASH_CLASS);
+            window.setTimeout(
+              () => placed.classList.remove(MEDIA_FLASH_CLASS),
+              MEDIA_FLASH_MS,
+            );
+          }
         },
         replacePlaceholder: (uploadId, kind, source) => {
           const quill = quillRef.current;
@@ -514,6 +579,15 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       };
       emitStateRef.current = emitState;
 
+      const emitInlineMedia = () => {
+        inlineMediaChangeRef.current?.(
+          inlineMediaPaths(quill.getContents() as unknown as QuillDelta),
+        );
+      };
+      // The starting document may already carry inline media (an existing
+      // entry), so report it once before any edit.
+      emitInlineMedia();
+
       const handleTextChange = (
         _delta: Delta,
         _oldContents: Delta,
@@ -521,6 +595,7 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       ) => {
         if (source === "user") userChangeRef.current?.();
         emitState(quill.getSelection());
+        emitInlineMedia();
       };
       const handleSelectionChange = (range: Range | null) => {
         emitState(range);
