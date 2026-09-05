@@ -8,7 +8,7 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { api } from "../../api/client/api";
-import { entryQuery, momentQuery } from "../../api/query/options";
+import { entryQuery, momentQuery, promptQuery } from "../../api/query/options";
 import { queryKeys } from "../../api/query/keys";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import { JournalBadge } from "../../components/journiv/JournalBadge";
@@ -22,6 +22,7 @@ import { useJournalLookup } from "../../lib/useJournalLookup";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
 import { planReaderContent, QuillReader } from "../editor/QuillReader";
+import { PromptBanner } from "../prompts/PromptBanner";
 import { scopeSearchFrom } from "../timeline/momentScope";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import { EntryMedia } from "./EntryMedia";
@@ -59,6 +60,12 @@ export function ReaderPage() {
   const entry = useQuery({
     ...entryQuery(moment.data?.entry?.id ?? ""),
     enabled: Boolean(moment.data?.entry?.id),
+  });
+  // Prompt attribution is supplementary reading context: a missing or deleted
+  // prompt never blocks the Moment itself from rendering.
+  const prompt = useQuery({
+    ...promptQuery(moment.data?.prompt_id ?? ""),
+    enabled: Boolean(moment.data?.prompt_id),
   });
   // One media query for the whole reader: the prose resolves inline embeds from
   // it, and the gallery renders whatever is left over.
@@ -218,6 +225,8 @@ export function ReaderPage() {
               title ? <h1 className="jv-entry-title">{title}</h1> : undefined
             }
           />
+
+          {prompt.data && <PromptBanner text={prompt.data.text} readOnly />}
 
           <EntryMedia moment={data} media={media} excludePaths={inlinePaths} />
 

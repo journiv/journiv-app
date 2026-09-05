@@ -31,6 +31,14 @@
   max-width: none;
 }
 
+/* The prompt band sits between the header notice and the toolbar
+   (docs/features/prompts.md). The notice above already carries 24px below it,
+   so this only needs a gap from the toolbar underneath. The CTA Button is
+   already content-width; PromptBanner carries the matching gap in prompts.css. */
+.jv-editor__prompt-cta {
+  margin-block: 0 var(--space-4);
+}
+
 /* The title wraps. An <input> cannot, which clipped long titles on mobile. */
 .jv-editor__title {
   display: block;

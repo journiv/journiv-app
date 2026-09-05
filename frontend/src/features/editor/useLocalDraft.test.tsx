@@ -28,6 +28,7 @@ function setup(overrides: Partial<UseLocalDraftOptions> = {}) {
     identity: { userId: "user-1", entryId: "entry-1" },
     journalId: "journal-1",
     title: "A rainy morning",
+    promptId: null,
     baseUpdatedAt: "2026-08-24T08:30:00Z",
     dirty: true,
     getDocument: () => text("Coffee while the rain moved past.\n"),
@@ -221,6 +222,18 @@ describe("what reaches storage", () => {
       entryId: "draft-entry-9",
       localDraftId: "local-1",
     });
+  });
+
+  it("stores both a selected prompt and an explicit prompt removal", async () => {
+    const { seen, rerender } = setup({ promptId: "prompt-1" });
+    act(() => seen.current?.schedule());
+    await settle();
+    expect((await draftRepository.read(KEY))?.promptId).toBe("prompt-1");
+
+    rerender({ promptId: null });
+    act(() => seen.current?.schedule());
+    await settle();
+    expect((await draftRepository.read(KEY))?.promptId).toBeNull();
   });
 
   it("refuses to store a draft that cannot represent the entry's media", async () => {

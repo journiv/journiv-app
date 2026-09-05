@@ -154,6 +154,9 @@ export function AppSidebar({
         >
           People
         </NavItem>
+        <NavItem to="/library/prompts" onNavigate={onNavigate} nested>
+          Prompts
+        </NavItem>
         <NavItem to="/library/tags" onNavigate={onNavigate} nested>
           Tags
         </NavItem>
@@ -229,6 +232,7 @@ function NavItem({
   to:
     | "/timeline"
     | "/settings/journaling/people"
+    | "/library/prompts"
     | "/library/tags"
     | "/settings/journaling/moods"
     | "/settings/journaling/activities"

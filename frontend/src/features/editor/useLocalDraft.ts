@@ -64,6 +64,8 @@ export type UseLocalDraftOptions = {
   identity: LocalDraftIdentity | null;
   journalId: string;
   title: string;
+  /** The selected prompt link, including an explicit cleared (`null`) state. */
+  promptId: string | null;
   /**
    * A non-"now" logged date the writer picked for a new entry. Kept so a reload
    * before the server Moment exists does not silently reset it. Omit for an
@@ -96,6 +98,7 @@ export function useLocalDraft({
   identity,
   journalId,
   title,
+  promptId,
   loggedAtUtc,
   loggedTimezone,
   baseUpdatedAt,
@@ -134,6 +137,7 @@ export function useLocalDraft({
     identity,
     journalId,
     title,
+    promptId,
     loggedAtUtc,
     loggedTimezone,
     baseUpdatedAt,
@@ -146,6 +150,7 @@ export function useLocalDraft({
     identity,
     journalId,
     title,
+    promptId,
     loggedAtUtc,
     loggedTimezone,
     baseUpdatedAt,
@@ -203,6 +208,9 @@ export function useLocalDraft({
         : {}),
       ...(current.journalId ? { journalId: current.journalId } : {}),
       title: current.title,
+      // Always write this field: `null` means the writer deliberately removed
+      // a prompt, whereas absence means an older draft had no such metadata.
+      promptId: current.promptId,
       ...(current.loggedAtUtc ? { loggedAtUtc: current.loggedAtUtc } : {}),
       ...(current.loggedTimezone
         ? { loggedTimezone: current.loggedTimezone }

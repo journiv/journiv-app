@@ -5,7 +5,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { TriangleAlert } from "lucide-react";
+import { Sparkles, TriangleAlert } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -32,6 +32,7 @@ import {
   mediaFormatsQuery,
   momentMediaQuery,
   momentQuery,
+  promptQuery,
 } from "../../api/query/options";
 import { browserTimeZone } from "../../lib/datetime";
 import { defaultJournalId } from "../../lib/journalOrder";
@@ -42,6 +43,9 @@ import { PageBar } from "../../components/journiv/PageBar";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { StatusView } from "../../components/journiv/StatusView";
+import { PromptBanner } from "../prompts/PromptBanner";
+import { PromptPickerDialog } from "../prompts/PromptPickerDialog";
+import { prependPromptHeading } from "../prompts/promptSeed";
 import {
   EMPTY_DELTA,
   INLINE_MEDIA_KINDS,
@@ -122,11 +126,23 @@ export function EntryEditorPage() {
     momentId?: string;
     journalId?: string;
   };
-  const { draft: draftParam, q = "" } = useSearch({ strict: false }) as {
+  const {
+    draft: draftParam,
+    q = "",
+    prompt: promptParam,
+  } = useSearch({ strict: false }) as {
     draft?: string;
     q?: string;
+    prompt?: string;
   };
   const navigate = useNavigate();
+  // A prompt to start a NEW entry from (docs/features/prompts.md). It seeds the
+  // body heading before the editor mounts and links `prompt_id` on save. A bad
+  // id just yields no prompt — it never blocks writing.
+  const promptFromParam = useQuery({
+    ...promptQuery(promptParam ?? ""),
+    enabled: Boolean(promptParam) && !momentId,
+  });
   const moment = useQuery({
     ...momentQuery(momentId ?? ""),
     enabled: Boolean(momentId),
@@ -183,19 +199,21 @@ export function EntryEditorPage() {
     // Named routes, because only the two "new" routes carry `draft` in their
     // search schema — the type system enforces that the parameter cannot be
     // pushed onto a route that would silently drop it.
+    // `prompt` rides along so a reload before the entry is saved still opens
+    // with the prompt context (docs/features/prompts.md).
     void (journalId
       ? navigate({
           to: "/journals/$journalId/new",
           params: { journalId },
-          search: { q, draft: localDraftId },
+          search: { q, draft: localDraftId, prompt: promptParam },
           replace: true,
         })
       : navigate({
           to: "/timeline/new",
-          search: { q, draft: localDraftId },
+          search: { q, draft: localDraftId, prompt: promptParam },
           replace: true,
         }));
-  }, [draftParam, journalId, localDraftId, navigate, q]);
+  }, [draftParam, journalId, localDraftId, navigate, promptParam, q]);
 
   /**
    * Once the editor is open it stays open.
@@ -235,6 +253,11 @@ export function EntryEditorPage() {
         draftIsSafe={recovery.state.phase === "offer"}
       />
     );
+
+  // Wait for the prompt before mounting: QuillSurface takes its document once
+  // and cannot be reseeded, so the heading has to be in `initialContent`.
+  if (promptParam && !momentId && promptFromParam.isLoading && !opened.current)
+    return <EditorSkeleton />;
 
   const serverInitialContent = serverContent ?? EMPTY_DELTA;
   if (!isEditableDocumentDelta(serverInitialContent)) {
@@ -292,10 +315,34 @@ export function EntryEditorPage() {
       : null;
   opened.current = true;
 
+  // A prompt seeds a heading at the top of a fresh document. A recovered draft
+  // brings its own content and wins; an existing entry is never seeded.
+  const promptForEntry =
+    !momentId && promptFromParam.data ? promptFromParam.data : null;
+  const seededInitialContent =
+    promptForEntry && !recovered
+      ? prependPromptHeading(serverInitialContent, promptForEntry.text)
+      : serverInitialContent;
+
   return (
     <EntryEditorForm
       key={momentId ?? `new-${journalId ?? "timeline"}`}
-      initialContent={recovered?.content ?? serverInitialContent}
+      initialContent={recovered?.content ?? seededInitialContent}
+      // Newer local drafts carry promptId even when it is explicitly null, so
+      // recovery preserves both a picked link and a deliberate removal. Older
+      // records do not have the field and retain their route prompt behaviour.
+      initialPromptId={
+        recovered && "promptId" in recovered.draft
+          ? (recovered.draft.promptId ?? null)
+          : promptForEntry?.id
+      }
+      initialPromptText={
+        recovered && "promptId" in recovered.draft
+          ? recovered.draft.promptId === promptForEntry?.id
+            ? promptForEntry?.text
+            : undefined
+          : promptForEntry?.text
+      }
       initialJournalId={
         recovered?.draft.journalId ??
         entry.data?.journal_id ??
@@ -359,6 +406,8 @@ function EntryEditorForm({
   recoveredLoggedTimezone,
   startsDirty,
   onDraftStored,
+  initialPromptId,
+  initialPromptText,
 }: {
   initialContent: QuillDelta;
   initialJournalId: string;
@@ -379,6 +428,12 @@ function EntryEditorForm({
   recoveredLoggedTimezone?: string;
   startsDirty: boolean;
   onDraftStored: () => void;
+  /** Prompt this NEW entry was opened from (`/timeline/new?prompt=`). Its
+   *  heading is already seeded into `initialContent`; this links `prompt_id`
+   *  on save and shows the banner (docs/features/prompts.md). */
+  /** `null` is an explicit recovered removal; undefined uses the server link. */
+  initialPromptId?: string | null;
+  initialPromptText?: string;
 }) {
   const { q = "" } = useSearch({ strict: false }) as { q?: string };
   const navigate = useNavigate();
@@ -419,6 +474,27 @@ function EntryEditorForm({
   const [bodyDirty, setBodyDirty] = useState(startsDirty);
   const [metaDirty, setMetaDirty] = useState(false);
   const [error, setError] = useState("");
+
+  // The prompt this entry is written from (docs/features/prompts.md). A NEW
+  // entry may arrive with one via `?prompt=`; either kind of entry can pick
+  // one from the in-editor picker. `null` means no link.
+  const initialPromptLink =
+    initialPromptId !== undefined
+      ? initialPromptId
+      : (moment?.prompt_id ?? null);
+  const [promptId, setPromptId] = useState<string | null>(initialPromptLink);
+  const [pickedPromptText, setPickedPromptText] = useState<string | undefined>(
+    initialPromptText,
+  );
+  const [promptPickerOpen, setPromptPickerOpen] = useState(false);
+  // The picker and the `?prompt=` seed carry the text; an existing entry only
+  // has the id, so fetch it for the banner.
+  const bannerPromptQuery = useQuery({
+    ...promptQuery(promptId ?? ""),
+    enabled: Boolean(promptId) && !pickedPromptText,
+  });
+  const bannerPromptText = pickedPromptText ?? bannerPromptQuery.data?.text;
+  const promptDirty = promptId !== initialPromptLink;
   /**
    * The server refused this save because the entry moved underneath it. Held in
    * state rather than read off the mutation, because it must survive the retry
@@ -449,7 +525,8 @@ function EntryEditorForm({
   });
   const titleDirty = title !== initialTitle;
   const journalDirty = journalId !== initialJournalId;
-  const dirty = titleDirty || journalDirty || bodyDirty || metaDirty;
+  const dirty =
+    titleDirty || journalDirty || bodyDirty || metaDirty || promptDirty;
 
   /**
    * The local safety net. Not autosave: Done is still the only thing that puts
@@ -473,6 +550,7 @@ function EntryEditorForm({
       : null,
     journalId,
     title,
+    promptId,
     // Only a NEW entry's picked date needs keeping locally — an existing
     // Moment already holds the real value on the server.
     loggedAtUtc: !moment && dateChosen.current ? draftAt.utc : undefined,
@@ -613,6 +691,7 @@ function EntryEditorForm({
       });
       void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
       void queryClient.invalidateQueries({ queryKey: queryKeys.insights });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prompts });
     },
     [keepLocally, moment, queryClient],
   );
@@ -695,6 +774,8 @@ function EntryEditorForm({
           entry: entryPayload,
           logged_at_utc: draftAt.utc,
           logged_timezone: draftAt.timezone,
+          // The prompt this entry was written from (docs/features/prompts.md).
+          ...(promptId ? { prompt_id: promptId } : {}),
         };
         return api.createMoment(body);
       }
@@ -706,6 +787,11 @@ function EntryEditorForm({
       const body: MomentUpdate = hasEntry
         ? { entry_update: { ...entryPayload, is_draft: false } }
         : { entry_create: entryPayload };
+      // A draft Moment may have been created before this new entry is saved
+      // (for media or metadata). It does not know the route/recovered prompt,
+      // so finalising it must include that initial link even when it was never
+      // changed in this editor. Existing entries still write only a change.
+      if (promptDirty || (!moment && promptId)) body.prompt_id = promptId;
       return api.updateMoment(targetId, body);
     },
     onSuccess: async (savedMoment) => {
@@ -725,6 +811,7 @@ function EntryEditorForm({
         queryClient.invalidateQueries({ queryKey: queryKeys.allMoments }),
         queryClient.invalidateQueries({ queryKey: queryKeys.journals }),
         queryClient.invalidateQueries({ queryKey: queryKeys.insights }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.prompts }),
         queryClient.invalidateQueries({
           queryKey: queryKeys.moment(savedMoment.id),
         }),
@@ -782,6 +869,7 @@ function EntryEditorForm({
       void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
       void queryClient.invalidateQueries({ queryKey: queryKeys.journals });
       void queryClient.invalidateQueries({ queryKey: queryKeys.insights });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.prompts });
       void queryClient.invalidateQueries({
         queryKey: queryKeys.moment(updated.id),
       });
@@ -979,6 +1067,43 @@ function EntryEditorForm({
           <LocalDraftStatus
             status={localDraft.status}
             omittedTransientUploads={localDraft.omittedTransientUploads}
+          />
+
+          {/* Prompt context sits between the header notice and the toolbar, in
+              its own band (docs/features/prompts.md). It is placed after
+              LocalDraftStatus so that component keeps its negative top margin
+              tight to the header. */}
+          {bannerPromptText ? (
+            <PromptBanner
+              text={bannerPromptText}
+              onRemove={() => {
+                setPromptId(null);
+                setPickedPromptText(undefined);
+                keepLocally();
+              }}
+            />
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="jv-editor__prompt-cta"
+              onClick={() => setPromptPickerOpen(true)}
+              disabled={mutation.isPending}
+            >
+              <Sparkles aria-hidden="true" size={15} />
+              Write from a prompt
+            </Button>
+          )}
+          <PromptPickerDialog
+            open={promptPickerOpen}
+            onOpenChange={setPromptPickerOpen}
+            onSelect={(prompt) => {
+              setPromptId(prompt.id);
+              setPickedPromptText(prompt.text);
+              surfaceRef.current?.seedPromptHeading(prompt.text);
+              setBodyDirty(true);
+              keepLocally();
+            }}
           />
 
           <EditorToolbar

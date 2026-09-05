@@ -60,9 +60,14 @@ import {
   getMoodStreakApiV1MoodsAnalyticsStreakGet,
   getPeopleApiV1PeopleGet,
   getPersonGroupsApiV1PeopleGroupsGet,
+  getDailyPromptApiV1PromptsDailyGet,
   getProductivityMetricsApiV1AnalyticsProductivityGet,
+  getPromptApiV1PromptsPromptIdGet,
+  getPromptStatisticsApiV1PromptsAnalyticsStatisticsGet,
+  getRandomPromptApiV1PromptsRandomGet,
   getStatusApiV1IntegrationsProviderStatusGet,
   getSupportedFormatsApiV1MediaFormatsGet,
+  getSystemPromptsApiV1PromptsGet,
   getTagAnalyticsApiV1TagsAnalyticsGet,
   getTagDetailAnalyticsApiV1TagsTagIdAnalyticsGet,
   getUserJournalsApiV1JournalsGet,
@@ -120,6 +125,7 @@ import type {
   AdminUserUpdate,
   EntryDraftCreate,
   ExportJobCreateRequest,
+  GetSystemPromptsApiV1PromptsGetData,
   GetMediaLibraryApiV1MediaGetData,
   GetMomentCalendarApiV1MomentsCalendarGetData,
   GetMomentsApiV1MomentsGetData,
@@ -145,6 +151,7 @@ import type {
   PersonGroupCreate,
   PersonGroupUpdate,
   PersonUpdate,
+  PromptResponse,
   TagCreate,
   TagUpdate,
   UserSettingsUpdate,
@@ -484,6 +491,9 @@ export const api = {
       }),
     ),
   moodStreak: () => data(getMoodStreakApiV1MoodsAnalyticsStreakGet(options())),
+  /** Current writer's prompt completion analytics. */
+  promptAnalytics: () =>
+    data(getPromptStatisticsApiV1PromptsAnalyticsStatisticsGet(options())),
   /** Every active activity. The endpoint is paginated, so Library must walk
    *  all pages instead of silently dropping everything after the first page. */
   activities: async () => {
@@ -810,6 +820,46 @@ export const api = {
     ),
   /** Authoritative accepted extensions, so the picker cannot invent its own. */
   mediaFormats: () => data(getSupportedFormatsApiV1MediaFormatsGet(options())),
+  /** Active system prompts in one deterministic offset page. */
+  prompts: (query: NonNullable<GetSystemPromptsApiV1PromptsGetData["query"]>) =>
+    data(
+      getSystemPromptsApiV1PromptsGet({
+        ...options(),
+        query,
+      }),
+    ),
+  /**
+   * Today's rotating prompt for the signed-in user. The backend returns 204
+   * once the user has journaled from it today (or when there are no prompts),
+   * which arrives here as `null` rather than an error.
+   *
+   * The generated client resolves an empty 204 body to `{}`, not `undefined`
+   * — `response.data ?? null` would keep that empty object, so the daily
+   * card rendered as if a prompt with no text/category had loaded. Check the
+   * actual HTTP status instead.
+   */
+  dailyPrompt: (): Promise<PromptResponse | null> =>
+    getDailyPromptApiV1PromptsDailyGet(options()).then((result) =>
+      result.response.status === 204 ? null : (result.data as PromptResponse),
+    ),
+  /** A random active prompt, optionally scoped. 404 (none available) surfaces
+   *  as an `ApiError` the caller handles — the Shuffle control, not a screen. */
+  randomPrompt: (query?: { category?: string; difficulty_level?: number }) =>
+    data(
+      getRandomPromptApiV1PromptsRandomGet({
+        ...options(),
+        query: { ...(query ?? {}) },
+      }),
+    ),
+  /** One prompt by id. The editor reads it to render the "written from" banner
+   *  for an entry that already carries a `prompt_id`. */
+  prompt: (prompt_id: string) =>
+    data(
+      getPromptApiV1PromptsPromptIdGet({
+        ...options(),
+        path: { prompt_id },
+      }),
+    ),
   momentMedia: (moment_id: string) =>
     data(
       getMomentMediaApiV1MomentsMomentIdMediaGet({

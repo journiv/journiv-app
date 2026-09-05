@@ -1,4 +1,8 @@
-import { infiniteQueryOptions, queryOptions } from "@tanstack/react-query";
+import {
+  infiniteQueryOptions,
+  keepPreviousData,
+  queryOptions,
+} from "@tanstack/react-query";
 import { api } from "../client/api";
 import {
   normalizeMomentFilters,
@@ -287,6 +291,63 @@ export const momentQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.moment(id),
     queryFn: () => api.moment(id),
+  });
+
+/**
+ * Journaling prompts (Prompts feature, docs/features/prompts.md). Free — not
+ * Plus-gated. The library uses the API's offset-page continuation; every
+ * browse filter is part of both the request and cache key. The daily prompt
+ * is per-day and per-user, so a short stale window is enough and a save that
+ * answers it invalidates `queryKeys.prompts`. `retry: 1` — a transient failure
+ * here is a pane-level StatusView, never a spinner loop.
+ */
+export const PROMPT_LIBRARY_PAGE_SIZE = 24;
+export const promptLibraryQuery = (filters: {
+  category?: string;
+  difficulty_level?: number;
+  q?: string;
+  min_minutes?: number;
+  max_minutes?: number;
+}) =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.promptLibrary(filters),
+    queryFn: ({ pageParam }) =>
+      api.prompts({
+        ...filters,
+        limit: PROMPT_LIBRARY_PAGE_SIZE,
+        offset: pageParam,
+      }),
+    initialPageParam: 0,
+    getNextPageParam: (page) => page.next_offset ?? undefined,
+    // Keep the filter controls mounted while the next server-filtered page is
+    // loading; otherwise each keystroke would replace the search input with a
+    // skeleton before the writer can finish their query.
+    placeholderData: keepPreviousData,
+    staleTime: 300_000,
+    retry: 1,
+  });
+export const dailyPromptQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.dailyPrompt,
+    queryFn: () => api.dailyPrompt(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+/** Per-writer prompt completion analytics. Mounted only by the prompt Insights
+ * tab, so opening Discover never makes an analytics request. */
+export const promptAnalyticsQuery = () =>
+  queryOptions({
+    queryKey: queryKeys.promptAnalytics,
+    queryFn: () => api.promptAnalytics(),
+    staleTime: 60_000,
+    retry: 1,
+  });
+export const promptQuery = (id: string) =>
+  queryOptions({
+    queryKey: queryKeys.prompt(id),
+    queryFn: () => api.prompt(id),
+    staleTime: 300_000,
+    retry: 1,
   });
 /**
  * Full media for one Moment. The Moment response carries thumbnails only, so

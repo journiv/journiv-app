@@ -36,6 +36,13 @@ export interface EditorDraftV1 {
   journalId?: string;
   title: string;
   /**
+   * The prompt link selected when this local copy was written. `null` is
+   * intentional: it records that a previously linked prompt was removed.
+   * Records from before this field existed leave it undefined and recover with
+   * the route/server prompt context they had before.
+   */
+  promptId?: string | null;
+  /**
    * The date/time the entry will be logged at, when the writer has chosen one
    * that is not "now". Only meaningful for a NEW entry before a server Moment
    * exists — once a Moment owns the draft, the Moment holds the real value.

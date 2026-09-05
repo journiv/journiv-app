@@ -49,6 +49,10 @@ const TagDetailPage = lazy(async () => ({
 const InsightsPage = lazy(async () => ({
   default: (await import("../../features/insights/InsightsPage")).InsightsPage,
 }));
+const PromptLibraryPage = lazy(async () => ({
+  default: (await import("../../features/prompts/PromptLibraryPage"))
+    .PromptLibraryPage,
+}));
 
 function DetailLoading({ label }: { label: string }) {
   return (
@@ -184,11 +188,18 @@ const timelineSearch = (
  */
 const editorSearch = (
   search: Record<string, unknown>,
-): { q: string; draft?: string } => ({
+): { q: string; draft?: string; prompt?: string } => ({
   ...timelineSearch(search),
   draft:
     typeof search.draft === "string" && UUID.test(search.draft)
       ? search.draft
+      : undefined,
+  // A prompt to start the entry from (docs/features/prompts.md). The id becomes
+  // a query key and, on save, the Moment's `prompt_id`, so it is shape-checked
+  // for the same reason `draft` is.
+  prompt:
+    typeof search.prompt === "string" && UUID.test(search.prompt)
+      ? search.prompt
       : undefined,
 });
 
@@ -388,6 +399,11 @@ const insightsSearch = (
     ? (search.period as InsightsPeriod)
     : 30,
 });
+const promptLibrarySearch = (
+  search: Record<string, unknown>,
+): { tab: "discover" | "insights" } => ({
+  tab: search.tab === "insights" ? "insights" : "discover",
+});
 const insightsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/insights",
@@ -395,6 +411,19 @@ const insightsRoute = createRoute({
   component: () => (
     <Suspense fallback={<DetailLoading label="Loading Insights…" />}>
       <InsightsPage />
+    </Suspense>
+  ),
+});
+/** The prompt library is a wide Library-style workspace: one component, no
+ *  detail pane. Choosing a prompt opens `/timeline/new?prompt=` rather than a
+ *  third pane (docs/features/prompts.md). */
+const libraryPromptsRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/library/prompts",
+  validateSearch: promptLibrarySearch,
+  component: () => (
+    <Suspense fallback={<DetailLoading label="Loading Prompts…" />}>
+      <PromptLibraryPage />
     </Suspense>
   ),
 });
@@ -545,6 +574,7 @@ const routeTree = rootRoute.addChildren([
     settingsTagsRedirectRoute,
     libraryTagsRoute,
     libraryTagRoute,
+    libraryPromptsRoute,
     insightsRoute,
     settingsPeopleRoute,
     settingsMoodsRoute,

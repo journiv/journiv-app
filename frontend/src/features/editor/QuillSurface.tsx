@@ -33,6 +33,12 @@ export interface QuillSurfaceHandle {
   getSelectionIndex(): number;
   /** Inserts a pending-upload placeholder on its own line. */
   insertPlaceholder(index: number, uploadId: string): void;
+  /**
+   * Prepends the prompt text as a heading-3 line at the top of the document
+   * and moves the caret after it. Used when a writer picks a prompt from the
+   * in-editor picker (docs/features/prompts.md).
+   */
+  seedPromptHeading(text: string): void;
   /** Swaps a placeholder for durable media. False when it is no longer there. */
   replacePlaceholder(
     uploadId: string,
@@ -262,6 +268,21 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           quill.insertEmbed(at, UPLOAD_BLOT_NAME, { uploadId }, "user");
           // Caret lands after the placeholder so writing continues below it.
           quill.setSelection(at + 1, 0, "silent");
+        },
+        seedPromptHeading: (text) => {
+          const quill = quillRef.current;
+          if (!quill) return;
+          const trimmed = text.trim();
+          if (!trimmed) return;
+          // No leading retain: the ops apply at index 0, so the heading lands
+          // above whatever is already written. "user" source so the editor
+          // marks the body dirty and the local draft is kept.
+          quill.updateContents(
+            new Delta().insert(trimmed).insert("\n", { header: 3 }),
+            "user",
+          );
+          quill.setSelection(trimmed.length + 1, 0, "silent");
+          quill.focus();
         },
         replacePlaceholder: (uploadId, kind, source) => {
           const quill = quillRef.current;
