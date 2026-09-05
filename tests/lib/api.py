@@ -4,6 +4,7 @@ Shared HTTP client utilities for integration and upgrade tests.
 Provides a small wrapper around httpx with high level helpers for the
 resources that the integration and upgrade suites exercise.
 """
+
 from __future__ import annotations
 
 import copy
@@ -184,16 +185,16 @@ class JournivApiClient:
         ).json()
 
     def delete_account(self, token: str) -> Dict[str, Any]:
-        return self.request(
-            "DELETE", "/users/me", token=token, expected=(200,)
-        ).json()
+        return self.request("DELETE", "/users/me", token=token, expected=(200,)).json()
 
     def get_user_settings(self, token: str) -> Dict[str, Any]:
         return self.request(
             "GET", "/users/me/settings", token=token, expected=(200,)
         ).json()
 
-    def update_user_settings(self, token: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def update_user_settings(
+        self, token: str, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         return self.request(
             "PUT",
             "/users/me/settings",
@@ -229,7 +230,9 @@ class JournivApiClient:
         return response.json()
 
     def list_journals(self, token: str, **params: Any) -> list[Dict[str, Any]]:
-        response = self.request("GET", "/journals/", token=token, params=params, expected=(200,))
+        response = self.request(
+            "GET", "/journals/", token=token, params=params, expected=(200,)
+        )
         return response.json()
 
     def get_journal(self, token: str, journal_id: str) -> Dict[str, Any]:
@@ -355,12 +358,18 @@ class JournivApiClient:
             )
             entry = moment.get("entry")
             if not entry:
-                raise RuntimeError("Moment creation succeeded but embedded entry is missing")
+                raise RuntimeError(
+                    "Moment creation succeeded but embedded entry is missing"
+                )
             return entry
         except JournivApiError as exc:
             # Backward compatibility for old versions used in upgrade tests where
             # /moments POST may not exist yet.
-            if exc.method != "POST" or exc.path != "/moments" or exc.status not in (404, 405):
+            if (
+                exc.method != "POST"
+                or exc.path != "/moments"
+                or exc.status not in (404, 405)
+            ):
                 raise
 
             legacy_payload: Dict[str, Any] = {
@@ -385,7 +394,11 @@ class JournivApiClient:
                 "import_metadata",
             }
             legacy_payload.update(
-                {key: value for key, value in extra_copy.items() if key in allowed_legacy_keys}
+                {
+                    key: value
+                    for key, value in extra_copy.items()
+                    if key in allowed_legacy_keys
+                }
             )
 
             response = self.request(
@@ -397,12 +410,18 @@ class JournivApiClient:
             )
             body = response.json()
             legacy_entry: Dict[str, Any]
-            if isinstance(body, dict) and "entry" in body and isinstance(body["entry"], dict):
+            if (
+                isinstance(body, dict)
+                and "entry" in body
+                and isinstance(body["entry"], dict)
+            ):
                 legacy_entry = body["entry"]
             elif isinstance(body, dict):
                 legacy_entry = body
             else:
-                raise RuntimeError("Legacy entry creation returned unexpected response format") from None
+                raise RuntimeError(
+                    "Legacy entry creation returned unexpected response format"
+                ) from None
 
             # Best-effort normalization: ensure callers can access moment_id.
             # Older versions may return only entry fields.
@@ -453,7 +472,9 @@ class JournivApiClient:
     # ------------------------------------------------------------------ #
     # Tag helpers
     # ------------------------------------------------------------------ #
-    def create_tag(self, token: str, *, name: str, color: str = "#22C55E") -> Dict[str, Any]:
+    def create_tag(
+        self, token: str, *, name: str, color: str = "#22C55E"
+    ) -> Dict[str, Any]:
         return self.request(
             "POST",
             "/tags/",
@@ -467,7 +488,9 @@ class JournivApiClient:
             "GET", "/tags/", token=token, params=params, expected=(200,)
         ).json()
 
-    def update_tag(self, token: str, tag_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def update_tag(
+        self, token: str, tag_id: str, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
         return self.request(
             "PUT",
             f"/tags/{tag_id}",
@@ -768,7 +791,9 @@ class JournivApiClient:
             entry_payload = copy.deepcopy(extra.pop("entry"))
             # Handle convenience content -> content_delta conversion for entry
             if "content" in entry_payload and "content_delta" not in entry_payload:
-                entry_payload["content_delta"] = wrap_plain_text(entry_payload.pop("content"))
+                entry_payload["content_delta"] = wrap_plain_text(
+                    entry_payload.pop("content")
+                )
             payload["entry"] = entry_payload
 
         # Add any other extra fields (location, weather, etc)
@@ -979,7 +1004,7 @@ class JournivApiClient:
             "POST", "/prompts/", token=token, json=payload, expected=(201,)
         ).json()
 
-    def list_prompts(self, token: str, **params: Any) -> list[Dict[str, Any]]:
+    def list_prompts(self, token: str, **params: Any) -> Dict[str, Any]:
         return self.request(
             "GET", "/prompts/", token=token, params=params, expected=(200,)
         ).json()
@@ -996,7 +1021,9 @@ class JournivApiClient:
         ).json()
 
     def delete_prompt(self, token: str, prompt_id: str) -> None:
-        self.request("DELETE", f"/prompts/{prompt_id}", token=token, expected=(200, 204))
+        self.request(
+            "DELETE", f"/prompts/{prompt_id}", token=token, expected=(200, 204)
+        )
 
     # ------------------------------------------------------------------ #
     # Media helpers
@@ -1026,7 +1053,11 @@ class JournivApiClient:
             ).json()
         except JournivApiError as exc:
             # Backward compatibility for APIs that use /media/upload but require entry_id.
-            if exc.method == "POST" and exc.path == "/media/upload" and exc.status == 422:
+            if (
+                exc.method == "POST"
+                and exc.path == "/media/upload"
+                and exc.status == 422
+            ):
                 files_entry = {
                     "file": (filename, io.BytesIO(content), content_type),
                 }
@@ -1041,9 +1072,14 @@ class JournivApiClient:
                 ).json()
 
             # Backward compatibility for older APIs that anchor media under entries.
-            if exc.method != "POST" or exc.path != "/media/upload" or exc.status not in (
-                404,
-                405,
+            if (
+                exc.method != "POST"
+                or exc.path != "/media/upload"
+                or exc.status
+                not in (
+                    404,
+                    405,
+                )
             ):
                 raise
             legacy_files = {
@@ -1059,7 +1095,9 @@ class JournivApiClient:
                 expected=(200, 201),
             ).json()
 
-    def wait_for_media_ready(self, token: str, media_id: str, *, timeout: int = 10) -> None:
+    def wait_for_media_ready(
+        self, token: str, media_id: str, *, timeout: int = 10
+    ) -> None:
         """
         Poll the media endpoint until upload_status is COMPLETED.
 
@@ -1096,7 +1134,9 @@ class JournivApiClient:
                         time.sleep(0.1)  # Wait 100ms before retrying
                         continue
                     # Some other 400 error - raise it
-                    raise JournivApiError("GET", f"/media/{media_id}/sign", 400, response.text)
+                    raise JournivApiError(
+                        "GET", f"/media/{media_id}/sign", 400, response.text
+                    )
 
             except JournivApiError:
                 raise
@@ -1105,7 +1145,9 @@ class JournivApiClient:
             f"Media {media_id} did not become ready within {timeout}s (last status: {last_status})"
         )
 
-    def get_media(self, token: str, media_id: str, *, wait_for_ready: bool = True) -> httpx.Response:
+    def get_media(
+        self, token: str, media_id: str, *, wait_for_ready: bool = True
+    ) -> httpx.Response:
         """
         Get media file content.
 

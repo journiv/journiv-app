@@ -118,6 +118,23 @@ export const queryKeys = {
     ["insights", "mood", "statistics", start, end] as const,
   moodStreak: ["insights", "mood", "streak"] as const,
   mediaFormats: ["media-formats"] as const,
+  /** Journaling prompts. One prefix so a future create/edit mutation (or the
+   *  editor attaching a `prompt_id`) can drop the whole surface at once. */
+  prompts: ["prompts"] as const,
+  /** Offset pages for the system-prompt browser, scoped by all API filters. */
+  promptLibrary: (filters: {
+    category?: string;
+    difficulty_level?: number;
+    q?: string;
+    min_minutes?: number;
+    max_minutes?: number;
+  }) => ["prompts", "library", filters] as const,
+  /** Per-writer prompt completion analytics, mounted only on the Insights tab. */
+  promptAnalytics: ["prompts", "analytics"] as const,
+  /** Today's rotating prompt for the signed-in user (204 → none left today). */
+  dailyPrompt: ["prompts", "daily"] as const,
+  /** One prompt by id — the editor reads it to show the "written from" banner. */
+  prompt: (id: string) => ["prompts", "item", id] as const,
   moments: (filters: MomentFilters) =>
     ["moments", normalizeMomentFilters(filters)] as const,
   momentCalendar: (filters: CalendarFilters) =>

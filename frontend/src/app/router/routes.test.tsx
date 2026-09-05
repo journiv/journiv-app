@@ -14,6 +14,7 @@ import type {
   JournalResponse,
   MomentPageResponse,
   MomentResponse,
+  PromptResponse,
   UserResponse,
 } from "../../api/generated/types.gen";
 import { createAppQueryClient } from "../queryClient";
@@ -41,6 +42,7 @@ vi.mock("../../api/client/api", () => ({
     journalAnalytics: vi.fn(),
     moodStatistics: vi.fn(),
     moodStreak: vi.fn(),
+    prompt: vi.fn(),
   },
 }));
 
@@ -113,6 +115,18 @@ const entry: EntryResponse = {
     ops: [{ insert: "Coffee while the rain moved past the windows.\n" }],
   },
   word_count: 8,
+  created_at: now,
+  updated_at: now,
+};
+const prompt: PromptResponse = {
+  id: "11111111-1111-4111-8111-111111111111",
+  text: "What made this rainy morning memorable?",
+  category: "reflection",
+  difficulty_level: 1,
+  estimated_time_minutes: 5,
+  is_active: true,
+  usage_count: 0,
+  answered_count: 0,
   created_at: now,
   updated_at: now,
 };
@@ -189,6 +203,7 @@ beforeEach(() => {
     current_streak: 0,
     total_days_logged: 0,
   });
+  vi.mocked(api.prompt).mockResolvedValue(prompt);
 });
 
 async function renderRoute(path: string) {
@@ -212,6 +227,21 @@ async function renderRoute(path: string) {
 }
 
 describe("Phase B routes", () => {
+  it("shows a read-only prompt attribution for a prompted Moment", async () => {
+    vi.mocked(api.moment).mockResolvedValue({
+      ...moment,
+      prompt_id: prompt.id,
+    });
+    await renderRoute("/timeline/moment-1");
+
+    const banner = await screen.findByRole("complementary", {
+      name: "Written from a prompt",
+    });
+    expect(banner.textContent).toContain(prompt.text);
+    expect(api.prompt).toHaveBeenCalledWith(prompt.id);
+    expect(screen.queryByRole("button", { name: "Remove prompt" })).toBeNull();
+  });
+
   it("renders one reader pane on a deep link and returns with search intact", async () => {
     const view = await renderRoute("/timeline/moment-1?q=rain");
 

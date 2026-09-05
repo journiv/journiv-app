@@ -5,6 +5,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
+import { queryKeys } from "../../api/query/keys";
 import type { InstanceConfigResponse } from "../../api/generated";
 import { createAppQueryClient } from "../../app/queryClient";
 import { createAppRouter } from "../../app/router";
@@ -43,7 +44,7 @@ async function renderFinish(path: string) {
     </StrictMode>,
   );
   await router.load();
-  return { ...view, router };
+  return { ...view, queryClient, router };
 }
 
 describe("OidcFinishPage", () => {
@@ -70,6 +71,14 @@ describe("OidcFinishPage", () => {
     );
     oidcReturnToStore.write("/signup");
     const view = await renderFinish("/oidc-finish?ticket=one-time-ticket");
+    sessionStore.write({
+      version: 1,
+      accessToken: "previous-access",
+      refreshToken: "previous-refresh",
+    });
+    view.queryClient.setQueryData(queryKeys.promptAnalytics, {
+      prompts_answered: 7,
+    });
 
     expect(
       await screen.findByRole("heading", { name: "Completing sign in" }),
@@ -88,6 +97,9 @@ describe("OidcFinishPage", () => {
       accessToken: "oidc-access",
       refreshToken: "oidc-refresh",
     });
+    expect(
+      view.queryClient.getQueryData(queryKeys.promptAnalytics),
+    ).toBeUndefined();
     expect(oidcReturnToStore.read()).toBe("/timeline");
   });
 

@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 import { sessionStore } from "../../api/auth/session";
@@ -21,6 +21,7 @@ export function LoginPage() {
   const [pending, setPending] = useState(false);
   const submitting = useRef(false);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { returnTo } = useSearch({ from: "/login" });
   const instanceConfig = useQuery({
     ...instanceConfigQuery(),
@@ -39,6 +40,7 @@ export function LoginPage() {
         String(form.get("email")),
         String(form.get("password")),
       );
+      queryClient.clear();
       sessionStore.write({
         version: 1,
         accessToken: tokens.access_token,

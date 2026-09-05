@@ -157,6 +157,7 @@ class Moment(BaseModel, table=True):
     __table_args__ = (
         Index('idx_moment_user_logged_at_utc', 'user_id', 'logged_at_utc', 'id'),
         Index('idx_moment_user_logged_date_tz', 'user_id', 'logged_date_tz'),
+        Index('idx_moment_user_prompt_id', 'user_id', 'prompt_id'),
         Index('idx_moment_latitude_longitude', 'latitude', 'longitude'),
         Index('idx_moment_prompt_id', 'prompt_id'),
         Index('idx_moment_note', 'note'),

@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
+import { queryKeys } from "../../api/query/keys";
 import type { InstanceConfigResponse } from "../../api/generated";
 import { createAppQueryClient } from "../../app/queryClient";
 import { createAppRouter } from "../../app/router";
@@ -41,7 +42,7 @@ async function renderLogin(path = "/login") {
     </QueryClientProvider>,
   );
   await router.load();
-  return { ...view, router };
+  return { ...view, queryClient, router };
 }
 
 describe("LoginPage", () => {
@@ -138,6 +139,14 @@ describe("LoginPage", () => {
 
   it("stores a password session and returns to the intended route", async () => {
     const view = await renderLogin("/login?returnTo=%2Fsignup");
+    sessionStore.write({
+      version: 1,
+      accessToken: "previous-access",
+      refreshToken: "previous-refresh",
+    });
+    view.queryClient.setQueryData(queryKeys.promptAnalytics, {
+      prompts_answered: 7,
+    });
     const user = userEvent.setup();
     await user.type(
       await screen.findByLabelText("Email"),
@@ -158,6 +167,9 @@ describe("LoginPage", () => {
       accessToken: "access-token",
       refreshToken: "refresh-token",
     });
+    expect(
+      view.queryClient.getQueryData(queryKeys.promptAnalytics),
+    ).toBeUndefined();
   });
 
   it("uses a generic password error and retains entered credentials", async () => {

@@ -1,0 +1,250 @@
+/* Prompts feature (docs/features/prompts.md). The browsing UI is shared by the
+   /library/prompts page (inside the Library workspace shell) and the in-editor
+   picker (inside AppAdaptiveDialog), so the layout here is container-driven and
+   carries no page-shaped breakpoint. Tokens only. */
+
+.jv-prompts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.jv-prompts--overlay {
+  gap: var(--space-4);
+}
+
+.jv-prompts__tabbar {
+  display: flex;
+  align-items: center;
+}
+
+.jv-prompts__discover,
+.jv-prompts__analytics {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  padding-top: var(--space-4);
+}
+
+.jv-prompts--overlay .jv-prompts__discover,
+.jv-prompts--overlay .jv-prompts__analytics {
+  gap: var(--space-4);
+}
+
+.jv-prompts__summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.jv-prompts__stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.jv-prompts__stat-value {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 1.125rem;
+  font-weight: 640;
+  font-variant-numeric: tabular-nums;
+}
+
+.jv-prompts__figure {
+  margin: 0;
+}
+
+.jv-prompts__chart {
+  block-size: 16rem;
+  inline-size: 100%;
+}
+
+.jv-prompts__categories {
+  list-style: none;
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+}
+
+.jv-prompts__categories li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.jv-prompts__loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---- daily / shuffled hero ------------------------------------------- */
+
+/* A bordered block, not a Card: it is the first child of the scroll owner, and
+   a Card's ring shadow is clipped by that container's top edge. */
+.jv-prompt-daily {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+}
+
+.jv-prompt-daily__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  color: var(--muted-foreground);
+}
+
+.jv-prompt-daily__text {
+  margin: 0;
+  color: var(--foreground);
+  font-size: 1.0625rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.jv-prompt-daily__text--muted {
+  color: var(--muted-foreground);
+  font-size: 1rem;
+}
+
+.jv-prompt-daily__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+/* ---- filter bar --------------------------------------------------------- */
+
+.jv-prompt-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.jv-prompt-filters__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.jv-prompt-filters__search {
+  flex: 1 1 16rem;
+}
+
+.jv-prompt-filters__selects {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.jv-prompt-filters__select {
+  display: block;
+}
+
+.jv-prompt-filters__categories {
+  flex-wrap: wrap;
+}
+
+.jv-prompt-filters__count {
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- results grid ----------------------------------------------------- */
+
+.jv-prompts__grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr));
+  gap: var(--space-3);
+}
+
+.jv-prompts--overlay .jv-prompts__grid {
+  grid-template-columns: 1fr;
+}
+
+.jv-prompt-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--card);
+}
+
+.jv-prompt-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.jv-prompt-card__usage {
+  color: var(--success);
+}
+
+.jv-prompt-card__text {
+  margin: 0;
+  color: var(--foreground);
+  text-wrap: pretty;
+}
+
+.jv-prompt-card__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-top: auto;
+}
+
+.jv-prompt-card__meta {
+  margin: 0;
+  min-width: 0;
+}
+
+.jv-prompt-card__action {
+  flex-shrink: 0;
+}
+
+/* ---- pager ---------------------------------------------------------- */
+
+.jv-prompts__pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.jv-prompts__pager-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 520px) {
+  .jv-prompts__summary {
+    grid-template-columns: 1fr;
+  }
+}

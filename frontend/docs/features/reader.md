@@ -10,6 +10,10 @@ Edit or Write. Its centred column is bounded by the reader measure. EntryHeader
 renders the display-only date, title, and reader metadata; QuillReader renders
 prose without raw HTML. People and tags sit above the final rule.
 
+When a Moment has `prompt_id`, the Reader resolves that prompt and shows its
+text as a read-only "Written from a prompt" banner below the header. A missing
+or deleted prompt is quiet supplementary context; it never blocks the Moment.
+
 Malformed stored content falls back visibly to plain text. An untitled Moment
 uses its date as h1. Reader does not edit metadata.
 
@@ -60,4 +64,3 @@ media needs one entry refetch because its URLs live in the document.
 - No full-size media viewer; gallery images must stay uncropped until one exists.
 - Legacy absolute third-party media URLs intentionally fall back to plain text.
 - Existing media alt text cannot be edited without a backend update endpoint.
-

@@ -209,7 +209,12 @@ const bodyText = () =>
 describe("offering a stored draft", () => {
   it("opens on the server's content when there is no draft", async () => {
     await renderRoute("/timeline/moment-1/edit");
-    expect(await screen.findByLabelText("Entry body")).toBeTruthy();
+    // This routed editor waits for its server data, local-draft read, and
+    // Quill mount. The default one-second async-query budget is too short on
+    // a loaded CI worker even though the screen reaches its ready state.
+    expect(
+      await screen.findByLabelText("Entry body", {}, { timeout: 5_000 }),
+    ).toBeTruthy();
     expect(screen.queryByText(/unsaved changes to this entry/i)).toBeNull();
   });
 

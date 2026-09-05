@@ -1,9 +1,10 @@
 """
 Prompt schemas.
 """
+
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, validator
 
@@ -32,7 +33,9 @@ class PromptBase(BaseModel):
         normalized = value.strip().lower()
         allowed = {category.value for category in PromptCategory}
         if normalized not in allowed:
-            raise ValueError(f"Invalid category: {value}. Must be one of {sorted(allowed)}")
+            raise ValueError(
+                f"Invalid category: {value}. Must be one of {sorted(allowed)}"
+            )
         return normalized
 
 
@@ -42,13 +45,29 @@ class PromptResponse(PromptBase, TimestampMixin):
     id: uuid.UUID
     is_active: bool
     usage_count: int
+    # Derived from the signed-in writer's Moments; it is never a global prompt
+    # counter and does not need a denormalized database column.
+    answered_count: int
     user_id: Optional[uuid.UUID] = None
     created_at: datetime
     updated_at: datetime
 
 
+class PromptPageResponse(BaseModel):
+    """A deterministic offset page of active system prompts."""
+
+    items: List[PromptResponse]
+    total: int
+    next_offset: Optional[int] = None
+    # Counts deliberately ignore the active category filter, so the browser can
+    # keep every category chip available while a writer switches between them.
+    category_counts: Dict[str, int]
+    all_count: int
+
+
 class PromptCreate(PromptBase):
     """Prompt creation schema."""
+
     pass
 
 
@@ -76,7 +95,9 @@ class PromptUpdate(BaseModel):
         normalized = value.strip().lower()
         allowed = {category.value for category in PromptCategory}
         if normalized not in allowed:
-            raise ValueError(f"Invalid category: {value}. Must be one of {sorted(allowed)}")
+            raise ValueError(
+                f"Invalid category: {value}. Must be one of {sorted(allowed)}"
+            )
         return normalized
 
     @validator("difficulty_level")

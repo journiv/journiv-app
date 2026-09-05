@@ -1,11 +1,15 @@
 """
 Prompt service for handling prompt-related operations.
 """
+
 import random
 import threading
 import uuid
+from collections import Counter
+from datetime import timedelta
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, select
 
@@ -13,8 +17,9 @@ from app.core.exceptions import PromptNotFoundError
 from app.core.logging_config import log_error
 from app.core.time_utils import utc_now
 from app.models.enums import PromptCategory
+from app.models.moment import Moment
 from app.models.prompt import Prompt
-from app.schemas.prompt import PromptCreate, PromptUpdate
+from app.schemas.prompt import PromptCreate, PromptResponse, PromptUpdate
 
 DEFAULT_PROMPT_PAGE_LIMIT = 50
 MAX_PROMPT_PAGE_LIMIT = 100
@@ -45,8 +50,26 @@ class PromptService:
             raise PromptNotFoundError(f"Invalid prompt category '{category}'") from exc
 
     @classmethod
-    def _cache_key(cls, *, category: Optional[str], difficulty_level: Optional[int], limit: int) -> str:
-        return f"{category or 'any'}::{difficulty_level or 'any'}::{limit}"
+    def _cache_key(
+        cls,
+        *,
+        category: Optional[str],
+        difficulty_level: Optional[int],
+        q: Optional[str],
+        min_minutes: Optional[int],
+        max_minutes: Optional[int],
+        limit: int,
+    ) -> str:
+        return repr(
+            (
+                category,
+                difficulty_level,
+                q,
+                min_minutes,
+                max_minutes,
+                limit,
+            )
+        )
 
     @classmethod
     def invalidate_cache(cls) -> None:
@@ -70,8 +93,9 @@ class PromptService:
                     usage_count=prompt.usage_count,
                     user_id=prompt.user_id,
                     created_at=prompt.created_at,
-                    updated_at=prompt.updated_at
-                ) for prompt in prompts
+                    updated_at=prompt.updated_at,
+                )
+                for prompt in prompts
             ]
 
     @classmethod
@@ -93,8 +117,9 @@ class PromptService:
                     usage_count=prompt.usage_count,
                     user_id=prompt.user_id,
                     created_at=prompt.created_at,
-                    updated_at=prompt.updated_at
-                ) for prompt in cached
+                    updated_at=prompt.updated_at,
+                )
+                for prompt in cached
             ]
 
     def _commit(self) -> None:
@@ -110,7 +135,7 @@ class PromptService:
         prompt_id: uuid.UUID,
         user_id: Optional[uuid.UUID],
         *,
-        include_deleted: bool = False
+        include_deleted: bool = False,
     ) -> Prompt:
         statement = select(Prompt).where(Prompt.id == prompt_id)
 
@@ -124,9 +149,15 @@ class PromptService:
             raise PromptNotFoundError("Prompt not found")
         return prompt
 
-    def create_prompt(self, user_id: Optional[uuid.UUID], prompt_data: PromptCreate) -> Prompt:
+    def create_prompt(
+        self, user_id: Optional[uuid.UUID], prompt_data: PromptCreate
+    ) -> Prompt:
         """Create a new prompt for a user or system."""
-        normalized_category = self._normalize_category(prompt_data.category) if prompt_data.category else None
+        normalized_category = (
+            self._normalize_category(prompt_data.category)
+            if prompt_data.category
+            else None
+        )
         text = prompt_data.text.strip()
 
         duplicate_stmt = select(Prompt).where(
@@ -139,7 +170,9 @@ class PromptService:
             duplicate_stmt = duplicate_stmt.where(Prompt.user_id == user_id)
 
         if normalized_category:
-            duplicate_stmt = duplicate_stmt.where(Prompt.category == normalized_category)
+            duplicate_stmt = duplicate_stmt.where(
+                Prompt.category == normalized_category
+            )
 
         existing = self.session.exec(duplicate_stmt).first()
         if existing:
@@ -163,7 +196,7 @@ class PromptService:
         self,
         prompt_id: uuid.UUID,
         user_id: Optional[uuid.UUID],
-        prompt_data: PromptUpdate
+        prompt_data: PromptUpdate,
     ) -> Prompt:
         """Update an existing prompt."""
         prompt = self._get_owned_prompt(prompt_id, user_id)
@@ -186,11 +219,15 @@ class PromptService:
                     normalized_category = prompt.category
 
                 if normalized_category:
-                    duplicate_stmt = duplicate_stmt.where(Prompt.category == normalized_category)
+                    duplicate_stmt = duplicate_stmt.where(
+                        Prompt.category == normalized_category
+                    )
 
                 existing = self.session.exec(duplicate_stmt).first()
                 if existing:
-                    raise ValueError("A prompt with the same text and category already exists.")
+                    raise ValueError(
+                        "A prompt with the same text and category already exists."
+                    )
 
                 prompt.text = text
 
@@ -219,11 +256,14 @@ class PromptService:
 
         from app.models.moment import Moment
 
-        in_use = self.session.exec(
-            select(func.count(Moment.id)).where(
-                col(Moment.prompt_id) == prompt_id,
-            )
-        ).one() or 0
+        in_use = (
+            self.session.exec(
+                select(func.count(Moment.id)).where(
+                    col(Moment.prompt_id) == prompt_id,
+                )
+            ).one()
+            or 0
+        )
 
         if in_use:
             raise ValueError("Prompt is currently in use and cannot be deleted.")
@@ -235,39 +275,135 @@ class PromptService:
         self.invalidate_cache()
         return True
 
-    def get_prompt_by_id(self, prompt_id: uuid.UUID, include_deleted: bool = False) -> Optional[Prompt]:
+    def get_prompt_by_id(
+        self, prompt_id: uuid.UUID, include_deleted: bool = False
+    ) -> Optional[Prompt]:
         """Get a prompt by ID."""
         statement = select(Prompt).where(Prompt.id == prompt_id)
         return self.session.exec(statement).first()
+
+    def prompt_responses(
+        self, prompts: List[Prompt], user_id: uuid.UUID
+    ) -> List[PromptResponse]:
+        """Attach current writer answer counts to a set of prompt responses.
+
+        Prompt usage is the number of the current user's Moments linked to a
+        prompt. Fetch the counts as one grouped query so a prompt page does not
+        turn into one query per card.
+        """
+        prompt_ids = [prompt.id for prompt in prompts]
+        if not prompt_ids:
+            return []
+
+        statement = (
+            select(Moment.prompt_id, func.count(Moment.id))
+            .where(
+                Moment.user_id == user_id,
+                col(Moment.prompt_id).in_(prompt_ids),
+            )
+            .group_by(Moment.prompt_id)
+        )
+        answered_counts = {
+            prompt_id: count
+            for prompt_id, count in self.session.exec(statement)
+            if prompt_id is not None
+        }
+        return [
+            PromptResponse.model_validate(
+                {
+                    **prompt.model_dump(),
+                    "answered_count": answered_counts.get(prompt.id, 0),
+                }
+            )
+            for prompt in prompts
+        ]
+
+    def prompt_response(self, prompt: Prompt, user_id: uuid.UUID) -> PromptResponse:
+        """Attach the current writer's answer count to one prompt."""
+        return self.prompt_responses([prompt], user_id)[0]
+
+    @staticmethod
+    def _normalized_search_query(q: Optional[str]) -> Optional[str]:
+        """Treat blank browse searches as absent filters."""
+        if q is None:
+            return None
+        return q.strip() or None
+
+    def _filtered_prompt_statement(
+        self,
+        *,
+        statement: Any = None,
+        user_id: Optional[uuid.UUID],
+        category: Optional[str],
+        difficulty_level: Optional[int],
+        is_active: bool,
+        q: Optional[str],
+        min_minutes: Optional[int],
+        max_minutes: Optional[int],
+    ):
+        """Build the shared browse/count query so pagination cannot drift."""
+        normalized_category = self._normalize_category(category) if category else None
+        normalized_q = self._normalized_search_query(q)
+        statement = statement if statement is not None else select(Prompt)
+        statement = statement.where(Prompt.is_active == is_active)
+
+        if user_id is not None:
+            statement = statement.where(Prompt.user_id == user_id)
+        else:
+            statement = statement.where(col(Prompt.user_id).is_(None))
+
+        if normalized_category:
+            statement = statement.where(Prompt.category == normalized_category)
+        if difficulty_level is not None:
+            statement = statement.where(Prompt.difficulty_level == difficulty_level)
+        if normalized_q:
+            pattern = f"%{normalized_q}%"
+            # Search the prompt body plus the raw and human-readable category.
+            # The latter preserves a browser search such as "self discovery" for
+            # the API's `self_discovery` category value.
+            statement = statement.where(
+                or_(
+                    col(Prompt.text).ilike(pattern),
+                    col(Prompt.category).ilike(pattern),
+                    func.replace(col(Prompt.category), "_", " ").ilike(pattern),
+                    func.replace(col(Prompt.category), "_", "-").ilike(pattern),
+                )
+            )
+        if min_minutes is not None:
+            statement = statement.where(
+                col(Prompt.estimated_time_minutes) >= min_minutes
+            )
+        if max_minutes is not None:
+            statement = statement.where(
+                col(Prompt.estimated_time_minutes) <= max_minutes
+            )
+        return statement
 
     def get_all_prompts(
         self,
         user_id: Optional[uuid.UUID] = None,
         category: Optional[str] = None,
         difficulty_level: Optional[int] = None,
+        q: Optional[str] = None,
+        min_minutes: Optional[int] = None,
+        max_minutes: Optional[int] = None,
         is_active: bool = True,
         limit: int = 50,
-        offset: int = 0
+        offset: int = 0,
     ) -> List[Prompt]:
         """Get prompts with optional filters."""
         limit = self._normalize_limit(limit)
         normalized_category = self._normalize_category(category) if category else None
-
-        statement = select(Prompt).where(
-            Prompt.is_active == is_active,
+        normalized_q = self._normalized_search_query(q)
+        statement = self._filtered_prompt_statement(
+            user_id=user_id,
+            category=normalized_category,
+            difficulty_level=difficulty_level,
+            is_active=is_active,
+            q=normalized_q,
+            min_minutes=min_minutes,
+            max_minutes=max_minutes,
         )
-
-        if user_id is not None:
-            statement = statement.where(Prompt.user_id == user_id)
-        else:
-            # If no user_id specified, get system prompts (user_id is NULL)
-            statement = statement.where(col(Prompt.user_id).is_(None))
-
-        if normalized_category:
-            statement = statement.where(Prompt.category == normalized_category)
-
-        if difficulty_level is not None:
-            statement = statement.where(Prompt.difficulty_level == difficulty_level)
 
         use_cache = user_id is None and is_active and offset == 0
         cache_key = None
@@ -275,13 +411,23 @@ class PromptService:
             cache_key = self._cache_key(
                 category=normalized_category,
                 difficulty_level=difficulty_level,
-                limit=limit
+                q=normalized_q,
+                min_minutes=min_minutes,
+                max_minutes=max_minutes,
+                limit=limit,
             )
             cached = self._get_cached_prompts(cache_key)
             if cached is not None:
                 return cached
 
-        statement = statement.order_by(col(Prompt.created_at).desc()).offset(offset).limit(limit)
+        statement = (
+            statement.order_by(
+                col(Prompt.created_at).desc(),
+                col(Prompt.id).desc(),
+            )
+            .offset(offset)
+            .limit(limit)
+        )
         prompts = list(self.session.exec(statement))
 
         if use_cache and cache_key is not None:
@@ -293,16 +439,67 @@ class PromptService:
         self,
         category: Optional[str] = None,
         difficulty_level: Optional[int] = None,
-        limit: int = 50
+        q: Optional[str] = None,
+        min_minutes: Optional[int] = None,
+        max_minutes: Optional[int] = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> List[Prompt]:
         """Get system prompts (user_id is NULL)."""
         return self.get_all_prompts(
             user_id=None,
             category=category,
             difficulty_level=difficulty_level,
-            limit=limit
+            q=q,
+            min_minutes=min_minutes,
+            max_minutes=max_minutes,
+            limit=limit,
+            offset=offset,
         )
 
+    def count_system_prompts(
+        self,
+        category: Optional[str] = None,
+        difficulty_level: Optional[int] = None,
+        q: Optional[str] = None,
+        min_minutes: Optional[int] = None,
+        max_minutes: Optional[int] = None,
+    ) -> int:
+        """Count active system prompts for the same filters as the list API."""
+        statement = self._filtered_prompt_statement(
+            statement=select(func.count(Prompt.id)),
+            user_id=None,
+            category=category,
+            difficulty_level=difficulty_level,
+            is_active=True,
+            q=q,
+            min_minutes=min_minutes,
+            max_minutes=max_minutes,
+        )
+        return self.session.exec(statement).one() or 0
+
+    def count_system_prompts_by_category(
+        self,
+        difficulty_level: Optional[int] = None,
+        q: Optional[str] = None,
+        min_minutes: Optional[int] = None,
+        max_minutes: Optional[int] = None,
+    ) -> Dict[str, int]:
+        """Count active system prompts by category for browser filter badges."""
+        statement = self._filtered_prompt_statement(
+            statement=select(Prompt.category, func.count(Prompt.id)),
+            user_id=None,
+            category=None,
+            difficulty_level=difficulty_level,
+            is_active=True,
+            q=q,
+            min_minutes=min_minutes,
+            max_minutes=max_minutes,
+        )
+        statement = statement.group_by(Prompt.category)
+        return {
+            category or "": count for category, count in self.session.exec(statement)
+        }
 
     def get_daily_prompt(self, user_id: uuid.UUID) -> Optional[Prompt]:
         """Get a deterministic daily prompt for a user based on user ID and current date."""
@@ -330,10 +527,15 @@ class PromptService:
         prompt_index = abs(hash_value) % total_prompts
 
         # Get the specific prompt at the calculated index using OFFSET
-        statement = select(Prompt).where(
-            Prompt.is_active,
-            col(Prompt.user_id).is_(None),
-        ).offset(prompt_index).limit(1)
+        statement = (
+            select(Prompt)
+            .where(
+                Prompt.is_active,
+                col(Prompt.user_id).is_(None),
+            )
+            .offset(prompt_index)
+            .limit(1)
+        )
 
         daily_prompt = self.session.exec(statement).first()
         if not daily_prompt:
@@ -359,7 +561,7 @@ class PromptService:
         self,
         user_id: Optional[uuid.UUID] = None,
         category: Optional[str] = None,
-        difficulty_level: Optional[int] = None
+        difficulty_level: Optional[int] = None,
     ) -> Optional[Prompt]:
         """Get a random prompt with optional filters."""
         statement = select(Prompt).where(
@@ -383,8 +585,6 @@ class PromptService:
             return random.choice(available_prompts)
         return None
 
-
-
     def increment_usage_count(self, prompt_id: uuid.UUID) -> Prompt:
         """Increment the usage count for a prompt."""
         prompt = self.get_prompt_by_id(prompt_id)
@@ -399,85 +599,116 @@ class PromptService:
         self.invalidate_cache()
         return prompt
 
-    def get_prompt_statistics(self, user_id: Optional[uuid.UUID] = None) -> Dict[str, Any]:
-        """Get prompt usage statistics."""
-        # Base query
-        statement = select(Prompt)
+    def get_prompt_statistics(self, user_id: uuid.UUID) -> Dict[str, Any]:
+        """Return prompt-answer analytics for one writer.
 
-        if user_id is not None:
-            statement = statement.where(Prompt.user_id == user_id)
-        else:
-            statement = statement.where(col(Prompt.user_id).is_(None))
+        A prompt answer is a Moment with a linked prompt. The aggregation is
+        deliberately based on those Moments (rather than ``Prompt.usage_count``),
+        which is a legacy global counter and cannot describe one writer.
+        """
+        rows = list(
+            self.session.exec(
+                select(
+                    col(Moment.prompt_id),
+                    col(Moment.logged_date_tz),
+                    col(Prompt.category),
+                    col(Prompt.text),
+                )
+                .join(Prompt, col(Moment.prompt_id) == col(Prompt.id))
+                .where(Moment.user_id == user_id)
+            )
+        )
 
-        prompts = list(self.session.exec(statement))
-
-        if not prompts:
+        if not rows:
             return {
-                'total_prompts': 0,
-                'active_prompts': 0,
-                'total_usage': 0,
-                'average_usage': 0,
-                'most_used_prompt': None,
-                'category_distribution': {},
-                'difficulty_distribution': {}
+                "prompts_answered": 0,
+                "total_answers": 0,
+                "current_streak": 0,
+                "favorite_categories": [],
+                "completion_trend": [],
             }
 
-        # Calculate statistics
-        total_prompts = len(prompts)
-        active_prompts = len([p for p in prompts if p.is_active])
-        total_usage = sum(p.usage_count for p in prompts)
-        average_usage = total_usage / total_prompts if total_prompts > 0 else 0
+        prompt_counts: Counter[uuid.UUID] = Counter()
+        category_counts: Counter[str] = Counter()
+        week_counts: Counter = Counter()
+        prompt_texts: dict[uuid.UUID, str] = {}
+        answered_dates = set()
 
-        # Most used prompt
-        most_used = max(prompts, key=lambda p: p.usage_count) if prompts else None
+        for prompt_id, logged_date, category, text in rows:
+            if prompt_id is None:
+                continue
+            prompt_counts[prompt_id] += 1
+            prompt_texts[prompt_id] = text
+            category_counts[category or "uncategorized"] += 1
+            answered_dates.add(logged_date)
+            week_counts[logged_date - timedelta(days=logged_date.weekday())] += 1
 
-        # Category distribution
-        category_distribution: Dict[str, int] = {}
-        for prompt in prompts:
-            category = prompt.category or 'uncategorized'
-            category_distribution[category] = category_distribution.get(category, 0) + 1
+        # A historical run is useful in the trend, but it is not a *current*
+        # streak. Resolve "today" in the writer's timezone, just as the daily
+        # prompt does, so a date rollover is never judged by the server clock.
+        from app.core.time_utils import local_date_for_user
+        from app.services.user_service import UserService
 
-        # Difficulty distribution
-        difficulty_distribution: Dict[str, int] = {}
-        for prompt in prompts:
-            difficulty_key = str(prompt.difficulty_level) if prompt.difficulty_level is not None else "unknown"
-            difficulty_distribution[difficulty_key] = difficulty_distribution.get(difficulty_key, 0) + 1
+        user_tz = UserService(self.session).get_user_timezone(user_id)
+        today = local_date_for_user(utc_now(), user_tz)
+        ordered_dates = sorted(answered_dates, reverse=True)
+        current_streak = 0
+        if ordered_dates and ordered_dates[0] in {
+            today,
+            today - timedelta(days=1),
+        }:
+            current_streak = 1
+            previous = ordered_dates[0]
+            for answered_date in ordered_dates[1:]:
+                if previous - answered_date != timedelta(days=1):
+                    break
+                current_streak += 1
+                previous = answered_date
 
+        most_used_id, most_used_count = max(
+            prompt_counts.items(), key=lambda item: (item[1], str(item[0]))
+        )
         return {
-            'total_prompts': total_prompts,
-            'active_prompts': active_prompts,
-            'total_usage': total_usage,
-            'average_usage': round(average_usage, 2),
-            'most_used_prompt': {
-                'id': str(most_used.id),
-                'text': most_used.text[:100] + '...' if len(most_used.text) > 100 else most_used.text,
-                'usage_count': most_used.usage_count
-            } if most_used else None,
-            'category_distribution': category_distribution,
-            'difficulty_distribution': difficulty_distribution
+            "prompts_answered": len(prompt_counts),
+            "total_answers": sum(prompt_counts.values()),
+            "current_streak": current_streak,
+            "favorite_categories": [
+                {"category": category, "answered_count": count}
+                for category, count in sorted(
+                    category_counts.items(), key=lambda item: (-item[1], item[0])
+                )
+            ],
+            "completion_trend": [
+                {"week_start": week_start, "answered_count": count}
+                for week_start, count in sorted(week_counts.items())
+            ],
+            "most_used_prompt": {
+                "id": most_used_id,
+                "text": prompt_texts[most_used_id],
+                "answered_count": most_used_count,
+            },
         }
 
-    def get_prompts_by_category(self, category: str, user_id: Optional[uuid.UUID] = None) -> List[Prompt]:
+    def get_prompts_by_category(
+        self, category: str, user_id: Optional[uuid.UUID] = None
+    ) -> List[Prompt]:
         """Get prompts by category."""
-        return self.get_all_prompts(
-            user_id=user_id,
-            category=category,
-            limit=100
-        )
+        return self.get_all_prompts(user_id=user_id, category=category, limit=100)
 
-    def get_prompts_by_difficulty(self, difficulty_level: int, user_id: Optional[uuid.UUID] = None) -> List[Prompt]:
+    def get_prompts_by_difficulty(
+        self, difficulty_level: int, user_id: Optional[uuid.UUID] = None
+    ) -> List[Prompt]:
         """Get prompts by difficulty level."""
         return self.get_all_prompts(
-            user_id=user_id,
-            difficulty_level=difficulty_level,
-            limit=100
+            user_id=user_id, difficulty_level=difficulty_level, limit=100
         )
 
-    def search_prompts(self, query: str, user_id: Optional[uuid.UUID] = None) -> List[Prompt]:
+    def search_prompts(
+        self, query: str, user_id: Optional[uuid.UUID] = None
+    ) -> List[Prompt]:
         """Search prompts by text content (excludes soft-deleted)."""
         statement = select(Prompt).where(
-            Prompt.is_active,
-            col(Prompt.text).ilike(f"%{query}%")
+            Prompt.is_active, col(Prompt.text).ilike(f"%{query}%")
         )
 
         if user_id is not None:
@@ -488,7 +719,9 @@ class PromptService:
         statement = statement.order_by(col(Prompt.created_at).desc())
         return list(self.session.exec(statement))
 
-    def bulk_update_prompts(self, user_id: uuid.UUID, updates: List[Dict[str, Any]]) -> List[Prompt]:
+    def bulk_update_prompts(
+        self, user_id: uuid.UUID, updates: List[Dict[str, Any]]
+    ) -> List[Prompt]:
         """
         Bulk update prompts for a user.
 
@@ -502,15 +735,13 @@ class PromptService:
         updated_prompts = []
 
         for update_data in updates:
-            prompt_id = update_data.get('id')
+            prompt_id = update_data.get("id")
             if not prompt_id:
                 continue
 
             # Get the prompt
             statement = select(Prompt).where(
-                Prompt.id == prompt_id,
-                Prompt.user_id == user_id,
-                Prompt.is_active
+                Prompt.id == prompt_id, Prompt.user_id == user_id, Prompt.is_active
             )
             prompt = self.session.exec(statement).first()
 
@@ -518,14 +749,14 @@ class PromptService:
                 continue
 
             # Update fields
-            if 'text' in update_data:
-                prompt.text = update_data['text']
-            if 'category' in update_data:
-                prompt.category = update_data['category']
-            if 'difficulty_level' in update_data:
-                prompt.difficulty_level = update_data['difficulty_level']
-            if 'estimated_time_minutes' in update_data:
-                prompt.estimated_time_minutes = update_data['estimated_time_minutes']
+            if "text" in update_data:
+                prompt.text = update_data["text"]
+            if "category" in update_data:
+                prompt.category = update_data["category"]
+            if "difficulty_level" in update_data:
+                prompt.difficulty_level = update_data["difficulty_level"]
+            if "estimated_time_minutes" in update_data:
+                prompt.estimated_time_minutes = update_data["estimated_time_minutes"]
 
             prompt.updated_at = utc_now()
             self.session.add(prompt)
@@ -534,7 +765,9 @@ class PromptService:
         self.session.commit()
         return updated_prompts
 
-    def bulk_delete_prompts(self, user_id: uuid.UUID, prompt_ids: List[uuid.UUID]) -> int:
+    def bulk_delete_prompts(
+        self, user_id: uuid.UUID, prompt_ids: List[uuid.UUID]
+    ) -> int:
         """
         Bulk soft delete prompts for a user.
 
@@ -550,9 +783,7 @@ class PromptService:
         for prompt_id in prompt_ids:
             # Get the prompt
             statement = select(Prompt).where(
-                Prompt.id == prompt_id,
-                Prompt.user_id == user_id,
-                Prompt.is_active
+                Prompt.id == prompt_id, Prompt.user_id == user_id, Prompt.is_active
             )
             prompt = self.session.exec(statement).first()
 

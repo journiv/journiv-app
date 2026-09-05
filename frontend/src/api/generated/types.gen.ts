@@ -396,6 +396,19 @@ export type AdminUserUpdate = {
 };
 
 /**
+ * AnalyticsDashboard
+ *
+ * ``GET /analytics/dashboard`` response.
+ */
+export type AnalyticsDashboard = {
+    writing_streak: WritingStreakAnalytics;
+    writing_patterns: WritingPatterns;
+    productivity: ProductivityMetrics;
+    journals: JournalAnalytics;
+    summary: DashboardSummary;
+};
+
+/**
  * AssetType
  *
  * Media asset types across all providers.
@@ -540,6 +553,30 @@ export type CspViolationReport = {
 };
 
 /**
+ * DashboardSummary
+ *
+ * The ``summary`` block of :class:`AnalyticsDashboard`.
+ */
+export type DashboardSummary = {
+    /**
+     * Total Journals
+     */
+    total_journals: number;
+    /**
+     * Total Entries
+     */
+    total_entries: number;
+    /**
+     * Current Streak
+     */
+    current_streak: number;
+    /**
+     * Longest Streak
+     */
+    longest_streak: number;
+};
+
+/**
  * DeleteResponse
  *
  * Response schema for delete operations.
@@ -549,6 +586,26 @@ export type DeleteResponse = {
      * Message
      */
     message: string;
+};
+
+/**
+ * EntriesByDayPoint
+ *
+ * One day of writing activity in :class:`WritingPatterns`.
+ */
+export type EntriesByDayPoint = {
+    /**
+     * Date
+     */
+    date: string;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Total Words
+     */
+    total_words: number;
 };
 
 /**
@@ -2230,6 +2287,46 @@ export type IntegrationStatusResponse = {
 export type JobStatus = 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'cancelled';
 
 /**
+ * JournalAnalytics
+ *
+ * ``GET /analytics/journals`` response.
+ */
+export type JournalAnalytics = {
+    /**
+     * Journals
+     */
+    journals: Array<JournalAnalyticsRow>;
+};
+
+/**
+ * JournalAnalyticsRow
+ *
+ * Per-journal totals in :class:`JournalAnalytics`.
+ */
+export type JournalAnalyticsRow = {
+    /**
+     * Journal Id
+     */
+    journal_id: string;
+    /**
+     * Title
+     */
+    title: string;
+    /**
+     * Entry Count
+     */
+    entry_count: number;
+    /**
+     * Total Words
+     */
+    total_words: number;
+    /**
+     * Last Entry
+     */
+    last_entry?: string | null;
+};
+
+/**
  * JournalColor
  *
  * Preset colors for journals.
@@ -3349,6 +3446,26 @@ export type MomentUpdate = {
 };
 
 /**
+ * MoodCount
+ *
+ * One mood and its log count.
+ */
+export type MoodCount = {
+    /**
+     * Mood
+     */
+    mood: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
  * MoodCreate
  */
 export type MoodCreate = {
@@ -3372,6 +3489,42 @@ export type MoodCreate = {
      * Position
      */
     position?: number | null;
+};
+
+/**
+ * MoodDailyTrend
+ *
+ * Per-day count of mood logs in one category.
+ */
+export type MoodDailyTrend = {
+    /**
+     * Date
+     */
+    date: string;
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
+ * MoodDateRange
+ *
+ * The analysed window echoed back in :class:`MoodStatistics`.
+ */
+export type MoodDateRange = {
+    /**
+     * Start Date
+     */
+    start_date: string;
+    /**
+     * End Date
+     */
+    end_date: string;
 };
 
 /**
@@ -3503,6 +3656,22 @@ export type MoodGroupWithMoodsResponse = {
 };
 
 /**
+ * MoodPatternPoint
+ *
+ * Moments carrying a primary mood on a given day.
+ */
+export type MoodPatternPoint = {
+    /**
+     * Date
+     */
+    date: string;
+    /**
+     * Mood Count
+     */
+    mood_count: number;
+};
+
+/**
  * MoodReorderRequest
  */
 export type MoodReorderRequest = {
@@ -3569,6 +3738,57 @@ export type MoodResponse = {
 };
 
 /**
+ * MoodStatistics
+ *
+ * ``GET /moods/analytics/statistics`` response.
+ */
+export type MoodStatistics = {
+    /**
+     * Total Logs
+     */
+    total_logs: number;
+    date_range: MoodDateRange;
+    /**
+     * Mood Distribution
+     */
+    mood_distribution: {
+        [key: string]: number;
+    };
+    most_frequent_mood?: MostFrequentMood | null;
+    /**
+     * Mood Counts
+     */
+    mood_counts: Array<MoodCount>;
+    /**
+     * Daily Trends
+     */
+    daily_trends: Array<MoodDailyTrend>;
+};
+
+/**
+ * MoodStreak
+ *
+ * ``GET /moods/analytics/streak`` response.
+ *
+ * ``get_mood_streak`` always returns the two counters (0 when nothing is
+ * logged); only ``last_logged_date`` can be absent.
+ */
+export type MoodStreak = {
+    /**
+     * Current Streak
+     */
+    current_streak: number;
+    /**
+     * Total Days Logged
+     */
+    total_days_logged: number;
+    /**
+     * Last Logged Date
+     */
+    last_logged_date?: string | null;
+};
+
+/**
  * MoodUpdate
  */
 export type MoodUpdate = {
@@ -3599,15 +3819,19 @@ export type MoodUpdate = {
 };
 
 /**
- * PeakMonth
+ * MostFrequentMood
  *
- * Peak month information.
+ * The single most-logged mood in the analysed window.
  */
-export type PeakMonth = {
+export type MostFrequentMood = {
     /**
-     * Month
+     * Name
      */
-    month: string;
+    name: string;
+    /**
+     * Category
+     */
+    category: string;
     /**
      * Count
      */
@@ -3615,11 +3839,23 @@ export type PeakMonth = {
 };
 
 /**
- * PeakMonthResult
+ * OidcTicketExchangeRequest
+ *
+ * One-time ticket returned to the SPA after an OIDC callback.
+ */
+export type OidcTicketExchangeRequest = {
+    /**
+     * Ticket
+     */
+    ticket: string;
+};
+
+/**
+ * PeakMonth
  *
  * Peak month information.
  */
-export type PeakMonthResult = {
+export type PeakMonth = {
     /**
      * Month
      */
@@ -3951,123 +4187,142 @@ export type PlusCapability = {
 };
 
 /**
- * PlusTagAnalyticsResult
+ * ProductivityMetrics
  *
- * Tag analytics computation result from Plus.
- *
- * This mirrors backend's TagAnalyticsResponse but is computed
- * entirely in Plus from raw data provided by backend.
- *
- * Backend converts this to TagAnalyticsResponse for API response.
+ * ``GET /analytics/productivity`` response.
  */
-export type PlusTagAnalyticsResult = {
+export type ProductivityMetrics = {
     /**
-     * Total Tags
+     * Current Month Entries
      */
-    total_tags: number;
+    current_month_entries: number;
     /**
-     * Used Tags
+     * Current Month Words
      */
-    used_tags: number;
+    current_month_words: number;
     /**
-     * Unused Tags
+     * Entry Growth Percentage
      */
-    unused_tags: number;
-    most_used_tag: PlusTagSummary | null;
+    entry_growth_percentage: number;
     /**
-     * Average Usage
+     * Average Daily Entries
      */
-    average_usage: number;
+    average_daily_entries: number;
     /**
-     * Tag Usage Ranking
+     * Average Words Per Day
      */
-    tag_usage_ranking: Array<PlusTagSummary>;
-    /**
-     * Recently Created Tags
-     */
-    recently_created_tags: Array<PlusTagSummary>;
-    /**
-     * Usage Over Time
-     */
-    usage_over_time: {
-        [key: string]: number;
-    };
-    /**
-     * Tag Distribution
-     */
-    tag_distribution: {
-        [key: string]: number;
-    };
+    average_words_per_day: number;
 };
 
 /**
- * PlusTagDetailAnalyticsResult
+ * PromptAnalyticsResponse
  *
- * Per-tag analytics computation result from Plus.
- *
- * Contains computed analytics for a single tag including trends,
- * growth analysis, and usage patterns.
+ * ``GET /prompts/analytics/statistics`` response for the current writer.
  */
-export type PlusTagDetailAnalyticsResult = {
+export type PromptAnalyticsResponse = {
     /**
-     * Tag Id
+     * Prompts Answered
      */
-    tag_id: string;
+    prompts_answered: number;
     /**
-     * Tag Name
+     * Total Answers
      */
-    tag_name: string;
+    total_answers: number;
     /**
-     * Usage Count
+     * Current Streak
      */
-    usage_count: number;
+    current_streak: number;
     /**
-     * Usage Over Time
+     * Favorite Categories
      */
-    usage_over_time: {
-        [key: string]: number;
-    };
+    favorite_categories: Array<PromptCategoryAnalytics>;
     /**
-     * First Used
+     * Completion Trend
      */
-    first_used?: string | null;
-    /**
-     * Last Used
-     */
-    last_used?: string | null;
-    peak_month?: PeakMonthResult | null;
-    /**
-     * Trend
-     */
-    trend: string;
-    /**
-     * Growth Rate
-     */
-    growth_rate?: number | null;
-    /**
-     * Days Analyzed
-     */
-    days_analyzed: number;
+    completion_trend: Array<PromptCompletionWeek>;
+    most_used_prompt?: PromptMostUsedAnalytics | null;
 };
 
 /**
- * PlusTagSummary
+ * PromptCategoryAnalytics
  *
- * Plus-only tag summary mirroring the backend tag summary shape.
+ * How often the current writer has answered one prompt category.
  */
-export type PlusTagSummary = {
+export type PromptCategoryAnalytics = {
+    /**
+     * Category
+     */
+    category: string;
+    /**
+     * Answered Count
+     */
+    answered_count: number;
+};
+
+/**
+ * PromptCompletionWeek
+ *
+ * Prompt-linked Moments completed in the calendar week beginning here.
+ */
+export type PromptCompletionWeek = {
+    /**
+     * Week Start
+     */
+    week_start: string;
+    /**
+     * Answered Count
+     */
+    answered_count: number;
+};
+
+/**
+ * PromptMostUsedAnalytics
+ *
+ * The current writer's most frequently answered prompt, when one exists.
+ */
+export type PromptMostUsedAnalytics = {
     /**
      * Id
      */
     id: string;
     /**
-     * Name
+     * Text
      */
-    name: string;
+    text: string;
     /**
-     * Usage Count
+     * Answered Count
      */
-    usage_count: number;
+    answered_count: number;
+};
+
+/**
+ * PromptPageResponse
+ *
+ * A deterministic offset page of active system prompts.
+ */
+export type PromptPageResponse = {
+    /**
+     * Items
+     */
+    items: Array<PromptResponse>;
+    /**
+     * Total
+     */
+    total: number;
+    /**
+     * Next Offset
+     */
+    next_offset?: number | null;
+    /**
+     * Category Counts
+     */
+    category_counts: {
+        [key: string]: number;
+    };
+    /**
+     * All Count
+     */
+    all_count: number;
 };
 
 /**
@@ -4113,41 +4368,13 @@ export type PromptResponse = {
      */
     usage_count: number;
     /**
+     * Answered Count
+     */
+    answered_count: number;
+    /**
      * User Id
      */
     user_id?: string | null;
-};
-
-/**
- * PublishUpdate
- *
- * Request body for publish state updates.
- */
-export type PublishUpdate = {
-    /**
-     * Publish
-     */
-    publish: boolean;
-};
-
-/**
- * PublishingConfigUpdate
- *
- * Request body for publishing config updates.
- */
-export type PublishingConfigUpdate = {
-    /**
-     * Slug
-     *
-     * Custom URL slug (lowercase alphanumeric and hyphens only)
-     */
-    slug?: string | null;
-    /**
-     * Is Indexed
-     *
-     * Search engine indexing
-     */
-    is_indexed?: boolean | null;
 };
 
 /**
@@ -4435,6 +4662,22 @@ export type TokenRefresh = {
      * Refresh Token
      */
     refresh_token: string;
+};
+
+/**
+ * TopTagCount
+ *
+ * A tag and how often it was used in the analysed window.
+ */
+export type TopTagCount = {
+    /**
+     * Tag Name
+     */
+    tag_name: string;
+    /**
+     * Usage Count
+     */
+    usage_count: number;
 };
 
 /**
@@ -4919,302 +5162,6 @@ export type WeatherServiceDisabledResponse = {
      * Explanation message
      */
     message: string;
-};
-
-/**
- * OidcTicketExchangeRequest
- *
- * One-time ticket returned to the SPA after an OIDC callback.
- */
-export type OidcTicketExchangeRequest = {
-    /**
-     * Ticket
-     */
-    ticket: string;
-};
-
-/**
- * AnalyticsDashboard
- *
- * ``GET /analytics/dashboard`` response.
- */
-export type AnalyticsDashboard = {
-    writing_streak: WritingStreakAnalytics;
-    writing_patterns: WritingPatterns;
-    productivity: ProductivityMetrics;
-    journals: JournalAnalytics;
-    summary: DashboardSummary;
-};
-
-/**
- * DashboardSummary
- *
- * The ``summary`` block of :class:`AnalyticsDashboard`.
- */
-export type DashboardSummary = {
-    /**
-     * Total Journals
-     */
-    total_journals: number;
-    /**
-     * Total Entries
-     */
-    total_entries: number;
-    /**
-     * Current Streak
-     */
-    current_streak: number;
-    /**
-     * Longest Streak
-     */
-    longest_streak: number;
-};
-
-/**
- * EntriesByDayPoint
- *
- * One day of writing activity in :class:`WritingPatterns`.
- */
-export type EntriesByDayPoint = {
-    /**
-     * Date
-     */
-    date: string;
-    /**
-     * Entry Count
-     */
-    entry_count: number;
-    /**
-     * Total Words
-     */
-    total_words: number;
-};
-
-/**
- * JournalAnalytics
- *
- * ``GET /analytics/journals`` response.
- */
-export type JournalAnalytics = {
-    /**
-     * Journals
-     */
-    journals: Array<JournalAnalyticsRow>;
-};
-
-/**
- * JournalAnalyticsRow
- *
- * Per-journal totals in :class:`JournalAnalytics`.
- */
-export type JournalAnalyticsRow = {
-    /**
-     * Journal Id
-     */
-    journal_id: string;
-    /**
-     * Title
-     */
-    title: string;
-    /**
-     * Entry Count
-     */
-    entry_count: number;
-    /**
-     * Total Words
-     */
-    total_words: number;
-    /**
-     * Last Entry
-     */
-    last_entry?: string | null;
-};
-
-/**
- * MoodCount
- *
- * One mood and its log count.
- */
-export type MoodCount = {
-    /**
-     * Mood
-     */
-    mood: string;
-    /**
-     * Category
-     */
-    category: string;
-    /**
-     * Count
-     */
-    count: number;
-};
-
-/**
- * MoodDailyTrend
- *
- * Per-day count of mood logs in one category.
- */
-export type MoodDailyTrend = {
-    /**
-     * Date
-     */
-    date: string;
-    /**
-     * Category
-     */
-    category: string;
-    /**
-     * Count
-     */
-    count: number;
-};
-
-/**
- * MoodDateRange
- *
- * The analysed window echoed back in :class:`MoodStatistics`.
- */
-export type MoodDateRange = {
-    /**
-     * Start Date
-     */
-    start_date: string;
-    /**
-     * End Date
-     */
-    end_date: string;
-};
-
-/**
- * MoodPatternPoint
- *
- * Moments carrying a primary mood on a given day.
- */
-export type MoodPatternPoint = {
-    /**
-     * Date
-     */
-    date: string;
-    /**
-     * Mood Count
-     */
-    mood_count: number;
-};
-
-/**
- * MoodStatistics
- *
- * ``GET /moods/analytics/statistics`` response.
- */
-export type MoodStatistics = {
-    /**
-     * Total Logs
-     */
-    total_logs: number;
-    date_range: MoodDateRange;
-    /**
-     * Mood Distribution
-     */
-    mood_distribution: {
-        [key: string]: number;
-    };
-    most_frequent_mood?: MostFrequentMood | null;
-    /**
-     * Mood Counts
-     */
-    mood_counts: Array<MoodCount>;
-    /**
-     * Daily Trends
-     */
-    daily_trends: Array<MoodDailyTrend>;
-};
-
-/**
- * MoodStreak
- *
- * ``GET /moods/analytics/streak`` response.
- *
- * ``get_mood_streak`` always returns the two counters (0 when nothing is
- * logged); only ``last_logged_date`` can be absent.
- */
-export type MoodStreak = {
-    /**
-     * Current Streak
-     */
-    current_streak: number;
-    /**
-     * Total Days Logged
-     */
-    total_days_logged: number;
-    /**
-     * Last Logged Date
-     */
-    last_logged_date?: string | null;
-};
-
-/**
- * MostFrequentMood
- *
- * The single most-logged mood in the analysed window.
- */
-export type MostFrequentMood = {
-    /**
-     * Name
-     */
-    name: string;
-    /**
-     * Category
-     */
-    category: string;
-    /**
-     * Count
-     */
-    count: number;
-};
-
-/**
- * ProductivityMetrics
- *
- * ``GET /analytics/productivity`` response.
- */
-export type ProductivityMetrics = {
-    /**
-     * Current Month Entries
-     */
-    current_month_entries: number;
-    /**
-     * Current Month Words
-     */
-    current_month_words: number;
-    /**
-     * Entry Growth Percentage
-     */
-    entry_growth_percentage: number;
-    /**
-     * Average Daily Entries
-     */
-    average_daily_entries: number;
-    /**
-     * Average Words Per Day
-     */
-    average_words_per_day: number;
-};
-
-/**
- * TopTagCount
- *
- * A tag and how often it was used in the analysed window.
- */
-export type TopTagCount = {
-    /**
-     * Tag Name
-     */
-    tag_name: string;
-    /**
-     * Usage Count
-     */
-    usage_count: number;
 };
 
 /**
@@ -8593,9 +8540,25 @@ export type GetSystemPromptsApiV1PromptsGetData = {
          */
         difficulty_level?: number | null;
         /**
+         * Q
+         */
+        q?: string | null;
+        /**
+         * Min Minutes
+         */
+        min_minutes?: number | null;
+        /**
+         * Max Minutes
+         */
+        max_minutes?: number | null;
+        /**
          * Limit
          */
         limit?: number;
+        /**
+         * Offset
+         */
+        offset?: number;
     };
     url: '/api/v1/prompts/';
 };
@@ -8619,11 +8582,9 @@ export type GetSystemPromptsApiV1PromptsGetError = GetSystemPromptsApiV1PromptsG
 
 export type GetSystemPromptsApiV1PromptsGetResponses = {
     /**
-     * Response Get System Prompts Api V1 Prompts  Get
-     *
      * Successful Response
      */
-    200: Array<PromptResponse>;
+    200: PromptPageResponse;
 };
 
 export type GetSystemPromptsApiV1PromptsGetResponse = GetSystemPromptsApiV1PromptsGetResponses[keyof GetSystemPromptsApiV1PromptsGetResponses];
@@ -8777,13 +8738,9 @@ export type GetPromptStatisticsApiV1PromptsAnalyticsStatisticsGetError = GetProm
 
 export type GetPromptStatisticsApiV1PromptsAnalyticsStatisticsGetResponses = {
     /**
-     * Response Get Prompt Statistics Api V1 Prompts Analytics Statistics Get
-     *
      * Successful Response
      */
-    200: {
-        [key: string]: unknown;
-    };
+    200: PromptAnalyticsResponse;
 };
 
 export type GetPromptStatisticsApiV1PromptsAnalyticsStatisticsGetResponse = GetPromptStatisticsApiV1PromptsAnalyticsStatisticsGetResponses[keyof GetPromptStatisticsApiV1PromptsAnalyticsStatisticsGetResponses];
@@ -13102,127 +13059,6 @@ export type ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses = {
 
 export type ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponse = ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses[keyof ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses];
 
-export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/v1/plus/analytics/tags';
-};
-
-export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: PlusTagAnalyticsResult;
-};
-
-export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponse = GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses[keyof GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses];
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetData = {
-    body?: never;
-    path: {
-        /**
-         * Tag Id
-         */
-        tag_id: string;
-    };
-    query?: {
-        /**
-         * Days
-         *
-         * Number of days to analyse
-         */
-        days?: number;
-    };
-    url: '/api/v1/plus/analytics/tags/{tag_id}';
-};
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetError = GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors[keyof GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors];
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: PlusTagDetailAnalyticsResult;
-};
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponse = GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses[keyof GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses];
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchData = {
-    body: PublishUpdate;
-    path: {
-        /**
-         * Entry Id
-         */
-        entry_id: string;
-    };
-    query?: never;
-    url: '/api/v1/plus/entries/{entry_id}/publish';
-};
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchError = ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors[keyof ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors];
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses = {
-    /**
-     * Response Toggle Entry Publish Api V1 Plus Entries  Entry Id  Publish Patch
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponse = ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses[keyof ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses];
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchData = {
-    body: PublishingConfigUpdate;
-    path: {
-        /**
-         * Entry Id
-         */
-        entry_id: string;
-    };
-    query?: never;
-    url: '/api/v1/plus/entries/{entry_id}/publishing-config';
-};
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchError = UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors[keyof UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors];
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses = {
-    /**
-     * Response Update Publishing Config Api V1 Plus Entries  Entry Id  Publishing Config Patch
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponse = UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses[keyof UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses];
-
 export type DownloadPublishedEntryPdfPubIdentifierPdfGetData = {
     body?: never;
     path: {
@@ -13250,97 +13086,3 @@ export type DownloadPublishedEntryPdfPubIdentifierPdfGetResponses = {
      */
     200: unknown;
 };
-
-export type GetPublishedEntryPubIdentifierGetData = {
-    body?: never;
-    path: {
-        /**
-         * Identifier
-         */
-        identifier: string;
-    };
-    query?: never;
-    url: '/pub/{identifier}';
-};
-
-export type GetPublishedEntryPubIdentifierGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetPublishedEntryPubIdentifierGetError = GetPublishedEntryPubIdentifierGetErrors[keyof GetPublishedEntryPubIdentifierGetErrors];
-
-export type GetPublishedEntryPubIdentifierGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: string;
-};
-
-export type GetPublishedEntryPubIdentifierGetResponse = GetPublishedEntryPubIdentifierGetResponses[keyof GetPublishedEntryPubIdentifierGetResponses];
-
-export type GetPublishedMediaPubMediaMediaIdGetData = {
-    body?: never;
-    path: {
-        /**
-         * Media Id
-         */
-        media_id: string;
-    };
-    query?: never;
-    url: '/pub/media/{media_id}';
-};
-
-export type GetPublishedMediaPubMediaMediaIdGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetPublishedMediaPubMediaMediaIdGetError = GetPublishedMediaPubMediaMediaIdGetErrors[keyof GetPublishedMediaPubMediaMediaIdGetErrors];
-
-export type GetPublishedMediaPubMediaMediaIdGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type GetOembedApiV1OembedGetData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * Url
-         *
-         * Public URL of the entry
-         */
-        url: string;
-    };
-    url: '/api/v1/oembed';
-};
-
-export type GetOembedApiV1OembedGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetOembedApiV1OembedGetError = GetOembedApiV1OembedGetErrors[keyof GetOembedApiV1OembedGetErrors];
-
-export type GetOembedApiV1OembedGetResponses = {
-    /**
-     * Response Get Oembed Api V1 Oembed Get
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type GetOembedApiV1OembedGetResponse = GetOembedApiV1OembedGetResponses[keyof GetOembedApiV1OembedGetResponses];
