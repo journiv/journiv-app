@@ -52,7 +52,11 @@ confirmation only for actual confirmation.
   keeps secrets ephemeral, and invalidates status after mutation.
 - Import/export starts explicit background jobs, polls only while active, shows
   progress and human failure states, and never auto-downloads.
-- Support reads available public version/config/license information.
+- Support reads available public version/config/license information. Administration
+  owns version checking and Plus license registration: it shows cached update
+  state, controls automatic checks, permits a rate-limit-aware manual check,
+  and lets an administrator register a license. License reset/unbinding is a
+  separate destructive lifecycle flow and is intentionally not exposed here.
 - Admin Users is role-gated before its list query. It fetches the documented
   offset pages, searches/pages locally, sends only changed fields, respects
   last-admin protections, and refreshes user/session queries when needed.
@@ -63,5 +67,3 @@ confirmation only for actual confirmation.
   icons have no backend contract.
 - Admin user pagination exposes neither a total nor continuation token, so the
   complete collection is fetched before local search/paging.
-- Version administration and license registration/reset remain intentionally
-  undesigned; do not render dead links.
