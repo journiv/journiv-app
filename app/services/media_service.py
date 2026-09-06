@@ -1468,7 +1468,7 @@ class MediaService:
 
         if media_type_value == "image":
             thumbnail_dir = file_path_obj.parent / "thumbnails"
-            thumbnail_path = thumbnail_dir / f"thumb_{file_path_obj.name}"
+            thumbnail_path = thumbnail_dir / f"thumb_{file_path_obj.stem}.jpg"
             self._generate_image_thumbnail(file_path_obj, thumbnail_path)
         elif media_type_value == "video":
             thumbnail_dir = file_path_obj.parent / "thumbnails"
@@ -2047,6 +2047,22 @@ class MediaService:
             media,
             range_header=range_header,
             allow_display_version=False,
+        )
+
+    async def get_media_file_for_display(
+        self,
+        media_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session: Session,
+        range_header: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Get browser-compatible media, preferring a generated display version."""
+        media = self.get_media_by_id(media_id, user_id, session)
+
+        return await self._build_media_file_info(
+            media,
+            range_header=range_header,
+            allow_display_version=True,
         )
 
     async def process_moment_media(self, moment_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> int:

@@ -6,7 +6,8 @@ Covers:
 - _build_display_path naming convention
 - _generate_heic_display_version transcoding (requires pillow-heif)
 - process_uploaded_file skips regeneration when display_path exists
-- get_media_file_for_serving serves original bytes for authenticated downloads
+- display serving prefers WebP while original serving preserves HEIC bytes
+- image thumbnails use an extension matching their JPEG encoding
 - delete_media_by_id cleans up display version file
 """
 import shutil
@@ -303,6 +304,15 @@ class TestServingHeicDisplayVersion:
         assert result["content_type"] == "image/heic"
         assert result["file_path"] == heic_file
 
+        display_result = await service.get_media_file_for_display(
+            media_id=media.id,
+            user_id=test_user.id,
+            session=test_db,
+        )
+
+        assert display_result["content_type"] == "image/webp"
+        assert display_result["file_path"] == display_file
+
     @pytest.mark.asyncio
     async def test_serves_original_when_no_display_path(
         self, tmp_path, test_db, test_user, test_entry
@@ -339,6 +349,20 @@ class TestServingHeicDisplayVersion:
         assert result["file_path"] == heic_file
         # content_type should NOT be image/webp
         assert result["content_type"] != "image/webp"
+
+
+class TestImageThumbnailFilename:
+    def test_heic_thumbnail_uses_jpeg_extension(self, tmp_path, test_db):
+        service = _build_service(tmp_path, test_db)
+        source = tmp_path / "media" / "photo.heic"
+
+        with patch.object(service, "_generate_image_thumbnail") as generate:
+            result = service._generate_thumbnail(str(source), MediaType.IMAGE)
+
+        assert result is not None
+        thumbnail_path = Path(result)
+        assert thumbnail_path.name == "thumb_photo.jpg"
+        generate.assert_called_once_with(source, thumbnail_path)
 
 
 # ─── delete: display version file cleanup ────────────────────────────
