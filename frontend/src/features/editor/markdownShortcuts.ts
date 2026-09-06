@@ -219,6 +219,8 @@ export function typedInsertion(
 }
 
 type InstallOptions = {
+  /** Whether shortcuts may rewrite the current user change. */
+  isEnabled?: () => boolean;
   /** Suppress rewrites while an IME composition is active. */
   isComposing?: () => boolean;
   /**
@@ -305,6 +307,7 @@ export function installMarkdownShortcuts(
     source: string,
   ) => {
     if (applying || source !== "user") return;
+    if (options.isEnabled?.() === false) return;
     if (options.isComposing?.()) return;
 
     const typed = typedInsertion(delta);

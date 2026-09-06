@@ -704,16 +704,14 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       // read-only reader must never rewrite what it renders. The rewrite is a
       // "user" change, so it re-enters handleTextChange like any edit —
       // marking the body dirty and refreshing toolbar state.
-      const teardownMarkdown = readOnlyRef.current
-        ? undefined
-        : installMarkdownShortcuts(quill, {
-            isComposing: () => composingRef.current,
-            onApplied: (caretIndex) =>
-              emitState({ index: caretIndex, length: 0 }),
-          });
+      const teardownMarkdown = installMarkdownShortcuts(quill, {
+        isEnabled: () => !readOnlyRef.current,
+        isComposing: () => composingRef.current,
+        onApplied: (caretIndex) => emitState({ index: caretIndex, length: 0 }),
+      });
 
       return () => {
-        teardownMarkdown?.();
+        teardownMarkdown();
         quill.off("text-change", handleTextChange);
         quill.off("selection-change", handleSelectionChange);
         quill.root.removeEventListener(

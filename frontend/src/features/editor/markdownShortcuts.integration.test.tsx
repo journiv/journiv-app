@@ -281,4 +281,26 @@ describe("markdown shortcuts in the writing surface", () => {
     const contents = ref.current?.getContents() as QuillDelta | undefined;
     expect(contents?.ops?.[0]).toEqual({ insert: "## not a heading\n" });
   });
+
+  it("installs shortcuts when a read-only surface becomes editable", async () => {
+    const view = render(
+      <QuillSurface
+        editorId="read-only-transition"
+        initialContent={{ ops: [{ insert: "\n" }] }}
+        readOnly
+      />,
+    );
+    const editor = within(view.container).getByLabelText("Entry content");
+
+    view.rerender(
+      <QuillSurface
+        editorId="read-only-transition"
+        initialContent={{ ops: [{ insert: "\n" }] }}
+      />,
+    );
+    expect(within(view.container).getByLabelText("Entry body")).toBe(editor);
+
+    await userEvent.type(editor, "## Morning");
+    expect(editor.querySelector("h2")?.textContent).toBe("Morning");
+  });
 });
