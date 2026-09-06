@@ -8,6 +8,7 @@ import {
 } from "../../components/ui/dialog";
 import {
   Bold,
+  CircleHelp,
   Heading1,
   Heading2,
   Heading3,
@@ -36,6 +37,7 @@ import type {
   QuillSurfaceHandle,
 } from "./QuillSurface";
 import { validateLinkUrl } from "./linkPolicy";
+import { MarkdownHelpDialog } from "./MarkdownHelpDialog";
 import {
   MomentDetailsPopover,
   type MomentDetailsPanelProps,
@@ -74,6 +76,7 @@ export function EditorToolbar({
   const [linkOpen, setLinkOpen] = useState(false);
   const [linkValue, setLinkValue] = useState("");
   const [linkError, setLinkError] = useState("");
+  const [helpOpen, setHelpOpen] = useState(false);
   const linkActive = typeof state.formats.link === "string";
 
   const toggleInline = (name: InlineFormat) => editor?.toggleInline(name);
@@ -235,10 +238,19 @@ export function EditorToolbar({
             </span>
           </>
         )}
+        <span className="jv-toolbar__divider" aria-hidden="true" />
+        <ToolbarButton
+          label="Markdown shortcuts"
+          onClick={() => setHelpOpen(true)}
+        >
+          <CircleHelp aria-hidden="true" size={16} />
+        </ToolbarButton>
         <span className="jv-toolbar__count">
           {state.wordCount} {state.wordCount === 1 ? "word" : "words"}
         </span>
       </div>
+
+      <MarkdownHelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       <Dialog open={linkOpen} onOpenChange={setLinkOpen}>
         <DialogContent>
