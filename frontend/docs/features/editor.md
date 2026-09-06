@@ -24,6 +24,53 @@ refresh ordering, and do not mark prose dirty. There is no arbitrary timezone
 selector. Date conversion helpers own DST behaviour; never persist the
 browser-local Date serialization.
 
+## Markdown input
+
+Markdown is an *input method*, never a stored format. Typed shorthand is
+rewritten into the same Delta the toolbar would produce; persisted content stays
+a Quill Delta. Two pieces cooperate:
+
+- **`markdownShortcuts.ts`** owns headings (`#`/`##`/`###`), the quote marker
+  (`>`) and the inline runs (`**b**`/`__b__`, `*i*`/`_i_`, `~~s~~`,
+  `[text](url)`). Its allowlist test pins it to the Gate-1 formats so a rule can
+  never widen what the editor saves. It is installed by `QuillSurface` on the
+  writing surface only; the read-only reader never rewrites. Rewrites apply
+  synchronously inside the triggering text-change — nothing is deferred, because
+  this module never performs a `<p>`→`<ol>` block-blot swap, which is the one
+  thing Quill will not do mid-text-change.
+- **Bullet and ordered lists are Quill's own `list autofill` keyboard binding**,
+  not this module. `QuillSurface` narrows that binding's prefix to
+  `^\s*?(1\.|-|\*)$`: `- ` / `* ` → bullet, `1. ` → ordered (Quill renumbers the
+  items itself). `2. `, `10. `, `[ ] ` and `[x] ` are dropped from the prefix so
+  they stay literal — Journiv has no checklist format, and an
+  `unchecked`/`checked` list value would make `getContents()` throw.
+
+These are typing shortcuts, not a CommonMark parser:
+
+- **Boundaries / escaping are positional.** A heading or quote marker fires only
+  when the text from line start to caret is *exactly* the marker plus one space,
+  so `\# `, `  # ` and `a > b ` stay literal. An inline run fires only when its
+  opening delimiter is at line start or right after whitespace, so `foo_bar_`,
+  `2*3*4`, `word**x**` and a delimiter after `(` stay literal. A `\` before a
+  delimiter blocks the match because it is non-whitespace; backslashes are never
+  consumed or interpreted. Four or more hashes, `***x***`, `**_x_**`, `****`,
+  `` `code` ``, `![img]()` and malformed or unsafe links (`[x]()`,
+  `[x](javascript:…)`, `[x](ftp:…)`) are left completely literal — never
+  partially transformed.
+- A line that already carries a block format is left alone.
+- Each `markdownShortcuts.ts` rewrite is one `"user"` change bracketed by
+  `history.cutoff()`, so a single undo of a bare marker restores the literal
+  characters; if content was already typed after the marker, the first undo
+  removes that content and the second reverts the format. Quill's list binding
+  brackets its transform the same way.
+- The toolbar's "Markdown shortcuts" control opens `MarkdownHelpDialog`, a
+  reference shown through the shared adaptive overlay. Formatting-toggle
+  `aria-pressed` state stays in sync because the rewrite re-emits editor state.
+
+Inline `code` and code blocks are deliberately out of scope: they need a Gate-1
+contract expansion (this document, `deltaProfile.ts`, the backend guard, prose
+styles, and the reader) before an input shortcut for them can exist.
+
 ## Attachments
 
 Server identity comes first. On a new Entry, the first media attachment or
@@ -145,9 +192,11 @@ fetch failure is a quiet retry state rather than a failed save.
 ## Quill boundary
 
 Prose styles target semantic elements, never Quill. The Quill adapter stylesheet
-and media blots are the only Quill-aware styling/code boundary. Reader and
-Editor share the same accepted-document guard. Every media kind accepted by the
-guard must be in EDITOR_FORMATS; a test protects this coupling.
+and media blots are the only Quill-aware styling/code boundary. `QuillSurface`,
+`QuillReader`, `deltaProfile.ts`, and `markdownShortcuts.ts` are the only
+Quill-aware code. Reader and Editor share the same accepted-document guard.
+Every media kind accepted by the guard must be in EDITOR_FORMATS; a test
+protects this coupling.
 
 ## Known gaps
 

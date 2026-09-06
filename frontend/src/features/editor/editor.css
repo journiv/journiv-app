@@ -309,6 +309,41 @@
    components/ui/ui.css (with its compact-width bottom-sheet override) since the
    Journals feature now uses it too. See docs/architecture/frontend.md. */
 
+/* Markdown shortcuts reference, opened from the toolbar's help control and
+   shown through the shared adaptive overlay (MarkdownHelpDialog). */
+.jv-markdown-help {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.jv-markdown-help__row {
+  display: grid;
+  grid-template-columns: minmax(6rem, max-content) 1fr;
+  gap: var(--space-2) var(--space-4);
+  align-items: baseline;
+}
+
+.jv-markdown-help__row dt {
+  margin: 0;
+}
+
+.jv-markdown-help__row dd {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+}
+
+.jv-markdown-help__row code {
+  padding: 0.1em var(--space-1);
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  white-space: nowrap;
+}
+
 /* ---- moment details popover ----------------------------------------------
    Metadata editing (mood, location, weather, people, tags), opened from the
    toolbar's Insert group. Its own scroll container — it is an overlay, not the

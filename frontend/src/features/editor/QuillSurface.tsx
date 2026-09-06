@@ -18,6 +18,7 @@ import {
   JOURNIV_DELTA_FORMATS,
   stripUploadPlaceholders,
 } from "./deltaProfile";
+import { installMarkdownShortcuts } from "./markdownShortcuts";
 import "./mediaBlots";
 import "./quill-adapter.css";
 import {
@@ -562,6 +563,22 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       // Belt and braces: loading a document is not something to undo.
       quill.history.clear();
 
+      // Quill's built-in "list autofill" keyboard binding turns
+      // `1.`/`2.`/`- `/`* `/`[ ] `/`[x] ` into a list on space. Journiv keeps
+      // ordered lists to a `1.` trigger (Quill renumbers the items itself) and
+      // has no checklist format — an `unchecked`/`checked` value is outside the
+      // Gate-1 allowlist and makes `getContents()` throw — so the prefix is
+      // narrowed to the three kinds Journiv stores. Headings and quotes are
+      // handled separately by markdownShortcuts.ts.
+      for (const binding of quill.keyboard.bindings[" "] ?? []) {
+        if (
+          binding.prefix instanceof RegExp &&
+          binding.prefix.source.includes("\\[x\\]")
+        ) {
+          binding.prefix = /^\s*?(1\.|-|\*)$/;
+        }
+      }
+
       const getWordCount = () => {
         const text = quill.getText().trim();
         return text ? text.split(/\s+/u).length : 0;
@@ -683,7 +700,18 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       quill.root.addEventListener("compositionend", handleCompositionEnd);
       emitState(null);
 
+      // Markdown input shortcuts are a writing-surface affordance only; the
+      // read-only reader must never rewrite what it renders. The rewrite is a
+      // "user" change, so it re-enters handleTextChange like any edit —
+      // marking the body dirty and refreshing toolbar state.
+      const teardownMarkdown = installMarkdownShortcuts(quill, {
+        isEnabled: () => !readOnlyRef.current,
+        isComposing: () => composingRef.current,
+        onApplied: (caretIndex) => emitState({ index: caretIndex, length: 0 }),
+      });
+
       return () => {
+        teardownMarkdown();
         quill.off("text-change", handleTextChange);
         quill.off("selection-change", handleSelectionChange);
         quill.root.removeEventListener(

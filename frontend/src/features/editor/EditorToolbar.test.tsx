@@ -119,4 +119,15 @@ describe("EditorToolbar", () => {
     await userEvent.click(screen.getByRole("button", { name: "Remove" }));
     expect(surface.setLink).toHaveBeenCalledWith(false);
   });
+
+  it("opens the markdown shortcuts reference", async () => {
+    render(<EditorToolbar editor={editor()} state={state()} />);
+    const help = screen.getByRole("button", { name: "Markdown shortcuts" });
+    expect(help.getAttribute("aria-pressed")).toBeNull();
+
+    await userEvent.click(help);
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog.textContent).toContain("**bold**");
+    expect(dialog.textContent).toContain("Numbered list");
+  });
 });
