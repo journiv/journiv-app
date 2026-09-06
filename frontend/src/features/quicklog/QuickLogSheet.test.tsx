@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client/api";
 import type { MomentResponse } from "../../api/generated/types.gen";
+import { queryKeys } from "../../api/query/keys";
 import { QuickLogSheet } from "./QuickLogSheet";
 
 const navigate = vi.fn();
@@ -69,7 +70,7 @@ function setup() {
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
   render(<QuickLogSheet open onOpenChange={onOpenChange} />, { wrapper });
-  return { onOpenChange };
+  return { client, onOpenChange };
 }
 
 beforeEach(() => {
@@ -163,6 +164,30 @@ describe("QuickLogSheet", () => {
     expect(
       await screen.findByRole("alertdialog", { name: "Discard quick log?" }),
     ).toBeTruthy();
+  });
+
+  it("invalidates the moment lists after discarding a saved detail", async () => {
+    const user = userEvent.setup();
+    const { client, onOpenChange } = setup();
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    momentGet.mockReturnValue(new Promise(() => {}) as never);
+
+    await user.click(await screen.findByRole("button", { name: /Happy/ }));
+    await waitFor(() =>
+      expect(updateMoment).toHaveBeenCalledWith("m-new", {
+        primary_mood_id: "mood-happy",
+      }),
+    );
+    invalidate.mockClear();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "Discard" }));
+
+    await waitFor(() => expect(deleteMoment).toHaveBeenCalledWith("m-new"));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: queryKeys.allMoments,
+    });
   });
 
   it("closes without a prompt when nothing was entered", async () => {

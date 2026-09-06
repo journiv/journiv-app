@@ -188,9 +188,7 @@ export function QuickLogSheet({
       await media.cancelPending();
       const keepMedia = media.items.some((item) => item.status === "done");
       await quickLog.discard(keepMedia);
-      if (keepMedia) {
-        await queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
-      }
+      await queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
       setDiscardOpen(false);
       onOpenChange(false);
     } finally {
