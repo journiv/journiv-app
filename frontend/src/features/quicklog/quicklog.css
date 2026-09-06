@@ -1,0 +1,157 @@
+/* Quick Log sheet body (docs/features/quicklog.md). The overlay chrome — the
+   Drawer / Dialog frame, its header, scroll body and fixed footer — belongs to
+   AppAdaptiveDialog (.jv-overlay*). This file styles only what sits inside the
+   scroll body: the field stack, the note counter, the media grid and the
+   "Add details" disclosure. Tokens only, matching editor.css. */
+
+.jv-quicklog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.jv-quicklog__error {
+  margin: 0;
+  color: var(--destructive);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+/* ---- note ------------------------------------------------------------- */
+
+.jv-quicklog__note {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-quicklog__note-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.jv-quicklog__count--limit {
+  color: var(--destructive);
+  font-weight: 500;
+}
+
+/* ---- media ---------------------------------------------------------------- */
+
+.jv-quicklog__media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.jv-quicklog__media-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.jv-quicklog__media-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jv-quicklog__media-item {
+  position: relative;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--muted);
+}
+
+.jv-quicklog__media-item--failed {
+  outline: 1px solid var(--destructive);
+  outline-offset: -1px;
+}
+
+.jv-quicklog__media-thumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.jv-quicklog__media-thumb--audio {
+  background: var(--card);
+}
+
+.jv-quicklog__media-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in oklch, var(--background) 55%, transparent);
+  color: var(--foreground);
+}
+
+.jv-quicklog__media-retry {
+  border: 0;
+  cursor: pointer;
+}
+
+.jv-quicklog__media-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  background: color-mix(in oklch, var(--background) 70%, transparent);
+}
+
+/* ---- details disclosure ------------------------------------------------- */
+
+.jv-quicklog__details {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+.jv-quicklog__disclosure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--tap-target);
+  cursor: pointer;
+  list-style: none;
+}
+
+.jv-quicklog__disclosure::-webkit-details-marker {
+  display: none;
+}
+
+/* Label and caption keep their shared text baseline; the row as a whole is
+   centered against the chevron within the 44px tap target. */
+.jv-quicklog__disclosure-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.jv-quicklog__disclosure-chevron {
+  flex-shrink: 0;
+  color: var(--muted-foreground);
+  transition: transform var(--duration-fast) ease;
+}
+
+.jv-quicklog__details[open] .jv-quicklog__disclosure-chevron {
+  transform: rotate(90deg);
+}
+
+.jv-quicklog__details-body {
+  padding-top: var(--space-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jv-quicklog__disclosure-chevron {
+    transition: none;
+  }
+}

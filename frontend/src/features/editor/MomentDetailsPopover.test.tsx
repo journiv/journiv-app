@@ -252,6 +252,31 @@ describe("MomentDetailsPanel", () => {
     );
   });
 
+  it("keeps a saved location when its follow-up weather request fails", async () => {
+    stubGeolocation((ok) => ok({ coords: { latitude: 35, longitude: 135 } }));
+    vi.mocked(api.fetchWeather).mockRejectedValueOnce(new Error("offline"));
+    setup();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Use current location" }),
+    );
+
+    await waitFor(() =>
+      expect(api.updateMoment).toHaveBeenCalledWith(
+        "moment-1",
+        expect.objectContaining({ latitude: 35, longitude: 135 }),
+      ),
+    );
+    expect(
+      await screen.findByText(
+        "Location saved, but weather couldn't be fetched. Try again.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("Your location couldn't be saved. Try again."),
+    ).toBeNull();
+  });
+
   it("surfaces a denied geolocation permission and saves nothing", async () => {
     stubGeolocation((_ok, err) => err({ code: 1, message: "denied" }));
     setup();

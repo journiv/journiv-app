@@ -11,6 +11,7 @@ import {
   NotebookPen,
   SearchX,
   TriangleAlert,
+  Zap,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { momentsQuery } from "../../api/query/options";
@@ -22,7 +23,7 @@ import { IconButton } from "../../components/ui/icon-button";
 import { SearchInput } from "../../components/ui/search-input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { useJournalLookup } from "../../lib/useJournalLookup";
-import { useShell } from "../shell/AppShell";
+import { useShell } from "../shell/shellContext";
 import { groupMomentsByDay } from "./dateGroups";
 import { MomentListItem } from "./MomentListItem";
 import { scopeSearchFrom, useMomentScope } from "./momentScope";
@@ -89,6 +90,11 @@ export function TimelinePage() {
           </IconButton>
         }
         title={<span className="jv-label jv-truncate">{scope.title}</span>}
+        actions={
+          <IconButton label="Quick log" onClick={shell.openQuickLog}>
+            <Zap aria-hidden="true" size={19} />
+          </IconButton>
+        }
       />
 
       <header className="jv-list-header">

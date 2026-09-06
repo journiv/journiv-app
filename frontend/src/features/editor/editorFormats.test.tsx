@@ -70,8 +70,9 @@ describe("media picker filter", () => {
     expect(accept).toContain(".mp4");
     expect(accept).toContain(".mov");
     expect(accept).toContain(".m4a");
-    expect(accept).toContain("video/*");
-    expect(accept).toContain("audio/*");
+    expect(accept).not.toContain("image/*");
+    expect(accept).not.toContain("video/*");
+    expect(accept).not.toContain("audio/*");
   });
 
   it("stays open to everything while the format list is unavailable", () => {

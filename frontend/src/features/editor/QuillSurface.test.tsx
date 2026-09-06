@@ -138,6 +138,93 @@ describe("QuillSurface", () => {
     }
   });
 
+  it("inserts attached moment media inline and reports it for gallery dedup", () => {
+    const ref = createRef<QuillSurfaceHandle>();
+    const onUserChange = vi.fn();
+    const onInlineMediaChange = vi.fn();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="add-attached"
+        initialContent={{ ops: [{ insert: "Existing note\n" }] }}
+        formats={[...JOURNIV_DELTA_FORMATS, "image", "video", "audio"]}
+        onUserChange={onUserChange}
+        onInlineMediaChange={onInlineMediaChange}
+      />,
+    );
+    // Reported once on mount: the starting document holds no inline media.
+    expect(onInlineMediaChange).toHaveBeenLastCalledWith([]);
+
+    const signed = "/api/v1/media/img-1/signed?uid=u&exp=1&sig=abc";
+    act(() => ref.current?.insertMedia("image", signed));
+
+    // The signed URL goes into the document verbatim — the backend maps it back
+    // to the media id on save, so no second media record is created.
+    expect(ref.current?.getContents().ops).toContainEqual({
+      insert: { image: signed },
+    });
+    // "user" source: the editor marks the body dirty and keeps the local draft.
+    expect(onUserChange).toHaveBeenCalled();
+    // The gallery is told to drop it, keyed by the stable path (no signature).
+    expect(onInlineMediaChange).toHaveBeenLastCalledWith([
+      "/api/v1/media/img-1/signed",
+    ]);
+  });
+
+  it.each(["image", "video", "audio"] as const)(
+    "insertMedia places a durable %s embed the document guard accepts",
+    (kind) => {
+      const ref = createRef<QuillSurfaceHandle>();
+      render(
+        <QuillSurface
+          ref={ref}
+          editorId={`insert-${kind}`}
+          initialContent={{ ops: [{ insert: "Note\n" }] }}
+          formats={[...JOURNIV_DELTA_FORMATS, "image", "video", "audio"]}
+        />,
+      );
+      const signed = `/api/v1/media/${kind}-1/signed?sig=x`;
+      act(() => ref.current?.insertMedia(kind, signed));
+      // getContents() validates against the surface's own profile, so a returned
+      // delta means the embed round-trips — image via Quill's blot, video/audio
+      // via Journiv's (mediaBlots.ts).
+      expect(ref.current?.getContents().ops).toContainEqual({
+        insert: { [kind]: signed },
+      });
+    },
+  );
+
+  it("leaves a save-then-remove delta the backend can orphan-diff", () => {
+    // The editor sends `content_delta` on every save. `delete_orphaned_media_
+    // for_delta` deletes media present in the previously-saved delta and absent
+    // from the new one — so an inserted-then-removed item is exactly what it
+    // collects, and an item that is never removed is never touched.
+    const ref = createRef<QuillSurfaceHandle>();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="add-then-remove"
+        initialContent={{ ops: [{ insert: "Note\n" }] }}
+        formats={[...JOURNIV_DELTA_FORMATS, "image", "video", "audio"]}
+      />,
+    );
+    const signed = "/api/v1/media/img-9/signed?sig=z";
+    act(() => ref.current?.insertMedia("image", signed));
+
+    // First save would carry the embed (inserted after "Note\n", at index 5).
+    expect(JSON.stringify(ref.current?.getContents())).toContain(signed);
+
+    // Writer removes it again before the next save.
+    const editor = screen.getByLabelText("Entry body");
+    const quill = Quill.find(editor.closest(".jv-prose") as Element) as Quill;
+    act(() => quill.setSelection(5, 1, "user"));
+    expect(ref.current?.getSelectedMedia()?.kind).toBe("image");
+    expect(ref.current?.removeSelectedMedia()).toBe(true);
+
+    // Second save drops it: present in old delta, absent from new → orphaned.
+    expect(JSON.stringify(ref.current?.getContents())).not.toContain(signed);
+  });
+
   it("formats ranged inline and line selections through the imperative adapter", () => {
     const ref = createRef<QuillSurfaceHandle>();
     const stateChanged = vi.fn();

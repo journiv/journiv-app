@@ -30,83 +30,10 @@
   max-width: none;
 }
 
-/* ---- media -------------------------------------------------------------
-   Photographs are never cropped. Until there is a full-image viewer, a
-   cropped preview hides part of a memory with no way to inspect it, so every
-   item is shown whole at its own aspect ratio in a single column. A compact
-   cropped grid becomes acceptable once a viewer exists. */
-
-.jv-media {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  margin-bottom: var(--space-8);
-}
-
-.jv-media__frame {
-  position: relative;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-  background: var(--muted);
-  /* Used when the API reported no dimensions; a solo item with known
-     width/height overrides this with an inline aspect-ratio. */
-  aspect-ratio: 3 / 2;
-  /* Keeps a very tall portrait from taking over the page. `contain` means the
-     whole image still shows, letterboxed, rather than being cut. */
-  max-height: 78svh;
-}
-
-.jv-media__element {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-
-.jv-media__element--contain {
-  object-fit: contain;
-}
-
-.jv-media__placeholder {
-  height: auto;
-  aspect-ratio: 3 / 2;
-  border-radius: var(--radius-md);
-}
-
-.jv-media__note {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--muted-foreground);
-  font-size: 0.78125rem;
-  font-weight: 500;
-}
-
-/* Quiet and inline: known content did not load, but the writing still reads. */
-.jv-media__failure {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin: 0;
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--muted-foreground);
-  font-size: 0.8125rem;
-  font-weight: 500;
-}
-
-.jv-media__audio {
-  padding: var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--muted);
-}
-
-.jv-media__audio .jv-media__element {
-  height: auto;
-}
+/* ---- media -----------------------------------------------------------------
+   The gallery moved to components/journiv/MomentMediaGallery.tsx +
+   momentMedia.css when the Editor became its second consumer. Reader keeps
+   only its own layout here. */
 
 .jv-reader__body-skeleton {
   display: flex;

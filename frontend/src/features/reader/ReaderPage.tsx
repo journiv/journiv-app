@@ -25,7 +25,9 @@ import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toast } from "../../components/ui/toast";
+import { MomentMediaGallery } from "../../components/journiv/MomentMediaGallery";
 import { StatusView } from "../../components/journiv/StatusView";
+import { useMomentMedia } from "../../components/journiv/useMomentMedia";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
@@ -33,8 +35,6 @@ import { planReaderContent, QuillReader } from "../editor/QuillReader";
 import { PromptBanner } from "../prompts/PromptBanner";
 import { scopeSearchFrom } from "../timeline/momentScope";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
-import { EntryMedia } from "./EntryMedia";
-import { useMomentMedia } from "./useMomentMedia";
 import "./reader.css";
 
 // One stable id so the pending toast can be resolved (closed) on settle rather
@@ -318,7 +318,11 @@ export function ReaderPage() {
 
           {prompt.data && <PromptBanner text={prompt.data.text} readOnly />}
 
-          <EntryMedia moment={data} media={media} excludePaths={inlinePaths} />
+          <MomentMediaGallery
+            moment={data}
+            media={media}
+            excludePaths={inlinePaths}
+          />
 
           {hasWriting && entry.isLoading && <ReaderBodySkeleton />}
           {hasWriting && entry.isError && (

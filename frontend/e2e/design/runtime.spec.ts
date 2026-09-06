@@ -203,4 +203,77 @@ test.describe("runtime design in dark mode", () => {
 
     expect(contrast).toBeGreaterThanOrEqual(5);
   });
+
+  /* The recurring dark-mode regression: Minimal Neutral ships `--border` and
+     `--input` at the same lightness as `--muted` / `--secondary` / `--sidebar`,
+     so a resting `outline` control drawn on chrome has no visible edge in dark
+     and stops looking interactive (DESIGN.md #3). tokens.css lifts the two
+     tokens; this guards that they stay distinguishable from the surface behind
+     them. Not a WCAG target — a "quiet but real hairline" floor. */
+  test("RD-005 a resting outline control has a visible edge on dark chrome", async ({
+    page,
+  }) => {
+    await page.goto("/timeline");
+    await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
+
+    const quickLog = page.getByRole("button", { name: "Quick log" });
+    await expect(quickLog).toBeVisible();
+
+    const contrast = await quickLog.evaluate((control) => {
+      const toRgba = (color: string) => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1;
+        canvas.height = 1;
+        const context = canvas.getContext("2d");
+        if (!context) throw new Error("Canvas 2D context is unavailable");
+        context.fillStyle = color;
+        context.fillRect(0, 0, 1, 1);
+        return [...context.getImageData(0, 0, 1, 1).data];
+      };
+      const luminance = ([red, green, blue]: number[]) =>
+        [red, green, blue]
+          .map((channel) => channel / 255)
+          .map((channel) =>
+            channel <= 0.04045
+              ? channel / 12.92
+              : ((channel + 0.055) / 1.055) ** 2.4,
+          )
+          .reduce(
+            (total, channel, index) =>
+              total + channel * [0.2126, 0.7152, 0.0722][index],
+            0,
+          );
+
+      // The surface the button actually sits on — walk up past transparent
+      // backgrounds to the first painted ancestor (the nav pane, `--sidebar`).
+      let surface: HTMLElement | null = control.parentElement;
+      let surfaceColor = "";
+      while (surface) {
+        const value = getComputedStyle(surface).backgroundColor;
+        if (value && value !== "rgba(0, 0, 0, 0)" && value !== "transparent") {
+          surfaceColor = value;
+          break;
+        }
+        surface = surface.parentElement;
+      }
+
+      const surfaceRgb = toRgba(surfaceColor).slice(0, 3);
+      const [red, green, blue, alpha] = toRgba(
+        getComputedStyle(control).borderTopColor,
+      );
+      // Canvas preserves the alpha in a CSS border colour. Contrast is against
+      // the colour actually painted over the control's surface, not its
+      // transparent source channels.
+      const edge = luminance(
+        [red, green, blue].map(
+          (channel, index) =>
+            channel * (alpha / 255) + surfaceRgb[index] * (1 - alpha / 255),
+        ),
+      );
+      const behind = luminance(surfaceRgb);
+      return (Math.max(edge, behind) + 0.05) / (Math.min(edge, behind) + 0.05);
+    });
+
+    expect(contrast).toBeGreaterThanOrEqual(1.15);
+  });
 });

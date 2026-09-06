@@ -203,6 +203,21 @@ const editorSearch = (
       : undefined,
 });
 
+/**
+ * Editor search for the "edit an existing moment" routes. `seedNote` is set by
+ * Quick Log's "Continue as full entry" (docs/features/quicklog.md): the moment
+ * already exists with its short text in `moment.note`, and this asks the editor
+ * to seed that text into the entry body and clear the note on the first save.
+ * It is a plain boolean flag, so an arbitrary value is coerced to `undefined`.
+ */
+const editSearch = (
+  search: Record<string, unknown>,
+): ReturnType<typeof timelineSearch> & { seedNote?: boolean } => ({
+  ...timelineSearch(search),
+  seedNote:
+    search.seedNote === true || search.seedNote === "true" ? true : undefined,
+});
+
 /** Marks routes that own the detail pane. The shell reads this instead of
  *  parsing the pathname, so adding a detail route needs no shell change. */
 const detailPane = { pane: "detail" } as const;
@@ -284,7 +299,7 @@ const timelineNewRoute = createRoute({
 const timelineEditRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/timeline/$momentId/edit",
-  validateSearch: timelineSearch,
+  validateSearch: editSearch,
   staticData: detailPane,
   component: EditorDetail,
 });
@@ -552,7 +567,7 @@ const journalNewRoute = createRoute({
 const journalEditRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/journals/$journalId/$momentId/edit",
-  validateSearch: timelineSearch,
+  validateSearch: editSearch,
   staticData: detailPane,
   component: EditorDetail,
 });

@@ -44,10 +44,14 @@ no restore contract.
 
 ## Media
 
-Inline media stays in prose. EntryMedia is a gallery only for attached media not
-referenced by prose. The moment response supplies thumbnails and media_count;
-the gallery fetches the detailed moment-media endpoint only when media_count is
-positive. The list wins if its result disagrees with the denormalized count.
+Inline media stays in prose. The gallery — `components/journiv/MomentMediaGallery`
+(`variant="content"`, the default) with `useMomentMedia` — shows only attached
+media not referenced by prose. The same component in `variant="tray"` is the
+Editor's attachment tray (docs/features/editor.md); the Reader never uses that.
+The moment response supplies thumbnails and media_count; the gallery fetches the
+detailed moment-media endpoint only when media_count is positive. The list wins
+if its result disagrees with the denormalized count. Reader passes no
+`renderItemAction`, so the gallery is display-only there.
 
 The backend hydrates stored media ids to signed relative URLs for inline Delta
 content. Render that URL, but never write it back in place of the durable id.
@@ -62,6 +66,8 @@ There is no full-screen viewer yet.
 - alt_text is only image alt text, never a visible caption.
 - pending or processing media has a Processing frame; failed media has an
   unavailable frame.
+- image, video and audio render inline; a `media_type` of `unknown` renders as a
+  plain "Attachment" frame rather than vanishing.
 - A failed gallery request is an inline retry notice, not a pane-filling error.
 - A successful empty list with nonzero media_count is quiet stale data.
 - One failed item never hides successful items.

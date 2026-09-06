@@ -1,5 +1,6 @@
 import { Delta } from "quill";
 import type { QuillDelta, QuillOp } from "../../api/generated/types.gen";
+import { mediaPath } from "../../lib/mediaUrl";
 import { validateLinkUrl } from "./linkPolicy";
 
 export const JOURNIV_DELTA_FORMATS = [
@@ -152,11 +153,6 @@ export function inlineMediaRef(value: unknown): InlineMediaRef | null {
 
 function isEmbedOp(value: unknown): boolean {
   return isRecord(value) && isRecord(value.insert);
-}
-
-/** Path portion of a media URL — stable across re-signing. */
-export function mediaPath(source: string): string {
-  return source.split("?")[0] ?? source;
 }
 
 /**

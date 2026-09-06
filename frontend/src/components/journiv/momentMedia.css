@@ -1,0 +1,204 @@
+/* A Moment's media gallery. Shared by the Reader (docs/features/reader.md) and
+   the Editor's attached-media surface (docs/features/editor.md).
+
+   Photographs are never cropped. Until there is a full-image viewer, a cropped
+   preview hides part of a memory with no way to inspect it, so every item is
+   shown whole at its own aspect ratio in a single column. A compact cropped
+   grid becomes acceptable once a viewer exists. */
+
+.jv-media {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-8);
+}
+
+.jv-media__frame {
+  position: relative;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  /* Used when the API reported no dimensions; a solo item with known
+     width/height overrides this with an inline aspect-ratio. */
+  aspect-ratio: 3 / 2;
+  /* Keeps a very tall portrait from taking over the page. `contain` means the
+     whole image still shows, letterboxed, rather than being cut. */
+  max-height: 78svh;
+}
+
+.jv-media__element {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.jv-media__element--contain {
+  object-fit: contain;
+}
+
+.jv-media__placeholder {
+  height: auto;
+  aspect-ratio: 3 / 2;
+  border-radius: var(--radius-md);
+}
+
+.jv-media__note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-foreground);
+  font-size: 0.78125rem;
+  font-weight: 500;
+}
+
+/* Quiet and inline: known content did not load, but the writing still reads. */
+.jv-media__failure {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.jv-media__audio {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.jv-media__audio .jv-media__element {
+  height: auto;
+}
+
+/* ---- per-item action (content variant) -----------------------------------
+   An optional control over a full-size item. The Reader passes no action, so
+   `.jv-media__item` is never emitted there and the gallery is byte-for-byte
+   what it was before. */
+
+.jv-media__item {
+  position: relative;
+}
+
+.jv-media__item-action {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+}
+
+/* ---- tray variant (editor) ----------------------------------------------
+   Media attached to the Moment, shown as a labelled panel of small cropped
+   thumbnails so it reads as source material, not entry content
+   (docs/features/editor.md). */
+
+.jv-media--tray {
+  display: block;
+  margin-bottom: var(--space-6);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+}
+
+.jv-media__tray-head {
+  margin-bottom: var(--space-3);
+}
+
+.jv-media__tray-label {
+  display: block;
+  color: var(--foreground);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.jv-media__tray-hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: 0.78125rem;
+}
+
+.jv-media__tray-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.jv-media__tray-toggle {
+  flex-shrink: 0;
+}
+
+.jv-media__tray-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.jv-media__tray-head .jv-media__tray-summary {
+  margin-top: 2px;
+}
+
+.jv-media__tray-summary + .jv-media__tray-grid {
+  margin-top: var(--space-2);
+}
+
+.jv-media__tile {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--card);
+  color: var(--muted-foreground);
+}
+
+.jv-media__tile img,
+.jv-media__tile video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.jv-media__tile--added {
+  opacity: 0.5;
+}
+
+.jv-media__tile-glyph {
+  display: inline-flex;
+}
+
+.jv-media__tile-badge {
+  position: absolute;
+  inset-block-start: var(--space-1);
+  inset-inline-end: var(--space-1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--overlay-scrim);
+  color: var(--text-on-overlay);
+}
+
+.jv-media__tile-action {
+  position: absolute;
+  inset-block-end: var(--space-1);
+  inset-inline-end: var(--space-1);
+}

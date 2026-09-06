@@ -89,6 +89,12 @@
 
 .jv-nav__new {
   width: 100%;
+  /* Tight to its quieter sibling below; the pair share one block of chrome. */
+  margin-bottom: var(--space-2);
+}
+
+.jv-nav__quick-log {
+  width: 100%;
   margin-bottom: var(--space-4);
 }
 

@@ -7,35 +7,26 @@ import {
   useRouter,
 } from "@tanstack/react-router";
 import { X } from "lucide-react";
-import {
-  createContext,
-  lazy,
-  Suspense,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { sessionStore } from "../../api/auth/session";
 import { currentUserQuery } from "../../api/query/options";
 import { IconButton } from "../../components/ui/icon-button";
 import type { SettingsSection } from "../settings/SettingsModal";
 import { AppSidebar } from "./AppSidebar";
+import { ShellContext } from "./shellContext";
 import { cx } from "../../lib/cx";
 import "./shell.css";
+
+// Re-exported for existing importers; the context itself lives in shellContext
+// to keep the AppShell ↔ AppSidebar module pair free of a cycle.
+export { useShell } from "./shellContext";
 
 const SettingsModal = lazy(async () => ({
   default: (await import("../settings/SettingsModal")).SettingsModal,
 }));
-
-type ShellContextValue = { openNavigation: () => void };
-const ShellContext = createContext<ShellContextValue>({
-  openNavigation: () => {},
-});
-
-/** Panes use this to render the compact navigation affordance in their PageBar. */
-export function useShell() {
-  return useContext(ShellContext);
-}
+const QuickLogSheet = lazy(async () => ({
+  default: (await import("../quicklog/QuickLogSheet")).QuickLogSheet,
+}));
 
 export function AppShell() {
   const location = useLocation();
@@ -52,6 +43,11 @@ export function AppShell() {
     .find((value): value is SettingsSection => Boolean(value));
 
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Quick Log is a single-session capture. Bumping `quickLogKey` on every open
+  // remounts the sheet so its form state and moment identity start clean, while
+  // leaving it mounted on close lets the overlay animate out.
+  const [quickLogOpen, setQuickLogOpen] = useState(false);
+  const [quickLogKey, setQuickLogKey] = useState(0);
   const router = useRouter();
   const queryClient = useQueryClient();
   const currentUser = useQuery(currentUserQuery());
@@ -73,7 +69,13 @@ export function AppShell() {
 
   return (
     <ShellContext.Provider
-      value={{ openNavigation: () => setDrawerOpen(true) }}
+      value={{
+        openNavigation: () => setDrawerOpen(true),
+        openQuickLog: () => {
+          setQuickLogKey((key) => key + 1);
+          setQuickLogOpen(true);
+        },
+      }}
     >
       <div className={cx("jv-shell", detailActive && "is-detail")}>
         <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
@@ -111,6 +113,16 @@ export function AppShell() {
         {settingsSection && (
           <Suspense fallback={null}>
             <SettingsModal section={settingsSection} />
+          </Suspense>
+        )}
+
+        {quickLogKey > 0 && (
+          <Suspense fallback={null}>
+            <QuickLogSheet
+              key={quickLogKey}
+              open={quickLogOpen}
+              onOpenChange={setQuickLogOpen}
+            />
           </Suspense>
         )}
       </div>
