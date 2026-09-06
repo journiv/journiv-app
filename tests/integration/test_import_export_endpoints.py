@@ -9,6 +9,7 @@ from tests.integration.helpers import (
     UNKNOWN_UUID,
     EndpointCase,
     assert_requires_authentication,
+    wait_for_export_completion,
 )
 from tests.lib import ApiUser, JournivApiClient, make_api_user
 
@@ -171,16 +172,13 @@ class TestExportEndpoints:
     ):
         job = api_client.request_export(api_user.access_token)
 
-        # The integration stack runs Celery eagerly, so a freshly created export
-        # is already in a terminal state by the time the request returns. Assert
-        # that precondition explicitly rather than racing a poll loop, so a run
-        # against a real broker fails with a clear message instead of a
-        # confusing 200-vs-409.
-        status_body = api_client.export_status(api_user.access_token, job["id"])
-        assert status_body["status"] not in {"pending", "running"}, (
-            f"expected the eager worker to finish the export, got "
-            f"{status_body['status']!r}"
+        # Let the worker take the job to a terminal state, then confirm a
+        # finished export can no longer be cancelled. The job is queued to
+        # Celery, so poll rather than assuming synchronous completion.
+        finished = wait_for_export_completion(
+            api_client, api_user.access_token, job["id"]
         )
+        assert finished["status"] not in {"pending", "running"}
 
         response = api_client.request(
             "POST",
