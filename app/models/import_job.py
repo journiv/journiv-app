@@ -126,6 +126,10 @@ class ImportJob(BaseModel, table=True):
 
     def mark_completed(self, result_data: Optional[Dict[str, Any]] = None):
         """Mark job as completed with results."""
+        # A cancellation that landed while the worker was finishing wins: never
+        # let a late success flip a cancelled job back to completed.
+        if self.status == JobStatus.CANCELLED:
+            return
         self.status = JobStatus.COMPLETED
         self.progress = 100
         if result_data:
@@ -134,6 +138,8 @@ class ImportJob(BaseModel, table=True):
 
     def mark_failed(self, error_message: str):
         """Mark job as failed with error."""
+        if self.status == JobStatus.CANCELLED:
+            return
         self.status = JobStatus.FAILED
         if self.errors is None:
             self.errors = []

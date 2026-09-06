@@ -281,6 +281,7 @@ class ExportService:
         export_data: JournivExportDTO,
         user_id: UUID,
         include_media: bool = True,
+        cancellation_check: Optional[Callable[[], None]] = None,
     ) -> tuple[Path, int, Dict[str, Any]]:
         """
         Create ZIP archive from export data.
@@ -289,6 +290,8 @@ class ExportService:
             export_data: Export data to package
             user_id: User ID (for file naming)
             include_media: Whether to include media files
+            cancellation_check: Optional callable invoked between media files so a
+                long archive can be abandoned promptly when the job is cancelled.
 
         Returns:
             Tuple of (zip_path, file_size, stats)
@@ -296,6 +299,9 @@ class ExportService:
         Raises:
             IOError: If ZIP creation fails
         """
+        if cancellation_check is not None:
+            cancellation_check()
+
         # Create export directory if needed
         export_dir = Path(settings.export_dir)
         export_dir.mkdir(parents=True, exist_ok=True)
@@ -337,21 +343,34 @@ class ExportService:
                 data_file_path=temp_data_path,
                 media_files=media_files,
                 data_filename=ExportConfig.DATA_FILENAME,
+                cancellation_check=cancellation_check,
             )
         finally:
             if temp_data_path and temp_data_path.exists():
                 temp_data_path.unlink(missing_ok=True)
 
-        # Update stats
+        # Update stats. Start from the full content breakdown computed while
+        # building the export (moods, activities, people, goals, …) so the
+        # persisted job.result_data can describe everything the archive holds,
+        # then overlay the counts only known once the ZIP exists.
         stats = {
-            "journal_count": len(export_data.journals),
-            "entry_count": sum(1 for m in export_data.moments if m.entry is not None),
-            "media_count": len(media_files),
-            "person_group_count": len(export_data.person_groups),
-            "missing_media_count": len(self._missing_media_files),
-            "missing_media_files": list(self._missing_media_files),
-            "file_size": file_size,
+            key: value
+            for key, value in (export_data.stats or {}).items()
+            if key != "export_size_estimate"  # placeholder string, replaced by file_size
         }
+        stats.update(
+            {
+                "journal_count": len(export_data.journals),
+                "entry_count": sum(
+                    1 for m in export_data.moments if m.entry is not None
+                ),
+                "media_count": len(media_files),
+                "person_group_count": len(export_data.person_groups),
+                "missing_media_count": len(self._missing_media_files),
+                "missing_media_files": list(self._missing_media_files),
+                "file_size": file_size,
+            }
+        )
 
         log_info(f"Created export ZIP: {zip_path} ({file_size} bytes)", user_id=str(user_id), file_size=file_size, media_count=len(media_files))
         return zip_path, file_size, stats

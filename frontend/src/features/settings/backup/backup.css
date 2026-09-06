@@ -1,0 +1,135 @@
+/* Import & export (docs/features/settings.md).
+   The config lives in a stock `SettingsSection` card; what needs product CSS is
+   the job-state panels between the card and the history table, the journal
+   picker's scroll box, and the history row's status cell. */
+
+/* A job-state panel — running progress, or a settled result — is a bounded
+   chrome surface on the `--muted` settings canvas, like a section or a
+   pane-level state (DESIGN.md, "Surfaces"). */
+.jv-backup-progress,
+.jv-backup-result {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  box-shadow: var(--shadow-xs);
+}
+
+.jv-backup-progress + .jv-backup-result,
+.jv-backup-result + .jv-backup-result {
+  margin-top: var(--space-6);
+}
+
+/* The running panel and its cancel control read as one unit. */
+.jv-backup-jobpanel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+/* "Load older jobs" sits under the history table, inside its section card. */
+.jv-backup-loadmore {
+  margin-top: var(--space-4);
+}
+
+.jv-backup-progress__count {
+  margin: var(--space-2) 0 0;
+  color: var(--muted-foreground);
+}
+
+.jv-backup-result__headline {
+  margin: 0 0 var(--space-3);
+  font-weight: 600;
+}
+
+.jv-backup-result__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  list-style: none;
+  color: var(--muted-foreground);
+}
+
+.jv-backup-result__stats > li {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.jv-backup-result__warn {
+  color: var(--muted-foreground);
+}
+
+/* The "choose journals" checklist. A capped scroll box so a long journal list
+   doesn't push the Create action out of view; the rows are stock `Field`s. */
+.jv-backup-journals {
+  max-height: 15rem;
+  overflow-y: auto;
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.jv-backup-journals__archived {
+  color: var(--muted-foreground);
+}
+
+.jv-backup-table__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.jv-backup-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  white-space: nowrap;
+}
+
+.jv-backup-status--ok {
+  color: var(--success);
+}
+
+.jv-backup-status--warn {
+  color: var(--foreground);
+}
+
+.jv-backup-status--bad {
+  color: var(--destructive);
+}
+
+.jv-backup-status--busy {
+  color: var(--muted-foreground);
+}
+
+/* Warnings disclosure inside the import result panel. Native <details>; only
+   the summary affordance and the message list need styling. */
+.jv-backup-warnings {
+  margin-top: var(--space-2);
+}
+
+.jv-backup-warnings > summary {
+  cursor: pointer;
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.jv-backup-warnings__categories,
+.jv-backup-warnings__messages {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-4);
+  color: var(--muted-foreground);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.jv-backup-warnings__messages {
+  max-height: 12rem;
+  overflow-y: auto;
+}

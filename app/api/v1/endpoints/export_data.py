@@ -3,12 +3,13 @@ Export endpoints for creating data exports.
 """
 import os
 import uuid
+from datetime import datetime
 from pathlib import Path
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Literal, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
-from sqlmodel import Session, col, select
+from sqlmodel import Session, and_, col, or_, select
 
 from app.api.dependencies import get_current_user
 from app.core.config import settings
@@ -19,6 +20,7 @@ from app.models.export_job import ExportJob
 from app.models.user import User
 from app.schemas.dto import (
     ExportJobCreateRequest,
+    ExportJobListResponse,
     ExportJobStatusResponse,
 )
 from app.schemas.media import MediaSignedUrlResponse
@@ -397,7 +399,7 @@ async def download_export_signed(
         raise HTTPException(status_code=500, detail="An error occurred while downloading export") from None
 @router.get(
     "/",
-    response_model=List[ExportJobStatusResponse],
+    response_model=Union[List[ExportJobStatusResponse], ExportJobListResponse],
     responses={
         200: {"description": "List of export jobs"},
         401: {"description": "Not authenticated"},
@@ -410,6 +412,9 @@ async def list_exports(
     session: Annotated[Session, Depends(get_session)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
     offset: Annotated[int, Query(ge=0)] = 0,
+    cursor_created_at: Annotated[datetime | None, Query()] = None,
+    cursor_id: Annotated[uuid.UUID | None, Query()] = None,
+    page_format: Annotated[Literal["page"] | None, Query(alias="format")] = None,
 ):
     """
     List export jobs for current user.
@@ -418,17 +423,34 @@ async def list_exports(
     """
     try:
 
-        jobs = list(
-            session.exec(
-                select(ExportJob)
-                .where(ExportJob.user_id == current_user.id)
-                .order_by(col(ExportJob.created_at).desc())
-                .offset(offset)
-                .limit(limit)
+        stmt = select(ExportJob).where(ExportJob.user_id == current_user.id)
+        if (
+            page_format == "page"
+            and cursor_created_at is not None
+            and cursor_id is not None
+        ):
+            stmt = stmt.where(
+                or_(
+                    col(ExportJob.created_at) < cursor_created_at,
+                    and_(
+                        col(ExportJob.created_at) == cursor_created_at,
+                        col(ExportJob.id) < cursor_id,
+                    ),
+                )
             )
-        )
 
-        return [
+        stmt = stmt.order_by(
+            col(ExportJob.created_at).desc(), col(ExportJob.id).desc()
+        )
+        if page_format == "page":
+            jobs = list(session.exec(stmt.limit(limit + 1)))
+        else:
+            # The Flutter client still consumes the legacy bare-array contract.
+            jobs = list(session.exec(stmt.offset(offset).limit(limit)))
+
+        has_more = page_format == "page" and len(jobs) > limit
+        jobs = jobs[:limit]
+        items = [
             ExportJobStatusResponse(
                 id=str(job.id),
                 status=job.status.value,
@@ -448,6 +470,15 @@ async def list_exports(
             )
             for job in jobs
         ]
+
+        if page_format != "page":
+            return items
+
+        return ExportJobListResponse(
+            items=items,
+            next_cursor_created_at=jobs[-1].created_at if has_more else None,
+            next_cursor_id=str(jobs[-1].id) if has_more else None,
+        )
 
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
@@ -530,3 +561,70 @@ async def delete_export_job(
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while deleting export job") from None
+
+
+@router.post(
+    "/{job_id}/cancel",
+    response_model=ExportJobStatusResponse,
+    responses={
+        200: {"description": "Cancellation requested; job is now cancelled"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized"},
+        404: {"description": "Export job not found"},
+        409: {"description": "Job already finished"},
+    },
+)
+async def cancel_export_job(
+    job_id: uuid.UUID,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    """Request cooperative cancellation of a pending or running export."""
+    job = session.exec(select(ExportJob).where(ExportJob.id == job_id)).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Export job not found")
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to cancel this export job",
+        )
+    if job.status in {
+        JobStatus.COMPLETED,
+        JobStatus.PARTIAL,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job already finished (status: {job.status.value})",
+        )
+
+    job.mark_cancelled()
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+
+    log_user_action(
+        current_user.email,
+        f"cancelled export job {job.id}",
+        request_id=None,
+    )
+
+    return ExportJobStatusResponse(
+        id=str(job.id),
+        status=job.status.value,
+        progress=job.progress,
+        total_items=job.total_items,
+        processed_items=job.processed_items,
+        created_at=job.created_at,
+        completed_at=job.completed_at,
+        result_data=job.result_data,
+        errors=job.errors,
+        warnings=job.warnings,
+        export_type=job.export_type.value,
+        include_media=job.include_media,
+        file_path=None,
+        file_size=job.file_size,
+        download_url=None,
+    )

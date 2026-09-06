@@ -613,6 +613,28 @@ class ImportJobStatusResponse(JobStatusResponse):
     source_type: ImportSourceType = Field(..., description="Source type: journiv, markdown, dayone")
 
 
+class ExportJobListResponse(BaseModel):
+    """A keyset-paginated page of export jobs."""
+
+    items: List[ExportJobStatusResponse]
+    next_cursor_created_at: Optional[datetime] = Field(
+        None,
+        description="Pass back as cursor_created_at; null when no more pages",
+    )
+    next_cursor_id: Optional[str] = Field(
+        None,
+        description="Pass back as cursor_id; null when no more pages",
+    )
+
+
+class ImportJobListResponse(BaseModel):
+    """A keyset-paginated page of import jobs."""
+
+    items: List[ImportJobStatusResponse]
+    next_cursor_created_at: Optional[datetime] = None
+    next_cursor_id: Optional[str] = None
+
+
 # ============================================================================
 # Import Result DTOs
 # ============================================================================

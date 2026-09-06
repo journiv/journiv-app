@@ -9,6 +9,7 @@ from tests.integration.helpers import (
     UNKNOWN_UUID,
     EndpointCase,
     assert_requires_authentication,
+    wait_for_export_completion,
 )
 from tests.lib import ApiUser, JournivApiClient, make_api_user
 
@@ -101,6 +102,91 @@ class TestExportEndpoints:
         )
         assert response.status_code == 404
 
+    def test_export_history_is_keyset_paginated(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        ids = [
+            api_client.request_export(api_user.access_token)["id"]
+            for _ in range(3)
+        ]
+
+        page1 = api_client.list_exports_page(api_user.access_token, limit=2)
+        assert len(page1["items"]) == 2
+        assert page1["next_cursor_created_at"] is not None
+        assert page1["next_cursor_id"] is not None
+
+        page2 = api_client.list_exports_page(
+            api_user.access_token,
+            limit=2,
+            cursor_created_at=page1["next_cursor_created_at"],
+            cursor_id=page1["next_cursor_id"],
+        )
+        assert len(page2["items"]) == 1
+        assert page2["next_cursor_created_at"] is None
+        assert page2["next_cursor_id"] is None
+
+        items = page1["items"] + page2["items"]
+        assert sorted(item["id"] for item in items) == sorted(ids)
+        ordering = [(item["created_at"], item["id"]) for item in items]
+        assert ordering == sorted(ordering, reverse=True)
+
+    def test_legacy_export_history_contract_remains_bare_array(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        exports = api_client.request(
+            "GET",
+            "/export/",
+            token=api_user.access_token,
+            params={"limit": 1, "offset": 0},
+        )
+        assert exports.status_code == 200
+        assert isinstance(exports.json(), list)
+
+    def test_cancel_export_auth_and_ownership(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        job = api_client.request_export(api_user.access_token)
+        unauthorized = api_client.request("POST", f"/export/{job['id']}/cancel")
+        assert unauthorized.status_code == 401
+
+        other_user = make_api_user(api_client)
+        forbidden = api_client.request(
+            "POST",
+            f"/export/{job['id']}/cancel",
+            token=other_user.access_token,
+        )
+        assert forbidden.status_code == 403
+
+    def test_cancel_missing_export(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        response = api_client.request(
+            "POST",
+            f"/export/{uuid.uuid4()}/cancel",
+            token=api_user.access_token,
+        )
+        assert response.status_code == 404
+
+    def test_cancel_finished_export_conflicts(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        job = api_client.request_export(api_user.access_token)
+
+        # Let the worker take the job to a terminal state, then confirm a
+        # finished export can no longer be cancelled. The job is queued to
+        # Celery, so poll rather than assuming synchronous completion.
+        finished = wait_for_export_completion(
+            api_client, api_user.access_token, job["id"]
+        )
+        assert finished["status"] not in {"pending", "running"}
+
+        response = api_client.request(
+            "POST",
+            f"/export/{job['id']}/cancel",
+            token=api_user.access_token,
+        )
+        assert response.status_code == 409
+
     def test_export_requires_auth(self, api_client: JournivApiClient):
         assert_requires_authentication(
             api_client,
@@ -110,6 +196,8 @@ class TestExportEndpoints:
                     "/export/",
                     json={"export_type": "full", "include_media": False},
                 ),
+                EndpointCase("GET", "/export/", params={"format": "page"}),
+                EndpointCase("POST", f"/export/{UNKNOWN_UUID}/cancel"),
             ],
         )
 
@@ -185,6 +273,58 @@ class TestImportEndpoints:
         )
         assert response.status_code in (404, 409)
 
+    def test_import_history_is_keyset_paginated(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        ids = [
+            api_client.upload_import(
+                api_user.access_token,
+                file_bytes=_tiny_zip_with_data(),
+                expected=(202,),
+            ).json()["id"]
+            for _ in range(3)
+        ]
+
+        page1 = api_client.list_imports_page(api_user.access_token, limit=2)
+        page2 = api_client.list_imports_page(
+            api_user.access_token,
+            limit=2,
+            cursor_created_at=page1["next_cursor_created_at"],
+            cursor_id=page1["next_cursor_id"],
+        )
+
+        assert len(page1["items"]) == 2
+        assert page1["next_cursor_id"] is not None
+        assert len(page2["items"]) == 1
+        assert page2["next_cursor_created_at"] is None
+        assert page2["next_cursor_id"] is None
+        items = page1["items"] + page2["items"]
+        assert sorted(item["id"] for item in items) == sorted(ids)
+        ordering = [(item["created_at"], item["id"]) for item in items]
+        assert ordering == sorted(ordering, reverse=True)
+
+    def test_legacy_import_history_contract_remains_bare_array(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        imports = api_client.request(
+            "GET",
+            "/import/",
+            token=api_user.access_token,
+            params={"limit": 1, "offset": 0},
+        )
+        assert imports.status_code == 200
+        assert isinstance(imports.json(), list)
+
+    def test_cancel_missing_import(
+        self, api_client: JournivApiClient, api_user: ApiUser
+    ):
+        response = api_client.request(
+            "POST",
+            f"/import/{uuid.uuid4()}/cancel",
+            token=api_user.access_token,
+        )
+        assert response.status_code == 404
+
     def test_import_requires_authentication(self, api_client: JournivApiClient):
         assert_requires_authentication(
             api_client,
@@ -199,5 +339,6 @@ class TestImportEndpoints:
                 ),
                 EndpointCase("GET", "/import/"),
                 EndpointCase("GET", f"/import/{UNKNOWN_UUID}"),
+                EndpointCase("POST", f"/import/{UNKNOWN_UUID}/cancel"),
             ],
         )

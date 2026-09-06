@@ -199,6 +199,60 @@ export const importJobQuery = (id: string) =>
       return status === "pending" || status === "running" ? 1000 : false;
     },
   });
+/** Recent export jobs for the Settings → Export history. Polls every few
+ *  seconds only while a listed job is still `pending`/`running`, so an
+ *  export started here (or in another tab) keeps advancing without the
+ *  per-job query, and settles to idle once nothing is active. */
+export const exportJobsQuery = () =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.exportJobs,
+    queryFn: ({ pageParam }) => api.listExports({ ...(pageParam ?? {}) }),
+    initialPageParam: undefined as
+      | { cursor_created_at?: string; cursor_id?: string }
+      | undefined,
+    getNextPageParam: (page) =>
+      page.next_cursor_created_at && page.next_cursor_id
+        ? {
+            cursor_created_at: page.next_cursor_created_at,
+            cursor_id: page.next_cursor_id,
+          }
+        : undefined,
+    staleTime: 15_000,
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) =>
+        page.items.some(
+          (job) => job.status === "pending" || job.status === "running",
+        ),
+      )
+        ? 3000
+        : false,
+  });
+/** Recent import jobs for the Settings → Import history. Same polling rule as
+ *  {@link exportJobsQuery}. */
+export const importJobsQuery = () =>
+  infiniteQueryOptions({
+    queryKey: queryKeys.importJobs,
+    queryFn: ({ pageParam }) => api.listImports({ ...(pageParam ?? {}) }),
+    initialPageParam: undefined as
+      | { cursor_created_at?: string; cursor_id?: string }
+      | undefined,
+    getNextPageParam: (page) =>
+      page.next_cursor_created_at && page.next_cursor_id
+        ? {
+            cursor_created_at: page.next_cursor_created_at,
+            cursor_id: page.next_cursor_id,
+          }
+        : undefined,
+    staleTime: 15_000,
+    refetchInterval: (query) =>
+      query.state.data?.pages.some((page) =>
+        page.items.some(
+          (job) => job.status === "pending" || job.status === "running",
+        ),
+      )
+        ? 3000
+        : false,
+  });
 /** A fresh signed download URL for a completed export. Enable only once the job
  *  reports `completed`; the signature is short-lived, so it is not cached. */
 export const exportDownloadQuery = (id: string) =>

@@ -9,10 +9,11 @@ from sqlmodel import Session
 from app.core.celery_app import celery_app
 from app.core.database import engine
 from app.core.logging_config import log_error, log_info
-from app.models.enums import ImportSourceType
+from app.models.enums import ImportSourceType, JobStatus
 from app.models.import_job import ImportJob
 from app.services.import_service import ImportService
 from app.utils.import_export import validate_import_data
+from app.utils.import_export.cancellation import JobCancelledError, raise_if_cancelled
 from app.utils.import_export.constants import ProgressStages
 from app.utils.import_export.progress_utils import create_throttled_progress_callback
 
@@ -40,6 +41,13 @@ def process_import_job(self, job_id: str):
                     "status": "not_found",
                     "error": "Job not found"
                 }
+
+            if job.status == JobStatus.CANCELLED:
+                log_info(
+                    f"Import job {job_id} was cancelled before it started",
+                    job_id=job_id,
+                )
+                return {"status": "cancelled"}
 
             log_info(f"Processing import job {job_id}", job_id=job_id, user_id=str(job.user_id), source_type=job.source_type.value)
 
@@ -94,6 +102,9 @@ def process_import_job(self, job_id: str):
                 end_progress=ProgressStages.IMPORT_FINALIZING,
                 commit_interval=10,
                 percentage_threshold=5,
+                cancellation_check=lambda: raise_if_cancelled(
+                    db, ImportJob, job_uuid
+                ),
             )
 
             # Import based on source type
@@ -133,6 +144,10 @@ def process_import_job(self, job_id: str):
             job.set_progress(max(current_progress, ProgressStages.IMPORT_FINALIZING))
             db.commit()
 
+            # A cancellation that arrived after the last import checkpoint must
+            # still win over the success path below (re-reads the row).
+            raise_if_cancelled(db, ImportJob, job_uuid)
+
             # Build result data
             result_data = summary.model_dump()
 
@@ -160,6 +175,16 @@ def process_import_job(self, job_id: str):
                 "summary": result_data,
             }
 
+        except JobCancelledError:
+            db.rollback()
+            job = db.get(ImportJob, job_uuid)
+            if job and job.status != JobStatus.CANCELLED:
+                job.mark_cancelled()
+            db.commit()
+            if job and job.file_path:
+                ImportService(db).cleanup_temp_files(Path(job.file_path))
+            log_info(f"Import job {job_id} cancelled", job_id=job_id)
+            return {"status": "cancelled"}
         except Exception as e:
             # Mark as failed
             user_id = None

@@ -1,6 +1,7 @@
 """
 Import/Export utility modules.
 """
+from .cancellation import JobCancelledError, raise_if_cancelled
 from .date_utils import ensure_utc, format_datetime, normalize_datetime, parse_datetime
 from .id_mapper import IDMapper
 from .media_handler import MediaHandler
@@ -14,9 +15,11 @@ __all__ = [
     "ensure_utc",
     "format_datetime",
     "IDMapper",
+    "JobCancelledError",
     "MediaHandler",
     "normalize_datetime",
     "parse_datetime",
+    "raise_if_cancelled",
     "validate_export_data",
     "validate_import_data",
     "ZipHandler",

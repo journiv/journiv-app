@@ -107,6 +107,10 @@ class ExportJob(BaseModel, table=True):
 
     def mark_completed(self, file_path: str, file_size: int, result_data: Dict[str, Any]):
         """Mark job as completed with results."""
+        # A cancellation that landed while the worker was finishing wins: never
+        # let a late success flip a cancelled job back to completed.
+        if self.status == JobStatus.CANCELLED:
+            return
         self.status = JobStatus.COMPLETED
         self.progress = 100
         self.file_path = file_path
@@ -116,6 +120,8 @@ class ExportJob(BaseModel, table=True):
 
     def mark_failed(self, error_message: str):
         """Mark job as failed with error."""
+        if self.status == JobStatus.CANCELLED:
+            return
         self.status = JobStatus.FAILED
         if self.errors is None:
             self.errors = []

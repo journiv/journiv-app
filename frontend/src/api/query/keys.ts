@@ -97,7 +97,13 @@ export const queryKeys = {
     ["moment", momentId, "immich-people-suggestions"] as const,
   exportJob: (id: string) => ["export", id] as const,
   exportDownload: (id: string) => ["export", id, "signed"] as const,
+  /** Recent export jobs — the "Recent exports" history table. Sibling of the
+   *  per-job key so a create/delete invalidates the list without touching a
+   *  single job that is still polling. */
+  exportJobs: ["export", "list"] as const,
   importJob: (id: string) => ["import", id] as const,
+  /** Recent import jobs — the "Recent imports" history table. */
+  importJobs: ["import", "list"] as const,
   tagSearch: (q: string) => ["tags", "search", q] as const,
   /** Aggregate tag analytics (Journiv Plus). */
   tagAnalytics: ["tags", "analytics"] as const,

@@ -295,16 +295,16 @@ class ImportService:
             media_dir=final_media_dir,
         )
 
+        # Reconcile journal references only. Progress is intentionally NOT
+        # reported here: this is a fast in-memory pass, and driving the shared
+        # throttled callback to 100% now would leave its baseline saturated so
+        # that import_journiv_data's real per-entry loop never commits (or
+        # checks for cancellation) again.
         journal_map = {j.external_id: j for j in export_dto.journals}
-        entries_processed = 0
         for moment in export_dto.moments:
             entry = moment.entry
             if entry is None or not entry.external_id:
                 continue
-            entries_processed += 1
-            if progress_callback and total_entries:
-                progress_callback(entries_processed, total_entries)
-
             if entry.journal_external_id and entry.journal_external_id not in journal_map:
                 entry.journal_external_id = None
 
