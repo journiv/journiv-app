@@ -110,6 +110,12 @@ export function ImportPage() {
     !fileError &&
     !busy &&
     !upload.isPending &&
+    // Don't start an upload whose size we can't check yet — `maxBytes` is 0
+    // until the instance config resolves, which would skip the limit silently.
+    Boolean(config.data) &&
+    // Until history loads it's unknown whether an import is already running
+    // from another visit or tab.
+    !history.isLoading &&
     (!jobId || settled);
 
   return (
@@ -185,6 +191,13 @@ export function ImportPage() {
           ) : null}
         </SettingsRow>
       </SettingsSection>
+
+      {upload.isError ? (
+        <p className="jv-settings__alert" role="alert">
+          The import couldn’t be started. Check the file and use Start import to
+          try again.
+        </p>
+      ) : null}
 
       {trackedId && inProgress && tracked.data ? (
         <div className="jv-backup-jobpanel">

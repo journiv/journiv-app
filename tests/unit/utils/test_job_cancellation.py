@@ -45,6 +45,13 @@ def test_raise_if_cancelled_detects_cancelled_job() -> None:
         with pytest.raises(JobCancelledError):
             raise_if_cancelled(db, ExportJob, cancelled.id)
 
+        # A job deleted mid-run (the delete endpoint allows removing a PENDING
+        # job) must also abort the worker, so no orphaned archive is produced.
+        db.delete(running)
+        db.commit()
+        with pytest.raises(JobCancelledError):
+            raise_if_cancelled(db, ExportJob, running.id)
+
 
 @pytest.mark.asyncio
 async def test_cancel_export_endpoint_marks_pending_job_cancelled() -> None:

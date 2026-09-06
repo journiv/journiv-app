@@ -142,7 +142,9 @@ export function ExportPage() {
           jobId && !failed && !cancelled && !ready ? undefined : (
             <Button
               variant="default"
-              disabled={create.isPending || busy || !valid}
+              // Hold the action until history loads: only then is it known
+              // whether an export is already running from another visit or tab.
+              disabled={create.isPending || busy || !valid || history.isLoading}
               onClick={() => {
                 setJobId("");
                 create.mutate();
@@ -242,6 +244,12 @@ export function ExportPage() {
           />
         </SettingsRow>
       </SettingsSection>
+
+      {create.isError ? (
+        <p className="jv-settings__alert" role="alert">
+          The export couldn’t be started. Use Create export to try again.
+        </p>
+      ) : null}
 
       {trackedId && inProgress && tracked.data ? (
         <div className="jv-backup-jobpanel">
