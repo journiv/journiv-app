@@ -1,6 +1,7 @@
 """
 Celery tasks for export operations.
 """
+from pathlib import Path
 from uuid import UUID
 
 from sqlmodel import Session
@@ -8,8 +9,10 @@ from sqlmodel import Session
 from app.core.celery_app import celery_app
 from app.core.database import engine
 from app.core.logging_config import log_error, log_info, log_warning
+from app.models.enums import JobStatus
 from app.models.export_job import ExportJob
 from app.services.export_service import ExportService
+from app.utils.import_export.cancellation import JobCancelledError, raise_if_cancelled
 from app.utils.import_export.constants import ProgressStages
 from app.utils.import_export.progress_utils import create_throttled_progress_callback
 
@@ -38,7 +41,18 @@ def process_export_job(job_id: str):
                     "error": "Job not found"
                 }
 
+            if job.status == JobStatus.CANCELLED:
+                log_info(
+                    f"Export job {job_id} was cancelled before it started",
+                    job_id=job_id,
+                )
+                return {"status": "cancelled"}
+
             log_info(f"Processing export job {job_id}", job_id=job_id, user_id=str(job.user_id))
+
+            def check_cancelled() -> None:
+                """Abort the job at the next safe point if it was cancelled."""
+                raise_if_cancelled(db, ExportJob, job_uuid)
 
             # Mark as running
             job.mark_running()
@@ -68,6 +82,7 @@ def process_export_job(job_id: str):
                 end_progress=ProgressStages.EXPORT_CREATING_ZIP,
                 commit_interval=10,
                 percentage_threshold=5,
+                cancellation_check=check_cancelled,
             )
 
             # Build export data
@@ -85,17 +100,23 @@ def process_export_job(job_id: str):
             job.set_progress(max(current_progress, ProgressStages.EXPORT_CREATING_ZIP))
             db.commit()
 
-            # Create ZIP archive
+            # Create ZIP archive. The media copy is the long pole of a real
+            # export, so the archiver checks for cancellation between files.
             zip_path, file_size, stats = export_service.create_export_zip(
                 export_data=export_data,
                 user_id=job.user_id,
                 include_media=job.include_media,
+                cancellation_check=check_cancelled,
             )
 
             # Update progress: Finalizing (ensure minimum, but don't regress)
             current_progress = job.progress or ProgressStages.EXPORT_FINALIZING
             job.set_progress(max(current_progress, ProgressStages.EXPORT_FINALIZING))
             db.commit()
+
+            # A cancellation that arrived during the zip step must still win over
+            # the success path below (re-reads the row before committing).
+            check_cancelled()
 
             # Mark as completed
             job.total_items = job.total_items or stats.get("entry_count", 0)
@@ -123,6 +144,25 @@ def process_export_job(job_id: str):
                 "stats": stats,
             }
 
+        except JobCancelledError:
+            db.rollback()
+            # Drop a finished archive that the cancellation raced past, so a
+            # cancelled job never leaves a downloadable file behind.
+            orphan_zip = locals().get("zip_path")
+            if orphan_zip is not None:
+                try:
+                    Path(orphan_zip).unlink(missing_ok=True)
+                except OSError as cleanup_error:
+                    log_warning(
+                        f"Could not remove cancelled export archive: {cleanup_error}",
+                        job_id=job_id,
+                    )
+            job = db.get(ExportJob, job_uuid)
+            if job and job.status != JobStatus.CANCELLED:
+                job.mark_cancelled()
+            db.commit()
+            log_info(f"Export job {job_id} cancelled", job_id=job_id)
+            return {"status": "cancelled"}
         except Exception as e:
             # Mark as failed
             user_id = None

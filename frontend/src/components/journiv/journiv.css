@@ -310,6 +310,14 @@
 
 .jv-overlay__body {
   min-height: 0;
+  /* `overflow-y: auto` makes this a scroll container, which clips to the
+   * padding box on BOTH axes (and defeats `overflow-clip-margin`). A child
+   * pressed flush to the edge — a bordered Card — would have its 1px ring shorn
+   * off every side, leaving only the corners. The padding gives that ring room
+   * to paint; the matching negative margin cancels it for layout, so the grid
+   * gap and every existing overlay keep their exact spacing. */
+  padding: var(--space-2);
+  margin: calc(var(--space-2) * -1);
   overflow-x: clip;
   overflow-y: auto;
   /* Keeps a scroll gesture inside the sheet from becoming a drag on it. */

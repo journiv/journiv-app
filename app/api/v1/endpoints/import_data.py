@@ -2,7 +2,8 @@
 Import endpoints for importing data into Journiv.
 """
 import uuid
-from typing import Annotated, List
+from datetime import datetime
+from typing import Annotated, List, Literal, Union
 
 from fastapi import (
     APIRouter,
@@ -11,18 +12,19 @@ from fastapi import (
     Form,
     HTTPException,
     Query,
+    Request,
     UploadFile,
     status,
 )
-from sqlmodel import Session, col, select
+from sqlmodel import Session, and_, col, or_, select
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
 from app.core.logging_config import log_error, log_user_action
-from app.models.enums import ImportSourceType
+from app.models.enums import ImportSourceType, JobStatus
 from app.models.import_job import ImportJob
 from app.models.user import User
-from app.schemas.dto import ImportJobStatusResponse
+from app.schemas.dto import ImportJobListResponse, ImportJobStatusResponse
 from app.services.import_service import ImportService
 from app.tasks.import_tasks import process_import_job
 
@@ -201,7 +203,7 @@ def get_import_status(
 
 @router.get(
     "/",
-    response_model=List[ImportJobStatusResponse],
+    response_model=Union[List[ImportJobStatusResponse], ImportJobListResponse],
     responses={
         200: {"description": "List of import jobs"},
         401: {"description": "Not authenticated"},
@@ -213,6 +215,11 @@ def list_imports(
     session: Annotated[Session, Depends(get_session)],
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    cursor_created_at: Annotated[datetime | None, Query()] = None,
+    cursor_id: Annotated[uuid.UUID | None, Query()] = None,
+    page_format: Annotated[
+        Literal["page"] | None, Query(alias="format")
+    ] = None,
 ):
     """
     List import jobs for current user.
@@ -221,17 +228,34 @@ def list_imports(
     """
     try:
 
-        jobs = list(
-            session.exec(
-                select(ImportJob)
-                .where(ImportJob.user_id == current_user.id)
-                .order_by(col(ImportJob.created_at).desc())
-                .offset(offset)
-                .limit(limit)
+        stmt = select(ImportJob).where(ImportJob.user_id == current_user.id)
+        if (
+            page_format == "page"
+            and cursor_created_at is not None
+            and cursor_id is not None
+        ):
+            stmt = stmt.where(
+                or_(
+                    col(ImportJob.created_at) < cursor_created_at,
+                    and_(
+                        col(ImportJob.created_at) == cursor_created_at,
+                        col(ImportJob.id) < cursor_id,
+                    ),
+                )
             )
-        )
 
-        return [
+        stmt = stmt.order_by(
+            col(ImportJob.created_at).desc(), col(ImportJob.id).desc()
+        )
+        if page_format == "page":
+            jobs = list(session.exec(stmt.limit(limit + 1)))
+        else:
+            # Preserve the legacy Flutter client's offset-based bare array.
+            jobs = list(session.exec(stmt.offset(offset).limit(limit)))
+
+        has_more = page_format == "page" and len(jobs) > limit
+        jobs = jobs[:limit]
+        items = [
             ImportJobStatusResponse(
                 id=str(job.id),
                 status=job.status.value,
@@ -247,6 +271,15 @@ def list_imports(
             )
             for job in jobs
         ]
+
+        if page_format != "page":
+            return items
+
+        return ImportJobListResponse(
+            items=items,
+            next_cursor_created_at=jobs[-1].created_at if has_more else None,
+            next_cursor_id=str(jobs[-1].id) if has_more else None,
+        )
 
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email, context="list_imports")
@@ -290,7 +323,6 @@ def delete_import_job(
             raise HTTPException(status_code=403, detail="Not authorized to delete this import job")
 
         # Check if job is running
-        from app.models.enums import JobStatus
         if job.status == JobStatus.RUNNING:
             raise HTTPException(status_code=409, detail="Cannot delete running job")
 
@@ -324,3 +356,66 @@ def delete_import_job(
             status_code=500,
             detail="An error occurred while deleting import job"
         ) from e
+
+
+@router.post(
+    "/{job_id}/cancel",
+    response_model=ImportJobStatusResponse,
+    responses={
+        200: {"description": "Cancellation requested; job is now cancelled"},
+        401: {"description": "Not authenticated"},
+        403: {"description": "Not authorized"},
+        404: {"description": "Import job not found"},
+        409: {"description": "Job already finished"},
+    },
+)
+def cancel_import_job(
+    job_id: uuid.UUID,
+    request: Request,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+):
+    """Request cooperative cancellation of a pending or running import."""
+    job = session.exec(select(ImportJob).where(ImportJob.id == job_id)).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Import job not found")
+    if job.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized to cancel this import job",
+        )
+    if job.status in {
+        JobStatus.COMPLETED,
+        JobStatus.PARTIAL,
+        JobStatus.FAILED,
+        JobStatus.CANCELLED,
+    }:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job already finished (status: {job.status.value})",
+        )
+
+    job.mark_cancelled()
+    session.add(job)
+    session.commit()
+    session.refresh(job)
+
+    log_user_action(
+        current_user.email,
+        f"cancelled import job {job.id}",
+        request_id=None,
+    )
+
+    return ImportJobStatusResponse(
+        id=str(job.id),
+        status=job.status.value,
+        progress=job.progress,
+        total_items=job.total_items,
+        processed_items=job.processed_items,
+        created_at=job.created_at,
+        completed_at=job.completed_at,
+        result_data=job.result_data,
+        errors=job.errors,
+        warnings=job.warnings,
+        source_type=job.source_type.value,
+    )

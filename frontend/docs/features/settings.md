@@ -51,7 +51,27 @@ confirmation only for actual confirmation.
   reads config and status, connects with import mode, supports sync/disconnect,
   keeps secrets ephemeral, and invalidates status after mutation.
 - Import/export starts explicit background jobs, polls only while active, shows
-  progress and human failure states, and never auto-downloads.
+  progress and human failure states, and never auto-downloads. Each section
+  lists its recent jobs newest-first with keyset pagination (`items` plus
+  `next_cursor_created_at` / `next_cursor_id`, mirroring moments); a **Load
+  older jobs** control fetches the next page. The legacy Flutter client still
+  receives its offset-paginated bare array unless it opts into `format=page`.
+  History lives in the content pane's own Table, so a job resumes after a reload
+  or a section switch and a finished export re-downloads through a fresh signed
+  URL. Every export row opens a details overlay with its scope, timing, archive
+  size, progress, media setting, warnings, and all recorded content totals; the
+  shared adaptive overlay presents as a dialog on regular screens and a bottom
+  sheet on compact screens. A settled job can be deleted (`DELETE`, confirmed). A `pending` or
+  `running` job can be cancelled (`POST /export/{id}/cancel`, `POST
+  /import/{id}/cancel`, confirmed); cancellation is cooperative — the worker
+  stops at its next progress checkpoint and the job moves to `cancelled`, which
+  reads as a neutral end state, not a failure. Export scope is full or a chosen
+  set of journals (archived included, marked). The completed panel reads the
+  job's `result_data` — export item/size/missing-media counts, import
+  created-vs-skipped totals with the warning list behind a disclosure. The
+  archive picker is the shared `Dropzone` primitive; the source row carries a
+  one-line "how to produce this export" hint per supported source (`journiv`,
+  `dayone`, `daylio`).
 - Support reads available public version/config/license information. Administration
   owns version checking and Plus license registration: it shows cached update
   state, controls automatic checks, permits a rate-limit-aware manual check,

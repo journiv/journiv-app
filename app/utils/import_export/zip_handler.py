@@ -164,6 +164,7 @@ class ZipHandler:
         media_files: Optional[Dict[str, Path]] = None,
         data_filename: str = "data.json",
         data_file_path: Optional[Path] = None,
+        cancellation_check: Optional[Callable[[], None]] = None,
     ) -> int:
         """
         Create a ZIP archive for export.
@@ -189,6 +190,9 @@ class ZipHandler:
             data: Export data (will be JSON serialized)
             media_files: Dictionary of {relative_path: source_file_path}
             data_filename: Name for the JSON data file
+            cancellation_check: Optional callable invoked every few media files;
+                whatever it raises propagates untouched so the caller can abandon
+                a long archive. A partially written archive is deleted first.
 
         Returns:
             Total size of created ZIP file in bytes
@@ -196,6 +200,8 @@ class ZipHandler:
         Raises:
             IOError: If ZIP creation fails
         """
+        from app.utils.import_export.cancellation import JobCancelledError
+
         try:
             if data is None and data_file_path is None:
                 raise ValueError("Either data or data_file_path must be provided")
@@ -210,7 +216,9 @@ class ZipHandler:
 
                 # Write media files
                 if media_files:
-                    for relative_path, source_path in media_files.items():
+                    for index, (relative_path, source_path) in enumerate(media_files.items()):
+                        if cancellation_check is not None and index % 25 == 0:
+                            cancellation_check()
                         if source_path.exists():
                             # Store in media/ subdirectory
                             archive_path = f"media/{relative_path}"
@@ -221,6 +229,14 @@ class ZipHandler:
             # Return file size
             return output_path.stat().st_size
 
+        except JobCancelledError:
+            # Not a failure: discard the half-written archive and let the caller
+            # record the cancellation.
+            try:
+                output_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            raise
         except Exception as e:
             log_error(e, output_path=str(output_path))
             raise IOError(f"ZIP creation failed: {e}") from e

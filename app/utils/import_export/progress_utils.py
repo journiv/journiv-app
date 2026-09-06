@@ -13,6 +13,8 @@ def create_throttled_progress_callback(
     end_progress: int = 90,
     commit_interval: int = 10,
     percentage_threshold: int = 5,
+    *,
+    cancellation_check: Callable[[], None] | None = None,
 ) -> Callable[[int, int], None]:
     """
     Create a throttled progress callback that commits to DB efficiently.
@@ -27,6 +29,7 @@ def create_throttled_progress_callback(
         end_progress: Ending progress percentage (default 90)
         commit_interval: Commit every N entries (default 10)
         percentage_threshold: Commit on N% progress changes (default 5)
+        cancellation_check: Optional clean-session cancellation check
 
     Returns:
         Progress callback function that ensures monotonic progress
@@ -66,6 +69,8 @@ def create_throttled_progress_callback(
 
             if should_commit:
                 db.commit()
+                if cancellation_check is not None:
+                    cancellation_check()
                 last_committed_progress = processed
                 last_committed_percentage = new_progress
         else:
@@ -76,7 +81,8 @@ def create_throttled_progress_callback(
                 if current_progress < start_progress:
                     job.set_progress(start_progress)
                 db.commit()
+                if cancellation_check is not None:
+                    cancellation_check()
                 zero_total_committed = True
 
     return handle_progress
-

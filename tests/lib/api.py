@@ -1207,6 +1207,31 @@ class JournivApiClient:
             "GET", f"/export/{job_id}", token=token, expected=(200,)
         ).json()
 
+    def list_exports(self, token: str, **params: Any) -> list[Dict[str, Any]]:
+        return self.list_exports_page(token, **params)["items"]
+
+    def list_exports_page(self, token: str, **params: Any) -> Dict[str, Any]:
+        return self.request(
+            "GET",
+            "/export/",
+            token=token,
+            params={"format": "page", **params},
+            expected=(200,),
+        ).json()
+
+    def cancel_export(
+        self,
+        token: str,
+        job_id: str,
+        expected: Iterable[int] | None = (200,),
+    ) -> Dict[str, Any]:
+        return self.request(
+            "POST",
+            f"/export/{job_id}/cancel",
+            token=token,
+            expected=expected,
+        ).json()
+
     def upload_import(
         self,
         token: str,
@@ -1233,8 +1258,28 @@ class JournivApiClient:
         ).json()
 
     def list_imports(self, token: str, **params: Any) -> list[Dict[str, Any]]:
+        return self.list_imports_page(token, **params)["items"]
+
+    def list_imports_page(self, token: str, **params: Any) -> Dict[str, Any]:
         return self.request(
-            "GET", "/import/", token=token, params=params, expected=(200,)
+            "GET",
+            "/import/",
+            token=token,
+            params={"format": "page", **params},
+            expected=(200,),
+        ).json()
+
+    def cancel_import(
+        self,
+        token: str,
+        job_id: str,
+        expected: Iterable[int] | None = (200,),
+    ) -> Dict[str, Any]:
+        return self.request(
+            "POST",
+            f"/import/{job_id}/cancel",
+            token=token,
+            expected=expected,
         ).json()
 
     def delete_import(self, token: str, job_id: str) -> None:

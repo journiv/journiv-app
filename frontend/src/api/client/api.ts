@@ -2,6 +2,8 @@ import {
   archiveJournalApiV1JournalsJournalIdArchivePost,
   archivePersonApiV1PeoplePersonIdDelete,
   bulkAddTagsToMomentApiV1MomentsMomentIdTagsPost,
+  cancelExportJobApiV1ExportJobIdCancelPost,
+  cancelImportJobApiV1ImportJobIdCancelPost,
   connectApiV1IntegrationsConnectPost,
   createActivityApiV1ActivitiesPost,
   createActivityGroupApiV1ActivityGroupsPost,
@@ -21,8 +23,10 @@ import {
   deleteActivityGroupApiV1ActivityGroupsGroupIdDelete,
   deleteCurrentUserApiV1UsersMeDelete,
   deleteEntryApiV1EntriesEntryIdDelete,
+  deleteExportJobApiV1ExportJobIdDelete,
   deleteGoalCategoryApiV1GoalCategoriesCategoryIdDelete,
   deleteGoalPermanentlyApiV1GoalsGoalIdDelete,
+  deleteImportJobApiV1ImportJobIdDelete,
   deleteJournalApiV1JournalsJournalIdDelete,
   deleteMediaApiV1MediaMediaIdDelete,
   deleteMomentApiV1MomentsMomentIdDelete,
@@ -82,7 +86,9 @@ import {
   importFromImmichAsyncApiV1MediaImportFromImmichAsyncPost,
   importImmichPeopleApiV1IntegrationsImmichPeopleImportPost,
   listAssetsApiV1IntegrationsProviderAssetsGet,
+  listExportsApiV1ExportGet,
   listImmichPeopleApiV1IntegrationsImmichPeopleGet,
+  listImportsApiV1ImportGet,
   listUsersApiV1AdminUsersGet,
   loginApiV1AuthLoginPost,
   mergePeopleApiV1PeopleSourceIdMergeTargetIdPost,
@@ -647,6 +653,41 @@ export const api = {
         path: { job_id },
       }),
     ),
+  /** Export jobs, newest first, using the paginated envelope. `format=page`
+   *  keeps the legacy Flutter client's bare-array default intact. */
+  listExports: (
+    query: {
+      limit?: number;
+      cursor_created_at?: string;
+      cursor_id?: string;
+    } = {},
+  ) =>
+    data(
+      listExportsApiV1ExportGet({
+        ...options(),
+        query: { limit: 20, format: "page", ...query },
+      }),
+    ).then((response) => {
+      if (Array.isArray(response)) {
+        throw new Error("Expected the paginated export history response");
+      }
+      return response;
+    }),
+  /** Requests cooperative cancellation of a pending/running export job. */
+  cancelExport: (job_id: string) =>
+    data(
+      cancelExportJobApiV1ExportJobIdCancelPost({
+        ...options(),
+        path: { job_id },
+      }),
+    ),
+  /** Removes an export job record and its archive file. 409 while it is
+   *  running, so callers only offer this for a settled job. */
+  deleteExport: (job_id: string) =>
+    deleteExportJobApiV1ExportJobIdDelete({
+      ...options(),
+      path: { job_id },
+    }).then(() => undefined),
   /** Short-lived signed download URL. The plain `download_url` on the status
    *  response points at an endpoint that needs the Authorization header, so a
    *  browser-native download can only use this. */
@@ -671,6 +712,40 @@ export const api = {
         path: { job_id },
       }),
     ),
+  /** Import jobs, newest first, using the paginated envelope. */
+  listImports: (
+    query: {
+      limit?: number;
+      cursor_created_at?: string;
+      cursor_id?: string;
+    } = {},
+  ) =>
+    data(
+      listImportsApiV1ImportGet({
+        ...options(),
+        query: { limit: 20, format: "page", ...query },
+      }),
+    ).then((response) => {
+      if (Array.isArray(response)) {
+        throw new Error("Expected the paginated import history response");
+      }
+      return response;
+    }),
+  /** Requests cooperative cancellation of a pending/running import job. */
+  cancelImport: (job_id: string) =>
+    data(
+      cancelImportJobApiV1ImportJobIdCancelPost({
+        ...options(),
+        path: { job_id },
+      }),
+    ),
+  /** Removes an import job record (not the data it imported). 409 while it is
+   *  running, so callers only offer this for a settled job. */
+  deleteImport: (job_id: string) =>
+    deleteImportJobApiV1ImportJobIdDelete({
+      ...options(),
+      path: { job_id },
+    }).then(() => undefined),
   versionInfo: () => data(getVersionInfoApiV1InstanceVersionInfoGet(options())),
   forceVersionCheck: () =>
     data(forceVersionCheckApiV1InstanceVersionCheckPost(options())),

@@ -853,6 +853,30 @@ export type ExportJobCreateRequest = {
 };
 
 /**
+ * ExportJobListResponse
+ *
+ * A keyset-paginated page of export jobs.
+ */
+export type ExportJobListResponse = {
+    /**
+     * Items
+     */
+    items: Array<ExportJobStatusResponse>;
+    /**
+     * Next Cursor Created At
+     *
+     * Pass back as cursor_created_at; null when no more pages
+     */
+    next_cursor_created_at?: string | null;
+    /**
+     * Next Cursor Id
+     *
+     * Pass back as cursor_id; null when no more pages
+     */
+    next_cursor_id?: string | null;
+};
+
+/**
  * ExportJobStatusResponse
  *
  * Export job status with download info.
@@ -1821,6 +1845,26 @@ export type ImmichPersonResponse = {
      * Sync Enabled
      */
     sync_enabled?: boolean;
+};
+
+/**
+ * ImportJobListResponse
+ *
+ * A keyset-paginated page of import jobs.
+ */
+export type ImportJobListResponse = {
+    /**
+     * Items
+     */
+    items: Array<ImportJobStatusResponse>;
+    /**
+     * Next Cursor Created At
+     */
+    next_cursor_created_at?: string | null;
+    /**
+     * Next Cursor Id
+     */
+    next_cursor_id?: string | null;
 };
 
 /**
@@ -3867,6 +3911,22 @@ export type PeakMonth = {
 };
 
 /**
+ * PeakMonthResult
+ *
+ * Peak month information.
+ */
+export type PeakMonthResult = {
+    /**
+     * Month
+     */
+    month: string;
+    /**
+     * Count
+     */
+    count: number;
+};
+
+/**
  * PeopleMatch
  */
 export type PeopleMatch = 'any' | 'all';
@@ -4187,6 +4247,126 @@ export type PlusCapability = {
 };
 
 /**
+ * PlusTagAnalyticsResult
+ *
+ * Tag analytics computation result from Plus.
+ *
+ * This mirrors backend's TagAnalyticsResponse but is computed
+ * entirely in Plus from raw data provided by backend.
+ *
+ * Backend converts this to TagAnalyticsResponse for API response.
+ */
+export type PlusTagAnalyticsResult = {
+    /**
+     * Total Tags
+     */
+    total_tags: number;
+    /**
+     * Used Tags
+     */
+    used_tags: number;
+    /**
+     * Unused Tags
+     */
+    unused_tags: number;
+    most_used_tag: PlusTagSummary | null;
+    /**
+     * Average Usage
+     */
+    average_usage: number;
+    /**
+     * Tag Usage Ranking
+     */
+    tag_usage_ranking: Array<PlusTagSummary>;
+    /**
+     * Recently Created Tags
+     */
+    recently_created_tags: Array<PlusTagSummary>;
+    /**
+     * Usage Over Time
+     */
+    usage_over_time: {
+        [key: string]: number;
+    };
+    /**
+     * Tag Distribution
+     */
+    tag_distribution: {
+        [key: string]: number;
+    };
+};
+
+/**
+ * PlusTagDetailAnalyticsResult
+ *
+ * Per-tag analytics computation result from Plus.
+ *
+ * Contains computed analytics for a single tag including trends,
+ * growth analysis, and usage patterns.
+ */
+export type PlusTagDetailAnalyticsResult = {
+    /**
+     * Tag Id
+     */
+    tag_id: string;
+    /**
+     * Tag Name
+     */
+    tag_name: string;
+    /**
+     * Usage Count
+     */
+    usage_count: number;
+    /**
+     * Usage Over Time
+     */
+    usage_over_time: {
+        [key: string]: number;
+    };
+    /**
+     * First Used
+     */
+    first_used?: string | null;
+    /**
+     * Last Used
+     */
+    last_used?: string | null;
+    peak_month?: PeakMonthResult | null;
+    /**
+     * Trend
+     */
+    trend: string;
+    /**
+     * Growth Rate
+     */
+    growth_rate?: number | null;
+    /**
+     * Days Analyzed
+     */
+    days_analyzed: number;
+};
+
+/**
+ * PlusTagSummary
+ *
+ * Plus-only tag summary mirroring the backend tag summary shape.
+ */
+export type PlusTagSummary = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Usage Count
+     */
+    usage_count: number;
+};
+
+/**
  * ProductivityMetrics
  *
  * ``GET /analytics/productivity`` response.
@@ -4375,6 +4555,38 @@ export type PromptResponse = {
      * User Id
      */
     user_id?: string | null;
+};
+
+/**
+ * PublishUpdate
+ *
+ * Request body for publish state updates.
+ */
+export type PublishUpdate = {
+    /**
+     * Publish
+     */
+    publish: boolean;
+};
+
+/**
+ * PublishingConfigUpdate
+ *
+ * Request body for publishing config updates.
+ */
+export type PublishingConfigUpdate = {
+    /**
+     * Slug
+     *
+     * Custom URL slug (lowercase alphanumeric and hyphens only)
+     */
+    slug?: string | null;
+    /**
+     * Is Indexed
+     *
+     * Search engine indexing
+     */
+    is_indexed?: boolean | null;
 };
 
 /**
@@ -10764,6 +10976,18 @@ export type ListExportsApiV1ExportGetData = {
          * Offset
          */
         offset?: number;
+        /**
+         * Cursor Created At
+         */
+        cursor_created_at?: string | null;
+        /**
+         * Cursor Id
+         */
+        cursor_id?: string | null;
+        /**
+         * Format
+         */
+        format?: 'page' | null;
     };
     url: '/api/v1/export/';
 };
@@ -10791,7 +11015,7 @@ export type ListExportsApiV1ExportGetResponses = {
      *
      * List of export jobs
      */
-    200: Array<ExportJobStatusResponse>;
+    200: Array<ExportJobStatusResponse> | ExportJobListResponse;
 };
 
 export type ListExportsApiV1ExportGetResponse = ListExportsApiV1ExportGetResponses[keyof ListExportsApiV1ExportGetResponses];
@@ -11076,6 +11300,52 @@ export type DownloadExportSignedApiV1ExportJobIdDownloadSignedGetResponses = {
     200: unknown;
 };
 
+export type CancelExportJobApiV1ExportJobIdCancelPostData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/export/{job_id}/cancel';
+};
+
+export type CancelExportJobApiV1ExportJobIdCancelPostErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Not authorized
+     */
+    403: unknown;
+    /**
+     * Export job not found
+     */
+    404: unknown;
+    /**
+     * Job already finished
+     */
+    409: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelExportJobApiV1ExportJobIdCancelPostError = CancelExportJobApiV1ExportJobIdCancelPostErrors[keyof CancelExportJobApiV1ExportJobIdCancelPostErrors];
+
+export type CancelExportJobApiV1ExportJobIdCancelPostResponses = {
+    /**
+     * Cancellation requested; job is now cancelled
+     */
+    200: ExportJobStatusResponse;
+};
+
+export type CancelExportJobApiV1ExportJobIdCancelPostResponse = CancelExportJobApiV1ExportJobIdCancelPostResponses[keyof CancelExportJobApiV1ExportJobIdCancelPostResponses];
+
 export type UploadImportApiV1ImportUploadPostData = {
     body: BodyUploadImportApiV1ImportUploadPost;
     path?: never;
@@ -11225,6 +11495,18 @@ export type ListImportsApiV1ImportGetData = {
          * Offset
          */
         offset?: number;
+        /**
+         * Cursor Created At
+         */
+        cursor_created_at?: string | null;
+        /**
+         * Cursor Id
+         */
+        cursor_id?: string | null;
+        /**
+         * Format
+         */
+        format?: 'page' | null;
     };
     url: '/api/v1/import/';
 };
@@ -11252,10 +11534,56 @@ export type ListImportsApiV1ImportGetResponses = {
      *
      * List of import jobs
      */
-    200: Array<ImportJobStatusResponse>;
+    200: Array<ImportJobStatusResponse> | ImportJobListResponse;
 };
 
 export type ListImportsApiV1ImportGetResponse = ListImportsApiV1ImportGetResponses[keyof ListImportsApiV1ImportGetResponses];
+
+export type CancelImportJobApiV1ImportJobIdCancelPostData = {
+    body?: never;
+    path: {
+        /**
+         * Job Id
+         */
+        job_id: string;
+    };
+    query?: never;
+    url: '/api/v1/import/{job_id}/cancel';
+};
+
+export type CancelImportJobApiV1ImportJobIdCancelPostErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Not authorized
+     */
+    403: unknown;
+    /**
+     * Import job not found
+     */
+    404: unknown;
+    /**
+     * Job already finished
+     */
+    409: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type CancelImportJobApiV1ImportJobIdCancelPostError = CancelImportJobApiV1ImportJobIdCancelPostErrors[keyof CancelImportJobApiV1ImportJobIdCancelPostErrors];
+
+export type CancelImportJobApiV1ImportJobIdCancelPostResponses = {
+    /**
+     * Cancellation requested; job is now cancelled
+     */
+    200: ImportJobStatusResponse;
+};
+
+export type CancelImportJobApiV1ImportJobIdCancelPostResponse = CancelImportJobApiV1ImportJobIdCancelPostResponses[keyof CancelImportJobApiV1ImportJobIdCancelPostResponses];
 
 export type HealthCheckApiV1HealthGetData = {
     body?: never;
@@ -13086,3 +13414,225 @@ export type DownloadPublishedEntryPdfPubIdentifierPdfGetResponses = {
      */
     200: unknown;
 };
+
+export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/plus/analytics/tags';
+};
+
+export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlusTagAnalyticsResult;
+};
+
+export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponse = GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses[keyof GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses];
+
+export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Tag Id
+         */
+        tag_id: string;
+    };
+    query?: {
+        /**
+         * Days
+         *
+         * Number of days to analyse
+         */
+        days?: number;
+    };
+    url: '/api/v1/plus/analytics/tags/{tag_id}';
+};
+
+export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetError = GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors[keyof GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors];
+
+export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: PlusTagDetailAnalyticsResult;
+};
+
+export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponse = GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses[keyof GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses];
+
+export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchData = {
+    body: PublishUpdate;
+    path: {
+        /**
+         * Entry Id
+         */
+        entry_id: string;
+    };
+    query?: never;
+    url: '/api/v1/plus/entries/{entry_id}/publish';
+};
+
+export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchError = ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors[keyof ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors];
+
+export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses = {
+    /**
+     * Response Toggle Entry Publish Api V1 Plus Entries  Entry Id  Publish Patch
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponse = ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses[keyof ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses];
+
+export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchData = {
+    body: PublishingConfigUpdate;
+    path: {
+        /**
+         * Entry Id
+         */
+        entry_id: string;
+    };
+    query?: never;
+    url: '/api/v1/plus/entries/{entry_id}/publishing-config';
+};
+
+export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchError = UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors[keyof UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors];
+
+export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses = {
+    /**
+     * Response Update Publishing Config Api V1 Plus Entries  Entry Id  Publishing Config Patch
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponse = UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses[keyof UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses];
+
+export type GetPublishedEntryPubIdentifierGetData = {
+    body?: never;
+    path: {
+        /**
+         * Identifier
+         */
+        identifier: string;
+    };
+    query?: {
+        /**
+         * Embed
+         *
+         * Render simplified embed-friendly view
+         */
+        embed?: boolean;
+    };
+    url: '/pub/{identifier}';
+};
+
+export type GetPublishedEntryPubIdentifierGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPublishedEntryPubIdentifierGetError = GetPublishedEntryPubIdentifierGetErrors[keyof GetPublishedEntryPubIdentifierGetErrors];
+
+export type GetPublishedEntryPubIdentifierGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: string;
+};
+
+export type GetPublishedEntryPubIdentifierGetResponse = GetPublishedEntryPubIdentifierGetResponses[keyof GetPublishedEntryPubIdentifierGetResponses];
+
+export type GetPublishedMediaPubMediaMediaIdGetData = {
+    body?: never;
+    path: {
+        /**
+         * Media Id
+         */
+        media_id: string;
+    };
+    query?: never;
+    url: '/pub/media/{media_id}';
+};
+
+export type GetPublishedMediaPubMediaMediaIdGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetPublishedMediaPubMediaMediaIdGetError = GetPublishedMediaPubMediaMediaIdGetErrors[keyof GetPublishedMediaPubMediaMediaIdGetErrors];
+
+export type GetPublishedMediaPubMediaMediaIdGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
+export type GetOembedApiV1OembedGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Url
+         *
+         * Public URL of the entry
+         */
+        url: string;
+    };
+    url: '/api/v1/oembed';
+};
+
+export type GetOembedApiV1OembedGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type GetOembedApiV1OembedGetError = GetOembedApiV1OembedGetErrors[keyof GetOembedApiV1OembedGetErrors];
+
+export type GetOembedApiV1OembedGetResponses = {
+    /**
+     * Response Get Oembed Api V1 Oembed Get
+     *
+     * Successful Response
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetOembedApiV1OembedGetResponse = GetOembedApiV1OembedGetResponses[keyof GetOembedApiV1OembedGetResponses];
