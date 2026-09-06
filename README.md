@@ -139,7 +139,7 @@ Need help or want to report an issue?
 - **Email**: journiv@protonmail.com
 - **Discord**: Join our [community server](https://discord.gg/CuEJ8qft46)
 
-![Star History Chart](https://api.star-history.com/svg?repos=journiv/journiv-app&type=Date)
+![Star History Chart](https://star-history.dera.page/svg?repos=journiv/journiv-app&type=Date)
 
 ---
 
