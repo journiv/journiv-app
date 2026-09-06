@@ -6,13 +6,34 @@ and syncing photo/video metadata.
 
 API Documentation: https://api.immich.app/introduction
 """
+
+import asyncio
+import json
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from inspect import isawaitable
-from typing import Any, Dict, List, Optional, Union
+from pathlib import Path
+from typing import Any, AsyncIterator, Optional, Protocol, Union
 from urllib.parse import urlencode
+from uuid import UUID
 
-import httpx
+import aiofiles
+import aiohttp
+from immichpy import AsyncClient
+from immichpy.client.generated import (
+    AssetMediaSize,
+    AssetOrder,
+    BulkIdsDto,
+    CreateAlbumDto,
+    MetadataSearchDto,
+)
+from immichpy.client.generated.exceptions import (
+    ApiException,
+    ForbiddenException,
+    NotFoundException,
+    UnauthorizedException,
+)
 from sqlmodel import Session
 from sqlmodel.ext.asyncio.session import AsyncSession
 
@@ -26,38 +47,48 @@ from app.integrations.schemas import IntegrationAssetResponse
 from app.models.integration import AssetType, Integration, IntegrationProvider
 from app.models.user import User
 
-# Immich API endpoints
-IMMICH_API_USER_ME = "/api/users/me"
-IMMICH_API_SEARCH_METADATA = "/api/search/metadata"  # Search assets with pagination
+# Immich URL templates for the media proxy (these build URLs only; they do not
+# issue HTTP requests, so they are not routed through the immichpy client).
 IMMICH_API_ASSET_THUMBNAIL = "/api/assets/{asset_id}/thumbnail"
-IMMICH_API_PEOPLE = "/api/people"
-IMMICH_API_PERSON = "/api/people/{person_id}"
 IMMICH_API_PERSON_THUMBNAIL = "/api/people/{person_id}/thumbnail"
-IMMICH_API_FACES = "/api/faces"
-IMMICH_API_ALBUMS = "/api/albums"
-IMMICH_API_ALBUM_ASSETS = "/api/albums/{album_id}/assets"
 
-_client: Optional[httpx.AsyncClient] = None
+# Immich caps metadata search / people pagination at 1000 items per page.
+IMMICH_MAX_PAGE_SIZE = 1000
 IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD = 1000
 
-def _get_client() -> httpx.AsyncClient:
-    """Reuse a single client to avoid connection churn."""
-    global _client
-    if _client is None:
-        _client = httpx.AsyncClient(
-            verify=True,
-            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-            transport=httpx.AsyncHTTPTransport(retries=2),
-        )
-    return _client
+
+@asynccontextmanager
+async def _client(base_url: str, api_key: str) -> AsyncIterator[AsyncClient]:
+    session = aiohttp.ClientSession(
+        timeout=aiohttp.ClientTimeout(connect=5.0, sock_read=60.0)
+    )
+    try:
+        yield AsyncClient(api_key=api_key, base_url=base_url, http_client=session)
+    finally:
+        await session.close()
+
+
+class _JsonSerializable(Protocol):
+    """Structural type for immichpy DTOs, which expose a generated ``to_json``."""
+
+    def to_json(self) -> str: ...
+
+
+def _dump(model: _JsonSerializable) -> dict[str, Any]:
+    """Reproduce the raw Immich JSON payload from an immichpy DTO.
+
+    ``to_json()`` emits camelCase aliases with ISO datetime strings and enum
+    values, i.e. the exact wire shape the previous httpx code returned. This
+    keeps every caller of this module unchanged.
+    """
+    return json.loads(model.to_json())
 
 
 async def connect(
     session: Session | AsyncSession,
     user: User,
     base_url: str,
-    credentials: Dict[str, Any]
+    credentials: dict[str, Any],
 ) -> str:
     """
     Connect to Immich and validate the user's API key.
@@ -75,21 +106,13 @@ async def connect(
     if not base_url.startswith(("http://", "https://")):
         raise ValueError("Base URL must start with http:// or https://")
 
-
-    # Validate API key by calling Immich's /api/user/me endpoint
+    # Validate API key by calling Immich's /api/users/me endpoint
     try:
-        client = _get_client()
-        response = await client.get(
-            f"{base_url}{IMMICH_API_USER_ME}",
-            headers={"x-api-key": api_key},
-        )
-
-        response.raise_for_status()
-
-        user_data = response.json()
+        async with _client(base_url, api_key) as client:
+            me = await client.users.get_my_user()
 
         # Extract user ID from response
-        external_user_id = user_data.get("id")
+        external_user_id = str(me.id) if me and me.id else None
         if not external_user_id:
             raise ValueError("Immich API response missing 'id' field")
 
@@ -98,25 +121,29 @@ async def connect(
             f"external_user_id: {external_user_id}"
         )
 
-        return str(external_user_id)
+        return external_user_id
 
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code in (401, 403):
-            log_warning(e, f"Invalid Immich API key for user {user.id}: {e}")
-            raise ValueError(
-                "Invalid Immich API key. Please check your key and try again."
-            ) from None
-        else:
-            log_error(e, message=f"Immich API error for user {user.id}: {e}")
-            raise ValueError(f"Immich API error: {e.response.status_code}") from None
+    except (UnauthorizedException, ForbiddenException) as e:
+        log_warning(e, f"Invalid Immich API key for user {user.id}: {e}")
+        raise ValueError(
+            "Invalid Immich API key. Please check your key and try again."
+        ) from None
 
-    except httpx.TimeoutException as e:
+    except ApiException as e:
+        log_error(e, message=f"Immich API error for user {user.id}: {e}")
+        raise ValueError(f"Immich API error: {e.status}") from None
+
+    except asyncio.TimeoutError as e:
         log_error(e, message=f"Timeout connecting to Immich at {base_url}")
-        raise ValueError("Connection to Immich timed out. Please check the URL and try again.") from None
+        raise ValueError(
+            "Connection to Immich timed out. Please check the URL and try again."
+        ) from None
 
-    except httpx.RequestError as e:
+    except aiohttp.ClientError as e:
         log_error(e, message=f"Failed to connect to Immich at {base_url}: {e}")
-        raise ValueError(f"Could not connect to Immich server at {base_url}. Please check the URL.") from None
+        raise ValueError(
+            f"Could not connect to Immich server at {base_url}. Please check the URL."
+        ) from None
 
 
 async def list_assets(
@@ -125,10 +152,10 @@ async def list_assets(
     integration: Integration,
     page: int = 1,
     limit: int = 50,
-    force_refresh: bool = False
+    force_refresh: bool = False,
 ) -> list[IntegrationAssetResponse]:
     """
-    List Immich assets (photos/videos) for the user.
+    list Immich assets (photos/videos) for the user.
 
     Strategy:
         - If force_refresh=True: fetch live from Immich
@@ -147,62 +174,62 @@ async def list_assets(
             start = (page - 1) * limit
             end = start + limit
             if len(assets_data) >= end:
-                log_info(f"Returning cached Immich assets for user {user.id} (page {page}, limit {limit})")
+                log_info(
+                    f"Returning cached Immich assets for user {user.id} (page {page}, limit {limit})"
+                )
                 return [
                     _normalize_immich_asset(asset, integration.provider, str(user.id))
                     for asset in assets_data[start:end]
                 ]
 
     # Fetch live from Immich using search metadata endpoint
-    log_info(f"Fetching live Immich assets for user {user.id} (page {page}, limit {limit})")
+    log_info(
+        f"Fetching live Immich assets for user {user.id} (page {page}, limit {limit})"
+    )
 
     api_key = decrypt_token(integration.access_token_encrypted)
 
     try:
-        client = _get_client()
-        response = await client.post(
-            f"{integration.base_url}{IMMICH_API_SEARCH_METADATA}",
-            headers={
-                "x-api-key": api_key,
-                "Content-Type": "application/json"
-            },
-            json={
-                "page": page,
-                "size": limit,
-                "order": "desc",
-            },
-        )
-        response.raise_for_status()
-        search_response = response.json()
+        async with _client(integration.base_url, api_key) as client:
+            search_response = await client.search.search_assets(
+                MetadataSearchDto(
+                    page=page,
+                    size=min(limit, IMMICH_MAX_PAGE_SIZE),
+                    order=AssetOrder.DESC,
+                )
+            )
 
         # Extract assets from search response
-        assets_result = search_response.get("assets", {})
-        assets_data = assets_result.get("items", [])
-        total = assets_result.get("total", len(assets_data))
-        count = assets_result.get("count", len(assets_data))
+        assets_result = search_response.assets
+        items = assets_result.items if assets_result else []
+        assets_data = [_dump(item) for item in items]
+        total = assets_result.total if assets_result else len(assets_data)
+        count = assets_result.count if assets_result else len(assets_data)
 
         log_info(f"Immich search returned {count} assets (total: {total})")
 
         # Normalize and optionally cache
         normalized_assets = []
         for asset_data in assets_data:
-            normalized = _normalize_immich_asset(asset_data, integration.provider, str(user.id))
+            normalized = _normalize_immich_asset(
+                asset_data, integration.provider, str(user.id)
+            )
             normalized_assets.append(normalized)
 
         # Cache the asset metadata if present
         if assets_data:
             _save_to_cache(str(user.id), assets_data)
 
-        log_info(f"Fetched {len(normalized_assets)} live Immich assets for user {user.id}")
+        log_info(
+            f"Fetched {len(normalized_assets)} live Immich assets for user {user.id}"
+        )
         return normalized_assets
 
-    except httpx.HTTPStatusError as e:
-        if e.response.status_code in (401, 403):
-            log_warning(e, f"Invalid Immich API key for user {user.id}: {e}")
-            raise ValueError("Immich API key is no longer valid. Please reconnect.") from None
-        else:
-            log_error(e, message=f"Immich API error for user {user.id}: {e}")
-            raise
+    except (UnauthorizedException, ForbiddenException) as e:
+        log_warning(e, f"Invalid Immich API key for user {user.id}: {e}")
+        raise ValueError(
+            "Immich API key is no longer valid. Please reconnect."
+        ) from None
 
     except Exception as e:
         log_error(e, message=f"Failed to fetch Immich assets for user {user.id}: {e}")
@@ -210,9 +237,7 @@ async def list_assets(
 
 
 async def sync(
-    session: Session | AsyncSession,
-    user: User,
-    integration: Integration
+    session: Session | AsyncSession, user: User, integration: Integration
 ) -> None:
     """
     Background sync task to cache Immich asset metadata.
@@ -238,25 +263,19 @@ async def sync(
         cache_limit = settings.integration_cache_limit
 
         # Fetch recent assets from Immich using search metadata endpoint
-        client = _get_client()
-        response = await client.post(
-            f"{integration.base_url}{IMMICH_API_SEARCH_METADATA}",
-            headers={
-                "x-api-key": api_key,
-                "Content-Type": "application/json"
-            },
-            json={
-                "page": 1,
-                "size": cache_limit,
-                "order": "desc",
-            },
-        )
-        response.raise_for_status()
-        search_response = response.json()
+        async with _client(integration.base_url, api_key) as client:
+            search_response = await client.search.search_assets(
+                MetadataSearchDto(
+                    page=1,
+                    size=min(cache_limit, IMMICH_MAX_PAGE_SIZE),
+                    order=AssetOrder.DESC,
+                )
+            )
 
         # Extract assets from search response
-        assets_result = search_response.get("assets", {})
-        assets_data = assets_result.get("items", [])
+        assets_result = search_response.assets
+        items = assets_result.items if assets_result else []
+        assets_data = [_dump(item) for item in items]
         log_info(f"Fetched {len(assets_data)} assets from Immich for sync")
 
         # Save to cache
@@ -270,7 +289,9 @@ async def sync(
         session.add(integration)
         await _commit_session(session)
 
-        log_info(f"Successfully synced Immich for user {user.id}, cached {len(assets_data)} assets")
+        log_info(
+            f"Successfully synced Immich for user {user.id}, cached {len(assets_data)} assets"
+        )
 
     except Exception as e:
         log_error(e, message=f"Failed to sync Immich for user {user.id}: {e}")
@@ -283,9 +304,7 @@ async def sync(
 
 
 async def ensure_album_exists(
-    base_url: str,
-    api_key: str,
-    album_name: str = "Journiv"
+    base_url: str, api_key: str, album_name: str = "Journiv"
 ) -> Optional[str]:
     """
     Ensure an album with the given name exists.
@@ -312,84 +331,54 @@ async def ensure_album_exists(
 
 
 async def get_album_id_by_name(
-    base_url: str,
-    api_key: str,
-    album_name: str
+    base_url: str, api_key: str, album_name: str
 ) -> Optional[str]:
     """Find an album ID by name."""
     try:
-        async with httpx.AsyncClient(verify=True) as client:
-            response = await client.get(
-                f"{base_url}{IMMICH_API_ALBUMS}",
-                headers={"x-api-key": api_key},
-                timeout=30.0
-            )
-            response.raise_for_status()
-            albums = response.json()
+        async with _client(base_url, api_key) as client:
+            albums = await client.albums.get_all_albums()
 
-            # Find album with matching name
-            for album in albums:
-                if album.get("albumName") == album_name:
-                    return album.get("id")
+        # Find album with matching name
+        for album in albums:
+            if album.album_name == album_name:
+                return str(album.id)
 
-            return None
+        return None
     except Exception as e:
         log_warning(e, f"Failed to list Immich albums: {e}")
         return None
 
 
-async def create_album(
-    base_url: str,
-    api_key: str,
-    album_name: str
-) -> str:
+async def create_album(base_url: str, api_key: str, album_name: str) -> str:
     """Create a new album with description."""
     try:
-        async with httpx.AsyncClient(verify=True) as client:
-            response = await client.post(
-                f"{base_url}{IMMICH_API_ALBUMS}",
-                headers={
-                    "x-api-key": api_key,
-                    "Content-Type": "application/json"
-                },
-                json={
-                    "albumName": album_name,
-                    "description": "Photos and Videos linked to Journiv journal entries"
-                },
-                timeout=30.0
+        async with _client(base_url, api_key) as client:
+            album = await client.albums.create_album(
+                CreateAlbumDto(
+                    albumName=album_name,
+                    description="Photos and Videos linked to Journiv journal entries",
+                )
             )
-            response.raise_for_status()
-            data = response.json()
-            return data.get("id")
+        return str(album.id)
     except Exception as e:
         log_error(e, message=f"Failed to create album: {e}")
         raise ValueError(f"Failed to create album: {e}") from None
 
 
 async def add_assets_to_album(
-    base_url: str,
-    api_key: str,
-    album_id: str,
-    asset_ids: List[str]
+    base_url: str, api_key: str, album_id: str, asset_ids: list[str]
 ) -> None:
     """Add assets to an album."""
     if not asset_ids:
         return
 
     try:
-        url = f"{base_url}{IMMICH_API_ALBUM_ASSETS.format(album_id=album_id)}"
-        async with httpx.AsyncClient(verify=True) as client:
-            response = await client.put(
-                url,
-                headers={
-                    "x-api-key": api_key,
-                    "Content-Type": "application/json"
-                },
-                json={"ids": asset_ids},
-                timeout=30.0
+        async with _client(base_url, api_key) as client:
+            await client.albums.add_assets_to_album(
+                UUID(album_id),
+                BulkIdsDto(ids=[UUID(asset_id) for asset_id in asset_ids]),
             )
-            response.raise_for_status()
-            log_info(f"Added {len(asset_ids)} assets to Immich album {album_id}")
+        log_info(f"Added {len(asset_ids)} assets to Immich album {album_id}")
 
     except Exception as e:
         log_error(e, message=f"Failed to add assets to Immich album {album_id}: {e}")
@@ -397,34 +386,24 @@ async def add_assets_to_album(
 
 
 async def remove_assets_from_album(
-    base_url: str,
-    api_key: str,
-    album_id: str,
-    asset_ids: List[str]
+    base_url: str, api_key: str, album_id: str, asset_ids: list[str]
 ) -> None:
     """Remove assets from an album."""
     if not asset_ids:
         return
 
     try:
-        url = f"{base_url}{IMMICH_API_ALBUM_ASSETS.format(album_id=album_id)}"
-
-        async with httpx.AsyncClient(verify=True) as client:
-            response = await client.request(
-                "DELETE",
-                url,
-                headers={
-                    "x-api-key": api_key,
-                    "Content-Type": "application/json"
-                },
-                json={"ids": asset_ids},
-                timeout=30.0
+        async with _client(base_url, api_key) as client:
+            await client.albums.remove_asset_from_album(
+                UUID(album_id),
+                BulkIdsDto(ids=[UUID(asset_id) for asset_id in asset_ids]),
             )
-            response.raise_for_status()
-            log_info(f"Removed {len(asset_ids)} assets from Immich album {album_id}")
+        log_info(f"Removed {len(asset_ids)} assets from Immich album {album_id}")
 
     except Exception as e:
-        log_error(e, message=f"Failed to remove assets from Immich album {album_id}: {e}")
+        log_error(
+            e, message=f"Failed to remove assets from Immich album {album_id}: {e}"
+        )
         raise
 
 
@@ -437,6 +416,7 @@ async def _commit_session(session: Session | AsyncSession) -> None:
 # Cache instance
 _cache: Optional[ScopedCache] = None
 
+
 def _get_cache() -> ScopedCache:
     """Get or create the cache instance."""
     global _cache
@@ -445,7 +425,7 @@ def _get_cache() -> ScopedCache:
     return _cache
 
 
-def _save_to_cache(user_id: str, assets_data: List[Dict[str, Any]]) -> None:
+def _save_to_cache(user_id: str, assets_data: list[dict[str, Any]]) -> None:
     """
     Save assets to ScopedCache.
     """
@@ -459,14 +439,16 @@ def _save_to_cache(user_id: str, assets_data: List[Dict[str, Any]]) -> None:
             scope_id=user_id,
             cache_type="assets",
             value=cache_data,
-            ttl_seconds=settings.integration_sync_interval_hours * 3600 * 2  # TTL = 2 sync cycles
+            ttl_seconds=settings.integration_sync_interval_hours
+            * 3600
+            * 2,  # TTL = 2 sync cycles
         )
     except Exception as e:
         log_warning(e, f"Failed to save Immich assets to cache for user {user_id}: {e}")
 
 
 def _normalize_immich_asset(
-    asset_data: Dict[str, Any],
+    asset_data: dict[str, Any],
     provider: Union[IntegrationProvider, str],
     user_id: str,
 ) -> IntegrationAssetResponse:
@@ -488,15 +470,19 @@ def _normalize_immich_asset(
     asset_type = _map_asset_type(asset_data.get("type", "OTHER"))
 
     # Title: prefer originalFileName, fall back to ID
-    title = asset_data.get("originalFileName") or asset_data.get("originalPath") or f"Asset {asset_id[:8]}"
+    title = (
+        asset_data.get("originalFileName")
+        or asset_data.get("originalPath")
+        or f"Asset {asset_id[:8]}"
+    )
 
     # taken_at: prefer localDateTime (user requested for timeline grouping),
     # then exifInfo.dateTimeOriginal, fall back to createdAt
     exif_info = asset_data.get("exifInfo", {})
     taken_at_str = (
-        asset_data.get("localDateTime") or
-        exif_info.get("dateTimeOriginal") or
-        asset_data.get("createdAt")
+        asset_data.get("localDateTime")
+        or exif_info.get("dateTimeOriginal")
+        or asset_data.get("createdAt")
     )
 
     # Parse taken_at datetime
@@ -511,7 +497,9 @@ def _normalize_immich_asset(
             else:
                 taken_at = taken_at.astimezone(timezone.utc)
         except (ValueError, AttributeError) as e:
-            log_warning(e, f"Failed to parse taken_at for asset {asset_id}: {taken_at_str}")
+            log_warning(
+                e, f"Failed to parse taken_at for asset {asset_id}: {taken_at_str}"
+            )
 
     thumb_url = _build_signed_proxy_url(
         provider=provider,
@@ -545,44 +533,26 @@ def _normalize_immich_asset(
     )
 
 
-async def get_asset_info(
-    base_url: str,
-    api_key: str,
-    asset_id: str
-) -> Dict[str, Any]:
+async def get_asset_info(base_url: str, api_key: str, asset_id: str) -> dict[str, Any]:
     """
     Fetch details for a single asset from Immich.
     Falls back to search endpoint if direct lookup fails (e.g. 404).
     """
-    client = _get_client()
-    headers = {"x-api-key": api_key, "Accept": "application/json"}
-
     try:
-        # 1. Try direct endpoint
-        response = await client.get(
-            f"{base_url}/api/assets/{asset_id}",
-            headers=headers,
-        )
-
-        if response.status_code == 200:
-            return response.json()
-
-        if response.status_code == 404:
-            # 2. Fallback to search endpoint
-            # Some versions of Immich or some asset states might require search lookup
-            search_response = await client.post(
-                f"{base_url}{IMMICH_API_SEARCH_METADATA}",
-                headers=headers,
-                json={"ids": [asset_id]},
-            )
-            if search_response.status_code == 200:
-                data = search_response.json()
-                items = data.get("assets", {}).get("items", [])
+        async with _client(base_url, api_key) as client:
+            # 1. Try direct endpoint
+            try:
+                asset = await client.assets.get_asset_info(UUID(asset_id))
+                return _dump(asset)
+            except NotFoundException:
+                # 2. Fallback to search endpoint
+                # Some versions of Immich or some asset states might require search lookup
+                search_response = await client.search.search_assets(
+                    MetadataSearchDto(id=UUID(asset_id))
+                )
+                items = search_response.assets.items if search_response.assets else []
                 if items:
-                    return items[0]
-
-        # Raise for other error codes
-        response.raise_for_status()
+                    return _dump(items[0])
 
     except Exception as e:
         log_warning(e, f"Failed to fetch Immich asset info for {asset_id}")
@@ -605,41 +575,35 @@ async def list_people(
     Immich supports paginated people listing. Its person search endpoint returns
     a full list on current releases, so search pagination is applied locally.
     """
-    client = _get_client()
-    headers = {"x-api-key": api_key, "Accept": "application/json"}
-    limit = max(1, min(limit, 1000))
+    limit = max(1, min(limit, IMMICH_MAX_PAGE_SIZE))
     page = max(1, page)
 
     if search and search.strip():
-        response = await client.get(
-            f"{base_url}{IMMICH_API_PEOPLE}/search",
-            headers=headers,
-            params={"name": search.strip(), "withHidden": include_hidden},
-        )
-        response.raise_for_status()
-        data = response.json()
-        people = data if isinstance(data, list) else data.get("people", [])
+        async with _client(base_url, api_key) as client:
+            results = await client.search.search_person(
+                name=search.strip(), with_hidden=include_hidden
+            )
+        people = [_dump(person) for person in (results or [])]
         if len(people) > IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD:
             log_warning(
                 "Immich people search returned "
                 f"{len(people)} results without server-side pagination support"
             )
         start = (page - 1) * limit
-        page_items = people[start:start + limit]
+        page_items = people[start : start + limit]
         return page_items, len(people), start + limit < len(people)
 
-    response = await client.get(
-        f"{base_url}{IMMICH_API_PEOPLE}",
-        headers=headers,
-        params={"page": page, "size": limit, "withHidden": include_hidden},
+    async with _client(base_url, api_key) as client:
+        response = await client.people.get_all_people(
+            page=page, size=limit, with_hidden=include_hidden
+        )
+    people = [_dump(person) for person in (response.people or [])]
+    total = int(response.total or len(people))
+    has_more = (
+        bool(response.has_next_page)
+        if response.has_next_page is not None
+        else page * limit < total
     )
-    response.raise_for_status()
-    data = response.json()
-    if isinstance(data, list):
-        return data, len(data), len(data) == limit
-    people = data.get("people", [])
-    total = int(data.get("total") or len(people))
-    has_more = bool(data.get("hasNextPage")) if "hasNextPage" in data else page * limit < total
     return people, total, has_more
 
 
@@ -649,14 +613,9 @@ async def get_person(
     person_id: str,
 ) -> dict[str, Any]:
     """Fetch a single Immich person."""
-    client = _get_client()
-    response = await client.get(
-        f"{base_url}{IMMICH_API_PERSON.format(person_id=person_id)}",
-        headers={"x-api-key": api_key, "Accept": "application/json"},
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data if isinstance(data, dict) else {}
+    async with _client(base_url, api_key) as client:
+        person = await client.people.get_person(UUID(person_id))
+    return _dump(person) if person else {}
 
 
 async def get_asset_faces(
@@ -665,15 +624,9 @@ async def get_asset_faces(
     asset_id: str,
 ) -> list[dict[str, Any]]:
     """Fetch face detections for a single Immich asset."""
-    client = _get_client()
-    response = await client.get(
-        f"{base_url}{IMMICH_API_FACES}",
-        headers={"x-api-key": api_key, "Accept": "application/json"},
-        params={"id": asset_id},
-    )
-    response.raise_for_status()
-    data = response.json()
-    return data if isinstance(data, list) else []
+    async with _client(base_url, api_key) as client:
+        faces = await client.faces.get_faces(UUID(asset_id))
+    return [_dump(face) for face in (faces or [])]
 
 
 def get_person_thumbnail_url(base_url: str, person_id: str) -> str:
@@ -689,18 +642,60 @@ async def get_person_thumbnail_bytes(
     max_bytes: int = 10 * 1024 * 1024,
 ) -> bytes:
     """Fetch an Immich person thumbnail for storage in Journiv."""
-    client = _get_client()
-    content = bytearray()
-    async with client.stream(
-        "GET",
-        get_person_thumbnail_url(base_url, person_id),
-        headers={"x-api-key": api_key, "Accept": "image/*"},
-    ) as response:
-        response.raise_for_status()
-        async for chunk in response.aiter_bytes():
-            content.extend(chunk)
-            if len(content) > max_bytes:
-                raise ValueError("Immich person thumbnail exceeds maximum profile image size")
+    async with _client(base_url, api_key) as client:
+        resp = await client.people.get_person_thumbnail_without_preload_content(
+            UUID(person_id)
+        )
+        async with resp:
+            await _raise_for_status(resp)
+            content = bytearray()
+            async for chunk in resp.content.iter_chunked(1024 * 1024):
+                content.extend(chunk)
+                if len(content) > max_bytes:
+                    # Abort early instead of buffering an unbounded body into memory.
+                    raise ValueError(
+                        "Immich person thumbnail exceeds maximum profile image size"
+                    )
+    return bytes(content)
+
+
+async def _raise_for_status(resp: aiohttp.ClientResponse) -> None:
+    """Raise the same typed exception immichpy would for a non-2xx response."""
+    if 200 <= resp.status <= 299:
+        return
+    body = (await resp.read()).decode("utf-8", "replace")
+    raise ApiException.from_response(http_resp=resp, body=body, data=None)
+
+
+async def download_original_to_file(
+    base_url: str,
+    api_key: str,
+    asset_id: str,
+    dest_path: Path,
+) -> None:
+    """Stream an asset's original file to ``dest_path``."""
+    async with _client(base_url, api_key) as client:
+        resp = await client.assets.download_asset_without_preload_content(
+            UUID(asset_id)
+        )
+        async with resp:
+            await _raise_for_status(resp)
+            async with aiofiles.open(dest_path, "wb") as f:
+                async for chunk in resp.content.iter_chunked(1024 * 1024):
+                    await f.write(chunk)
+
+
+async def download_media_bytes(
+    base_url: str,
+    api_key: str,
+    asset_id: str,
+    size: AssetMediaSize,
+) -> bytes:
+    """Download an asset's thumbnail/preview and return its bytes in memory."""
+    # ``view_asset`` reads the whole (small) body and raises immichpy's typed
+    # exceptions on non-2xx, so no hand-rolled status handling is needed here.
+    async with _client(base_url, api_key) as client:
+        content = await client.assets.view_asset(UUID(asset_id), size=size)
     return bytes(content)
 
 
@@ -754,9 +749,13 @@ def _build_signed_proxy_url(
     ttl_seconds: int,
 ) -> str:
     # Handle both enum and string types for provider
-    provider_value = provider.value if isinstance(provider, IntegrationProvider) else provider
+    provider_value = (
+        provider.value if isinstance(provider, IntegrationProvider) else provider
+    )
     expires_at = int(time.time()) + ttl_seconds
-    query = build_signed_query(provider_value, variant, asset_id, str(user_id), expires_at)
+    query = build_signed_query(
+        provider_value, variant, asset_id, str(user_id), expires_at
+    )
     return (
         f"/api/v1/integrations/{provider_value}/proxy/{asset_id}/{variant}"
         f"?{urlencode(query)}"

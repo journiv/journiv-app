@@ -1,21 +1,42 @@
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
-import httpx
 import pytest
+from immichpy.client.generated import AssetMediaSize, AssetOrder
+from immichpy.client.generated.exceptions import NotFoundException
 
 from app.integrations import immich
-from app.integrations.immich import IMMICH_API_SEARCH_METADATA
 from app.models.integration import AssetType, Integration, IntegrationProvider
 from app.models.user import User
+
+ASSET_ID = "11111111-1111-1111-1111-111111111111"
+ASSET_ID2 = "22222222-2222-2222-2222-222222222222"
+ALBUM_ID = "33333333-3333-3333-3333-333333333333"
+
+
+def _dto(payload: dict) -> MagicMock:
+    """Stand-in for an immichpy DTO: `_dump()` only calls `.to_json()`."""
+    model = MagicMock()
+    model.to_json.return_value = json.dumps(payload)
+    return model
+
+
+def _patch_client(client: MagicMock):
+    """Patch the immichpy client factory (an async context manager) to yield the
+    given mock client."""
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=client)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return patch("app.integrations.immich._client", return_value=cm)
 
 
 class TestImmichProvider:
 
     @pytest.mark.asyncio
     async def test_list_assets_requests_sorted_live_response(self):
-        """Test that list_assets requests descending order from API."""
-        # Setup Mocks
+        """list_assets should request descending order via MetadataSearchDto."""
         mock_user = User(id="00000000-0000-0000-0000-000000000000")
         mock_integration = Integration(
             id="00000000-0000-0000-0000-000000000000",
@@ -27,300 +48,250 @@ class TestImmichProvider:
             external_user_id="immich-user-1",
         )
 
-        response_json = {
-            "assets": {"items": [], "total": 0}
-        }
+        search_response = MagicMock()
+        search_response.assets.items = []
+        search_response.assets.total = 0
+        search_response.assets.count = 0
 
-        # Mock dependencies
+        client = MagicMock()
+        client.search.search_assets = AsyncMock(return_value=search_response)
+
         with patch("app.integrations.immich._get_cache") as mock_cache_get:
             mock_cache = MagicMock()
-            mock_cache.get.return_value = None # Force live fetch
+            mock_cache.get.return_value = None  # Force live fetch
             mock_cache_get.return_value = mock_cache
 
-
-            with patch("app.integrations.immich._get_client") as mock_client_get:
-                mock_client = AsyncMock()
-                # Ensure the response object is a regular MagicMock, not Async
-                mock_response = MagicMock()
-                mock_response.json.return_value = response_json
-                mock_response.raise_for_status = MagicMock()
-
-                mock_client.post.return_value = mock_response
-                mock_client_get.return_value = mock_client
-
+            with _patch_client(client):
                 with patch("app.integrations.immich.decrypt_token", return_value="key"):
-                    # Execute
                     await immich.list_assets(
                         session=MagicMock(),
                         user=mock_user,
                         integration=mock_integration,
-                        page=1
+                        page=1,
                     )
 
-                    # Verify API call included order: desc
-                    call_kwargs = mock_client.post.call_args.kwargs
-                    assert call_kwargs['json']['order'] == 'desc'
+            dto = client.search.search_assets.call_args.args[0]
+            assert dto.order == AssetOrder.DESC
 
     @pytest.mark.asyncio
     async def test_ensure_album_exists_found_existing(self):
-        """Test ensure_album_exists returns ID when album already exists."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "Journiv"
-        existing_id = "existing-uuid"
-
+        """ensure_album_exists returns ID when album already exists."""
         with patch("app.integrations.immich.get_album_id_by_name", new_callable=AsyncMock) as mock_get_id:
-            mock_get_id.return_value = existing_id
+            mock_get_id.return_value = "existing-uuid"
 
-            # Execute
-            result = await immich.ensure_album_exists(base_url, api_key, album_name)
+            result = await immich.ensure_album_exists("http://immich.test", "test-key", "Journiv")
 
-            # Verify
-            assert result == existing_id
-            mock_get_id.assert_called_once_with(base_url, api_key, album_name)
+            assert result == "existing-uuid"
+            mock_get_id.assert_called_once_with("http://immich.test", "test-key", "Journiv")
 
     @pytest.mark.asyncio
     async def test_ensure_album_exists_create_new(self):
-        """Test ensure_album_exists creates new album when not found."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "Journiv"
-        new_id = "new-uuid"
-
+        """ensure_album_exists creates a new album when not found."""
         with patch("app.integrations.immich.get_album_id_by_name", new_callable=AsyncMock) as mock_get_id:
-            mock_get_id.return_value = None  # Not found initially
+            mock_get_id.return_value = None
 
             with patch("app.integrations.immich.create_album", new_callable=AsyncMock) as mock_create:
-                mock_create.return_value = new_id
+                mock_create.return_value = "new-uuid"
 
-                # Execute
-                result = await immich.ensure_album_exists(base_url, api_key, album_name)
+                result = await immich.ensure_album_exists("http://immich.test", "test-key", "Journiv")
 
-                # Verify
-                assert result == new_id
-                mock_get_id.assert_called_once_with(base_url, api_key, album_name)
-                mock_create.assert_called_once_with(base_url, api_key, album_name)
+                assert result == "new-uuid"
+                mock_create.assert_called_once_with("http://immich.test", "test-key", "Journiv")
 
     @pytest.mark.asyncio
     async def test_ensure_album_exists_race_condition(self):
-        """Test ensure_album_exists handles race condition (creation fails but exists)."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "Journiv"
-        race_id = "race-uuid"
-
+        """ensure_album_exists handles a create race (fails, then finds it)."""
         with patch("app.integrations.immich.get_album_id_by_name", new_callable=AsyncMock) as mock_get_id:
-            # First call -> None (not found), Second call -> ID (found)
-            mock_get_id.side_effect = [None, race_id]
+            mock_get_id.side_effect = [None, "race-uuid"]
 
             with patch("app.integrations.immich.create_album", new_callable=AsyncMock) as mock_create:
-                # Creation fails (e.g. someone else created it in between)
                 mock_create.side_effect = ValueError("Album already exists")
 
-                # Execute
-                result = await immich.ensure_album_exists(base_url, api_key, album_name)
+                result = await immich.ensure_album_exists("http://immich.test", "test-key", "Journiv")
 
-                # Verify
-                assert result == race_id
+                assert result == "race-uuid"
                 assert mock_get_id.call_count == 2
                 mock_create.assert_called_once()
 
-
     @pytest.mark.asyncio
     async def test_get_album_id_by_name_found(self):
-        """Test get_album_id_by_name finds the correct album."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "Target Album"
-
-        albums_response = [
-            {"id": "id-1", "albumName": "Other Album"},
-            {"id": "target-id", "albumName": "Target Album"},
-            {"id": "id-2", "albumName": "Another Album"},
+        """get_album_id_by_name matches on album_name and returns the id."""
+        albums = [
+            MagicMock(id="id-1", album_name="Other Album"),
+            MagicMock(id="target-id", album_name="Target Album"),
+            MagicMock(id="id-2", album_name="Another Album"),
         ]
+        client = MagicMock()
+        client.albums.get_all_albums = AsyncMock(return_value=albums)
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
+        with _patch_client(client):
+            result = await immich.get_album_id_by_name("http://immich.test", "test-key", "Target Album")
 
-            mock_response = MagicMock()
-            mock_response.json.return_value = albums_response
-            mock_response.raise_for_status = MagicMock()
-            mock_client.get.return_value = mock_response
-
-            # Execute
-            result = await immich.get_album_id_by_name(base_url, api_key, album_name)
-
-            # Verify
-            assert result == "target-id"
-            mock_client.get.assert_called_once()
-            assert mock_client.get.call_args[0][0] == f"{base_url}/api/albums"
+        assert result == "target-id"
+        client.albums.get_all_albums.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_album_id_by_name_not_found(self):
-        """Test get_album_id_by_name returns None if not found."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "Non Existent"
+        """get_album_id_by_name returns None when no album matches."""
+        client = MagicMock()
+        client.albums.get_all_albums = AsyncMock(
+            return_value=[MagicMock(id="id-1", album_name="Other Album")]
+        )
 
-        albums_response = [
-            {"id": "id-1", "albumName": "Other Album"},
-        ]
+        with _patch_client(client):
+            result = await immich.get_album_id_by_name("http://immich.test", "test-key", "Non Existent")
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
-
-            mock_response = MagicMock()
-            mock_response.json.return_value = albums_response
-            mock_client.get.return_value = mock_response
-
-            # Execute
-            result = await immich.get_album_id_by_name(base_url, api_key, album_name)
-
-            # Verify
-            assert result is None
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_create_album_success(self):
-        """Test create_album calls correct endpoint."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "New Album"
-        new_id = "new-uuid"
+        """create_album returns the new album id and sends the album name."""
+        client = MagicMock()
+        client.albums.create_album = AsyncMock(return_value=MagicMock(id="new-uuid"))
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
+        with _patch_client(client):
+            result = await immich.create_album("http://immich.test", "test-key", "New Album")
 
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"id": new_id}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.post.return_value = mock_response
-
-            # Execute
-            result = await immich.create_album(base_url, api_key, album_name)
-
-            # Verify
-            assert result == new_id
-            mock_client.post.assert_called_once()
-            args, kwargs = mock_client.post.call_args
-            assert args[0] == f"{base_url}/api/albums"
-            assert kwargs['json']['albumName'] == album_name
+        assert result == "new-uuid"
+        dto = client.albums.create_album.call_args.args[0]
+        assert dto.album_name == "New Album"
 
     @pytest.mark.asyncio
     async def test_add_assets_to_album(self):
-        """Test add_assets_to_album calls correct endpoint."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_id = "album-uuid"
-        asset_ids = ["asset-1", "asset-2"]
+        """add_assets_to_album passes UUIDs to the immichpy client."""
+        client = MagicMock()
+        client.albums.add_assets_to_album = AsyncMock()
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
+        with _patch_client(client):
+            await immich.add_assets_to_album(
+                "http://immich.test", "test-key", ALBUM_ID, [ASSET_ID, ASSET_ID2]
+            )
 
-            mock_response = MagicMock()
-            mock_response.raise_for_status = MagicMock()
-            mock_client.put.return_value = mock_response
-
-            # Execute
-            await immich.add_assets_to_album(base_url, api_key, album_id, asset_ids)
-
-            # Verify
-            mock_client.put.assert_called_once()
-            args, kwargs = mock_client.put.call_args
-            assert args[0] == f"{base_url}/api/albums/{album_id}/assets"
-            assert kwargs['json']['ids'] == asset_ids
+        args = client.albums.add_assets_to_album.call_args.args
+        assert args[0] == UUID(ALBUM_ID)
+        assert args[1].ids == [UUID(ASSET_ID), UUID(ASSET_ID2)]
 
     def test_get_asset_url_variants(self):
-        """Test URL generation for different asset types."""
+        """URL generation for different asset types (pure, no HTTP)."""
         base_url = "http://immich.test"
         asset_id = "asset-1"
 
-        # Image original
         url = immich.get_asset_url(base_url, asset_id, "original", AssetType.IMAGE)
         assert "/thumbnail?size=preview" in url
         assert asset_id in url
 
-        # Video original
         url = immich.get_asset_url(base_url, asset_id, "original", AssetType.VIDEO)
         assert "/video/playback" in url
         assert asset_id in url
 
-        # Thumbnail (type doesn't matter)
         url = immich.get_asset_url(base_url, asset_id, "thumbnail", AssetType.IMAGE)
         assert "/thumbnail" in url
         assert "size=preview" not in url
 
     @pytest.mark.asyncio
     async def test_get_asset_info_success(self):
-        """Test fetching asset info from Immich."""
-        base_url = "http://immich.test"
-        api_key = "key"
-        asset_id = "asset-1"
-        response_data = {"id": asset_id, "type": "VIDEO"}
+        """get_asset_info returns the dumped asset dict."""
+        response_data = {"id": ASSET_ID, "type": "VIDEO"}
+        client = MagicMock()
+        client.assets.get_asset_info = AsyncMock(return_value=_dto(response_data))
 
-        with patch("app.integrations.immich._get_client") as mock_get_client:
-            mock_client = AsyncMock()
-            mock_response = MagicMock()
-            mock_response.status_code = 200  # Explicitly set status code
-            mock_response.json.return_value = response_data
-            mock_response.raise_for_status = MagicMock()
-            mock_client.get.return_value = mock_response
-            mock_get_client.return_value = mock_client
+        with _patch_client(client):
+            result = await immich.get_asset_info("http://immich.test", "key", ASSET_ID)
 
-            result = await immich.get_asset_info(base_url, api_key, asset_id)
-
-            assert result == response_data
-            mock_client.get.assert_called_once()
-            assert f"/api/assets/{asset_id}" in mock_client.get.call_args[0][0]
+        assert result == response_data
+        assert client.assets.get_asset_info.call_args.args[0] == UUID(ASSET_ID)
 
     @pytest.mark.asyncio
     async def test_get_asset_info_fallback(self):
-        """Test get_asset_info falls back to search on 404."""
-        base_url = "http://immich.test"
-        api_key = "key"
-        asset_id = "asset-1"
-        response_data = {"id": asset_id, "type": "VIDEO"}
+        """get_asset_info falls back to metadata search on 404."""
+        response_data = {"id": ASSET_ID, "type": "VIDEO"}
+        search_response = MagicMock()
+        search_response.assets.items = [_dto(response_data)]
 
-        with patch("app.integrations.immich._get_client") as mock_get_client:
-            mock_client = AsyncMock()
+        client = MagicMock()
+        client.assets.get_asset_info = AsyncMock(side_effect=NotFoundException(status=404))
+        client.search.search_assets = AsyncMock(return_value=search_response)
 
-            # First response: 404
-            mock_response_404 = MagicMock()
-            mock_response_404.status_code = 404
-            mock_client.get.return_value = mock_response_404
+        with _patch_client(client):
+            result = await immich.get_asset_info("http://immich.test", "key", ASSET_ID)
 
-            # Second response (search): 200
-            mock_response_search = MagicMock()
-            mock_response_search.status_code = 200
-            mock_response_search.json.return_value = {
-                "assets": {"items": [response_data]}
-            }
-            mock_client.post.return_value = mock_response_search
-
-            mock_get_client.return_value = mock_client
-
-            result = await immich.get_asset_info(base_url, api_key, asset_id)
-
-            assert result == response_data
-            mock_client.get.assert_called_once()
-            mock_client.post.assert_called_once()
-            assert IMMICH_API_SEARCH_METADATA in mock_client.post.call_args[0][0]
+        assert result == response_data
+        assert client.search.search_assets.call_args.args[0].id == UUID(ASSET_ID)
 
     @pytest.mark.asyncio
     async def test_get_asset_info_failure(self):
-        """Test get_asset_info returns empty dict on error."""
-        with patch("app.integrations.immich._get_client") as mock_get_client:
-            mock_client = AsyncMock()
-            mock_client.get.side_effect = httpx.RequestError("Error")
-            mock_get_client.return_value = mock_client
+        """get_asset_info returns an empty dict on unexpected errors."""
+        client = MagicMock()
+        client.assets.get_asset_info = AsyncMock(side_effect=RuntimeError("boom"))
 
-            result = await immich.get_asset_info("url", "key", "id")
-            assert result == {}
+        with _patch_client(client):
+            result = await immich.get_asset_info("http://immich.test", "key", ASSET_ID)
 
+        assert result == {}
+
+
+class _FakeAioResp:
+    """Minimal aiohttp.ClientResponse stand-in for the streaming download helpers."""
+
+    def __init__(self, body: bytes = b""):
+        self.status = 200
+        self.reason = "OK"
+        self.headers: dict = {}
+        self._body = body
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def read(self) -> bytes:
+        return self._body
+
+    @property
+    def content(self):
+        body = self._body
+
+        class _Stream:
+            async def iter_chunked(self, n):
+                for i in range(0, len(body), n):
+                    yield body[i:i + n]
+
+        return _Stream()
+
+
+class TestImmichDownloadHelpers:
+    """Cover journiv's own download wiring (UUID conversion, streaming, bytes).
+
+    The status->exception mapping is immichpy's (ApiException.from_response) and
+    is not re-tested here.
+    """
+
+    @pytest.mark.asyncio
+    async def test_download_media_bytes_returns_body(self):
+        client = MagicMock()
+        client.assets.view_asset = AsyncMock(return_value=bytearray(b"IMG"))
+
+        with _patch_client(client):
+            data = await immich.download_media_bytes(
+                "http://immich.test", "key", ASSET_ID, AssetMediaSize.THUMBNAIL
+            )
+
+        assert data == b"IMG"
+        call = client.assets.view_asset.call_args
+        assert call.args[0] == UUID(ASSET_ID)
+        assert call.kwargs["size"] == AssetMediaSize.THUMBNAIL
+
+    @pytest.mark.asyncio
+    async def test_download_original_to_file_streams_to_disk(self, tmp_path):
+        client = MagicMock()
+        client.assets.download_asset_without_preload_content = AsyncMock(
+            return_value=_FakeAioResp(b"V" * 1_500_000)
+        )
+        dest = tmp_path / "original"
+
+        with _patch_client(client):
+            await immich.download_original_to_file("http://immich.test", "key", ASSET_ID, dest)
+
+        assert dest.read_bytes() == b"V" * 1_500_000
+        assert client.assets.download_asset_without_preload_content.call_args.args[0] == UUID(ASSET_ID)

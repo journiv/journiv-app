@@ -21,6 +21,7 @@ from typing import Annotated, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from immichpy.client.generated.exceptions import ApiException
 from sqlmodel import select
 from starlette.background import BackgroundTask
 
@@ -420,8 +421,8 @@ async def list_immich_people(
             )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail="Immich people request failed") from None
+    except ApiException as e:
+        raise HTTPException(status_code=e.status or 502, detail="Immich people request failed") from None
     except Exception as e:
         log_error(e)
         raise HTTPException(
@@ -484,8 +485,8 @@ async def get_immich_asset_faces(
         return {"asset_id": asset_id, "faces": faces}
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=e.response.status_code, detail="Immich faces request failed") from None
+    except ApiException as e:
+        raise HTTPException(status_code=e.status or 502, detail="Immich faces request failed") from None
     except Exception as e:
         log_error(e)
         raise HTTPException(

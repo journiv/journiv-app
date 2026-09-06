@@ -138,8 +138,11 @@ class TestIntegrationService:
         mock_user = MagicMock()
         mock_user.id = "user-123"
 
-        # Mock the provider's connect function to return a user ID
-        with patch('app.integrations.immich.connect', new_callable=AsyncMock) as mock_connect:
+        # Mock the provider's connect function to return a user ID. Also stub
+        # ensure_album_exists so the real immich client (and its aiohttp session)
+        # is never created during this unit test.
+        with patch('app.integrations.immich.connect', new_callable=AsyncMock) as mock_connect, \
+             patch('app.integrations.immich.ensure_album_exists', new_callable=AsyncMock):
             mock_connect.return_value = "immich-user-456"
 
             # Mock session.exec to simulate no existing integration
@@ -535,35 +538,6 @@ class TestAlbumAssetManagement:
 
 class TestIntegrationOptimizations:
     """Test recent performance optimizations (Connection Pooling, Caching, Shared Clients)."""
-
-    @pytest.mark.asyncio
-    async def test_immich_client_is_shared(self):
-        """Test that Immich provider uses a shared httpx client."""
-        from app.integrations import immich
-
-        # Reset client to ensure clean state
-        original_client = immich._client
-        immich._client = None
-        client1 = None
-        client2 = None
-
-        try:
-            client1 = immich._get_client()
-            client2 = immich._get_client()
-
-            assert client1 is not None
-            assert client2 is not None
-            assert client1 is client2
-            assert isinstance(client1, httpx.AsyncClient)
-        finally:
-            clients_to_close = []
-            for client in (immich._client, client1, client2):
-                if isinstance(client, httpx.AsyncClient) and client is not original_client:
-                    if client not in clients_to_close:
-                        clients_to_close.append(client)
-            for client in clients_to_close:
-                await client.aclose()
-            immich._client = original_client
 
     @pytest.mark.asyncio
     async def test_proxy_credential_caching(self):
