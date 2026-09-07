@@ -1,7 +1,7 @@
 import { Button } from "../../../components/ui/button";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { StatusView } from "../../../components/journiv/StatusView";
-import { useSettingsDirty } from "../SettingsModal";
+import { useSettingsForm } from "../SettingsModal";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 import { PersonalizeSection } from "./PersonalizeSection";
 import { useAppearanceForm } from "./useAppearanceForm";
@@ -10,7 +10,12 @@ import { Alert, AlertDescription } from "../../../components/ui/alert";
 
 export function AppearancePage() {
   const form = useAppearanceForm();
-  useSettingsDirty(form.dirty);
+  useSettingsForm({
+    dirty: form.dirty,
+    pending: form.mutation.isPending,
+    canSave: form.dirty && !form.mutation.isPending,
+    onSave: () => form.mutation.mutate(),
+  });
   if (form.query.isLoading)
     return <Skeleton className="jv-settings__skeleton" />;
   if (form.query.isError)
@@ -30,15 +35,6 @@ export function AppearancePage() {
       <SettingsSection
         title="Appearance"
         intro="These are account defaults. The sidebar theme control remains a per-device override."
-        footer={
-          <Button
-            variant="default"
-            disabled={!form.dirty || form.mutation.isPending}
-            onClick={() => form.mutation.mutate()}
-          >
-            {form.mutation.isPending ? "Saving…" : "Save changes"}
-          </Button>
-        }
       >
         <SettingsRow label="Account theme" htmlFor="account-theme">
           <NativeSelect

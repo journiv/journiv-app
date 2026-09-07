@@ -1,6 +1,11 @@
 /* Settings — a contextual overlay over Journiv (docs/features/settings.md).
    Desktop: a large two-column modal. Compact: a full-screen routed flow.
-   One responsive Dialog; the layout switches in CSS, the routes do not. */
+   One responsive Dialog; the layout switches in CSS, the routes do not.
+
+   Settings is application chrome but not a dashboard. Sections sit directly on
+   one plain pane surface — no muted canvas, no raised cards. Grouping is a
+   heading, vertical rhythm, and a hairline between sections (DESIGN.md,
+   docs/features/settings.md). */
 
 .jv-settings-popup {
   position: fixed;
@@ -11,6 +16,16 @@
   overflow: hidden;
   background: var(--popover);
   color: var(--foreground);
+
+  /* Two left-anchored measures, never centred (DESIGN.md "Settings rows").
+     `measure` bounds the structure — headings, dividers, rows, empty states,
+     the footer rule — so it fills the desktop pane without a wide right gutter.
+     `field-measure` bounds a single input/select tighter, so a lone control is
+     not stretched to the structure's width. Wide table blocks opt out with
+     `jv-settings__body--wide`. */
+  --jv-settings-measure: 43rem;
+  --jv-settings-field-measure: 30rem;
+  --jv-settings-pad-inline: var(--space-8);
 }
 
 /* Desktop: centre a bounded workspace with generous margins. */
@@ -95,6 +110,35 @@
 @media (max-width: 1100px) {
   .jv-settings__topbar .jv-settings__back {
     display: inline-flex;
+  }
+
+  /* Compact: the pane inset drops to 16px — the app-shell pane value — so the
+     content column is not crushed on a phone (DESIGN.md). */
+  .jv-settings-popup {
+    --jv-settings-pad-inline: var(--space-4);
+  }
+
+  /* The primary action is full-width and thumb-reachable on compact. */
+  .jv-settings__actionbar {
+    justify-content: stretch;
+  }
+
+  .jv-settings__actionbar > :where(button, [data-slot="button"], a) {
+    width: 100%;
+  }
+
+  /* Section footer actions (Create export, Start import, Connect…) match: a
+     full-width primary on compact. A footer with more than one button stacks,
+     source order intact, so the primary lands at the bottom within thumb
+     reach. */
+  .jv-settings-section__footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+  }
+
+  .jv-settings-section__footer > :where(button, [data-slot="button"], a) {
+    width: 100%;
   }
 }
 
@@ -239,15 +283,13 @@
 
 /* ---- content pane ----------------------------------------------------------- */
 
-/* The settings canvas. Sections are cards raised off it (DESIGN.md, docs/features/settings.md),
-   so this is `--muted` — the same surface relationship the app shell uses
-   between the page canvas and its panels. */
+/* One plain surface — the same as the modal behind it. Sections are not cards,
+   so there is no second canvas colour here (DESIGN.md, docs/features/settings.md). */
 .jv-settings__content {
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  background: var(--muted);
 }
 
 @media (min-width: 1101px) {
@@ -256,110 +298,171 @@
   }
 }
 
-/* The one scroll owner in the modal. The top bar is a flex sibling above it,
-   never sticky (DESIGN.md). */
+/* The one scroll owner in the modal. The top bar is a flex sibling above it and
+   the action bar a flex sibling below it — neither is a sticky layer over
+   scrolling content (DESIGN.md). */
 .jv-settings__scroll {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-8) var(--space-6)
+  padding: var(--space-8) var(--jv-settings-pad-inline)
     max(var(--space-8), env(safe-area-inset-bottom));
 }
 
-/* Named so a page inside it can say which box it is measuring. Sections and
-   rows reflow against the content pane's width, never the viewport's — inside
-   a fixed-width modal those two numbers have nothing to do with each other
-   (DESIGN.md). */
-.jv-settings__body {
-  max-width: 46rem;
-  container: jv-settings-body / inline-size;
+/* The page's primary Save. A fixed flex sibling of the scroll owner, always
+   in view, with one primary button (no Cancel — Esc / ✕ / backdrop / Back
+   dismiss, all guarded). On compact widths the button goes full-width for
+   thumb reach. */
+.jv-settings__actionbar {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--jv-settings-pad-inline);
+  padding-bottom: max(var(--space-3), env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--popover);
 }
 
-/* A data table is not a form: it gets the whole content pane rather than the
-   46rem reading measure, and decides its own column budget from that width
-   (docs/features/settings.md, and `users.css`). */
+/* Left-anchored content measure (not centred). A control caps tighter than the
+   body so a lone input does not stretch the full measure. */
+.jv-settings__body {
+  max-width: var(--jv-settings-measure);
+}
+
+/* A whole page that is a data table (Users) gets the content pane rather than
+   the reading measure, and decides its own column budget from that width
+   (docs/features/settings.md, and `users.css`). A page that pairs a form with a
+   history table (Import, Export) keeps one measure for both — the table sits in
+   its own `overflow-x` container and scrolls there if a row is ever too wide,
+   rather than widening the page and breaking the shared left edge. */
 .jv-settings__body--wide {
   max-width: none;
 }
 
-/* A whole-pane empty or error state is still a chrome surface, so it is bounded
-   like a section rather than floating on the canvas (DESIGN.md). This also
-   keeps the state's own action identifiable: on `--muted` in dark, `--secondary`
-   and `--border` are the same value as the canvas, so a `secondary` button
-   sitting straight on it has no edge at all (DESIGN.md). */
-.jv-settings__scroll > [data-slot="empty"] {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow-xs);
-}
-
-/* On a phone the page inset and the card padding compete for the same 390px.
-   `--card-spacing` is `Card`'s own knob, so this tightens the card without
-   touching its class string. */
-@media (max-width: 620px) {
-  .jv-settings-section {
-    --card-spacing: var(--space-4);
-  }
-}
-
 /* ---- sections and rows ------------------------------------------------------ */
 
-/* Cards, alerts and status blocks all sit on the settings canvas at one
-   rhythm. Section actions live in the card footer, never out here. */
+/* Sections, alerts and status blocks sit on the pane at one rhythm. Adjacent
+   sections are separated by space and a hairline — the card-free equivalent of
+   a raised panel edge. */
 .jv-settings-section + *,
 * + .jv-settings-section {
   margin-top: var(--space-6);
 }
 
-/* The heading element only carries semantics — `CardTitle` owns the type. */
-.jv-settings-section__title {
-  margin: 0;
-  font-size: inherit;
-  font-weight: inherit;
-  letter-spacing: inherit;
+.jv-settings-section + .jv-settings-section {
+  margin-top: var(--space-8);
+  padding-top: var(--space-8);
+  border-top: 1px solid var(--border);
 }
 
-/* Settings rows are flush inside the card and separated by hairlines, so the
-   card content drops its own gap. Sections whose body is not a row list (the
-   provider catalogue, Personalize) keep it. */
-.jv-settings-section
-[data-slot="card-content"]:has(> .jv-settings-row):not(
-  :has(> :not(.jv-settings-row))
-) {
+/* When the previous section ends in a footer, that footer's own top rule is
+   already the separator — a second hairline right under it just reads as
+   noise. Keep the spacing, drop the duplicate line. */
+.jv-settings-section:has(> .jv-settings-section__footer)
++ .jv-settings-section {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* Header: heading + one-line intro, with an optional section action opposite. */
+.jv-settings-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.jv-settings-section__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.jv-settings-section__action {
+  flex: 0 0 auto;
+}
+
+/* Hierarchy step: title reads a size up from a row label, the intro a size
+   down and muted (DESIGN.md "Chrome type hierarchy"). */
+.jv-settings-section__title {
+  margin: 0;
+  font-size: 1.0625rem;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+
+.jv-settings-section__intro {
+  margin: 0;
+  max-width: 60ch;
+  font-size: 0.8125rem;
+  color: var(--muted-foreground);
+}
+
+.jv-settings-section__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* A body that is purely a row list drops its gap — rows carry their own block
+   padding and the hairline between them. */
+.jv-settings-section__body:has(> .jv-settings-row) {
   gap: 0;
 }
 
-/* Setting: label + description on the left, control on the right. The row is
-   a stock `Item` carrying a `Field`; what stays here is the two-column reflow
-   at the row's own width (DESIGN.md — a component breakpoint, not a layout one) and
-   the hairline between rows. */
+/* An empty or error state inside a section is a quiet inline note aligned with
+   the section's own content — not the large centred pane-level `Empty`, which
+   is for a whole route with nothing in it. Pane-level StatusView (a failed
+   load, rendered outside a section) keeps its centred treatment. */
+.jv-settings-section__body [data-slot="empty"] {
+  align-items: flex-start;
+  max-width: none;
+  margin-inline: 0;
+  padding: var(--space-4) 0;
+  text-align: left;
+}
+
+.jv-settings-section__body
+  [data-slot="empty"]
+  :where([data-slot="empty-header"], [data-slot="empty-content"]) {
+  align-items: flex-start;
+  text-align: left;
+}
+
+/* The section's own settled actions (Connect, Start import, Register…), in a
+   hairline-topped row. Not the page's primary Save. */
+.jv-settings-section__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* Setting: label + help stacked above the control by default. The control is
+   left-anchored and bounded — never pinned to the far edge with a dead gutter
+   beside it (DESIGN.md "Settings rows"). The row is a stock `Item` carrying a
+   `Field`; what stays here is the stack, the bound, and the hairline. */
 .jv-settings-row {
   align-items: flex-start;
   flex-direction: column;
   gap: var(--space-2);
+  padding-block: var(--space-3);
   padding-inline: 0;
+  border-radius: 0;
+}
+
+.jv-settings-row:first-child {
+  padding-top: 0;
 }
 
 .jv-settings-row + .jv-settings-row {
   border-top: 1px solid var(--border);
-}
-
-/* The row list is flush with the card's horizontal padding. */
-.jv-settings-row {
-  border-radius: 0;
-}
-
-@container jv-settings-body (min-width: 620px) {
-  .jv-settings-row {
-    flex-direction: row;
-    align-items: flex-start;
-    gap: var(--space-6);
-  }
-  .jv-settings-row__control {
-    flex: 0 0 22rem;
-    max-width: 22rem;
-  }
 }
 
 .jv-settings-row__control {
@@ -368,7 +471,29 @@
   align-items: stretch;
   gap: var(--space-2);
   width: 100%;
+  max-width: var(--jv-settings-field-measure);
   min-width: 0;
+}
+
+/* Inline variant — label, then the control right beside it. For toggles and
+   short segmented controls only (DESIGN.md); inputs and selects stay stacked.
+   The control sits next to its own label rather than stranded at the section
+   edge, while the row and its hairline still span the structural measure. */
+.jv-settings-row--inline {
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: var(--space-4);
+}
+
+.jv-settings-row--inline > [data-slot="item-content"] {
+  flex: 0 1 auto;
+}
+
+.jv-settings-row--inline .jv-settings-row__control {
+  width: auto;
+  max-width: none;
+  flex: 0 0 auto;
 }
 
 .jv-settings-row__readonly {
@@ -397,7 +522,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding-bottom: var(--space-6);
+  margin-bottom: var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
 }
 
 /* A stock `Avatar`; only the identity block's larger size is Journiv's. */

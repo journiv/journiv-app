@@ -235,6 +235,7 @@ export function ExportPage() {
           label="Include media"
           htmlFor="export-media"
           description="Adds original photos and files to the archive."
+          inline
         >
           <Switch
             id="export-media"
