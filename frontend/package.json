@@ -45,7 +45,8 @@
     "react-day-picker": "10.0.1",
     "react-dom": "19.2.3",
     "recharts": "3.8.0",
-    "tailwind-merge": "3.6.0"
+    "tailwind-merge": "3.6.0",
+    "yet-another-react-lightbox": "3.32.2"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.10",

@@ -1,10 +1,10 @@
 /* A Moment's media gallery. Shared by the Reader (docs/features/reader.md) and
    the Editor's attached-media surface (docs/features/editor.md).
 
-   Photographs are never cropped. Until there is a full-image viewer, a cropped
-   preview hides part of a memory with no way to inspect it, so every item is
-   shown whole at its own aspect ratio in a single column. A compact cropped
-   grid becomes acceptable once a viewer exists. */
+   Photographs are never cropped here: every item is shown whole at its own
+   aspect ratio in a single column, because this is the entry's content. The
+   full-screen viewer (components/journiv/media/MediaViewer) is for inspecting a
+   single item, not a reason to crop the inline gallery. */
 
 .jv-media {
   display: flex;
@@ -36,6 +36,37 @@
 
 .jv-media__element--contain {
   object-fit: contain;
+}
+
+/* ---- open full screen (content variant) --------------------------------
+   The image itself is the button. A video keeps its native controls, so it
+   gets a small corner control instead. Both are emitted only when the Reader
+   passes `onOpenItem`; the gallery is otherwise unchanged. */
+
+.jv-media__open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.jv-media__expand {
+  position: absolute;
+  inset-block-start: var(--space-2);
+  inset-inline-end: var(--space-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--space-8);
+  height: var(--space-8);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--overlay-scrim);
+  color: var(--text-on-overlay);
+  cursor: pointer;
 }
 
 .jv-media__placeholder {

@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { CANONICAL_DELTA_FIXTURES } from "./fixtures";
 import { planReaderContent, QuillReader } from "./QuillReader";
 
@@ -37,6 +37,63 @@ describe("QuillReader", () => {
     expect(editor.querySelector("img")?.getAttribute("src")).toBe(SIGNED);
     expect(editor.textContent).toContain("Before the photo");
     expect(editor.textContent).toContain("After the photo");
+  });
+
+  it("gives inline images button semantics and a tab stop when activation is wired", () => {
+    render(
+      <QuillReader
+        content={{ ops: [{ insert: { image: SIGNED } }, { insert: "\n" }] }}
+        entryId="inline-a11y"
+        onImageActivate={vi.fn()}
+      />,
+    );
+    const img = screen
+      .getByLabelText("Entry content")
+      .querySelector("img") as HTMLImageElement;
+    expect(img.getAttribute("role")).toBe("button");
+    expect(img.getAttribute("tabindex")).toBe("0");
+    expect(img.getAttribute("aria-label")).toBe("View image");
+  });
+
+  it("activates an inline image on click, Enter and Space, suppressing the default", () => {
+    const onImageActivate = vi.fn();
+    render(
+      <QuillReader
+        content={{
+          ops: [{ insert: { image: SIGNED } }, { insert: "\n" }],
+        }}
+        entryId="inline-open"
+        onImageActivate={onImageActivate}
+      />,
+    );
+    const img = screen
+      .getByLabelText("Entry content")
+      .querySelector("img") as HTMLImageElement;
+
+    expect(fireEvent.click(img)).toBe(false); // preventDefault -> cancelled
+    expect(onImageActivate).toHaveBeenLastCalledWith(img.src);
+
+    expect(fireEvent.keyDown(img, { key: "Enter" })).toBe(false);
+    expect(onImageActivate).toHaveBeenLastCalledWith(img.src);
+
+    expect(fireEvent.keyDown(img, { key: " " })).toBe(false);
+    expect(onImageActivate).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not touch inline images when no handler is given", () => {
+    render(
+      <QuillReader
+        content={{ ops: [{ insert: { image: SIGNED } }, { insert: "\n" }] }}
+        entryId="inline-noop"
+      />,
+    );
+    const img = screen
+      .getByLabelText("Entry content")
+      .querySelector("img") as HTMLImageElement;
+    expect(img.hasAttribute("role")).toBe(false);
+    expect(img.hasAttribute("tabindex")).toBe(false);
+    expect(fireEvent.click(img)).toBe(true);
+    expect(fireEvent.keyDown(img, { key: "Enter" })).toBe(true);
   });
 
   it("reports the inline paths so the gallery can avoid showing a photo twice", () => {

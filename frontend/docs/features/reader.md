@@ -61,7 +61,40 @@ fall back visibly to plain text.
 Where media is content, show it uncropped: one column, intrinsic ratio (3:2
 fallback), object-fit contain, bounded height, and reserved layout space.
 Thumbnails may use object-fit cover because they navigate to the full Moment.
-There is no full-screen viewer yet.
+
+### Full-screen viewer
+
+Activating a gallery image, or an inline prose image, opens the moment's media
+in a full-screen viewer (`components/journiv/media/MediaViewer`, backed by
+`yet-another-react-lightbox` and lazy-loaded). Gallery images are real buttons;
+inline prose images (rendered by Quill) are given `role="button"` + a tab stop
+and activate on click, Enter or Space. A gallery `<video>` keeps its native
+controls and gets a small corner "expand" control instead; an inline prose
+`<video>` has no expand affordance. Feature code speaks `MediaViewerItem`
+(`momentMediaToViewerItems`), never the library's slide types or a raw API
+response.
+
+The collection is **ready media only**: `image` and `video`, upload complete,
+signed URL present, inline and attached, in document order. Audio, `unknown`,
+and anything still processing or failed stay in the Reader gallery and never
+become a slide position. A slide that was ready but whose URL breaks at runtime
+keeps its position and shows an in-place error with a retry (`brokenIds` on the
+viewer), so the slide count never shifts mid-session.
+
+The open item is `?media=<mediaId>` on the reader route. Opening pushes one
+history entry; prev/next replace it; the close control steps back over the
+pushed entry (or just drops the param when the viewer was deep-linked). A
+`?media=` id is stripped from the URL only once the moment media query has
+*definitively* resolved without it — never while it is still loading, so a
+valid deep link survives a temporarily empty list. Load failures route through
+`useMomentMedia.reportLoadFailure` (the capture-phase handler also covers the
+Video plugin's `<source>`/`<video>`, which carry no `onError`); the viewer is
+keyed by media id, so a re-signed URL reloads the slide in place.
+
+The library owns its own modal semantics — `role="dialog"`, `aria-modal`,
+accessible name from `labels.Lightbox`, sibling `inert`, focus-in on open and
+focus-restore on close. `controller.aria` is a deprecated no-op in 3.32 and is
+not set. `carousel.finite` is deliberately `true` (no wrap past the last item).
 
 - alt_text is only image alt text, never a visible caption.
 - pending or processing media has a Processing frame; failed media has an
@@ -86,6 +119,9 @@ media needs one entry refetch because its URLs live in the document.
   WeasyPrint synchronously inside an `async` handler, blocking the event loop for
   the whole render. Offload the render (thread pool or worker).
 - Reader PageBar can be visually bare for journal-less quick logs.
-- No full-size media viewer; gallery images must stay uncropped until one exists.
+- The full-screen viewer is wired on the Reader only. The Media Library grid
+  still navigates to the moment; wiring it to open the viewer in place needs a
+  by-id media lookup for items outside the loaded page (`/api/v1/media/{id}/info`
+  returns an untyped body, so there is no contract for it yet).
 - Legacy absolute third-party media URLs intentionally fall back to plain text.
 - Existing media alt text cannot be edited without a backend update endpoint.

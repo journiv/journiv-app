@@ -1,0 +1,63 @@
+/* Full-screen media viewer.
+
+   The overlay itself is owned by `yet-another-react-lightbox`; this file only
+   maps its theming custom properties onto Journiv's on-media tokens so the
+   viewer matches the rest of the product in both themes, and styles the two
+   Journiv-authored pieces (the unavailable/processing placeholder and the
+   filename footer). The lightbox sits on a photograph, not a Journiv surface,
+   so — like every other on-media treatment — it is deliberately
+   theme-independent (DESIGN.md, "on-media values").
+
+   Note: only *assign* the --yarl__* properties here; never read one with
+   var(--yarl__…). The design guard resolves every var(--…) against Journiv's
+   own token set and a vendor name would read as an undefined token. */
+
+.jv-media-viewer {
+  --yarl__color_backdrop: var(--overlay-scrim-strong);
+  --yarl__color_button: var(--text-on-overlay);
+  --yarl__color_button_active: var(--text-on-overlay);
+  --yarl__slide_icon_loading_color: var(--text-on-overlay);
+  --yarl__slide_icon_error_color: var(--text-on-overlay);
+}
+
+.jv-media-viewer .yarl__slide_title {
+  color: var(--text-on-overlay);
+}
+
+/* Journiv-authored slide content: an in-place error for a slide whose signed
+   URL broke at runtime. It keeps its slide position rather than vanishing. */
+.jv-media-viewer__error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  color: var(--text-on-overlay);
+  text-align: center;
+}
+
+.jv-media-viewer__error-text {
+  max-width: 28ch;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* Filename / counter footer, positioned by the lightbox's own footer slot. */
+.jv-media-viewer__footer {
+  position: absolute;
+  inset-inline: 0;
+  inset-block-end: 0;
+  padding: var(--space-3) var(--space-4)
+    calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  color: var(--text-on-overlay);
+  font-size: 0.8125rem;
+  text-align: center;
+  text-shadow: 0 1px 2px var(--overlay-scrim);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .jv-media-viewer {
+    --yarl__fade_animation_duration: 1ms;
+  }
+}

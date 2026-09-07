@@ -49,11 +49,13 @@ function Harness({
   excludePaths,
   renderItemAction,
   variant,
+  onOpenItem,
 }: {
   moment: MomentResponse;
   excludePaths?: ReadonlySet<string>;
   renderItemAction?: (item: MomentMediaResponse) => ReactNode;
   variant?: "content" | "tray";
+  onOpenItem?: (id: string) => void;
 }) {
   const media = useMomentMedia(node.id, (node.media_count ?? 0) > 0);
   return (
@@ -63,6 +65,7 @@ function Harness({
       variant={variant}
       excludePaths={excludePaths}
       renderItemAction={renderItemAction}
+      onOpenItem={onOpenItem}
     />
   );
 }
@@ -71,6 +74,7 @@ function renderMedia(
   node: MomentResponse,
   excludePaths?: ReadonlySet<string>,
   renderItemAction?: (item: MomentMediaResponse) => ReactNode,
+  onOpenItem?: (id: string) => void,
 ) {
   const client = createAppQueryClient();
   client.setDefaultOptions({ queries: { retry: false } });
@@ -80,6 +84,7 @@ function renderMedia(
         moment={node}
         excludePaths={excludePaths}
         renderItemAction={renderItemAction}
+        onOpenItem={onOpenItem}
       />
     </QueryClientProvider>,
   );
@@ -295,6 +300,43 @@ describe("MomentMediaGallery", () => {
     expect(
       screen.getByRole("button", { name: "Add media-2 to entry" }),
     ).toBeTruthy();
+  });
+
+  it("opens a ready image full screen through its button", async () => {
+    vi.mocked(api.momentMedia).mockResolvedValue([image({ id: "media-9" })]);
+    const onOpenItem = vi.fn();
+    renderMedia(moment(1), undefined, undefined, onOpenItem);
+    const button = await screen.findByRole("button", {
+      name: "View photo: Torii gates in the rain",
+    });
+    fireEvent.click(button);
+    expect(onOpenItem).toHaveBeenCalledWith("media-9");
+  });
+
+  it("gives a video an expand control that opens the viewer, leaving its own controls alone", async () => {
+    vi.mocked(api.momentMedia).mockResolvedValue([
+      image({
+        id: "clip-1",
+        media_type: "video",
+        mime_type: "video/mp4",
+        alt_text: null,
+        signed_url: "/api/v1/media/clip-1/signed?sig=v",
+      }),
+    ]);
+    const onOpenItem = vi.fn();
+    renderMedia(moment(1), undefined, undefined, onOpenItem);
+    const expand = await screen.findByRole("button", {
+      name: "Open video full screen",
+    });
+    fireEvent.click(expand);
+    expect(onOpenItem).toHaveBeenCalledWith("clip-1");
+  });
+
+  it("adds no image button when the consumer passes no open handler", async () => {
+    vi.mocked(api.momentMedia).mockResolvedValue([image()]);
+    renderMedia(moment(1));
+    await screen.findByAltText("Torii gates in the rain");
+    expect(screen.queryByRole("button", { name: /view photo/i })).toBeNull();
   });
 
   it("stops offering an item, and its action, once it is inline in the prose", async () => {

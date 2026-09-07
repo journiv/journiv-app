@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams, useSearch } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import {
+  useNavigate,
+  useParams,
+  useRouter,
+  useSearch,
+} from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Download,
@@ -26,9 +31,15 @@ import { IconButton } from "../../components/ui/icon-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toast } from "../../components/ui/toast";
 import { MomentMediaGallery } from "../../components/journiv/MomentMediaGallery";
+import {
+  MediaViewer,
+  momentMediaToViewerItems,
+} from "../../components/journiv/media/MediaViewer";
+import { shouldClearMediaParam } from "../../components/journiv/media/mediaViewerNav";
 import { StatusView } from "../../components/journiv/StatusView";
 import { useMomentMedia } from "../../components/journiv/useMomentMedia";
 import { useJournalLookup } from "../../lib/useJournalLookup";
+import { mediaPath } from "../../lib/mediaUrl";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
 import { planReaderContent, QuillReader } from "../editor/QuillReader";
@@ -56,9 +67,11 @@ export function ReaderPage() {
     activity?: string;
     mood?: string;
     goal?: string;
+    media?: string;
   };
-  const { q = "", view, month, date } = search;
+  const { q = "", view, month, date, media: mediaParam } = search;
   const navigate = useNavigate();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const isPdfRetryInFlight = useRef(false);
@@ -84,6 +97,92 @@ export function ReaderPage() {
   // One media query for the whole reader: the prose resolves inline embeds from
   // it, and the gallery renders whatever is left over.
   const media = useMomentMedia(momentId, (moment.data?.media_count ?? 0) > 0);
+
+  // Full-screen viewer. The array is the moment's ready image + video media
+  // (inline and attached, in order) so prev/next walks everything; `mediaParam`
+  // is the id of the open item, or absent when closed.
+  const viewerItems = useMemo(
+    () => momentMediaToViewerItems(media.items),
+    [media.items],
+  );
+  const brokenViewerIds = useMemo(
+    () => new Set(Object.keys(media.broken)),
+    [media.broken],
+  );
+  const viewerPathToId = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const item of viewerItems) {
+      if (item.src) map.set(mediaPath(item.src), item.id);
+    }
+    return map;
+  }, [viewerItems]);
+  // The media list is settled once its query has succeeded, or once we know the
+  // moment has no media at all (the query never runs). Only then is an unknown
+  // `?media=` id genuinely stale rather than not-loaded-yet.
+  const mediaSettled =
+    (media.isSuccess || (moment.data?.media_count ?? 0) === 0) &&
+    !media.isFetching;
+  const activeViewerId =
+    mediaParam && viewerItems.some((item) => item.id === mediaParam)
+      ? mediaParam
+      : null;
+  // Set when this session opened the viewer, so the close control can step back
+  // over the one pushed history entry (prev/next only replace it). A deep link
+  // never sets it, so closing a deep-linked viewer just drops the param.
+  const viewerPushed = useRef(false);
+
+  const setMediaParam = useCallback(
+    (id: string | undefined, replace: boolean) => {
+      const nextSearch = { ...search, q, media: id };
+      if (journalId) {
+        void navigate({
+          to: "/journals/$journalId/$momentId",
+          params: { journalId, momentId },
+          search: nextSearch,
+          replace,
+        });
+      } else {
+        void navigate({
+          to: "/timeline/$momentId",
+          params: { momentId },
+          search: nextSearch,
+          replace,
+        });
+      }
+    },
+    [navigate, search, q, journalId, momentId],
+  );
+  const openViewer = (id: string) => {
+    viewerPushed.current = true;
+    setMediaParam(id, false);
+  };
+  const selectViewer = (id: string) => setMediaParam(id, true);
+  const closeViewer = () => {
+    if (viewerPushed.current) {
+      viewerPushed.current = false;
+      router.history.back();
+      return;
+    }
+    setMediaParam(undefined, true);
+  };
+  const openInlineImage = (src: string) => {
+    const id = viewerPathToId.get(mediaPath(src));
+    if (id) openViewer(id);
+  };
+
+  // A stale or deleted `?media=` id must not sit in the URL — but only strip it
+  // once the media list has definitively loaded without it.
+  useEffect(() => {
+    if (
+      shouldClearMediaParam({
+        mediaParam,
+        settled: mediaSettled,
+        hasItem: viewerItems.some((item) => item.id === mediaParam),
+      })
+    ) {
+      setMediaParam(undefined, true);
+    }
+  }, [mediaParam, mediaSettled, viewerItems, setMediaParam]);
 
   const goBack = () => {
     if (journalId) {
@@ -322,6 +421,7 @@ export function ReaderPage() {
             moment={data}
             media={media}
             excludePaths={inlinePaths}
+            onOpenItem={openViewer}
           />
 
           {hasWriting && entry.isLoading && <ReaderBodySkeleton />}
@@ -346,6 +446,7 @@ export function ReaderPage() {
               // Inline sources are signed URLs inside the document, so a stale
               // signature is recovered by refetching the entry.
               onMediaError={() => void entry.refetch()}
+              onImageActivate={openInlineImage}
             />
           )}
 
@@ -385,6 +486,16 @@ export function ReaderPage() {
           <MomentChips moment={data} scopeLinks />
         </div>
       </div>
+
+      <MediaViewer
+        items={viewerItems}
+        activeId={activeViewerId}
+        onActiveIdChange={selectViewer}
+        onClose={closeViewer}
+        onItemError={media.reportLoadFailure}
+        brokenIds={brokenViewerIds}
+        onRetry={media.retryAll}
+      />
     </article>
   );
 }
