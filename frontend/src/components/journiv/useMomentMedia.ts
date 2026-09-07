@@ -77,6 +77,7 @@ export function useMomentMedia(momentId: string, enabled: boolean) {
     byId,
     isLoading: query.isLoading,
     isError: query.isError,
+    isSuccess: query.isSuccess,
     isFetching,
     broken,
     reportLoadFailure,

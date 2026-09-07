@@ -89,6 +89,31 @@ Journiv’s original source code is licensed separately under the
 
 ---
 
+## React Frontend Dependencies
+
+Runtime dependencies of the React frontend (`journiv-backend/frontend`).
+
+| Package                    | License      | Source                                                                                                    |
+| -------------------------- | ------------ | ------------------------------------------------------------------------------------------------------- |
+| react / react-dom          | MIT          | [https://github.com/facebook/react](https://github.com/facebook/react)                                 |
+| @tanstack/react-query      | MIT          | [https://github.com/TanStack/query](https://github.com/TanStack/query)                                 |
+| @tanstack/react-router     | MIT          | [https://github.com/TanStack/router](https://github.com/TanStack/router)                               |
+| @tanstack/react-virtual    | MIT          | [https://github.com/TanStack/virtual](https://github.com/TanStack/virtual)                             |
+| @base-ui/react             | MIT          | [https://github.com/mui/base-ui](https://github.com/mui/base-ui)                                       |
+| quill                      | BSD-3-Clause | [https://github.com/slab/quill](https://github.com/slab/quill)                                         |
+| recharts                   | MIT          | [https://github.com/recharts/recharts](https://github.com/recharts/recharts)                           |
+| yet-another-react-lightbox | MIT          | [https://github.com/igordanchenko/yet-another-react-lightbox](https://github.com/igordanchenko/yet-another-react-lightbox) |
+| lucide-react               | ISC          | [https://github.com/lucide-icons/lucide](https://github.com/lucide-icons/lucide)                       |
+| date-fns / date-fns-tz     | MIT          | [https://github.com/date-fns/date-fns](https://github.com/date-fns/date-fns)                           |
+| react-day-picker           | MIT          | [https://github.com/gpbl/react-day-picker](https://github.com/gpbl/react-day-picker)                   |
+| class-variance-authority   | Apache-2.0   | [https://github.com/joe-bell/cva](https://github.com/joe-bell/cva)                                     |
+| clsx                       | MIT          | [https://github.com/lukeed/clsx](https://github.com/lukeed/clsx)                                       |
+| tailwind-merge             | MIT          | [https://github.com/dcastil/tailwind-merge](https://github.com/dcastil/tailwind-merge)                 |
+| idb                        | ISC          | [https://github.com/jakearchibald/idb](https://github.com/jakearchibald/idb)                           |
+| @fontsource-variable/\*    | OFL-1.1      | [https://github.com/fontsource/fontsource](https://github.com/fontsource/fontsource)                   |
+
+---
+
 ## Fonts
 
 - **Manrope** — Licensed under the [**SIL Open Font License 1.1**](https://scripts.sil.org/OFL).

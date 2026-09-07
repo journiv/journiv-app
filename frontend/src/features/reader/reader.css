@@ -35,6 +35,12 @@
    momentMedia.css when the Editor became its second consumer. Reader keeps
    only its own layout here. */
 
+/* Inline prose images open the full-screen viewer on click (QuillReader wires
+   the handler; the class is only present when it does). */
+.jv-reader-content--zoomable .jv-prose img {
+  cursor: zoom-in;
+}
+
 .jv-reader__body-skeleton {
   display: flex;
   flex-direction: column;

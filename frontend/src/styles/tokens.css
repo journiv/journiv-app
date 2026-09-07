@@ -115,6 +115,9 @@
   /* Deliberately theme-independent: these sit on a photograph, not a Journiv
      surface, so they must not follow light/dark. */
   --overlay-scrim: oklch(0 0 0 / 0.6);
+  /* A near-opaque scrim for the full-screen media viewer, where the page
+     behind must read as fully dismissed rather than dimmed. */
+  --overlay-scrim-strong: oklch(0 0 0 / 0.92);
   --text-on-overlay: oklch(1 0 0);
 
   /* ---- spacing rhythm ------------------------------------------------- */

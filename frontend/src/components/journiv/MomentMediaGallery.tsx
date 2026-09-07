@@ -1,5 +1,6 @@
 import {
   Check,
+  Expand,
   FileAudio,
   ImageOff,
   Loader2,
@@ -54,6 +55,12 @@ type MomentMediaGalleryProps = {
    * still renders as a plain attachment. Not called for items already added.
    */
   renderItemAction?: (item: MomentMediaResponse) => ReactNode;
+  /**
+   * Open a ready image or video full screen. `content` variant only. The image
+   * becomes the button; a video keeps its native controls and gets a small
+   * corner "expand" control instead, so play/seek/volume are untouched.
+   */
+  onOpenItem?: (id: string) => void;
 };
 
 export function MomentMediaGallery(props: MomentMediaGalleryProps) {
@@ -73,6 +80,7 @@ function ContentGallery({
   media,
   excludePaths,
   renderItemAction,
+  onOpenItem,
 }: MomentMediaGalleryProps) {
   if (media.isLoading) {
     return (
@@ -109,6 +117,7 @@ function ContentGallery({
           broken={Boolean(media.broken[item.id])}
           onLoadError={media.reportLoadFailure}
           action={renderItemAction?.(item)}
+          onOpen={onOpenItem ? () => onOpenItem(item.id) : undefined}
         />
       ))}
     </div>
@@ -120,11 +129,13 @@ function MediaItem({
   broken,
   onLoadError,
   action,
+  onOpen,
 }: {
   item: MomentMediaResponse;
   broken: boolean;
   onLoadError: (id: string) => void;
   action?: ReactNode;
+  onOpen?: () => void;
 }) {
   const status = item.upload_status ?? "completed";
   // The frame always reserves space. When the API reported dimensions it uses
@@ -185,6 +196,16 @@ function MediaItem({
           preload="metadata"
           onError={() => onLoadError(item.id)}
         />
+        {onOpen && (
+          <button
+            type="button"
+            className="jv-media__expand"
+            onClick={onOpen}
+            aria-label="Open video full screen"
+          >
+            <Expand aria-hidden="true" size={16} />
+          </button>
+        )}
       </div>,
     );
   }
@@ -219,18 +240,35 @@ function MediaItem({
     );
   }
 
+  const picture = (
+    <img
+      className={cx("jv-media__element", "jv-media__element--contain")}
+      src={item.signed_url}
+      alt={item.alt_text ?? ""}
+      width={item.width ?? undefined}
+      height={item.height ?? undefined}
+      loading="lazy"
+      decoding="async"
+      onError={() => onLoadError(item.id)}
+    />
+  );
+
   return withAction(
     <div {...frame}>
-      <img
-        className={cx("jv-media__element", "jv-media__element--contain")}
-        src={item.signed_url}
-        alt={item.alt_text ?? ""}
-        width={item.width ?? undefined}
-        height={item.height ?? undefined}
-        loading="lazy"
-        decoding="async"
-        onError={() => onLoadError(item.id)}
-      />
+      {onOpen ? (
+        <button
+          type="button"
+          className="jv-media__open"
+          onClick={onOpen}
+          aria-label={
+            item.alt_text ? `View photo: ${item.alt_text}` : "View photo"
+          }
+        >
+          {picture}
+        </button>
+      ) : (
+        picture
+      )}
     </div>,
   );
 }

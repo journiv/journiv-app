@@ -179,6 +179,19 @@ const timelineSearch = (
 });
 
 /**
+ * Reader search: the list-pane search plus `media`, the id of the moment media
+ * item shown in the full-screen viewer. It rides only the two reader routes so
+ * the viewer is deep-linkable and dismissed by Back. Shape-checked like every
+ * other id in the URL.
+ */
+const readerSearch = (
+  search: Record<string, unknown>,
+): ReturnType<typeof timelineSearch> & { media?: string } => ({
+  ...timelineSearch(search),
+  media: asId(search.media),
+});
+
+/**
  * A new entry's local draft id, so a reload finds the writing it left behind.
  *
  * Only the two "new" routes carry it — an existing entry keys its draft on its
@@ -306,7 +319,7 @@ const timelineEditRoute = createRoute({
 const timelineMomentRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/timeline/$momentId",
-  validateSearch: timelineSearch,
+  validateSearch: readerSearch,
   staticData: detailPane,
   component: ReaderDetail,
 });
@@ -574,7 +587,7 @@ const journalEditRoute = createRoute({
 const journalMomentRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/journals/$journalId/$momentId",
-  validateSearch: timelineSearch,
+  validateSearch: readerSearch,
   staticData: detailPane,
   component: ReaderDetail,
 });
