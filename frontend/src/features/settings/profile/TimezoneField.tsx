@@ -76,18 +76,22 @@ export function TimezoneField({
           </ComboboxList>
         </ComboboxContent>
       </Combobox>
-      {detected != null && (
-        <FieldDescription>Detected on this device: {detected}</FieldDescription>
-      )}
-      {canUseDetected && (
+      {canUseDetected ? (
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
+          className="self-start"
           disabled={disabled}
           onClick={() => onChange(detected)}
         >
-          Use detected timezone
+          Use detected: {detected}
         </Button>
+      ) : (
+        detected != null && (
+          <FieldDescription>
+            Detected on this device: {detected}
+          </FieldDescription>
+        )
       )}
     </>
   );

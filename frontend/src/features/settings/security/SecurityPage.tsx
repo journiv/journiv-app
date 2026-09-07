@@ -15,7 +15,7 @@ import {
   currentUserQuery,
   instanceConfigQuery,
 } from "../../../api/query/options";
-import { useSettingsDirty } from "../SettingsModal";
+import { useSettingsForm } from "../SettingsModal";
 import { SettingsSection } from "../SettingsSection";
 import { usePasswordForm } from "./usePasswordForm";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
@@ -40,7 +40,14 @@ function SecuritySkeleton() {
 
 function PasswordForm({ email }: { email: string }) {
   const form = usePasswordForm();
-  useSettingsDirty(form.dirty);
+  useSettingsForm({
+    dirty: form.dirty,
+    pending: form.submitting,
+    canSave: form.canSubmit,
+    onSave: form.submit,
+    label: "Change password",
+    pendingLabel: "Changing…",
+  });
 
   const currentId = useId();
   const nextId = useId();
@@ -65,11 +72,6 @@ function PasswordForm({ email }: { email: string }) {
       <SettingsSection
         title="Password"
         intro="Change the password you use to sign in to Journiv."
-        footer={
-          <Button type="submit" variant="default" disabled={!form.canSubmit}>
-            {form.submitting ? "Changing…" : "Change password"}
-          </Button>
-        }
       >
         {form.succeeded && (
           <Alert role="status">

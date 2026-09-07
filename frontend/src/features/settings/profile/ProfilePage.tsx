@@ -5,7 +5,7 @@ import { FieldError } from "../../../components/ui/field";
 import { Input } from "../../../components/ui/input";
 import { Skeleton } from "../../../components/ui/skeleton";
 import { StatusView } from "../../../components/journiv/StatusView";
-import { useSettingsDirty } from "../SettingsModal";
+import { useSettingsForm } from "../SettingsModal";
 import { SettingsRow, SettingsSection } from "../SettingsSection";
 import { TimezoneField } from "./TimezoneField";
 import { useProfileForm } from "./useProfileForm";
@@ -46,7 +46,12 @@ function ProfileSkeleton() {
 
 export function ProfilePage() {
   const form = useProfileForm();
-  useSettingsDirty(form.dirty);
+  useSettingsForm({
+    dirty: form.dirty,
+    pending: form.saving,
+    canSave: form.canSave,
+    onSave: form.save,
+  });
 
   const nameId = useId();
   const timezoneId = useId();
@@ -80,11 +85,6 @@ export function ProfilePage() {
       <SettingsSection
         title="Personal information"
         intro="How you appear in Journiv, and the timezone new moments are stamped with."
-        footer={
-          <Button type="submit" variant="default" disabled={!form.canSave}>
-            {form.saving ? "Saving…" : "Save changes"}
-          </Button>
-        }
       >
         <div className="jv-settings__identity">
           <Avatar className="jv-settings__avatar" aria-hidden="true">

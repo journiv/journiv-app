@@ -13,8 +13,12 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
+  useState,
+  type MutableRefObject,
 } from "react";
+import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
 import { SettingsNavigation } from "./SettingsNavigation";
 import { settingsItem, type SettingsNavItem } from "./settingsNav";
@@ -50,15 +54,32 @@ function isDesktop() {
   );
 }
 
+/** What the modal's fixed action bar needs to render a page's primary Save. */
+type SettingsSaveState = {
+  pending: boolean;
+  canSave: boolean;
+  /** Resting label, default "Save changes". */
+  label?: string;
+  /** Label while pending, default "Saving…". */
+  pendingLabel?: string;
+};
+
 type SettingsFormContextValue = {
   /** A page with an editable form calls this as its dirty state changes. The
    *  modal then guards every dismissal — X, Escape, backdrop, section switch,
    *  browser Back. */
   setDirty: (dirty: boolean) => void;
+  /** Latest primary-save handler for the modal action bar. Held in a ref so a
+   *  page can pass a fresh closure every render without re-arming effects. */
+  saveRef: MutableRefObject<(() => void) | null>;
+  /** Publishes (or clears, with null) the action bar's button state. */
+  setSaveState: (state: SettingsSaveState | null) => void;
 };
 
 const SettingsFormContext = createContext<SettingsFormContextValue>({
   setDirty: () => {},
+  saveRef: { current: null },
+  setSaveState: () => {},
 });
 
 /** Registers a page's unsaved-changes state with the modal's dismissal guard.
@@ -71,6 +92,38 @@ export function useSettingsDirty(dirty: boolean) {
   }, [dirty, setDirty]);
 }
 
+/**
+ * A settings page with one primary Save calls this instead of `useSettingsDirty`.
+ * It arms the dismissal guard AND surfaces the Save control in the modal's fixed
+ * action bar (docs/features/settings.md) — the page keeps its own `<form>` and
+ * submit logic; the bar just calls `onSave`. Every field is a primitive or a
+ * ref-held closure, so passing a fresh object each render is fine.
+ */
+export function useSettingsForm(options: {
+  dirty: boolean;
+  pending: boolean;
+  canSave: boolean;
+  onSave: () => void;
+  label?: string;
+  pendingLabel?: string;
+}) {
+  const { setDirty, saveRef, setSaveState } = useContext(SettingsFormContext);
+  const { dirty, pending, canSave, onSave, label, pendingLabel } = options;
+
+  // Keep the newest handler without making effects depend on its identity.
+  saveRef.current = onSave;
+
+  useEffect(() => {
+    setDirty(dirty);
+    return () => setDirty(false);
+  }, [dirty, setDirty]);
+
+  useEffect(() => {
+    setSaveState({ pending, canSave, label, pendingLabel });
+    return () => setSaveState(null);
+  }, [pending, canSave, label, pendingLabel, setSaveState]);
+}
+
 export function SettingsModal({ section }: { section: SettingsSection }) {
   const router = useRouter();
   const navigate = useNavigate();
@@ -79,12 +132,19 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
     matchRoute({ to: "/settings/integrations/$provider" }),
   );
   const dirtyRef = useRef(false);
+  const saveRef = useRef<(() => void) | null>(null);
+  const [saveState, setSaveState] = useState<SettingsSaveState | null>(null);
   const currentUser = useQuery(currentUserQuery());
   const isAdmin = currentUser.data?.role === "admin";
 
   const setDirty = useCallback((next: boolean) => {
     dirtyRef.current = next;
   }, []);
+
+  const formContext = useMemo<SettingsFormContextValue>(
+    () => ({ setDirty, saveRef, setSaveState }),
+    [setDirty],
+  );
 
   // One guard for every path out of a dirty form: the section links, the
   // programmatic close below, and browser Back all pass through it. The native
@@ -139,8 +199,12 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
         ? "Immich"
         : settingsItem(section).label;
 
+  // The action bar only makes sense against a real section form, never the
+  // bare compact index.
+  const showActionBar = saveState != null && section !== "index";
+
   return (
-    <SettingsFormContext.Provider value={{ setDirty }}>
+    <SettingsFormContext.Provider value={formContext}>
       <Dialog.Root
         open
         onOpenChange={(open) => {
@@ -216,6 +280,25 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
                   {section === "help" && <HelpPage />}
                   {section === "about" && <AboutPage />}
                 </div>
+
+                {/* The page's one primary Save. A fixed flex sibling of the
+                    scroll owner, never a layer over it (DESIGN.md). Pages
+                    register it with useSettingsForm; on compact widths its
+                    button goes full-width. */}
+                {showActionBar && (
+                  <div className="jv-settings__actionbar">
+                    <Button
+                      type="button"
+                      variant="default"
+                      disabled={!saveState.canSave || saveState.pending}
+                      onClick={() => saveRef.current?.()}
+                    >
+                      {saveState.pending
+                        ? (saveState.pendingLabel ?? "Saving…")
+                        : (saveState.label ?? "Save changes")}
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
           </Dialog.Popup>

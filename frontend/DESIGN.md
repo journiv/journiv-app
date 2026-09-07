@@ -102,12 +102,61 @@ that relationship rather than forcing light-mode hierarchy into dark mode.
 
 The reader is content: prose has a measured column, no card, and no paragraph
 dividers. Timeline rows are content-side list rows. Management screens,
-settings, dialogs, and libraries are chrome: use a clear canvas, panels, Cards,
-fields, and grouping where controls belong together.
+dialogs, and libraries are chrome: use a clear canvas, panels, fields, and
+grouping where controls belong together. A `Card` is one tool for a grouped or
+detached surface, not the default wrapper — reach for it when a group genuinely
+needs to read as a separate raised object, not to fill space.
 
 Do not put a card around a single ungrouped value, or add a card simply because
 there is empty space. A row's hover shape matches its container: flush inside a
 clipping panel, rounded within a gapped list.
+
+### Settings and management surfaces
+
+Settings is chrome, but it is not a dashboard. Its sections sit directly on one
+plain pane surface — the same colour as the modal behind them. There is no
+muted settings canvas and no raised per-section card; grouping is carried by an
+`h3` heading, an optional one-line intro, the vertical rhythm, and a hairline
+between adjacent sections. Do not wrap a settings section in `Card`. This
+applies to every Settings screen (Profile, Security, Theme & time, Providers,
+Users, Import, Export, Help, About) and is the pattern for other in-app
+management panes unless that pane has a concrete reason to raise a surface.
+`SettingsSection` / `SettingsRow`
+([src/features/settings/SettingsSection.tsx](src/features/settings/SettingsSection.tsx))
+own this composition; feature code fills them, it does not re-skin them.
+
+- **Two measures, both left-anchored, never centred.** A *structural* measure
+  (~690px) bounds headings, dividers, row structure, empty states and the
+  footer rule, so the content fills the desktop pane without a wide right
+  gutter. A tighter *field* measure (~480px) bounds a single input or select, so
+  a lone control is not stretched to the structural width. Never give a control
+  a fixed-width column wider than the control needs — that is what leaves a
+  label on the far left and the control stranded against the right edge with a
+  dead gutter between them. Wide table or list blocks opt out and take the whole
+  pane.
+- **Rows are stacked by default.** Label and help text sit *above* the control,
+  hairline-separated from the next row
+  ([settings.css](src/features/settings/settings.css)). An inline row (label
+  left, control right) is only for a `Switch` or a short segmented control —
+  `SettingsRow inline`. Stacked is the default, not a universal rule: data
+  tables (Users, Import/Export history), the provider catalogue, and other
+  specialised management content keep their own appropriate composition.
+- **Hierarchy has a visible size step.** Section title ~`1.06rem`/`640`; row
+  label `text-sm` medium at full `--foreground`; help text `text-xs`
+  `--muted-foreground`. The three must be distinguishable at a glance — a label
+  and its help must not look identical.
+- **One primary Save, in a fixed action bar.** A settings page with an editable
+  form registers its Save through `useSettingsForm`
+  ([src/features/settings/SettingsModal.tsx](src/features/settings/SettingsModal.tsx));
+  the modal renders it in a fixed action bar that is a flex sibling of the
+  scroll owner (never a sticky layer over it). There is no Cancel — Esc, ✕,
+  backdrop and Back all dismiss and are guarded. A section's *own* settled
+  actions (Connect, Start import, Register a license) stay in that section's
+  footer, not in the page action bar.
+- **One grammar across widths.** Desktop and compact look the same; compact
+  simply drops the pane inset to 16px (`--space-4`) and runs primary buttons
+  full-width — the action bar and section footers alike, a multi-button footer
+  stacking with its primary last. No separate compact layout mode.
 
 ## States and actions
 
@@ -130,6 +179,11 @@ Use explicit Base Vega button variants. There is exactly one surface-primary
 default or brand action. Brand is reserved for the sidebar New entry action;
 destructive is serious and tinted rather than another primary. Cancel and Done
 must not look identical.
+
+A standalone secondary action that sits beneath a field or a block of body text
+(not one of several buttons in a footer) takes `outline` or `secondary`, never
+`ghost`: a lone ghost button under prose has no resting edge and reads as a
+link that isn't one.
 
 Use StatusView for pane-level empty or error state. A bare sentence, unfiltered
 server error, or silent failed action is not acceptable. Loading skeletons
@@ -210,12 +264,14 @@ exceptions in their feature contract.
 
 ## Global component rules
 
-Use Base Vega compositions for generic arrangements: Card for a titled group,
-Field for labelled input/help/error, Item for a structured row, RadioGroup or
-ToggleGroup for exclusive choices, Empty through StatusView, ButtonGroup for
-related actions, and Table for tabular data. This does not prohibit Journiv's
-own page structures; it prevents rebuilding a generic primitive with a div and
-bespoke CSS.
+Use Base Vega compositions for generic arrangements: Card for a group that must
+read as a raised, separate object, Field for labelled input/help/error, Item for
+a structured row, RadioGroup or ToggleGroup for exclusive choices, Empty through
+StatusView, ButtonGroup for related actions, and Table for tabular data. This
+does not prohibit Journiv's own page structures; it prevents rebuilding a
+generic primitive with a div and bespoke CSS. A titled group is not
+automatically a `Card` — on the Settings surface it is a heading plus a hairline
+(see "Settings and management surfaces").
 
 The durable allowed divergences are bundled DM Sans; the documented readable
 muted foreground and brand focus ring; the one brand button variant;

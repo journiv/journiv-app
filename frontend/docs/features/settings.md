@@ -24,15 +24,35 @@ store password or API-key fields in drafts or persistent client storage.
 
 ## Presentation
 
-The modal is a real overlay. It has one close control, restrained navigation,
-and a muted canvas with stock Cards for coherent sections. Use Card header,
-content, and footer; a section action belongs in its Card footer, not on the
-canvas. Forms have a readable max width, while data tables may take the content
-pane and choose their own container-query layout.
+The modal is a real overlay with one close control and restrained navigation.
+Its content pane is a single plain surface — no muted canvas, no per-section
+card. A section is an `h3` heading, an optional one-line intro, and its
+controls, with a hairline separating adjacent sections (`SettingsSection`). The
+design contract's "Settings and management surfaces" section is authoritative
+for the surface, measure, hierarchy, and row rules; this file only adds
+feature-specific behaviour.
 
-Settings rows use Item and Field. Selection is accent plus brand rail and
-aria-current. Do not stack large modals: edit in place, reserving small
-confirmation only for actual confirmation.
+Form content is left-anchored (not centred). A structural measure (~690px)
+bounds headings, dividers, rows, empty states and the footer rule; a tighter
+field measure (~480px) bounds a single input or select. Data tables take the
+whole content pane (`jv-settings__body--wide`) and choose their own layout.
+Settings rows use `Item` and `Field` and stack label/help above the control by
+default;
+`SettingsRow inline` is for toggles only.
+
+Each editable section registers its one primary Save through `useSettingsForm`;
+the modal renders it in a fixed action bar (a flex sibling of the scroll owner)
+with a single primary button and no Cancel — Escape, ✕, backdrop and Back all
+dismiss and pass through the unsaved-changes guard. A section's own settled
+actions (Connect, Start import, register a license) live in that section's
+footer, not the action bar. Desktop and compact share one visual grammar;
+compact only narrows the pane inset to 16px and runs primary buttons full-width
+— the action bar and section footers alike, a multi-button footer stacking with
+its primary last.
+
+Selection is accent plus brand rail and aria-current. Do not stack large
+modals: edit in place, reserving small confirmation only for actual
+confirmation.
 
 ## Implemented sections
 
