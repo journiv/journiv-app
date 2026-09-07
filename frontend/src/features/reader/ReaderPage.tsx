@@ -131,6 +131,15 @@ export function ReaderPage() {
   // never sets it, so closing a deep-linked viewer just drops the param.
   const viewerPushed = useRef(false);
 
+  // Reader detail routes reuse this component when their path parameters
+  // change. A history entry pushed for one Moment must never affect a
+  // deep-linked viewer for the next Moment (or for the same Moment in a
+  // different journal). Search-only updates deliberately keep this ref.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the route params intentionally trigger this reset without being read in its body.
+  useEffect(() => {
+    viewerPushed.current = false;
+  }, [momentId, journalId]);
+
   const setMediaParam = useCallback(
     (id: string | undefined, replace: boolean) => {
       const nextSearch = { ...search, q, media: id };
