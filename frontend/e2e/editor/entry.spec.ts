@@ -245,6 +245,8 @@ test.describe("entry journeys", () => {
     const italicText = data.label("Italic memory");
     const firstItem = data.label("First list item");
     const secondItem = data.label("Second list item");
+    const taskItem = data.label("Task item");
+    const nestedItem = data.label("Nested item");
 
     await page.goto(`/journals/${journal.id}/new`);
     await page.getByLabel("Entry title").fill(title);
@@ -265,6 +267,14 @@ test.describe("entry journeys", () => {
     await page.keyboard.type(firstItem);
     await page.keyboard.press("Enter");
     await page.keyboard.type(secondItem);
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Enter");
+
+    await page.getByRole("button", { name: "Checklist" }).click();
+    await page.keyboard.type(taskItem);
+    await page.keyboard.press("Enter");
+    await page.getByRole("button", { name: "Indent list item" }).click();
+    await page.keyboard.type(nestedItem);
 
     await expect(
       page
@@ -284,13 +294,18 @@ test.describe("entry journeys", () => {
     const reader = page.getByLabel("Entry content");
     await expect(reader.getByRole("strong")).toHaveText(boldText);
     await expect(reader.getByRole("emphasis")).toHaveText(italicText);
-    const list = reader.getByRole("list");
+    const list = reader.getByRole("list").first();
     await expect(
       list.getByRole("listitem").filter({ hasText: firstItem }),
     ).toBeVisible();
     await expect(
       list.getByRole("listitem").filter({ hasText: secondItem }),
     ).toBeVisible();
+    // The task line renders as a checklist row; the nested line indents.
+    await expect(
+      reader.locator('li[data-list="unchecked"]').filter({ hasText: taskItem }),
+    ).toBeVisible();
+    await expect(reader.locator("li.ql-indent-1")).toHaveText(nestedItem);
 
     await page.reload();
     await expect(
@@ -303,9 +318,19 @@ test.describe("entry journeys", () => {
       page
         .getByLabel("Entry content")
         .getByRole("list")
+        .first()
         .getByRole("listitem")
         .filter({ hasText: firstItem }),
     ).toBeVisible();
+    await expect(
+      page
+        .getByLabel("Entry content")
+        .locator('li[data-list="unchecked"]')
+        .filter({ hasText: taskItem }),
+    ).toBeVisible();
+    await expect(
+      page.getByLabel("Entry content").locator("li.ql-indent-1"),
+    ).toHaveText(nestedItem);
   });
 });
 

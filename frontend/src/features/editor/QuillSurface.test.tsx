@@ -275,6 +275,89 @@ describe("QuillSurface", () => {
     );
   });
 
+  it("creates task lists and nests them without breaking the saveable Delta", async () => {
+    const ref = createRef<QuillSurfaceHandle>();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="checklist"
+        initialContent={{ ops: [{ insert: "Parent\nChild\n" }] }}
+      />,
+    );
+    const editor = screen.getByLabelText("Entry body");
+    const quill = Quill.find(editor.closest(".jv-prose") as Element) as Quill;
+
+    act(() => quill.setSelection(0, 12, "user"));
+    act(() => ref.current?.toggleLine("list", "unchecked"));
+    expect(editor.querySelectorAll('li[data-list="unchecked"]').length).toBe(2);
+    // The checklist value is inside the Gate-1 profile: getContents must not throw.
+    expect(() => ref.current?.getContents()).not.toThrow();
+
+    // Nest the second item one level via the imperative control.
+    act(() => quill.setSelection(9, 0, "user"));
+    act(() => ref.current?.indent(1));
+    const child = editor.querySelectorAll("li")[1];
+    expect(child?.className).toContain("ql-indent-1");
+    const nestedOp = ref.current
+      ?.getContents()
+      .ops?.find(
+        (op) =>
+          typeof op.insert === "string" &&
+          op.insert === "\n" &&
+          op.attributes?.indent === 1,
+      );
+    expect(nestedOp?.attributes).toMatchObject({
+      list: "unchecked",
+      indent: 1,
+    });
+
+    // Clamp: five nudges up then well past the floor.
+    for (let i = 0; i < 8; i += 1) act(() => ref.current?.indent(1));
+    expect(editor.querySelectorAll("li")[1]?.className).toContain(
+      "ql-indent-5",
+    );
+    for (let i = 0; i < 8; i += 1) act(() => ref.current?.indent(-1));
+    expect(editor.querySelectorAll("li")[1]?.className).not.toMatch(
+      /ql-indent-/,
+    );
+
+    // Turning the list off drops the orphaned nesting too.
+    act(() => quill.setSelection(9, 0, "user"));
+    act(() => ref.current?.indent(1));
+    act(() => ref.current?.toggleLine("list", "unchecked"));
+    expect(() => ref.current?.getContents()).not.toThrow();
+    expect(JSON.stringify(ref.current?.getContents())).not.toContain("indent");
+  });
+
+  it("indents a list line with Tab and outdents with Shift+Tab, capped", async () => {
+    const ref = createRef<QuillSurfaceHandle>();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="tab-indent"
+        initialContent={{
+          ops: [
+            { insert: "Item" },
+            { insert: "\n", attributes: { list: "bullet" } },
+          ],
+        }}
+      />,
+    );
+    const editor = screen.getByLabelText("Entry body");
+    const quill = Quill.find(editor.closest(".jv-prose") as Element) as Quill;
+
+    act(() => quill.setSelection(2, 0, "user"));
+    await userEvent.keyboard("{Tab}");
+    expect(editor.querySelector("li")?.className).toContain("ql-indent-1");
+
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(editor.querySelector("li")?.className ?? "").not.toMatch(
+      /ql-indent-/,
+    );
+    // A Delta round-trip stays valid throughout.
+    expect(() => ref.current?.getContents()).not.toThrow();
+  });
+
   it("adds, edits, and removes a link without losing the selected text", () => {
     const ref = createRef<QuillSurfaceHandle>();
     render(

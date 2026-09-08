@@ -91,11 +91,65 @@ describe("Journiv Delta profile", () => {
       },
     ],
     [
-      "invalid list",
+      "unknown list value",
       {
         ops: [
           { insert: "Task" },
-          { insert: "\n", attributes: { list: "checked" } },
+          { insert: "\n", attributes: { list: "square" } },
+        ],
+      },
+    ],
+    [
+      "indent without a list",
+      {
+        ops: [
+          { insert: "Floating" },
+          { insert: "\n", attributes: { indent: 1 } },
+        ],
+      },
+    ],
+    [
+      "indent on a heading",
+      {
+        ops: [
+          { insert: "Heading" },
+          { insert: "\n", attributes: { header: 2, indent: 1 } },
+        ],
+      },
+    ],
+    [
+      "indent below the range",
+      {
+        ops: [
+          { insert: "Item" },
+          { insert: "\n", attributes: { list: "bullet", indent: 0 } },
+        ],
+      },
+    ],
+    [
+      "indent above the range",
+      {
+        ops: [
+          { insert: "Item" },
+          { insert: "\n", attributes: { list: "bullet", indent: 6 } },
+        ],
+      },
+    ],
+    [
+      "fractional indent",
+      {
+        ops: [
+          { insert: "Item" },
+          { insert: "\n", attributes: { list: "ordered", indent: 1.5 } },
+        ],
+      },
+    ],
+    [
+      "indent on a text insert",
+      {
+        ops: [
+          { insert: "Item", attributes: { list: "bullet", indent: 1 } },
+          { insert: "\n" },
         ],
       },
     ],
@@ -167,6 +221,59 @@ describe("Journiv Delta profile", () => {
       expect(value).toEqual(original);
     },
   );
+
+  it.each([
+    [
+      "unchecked task line",
+      {
+        ops: [
+          { insert: "Buy milk" },
+          { insert: "\n", attributes: { list: "unchecked" } },
+        ],
+      },
+    ],
+    [
+      "checked task line",
+      {
+        ops: [
+          { insert: "Ship it" },
+          { insert: "\n", attributes: { list: "checked" } },
+        ],
+      },
+    ],
+    [
+      "nested bullet",
+      {
+        ops: [
+          { insert: "Child" },
+          { insert: "\n", attributes: { list: "bullet", indent: 1 } },
+        ],
+      },
+    ],
+    [
+      "nested ordered at the deepest level",
+      {
+        ops: [
+          { insert: "Deep" },
+          { insert: "\n", attributes: { list: "ordered", indent: 5 } },
+        ],
+      },
+    ],
+    [
+      "nested task line",
+      {
+        ops: [
+          { insert: "Sub-task" },
+          { insert: "\n", attributes: { list: "unchecked", indent: 2 } },
+        ],
+      },
+    ],
+  ])("accepts %s", (_name, value) => {
+    expect(isQuillDocumentDelta(value)).toBe(true);
+    // Canonicalises without throwing and round-trips unchanged.
+    expect(() => canonicalDeltaJson(value as never)).not.toThrow();
+    expect(deltasEqual(value as never, cloneDelta(value as never))).toBe(true);
+  });
 
   it("compares semantically equivalent adjacent operations", () => {
     expect(

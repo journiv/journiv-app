@@ -16,6 +16,8 @@ import {
   isQuillDocumentDelta,
   isReaderDocumentDelta,
   JOURNIV_DELTA_FORMATS,
+  MAX_LIST_INDENT,
+  stripOrphanIndent,
   stripUploadPlaceholders,
 } from "./deltaProfile";
 import { installMarkdownShortcuts } from "./markdownShortcuts";
@@ -79,6 +81,11 @@ export interface QuillSurfaceHandle {
   isComposing(): boolean;
   toggleInline(name: InlineFormat): void;
   toggleLine(name: LineFormat, value: LineFormatValue): void;
+  /**
+   * Nudges the nesting level of the current list line by one step, clamped to
+   * 0…MAX_LIST_INDENT. A no-op when the caret is not on a list line.
+   */
+  indent(direction: 1 | -1): void;
   setLink(value: string | false): boolean;
   undo(): void;
   redo(): void;
@@ -86,7 +93,15 @@ export interface QuillSurfaceHandle {
 
 export type InlineFormat = "bold" | "italic" | "underline" | "strike";
 export type LineFormat = "header" | "list" | "blockquote";
-export type LineFormatValue = 1 | 2 | 3 | "bullet" | "ordered" | true;
+export type LineFormatValue =
+  | 1
+  | 2
+  | 3
+  | "bullet"
+  | "ordered"
+  | "checked"
+  | "unchecked"
+  | true;
 
 /** Transient class + lifetime for the "just added from the tray" ring
  *  (styled in editor.css, honoured-down by prefers-reduced-motion there). */
@@ -267,9 +282,12 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           if (!contents) throw new Error("Editor is not ready");
           // A pending upload placeholder is client-only state and must never
           // leave the editor. Strip before validating, so a document that is
-          // mid-upload still yields a valid saveable Delta.
-          const stripped = stripUploadPlaceholders(
-            contents as unknown as QuillDelta,
+          // mid-upload still yields a valid saveable Delta. `stripOrphanIndent`
+          // then drops any `indent` left on a line whose `list` was removed
+          // (e.g. a nested bullet turned into a heading) — an orphan indent is
+          // outside the Gate-1 profile and would fail the guard below.
+          const stripped = stripOrphanIndent(
+            stripUploadPlaceholders(contents as unknown as QuillDelta),
           );
           if (!validateRef.current(stripped))
             throw new Error("Editor returned an invalid document Delta");
@@ -472,12 +490,44 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
         },
         toggleLine: (name, value) => {
           withSelection((quill, range) => {
-            const active = quill.getFormat(range)[name] === value;
+            const length = Math.max(range.length, 1);
+            const current = quill.getFormat(range)[name];
+            // The single Checklist control owns both task states, so pressing it
+            // on a `checked` line must also read as active and turn the list
+            // off, not silently flip the line to `unchecked`.
+            const isChecklistToggle =
+              name === "list" && (value === "checked" || value === "unchecked");
+            const active = isChecklistToggle
+              ? current === "checked" || current === "unchecked"
+              : current === value;
+            quill.formatLine(
+              range.index,
+              length,
+              name,
+              active ? false : value,
+              "user",
+            );
+            // Removing the list also removes its nesting: an orphan `indent` is
+            // not a valid Journiv line and would leave the row visually inset.
+            if (name === "list" && active) {
+              quill.formatLine(range.index, length, "indent", false, "user");
+            }
+          });
+        },
+        indent: (direction) => {
+          withSelection((quill, range) => {
+            if (quill.getFormat(range).list == null) return;
+            const currentIndent = Number(quill.getFormat(range).indent) || 0;
+            const nextIndent = Math.min(
+              MAX_LIST_INDENT,
+              Math.max(0, currentIndent + direction),
+            );
+            if (nextIndent === currentIndent) return;
             quill.formatLine(
               range.index,
               Math.max(range.length, 1),
-              name,
-              active ? false : value,
+              "indent",
+              nextIndent || false,
               "user",
             );
           });
@@ -563,20 +613,94 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       // Belt and braces: loading a document is not something to undo.
       quill.history.clear();
 
-      // Quill's built-in "list autofill" keyboard binding turns
-      // `1.`/`2.`/`- `/`* `/`[ ] `/`[x] ` into a list on space. Journiv keeps
-      // ordered lists to a `1.` trigger (Quill renumbers the items itself) and
-      // has no checklist format — an `unchecked`/`checked` value is outside the
-      // Gate-1 allowlist and makes `getContents()` throw — so the prefix is
-      // narrowed to the three kinds Journiv stores. Headings and quotes are
-      // handled separately by markdownShortcuts.ts.
+      // Nudge the current list line's nesting by one step, clamped to
+      // 0…MAX_LIST_INDENT. `indent` is a Journiv list-only modifier, so this is
+      // the single place keyboard indenting is allowed to write it.
+      const applyListIndent = (index: number, direction: 1 | -1) => {
+        const [line, offset] = quill.getLine(index);
+        if (!line) return;
+        const lineStart = index - offset;
+        const format = quill.getFormat(
+          lineStart,
+          Math.max(line.length() - 1, 1),
+        );
+        if (format.list == null) return;
+        const current = Number(format.indent) || 0;
+        const next = Math.min(
+          MAX_LIST_INDENT,
+          Math.max(0, current + direction),
+        );
+        if (next === current) return;
+        quill.history.cutoff();
+        quill.formatLine(lineStart, 1, "indent", next || false, "user");
+        quill.history.cutoff();
+      };
+
+      // Quill's built-in "list autofill" binding turns
+      // `1.`/`2.`/`- `/`* `/`[ ] `/`[x] ` into a list on space. Journiv narrows
+      // the ordered trigger to a bare `1.` (Quill renumbers the rest itself) and
+      // reads the leading whitespace the marker was typed after as a nesting
+      // level, so `\t- ` / `  - ` start an indented item. `[ ] ` / `[x] ` map to
+      // the task-list values. Headings and quotes stay with markdownShortcuts.ts.
       for (const binding of quill.keyboard.bindings[" "] ?? []) {
         if (
-          binding.prefix instanceof RegExp &&
-          binding.prefix.source.includes("\\[x\\]")
-        ) {
-          binding.prefix = /^\s*?(1\.|-|\*)$/;
-        }
+          !(binding.prefix instanceof RegExp) ||
+          !binding.prefix.source.includes("\\[x\\]")
+        )
+          continue;
+        binding.prefix = /^\s*?(1\.|-|\*|\[ ?\]|\[x\])$/;
+        binding.handler = (range, context) => {
+          if (quill.scroll.query("list") == null) return true;
+          const prefix: string = context.prefix ?? "";
+          const [line, offset] = quill.getLine(range.index);
+          if (!line || offset > prefix.length) return true;
+          const leading = prefix.match(/^\s*/u)?.[0] ?? "";
+          const marker = prefix.slice(leading.length);
+          const value =
+            marker === "-" || marker === "*"
+              ? "bullet"
+              : marker === "[x]"
+                ? "checked"
+                : marker === "[]" || marker === "[ ]"
+                  ? "unchecked"
+                  : "ordered";
+          const tabs = (leading.match(/\t/gu) ?? []).length;
+          const spaces = leading.length - tabs;
+          const indent = Math.min(
+            MAX_LIST_INDENT,
+            tabs + Math.floor(spaces / 2),
+          );
+          const lineFormats: Record<string, unknown> = { list: value };
+          if (indent > 0) lineFormats.indent = indent;
+          quill.insertText(range.index, " ", "user");
+          quill.history.cutoff();
+          quill.updateContents(
+            new Delta()
+              .retain(range.index - offset)
+              .delete(prefix.length + 1)
+              .retain(line.length() - 2 - offset)
+              .retain(1, lineFormats),
+            "user",
+          );
+          quill.history.cutoff();
+          quill.setSelection(range.index - prefix.length, "silent");
+          return false;
+        };
+      }
+
+      // Tab / Shift+Tab nest and un-nest a list line (capped at
+      // MAX_LIST_INDENT). Quill only offers these bindings when the line
+      // already carries `blockquote`, `indent` or `list`; on a non-list line
+      // Journiv swallows the key rather than letting the fallback insert a
+      // literal tab or push an `indent` a blockquote may not carry.
+      for (const binding of quill.keyboard.bindings.Tab ?? []) {
+        const formats = Array.isArray(binding.format) ? binding.format : [];
+        if (!formats.includes("indent") || !formats.includes("list")) continue;
+        const direction: 1 | -1 = binding.shiftKey ? -1 : 1;
+        binding.handler = (range) => {
+          applyListIndent(range.index, direction);
+          return false;
+        };
       }
 
       const getWordCount = () => {

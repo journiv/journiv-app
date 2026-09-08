@@ -1,5 +1,6 @@
 import type { QuillDelta } from "../../../api/generated/types.gen";
 import blockquote from "./blockquote.json";
+import checklist from "./checklist.json";
 import combined from "./combined.json";
 import empty from "./empty.json";
 import headings from "./headings.json";
@@ -11,6 +12,7 @@ import inlineVideo from "./inline-video.json";
 import links from "./links.json";
 import lists from "./lists.json";
 import multipleParagraphs from "./multiple-paragraphs.json";
+import nestedLists from "./nested-lists.json";
 import plainParagraph from "./plain-paragraph.json";
 import unicode from "./unicode.json";
 
@@ -23,6 +25,8 @@ export const CANONICAL_DELTA_FIXTURES = [
   ["links", links],
   ["headings", headings],
   ["lists", lists],
+  ["checklist", checklist],
+  ["nested lists", nestedLists],
   ["blockquote", blockquote],
   ["combined", combined],
 ] as const satisfies readonly (readonly [string, QuillDelta])[];

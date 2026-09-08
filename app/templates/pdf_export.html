@@ -71,6 +71,36 @@
             margin-bottom: 0.3em;
         }
 
+        /* Nested lists sit tighter than a fresh list block. */
+        li > ul,
+        li > ol {
+            margin-bottom: 0;
+        }
+
+        /* Task lists: no bullet, a checkbox drawn inline, completed items muted. */
+        ul.checklist {
+            list-style: none;
+            margin-left: 0;
+            padding-left: 0;
+        }
+
+        ul.checklist ul.checklist {
+            margin-left: 1.5em;
+        }
+
+        li.checklist-item {
+            list-style: none;
+        }
+
+        li.checklist-item > input[type="checkbox"] {
+            margin-right: 0.5em;
+            vertical-align: baseline;
+        }
+
+        li.checklist-item[data-checked="true"] {
+            color: #777;
+        }
+
         /* Blockquotes */
         blockquote {
             border-left: 4px solid #ccc;

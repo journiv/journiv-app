@@ -38,12 +38,13 @@ a Quill Delta. Two pieces cooperate:
   synchronously inside the triggering text-change — nothing is deferred, because
   this module never performs a `<p>`→`<ol>` block-blot swap, which is the one
   thing Quill will not do mid-text-change.
-- **Bullet and ordered lists are Quill's own `list autofill` keyboard binding**,
-  not this module. `QuillSurface` narrows that binding's prefix to
-  `^\s*?(1\.|-|\*)$`: `- ` / `* ` → bullet, `1. ` → ordered (Quill renumbers the
-  items itself). `2. `, `10. `, `[ ] ` and `[x] ` are dropped from the prefix so
-  they stay literal — Journiv has no checklist format, and an
-  `unchecked`/`checked` list value would make `getContents()` throw.
+- **Lists are Quill's own `list autofill` keyboard binding**, not this module.
+  `QuillSurface` replaces that binding with a Journiv handler keyed on
+  `^\s*?(1\.|-|\*|\[ ?\]|\[x\])$`: `- ` / `* ` → bullet, `1. ` → ordered (Quill
+  renumbers the items itself), `[ ] ` → `unchecked`, `[x] ` → `checked`. `2. `
+  and `10. ` stay literal — the ordered trigger is a bare `1.` only. Whitespace
+  the marker was typed after sets the nesting level: one tab, or every two
+  spaces, is one `indent` step, capped at 5.
 
 These are typing shortcuts, not a CommonMark parser:
 
@@ -70,6 +71,28 @@ These are typing shortcuts, not a CommonMark parser:
 Inline `code` and code blocks are deliberately out of scope: they need a Gate-1
 contract expansion (this document, `deltaProfile.ts`, the backend guard, prose
 styles, and the reader) before an input shortcut for them can exist.
+
+## Lists
+
+The `list` line attribute has four values: `bullet`, `ordered`, `unchecked`,
+`checked`. A separate `indent` line attribute (integer 1–5) nests a list line;
+it is a **list-only modifier** — `deltaProfile.ts` rejects `indent` on any line
+that is not a list line, and `QuillSurface.getContents()` runs
+`stripOrphanIndent` so a nested item turned into a heading cannot carry one into
+a save. Blockquote stays single-level.
+
+The toolbar carries Bullet, Ordered and Checklist toggles (the Checklist toggle
+owns both task states) plus Indent / Outdent controls that appear only while the
+caret is on a list line. `Tab` / `Shift+Tab` do the same nesting from the
+keyboard, clamped to the 0–5 range. Ticking a task box is a `checked` ⇄
+`unchecked` line-format change like any other toolbar toggle — there is no
+document-history entry beyond the normal one.
+
+The reader renders task boxes and nested lists for reference only: its Quill
+instance is disabled, so the checkbox is inert and there is no prose-write path
+to persist a tick. Server-side rendering (`app/utils/render_engine.py`, used by
+PDF export) emits `<ul class="checklist">` with disabled `<input type="checkbox">`
+and a real nested `<ul>` / `<ol>` tree.
 
 ## Attachments
 
@@ -200,7 +223,13 @@ protects this coupling.
 
 ## Known gaps
 
-- Toolbar overflow below roughly 700px needs a More popover, not smaller targets.
+- Toolbar overflow below roughly 700px needs a More popover, not smaller
+  targets — more pressing now the Checklist toggle is a permanent control.
+- The standalone export viewer (`journiv-viewer`, separate repo) has its own
+  client-side Delta renderer and does not yet draw task boxes or nested lists;
+  exported ZIPs carry the `checked`/`unchecked`/`indent` deltas regardless.
+- Reader task boxes are display-only; there is no way to tick one from the
+  reader.
 - Media picker/caret/keyboard/slow-network behaviour lacks real-device coverage.
 - Conflict resolution is refuse-or-overwrite; no merge exists.
 - Recovering the same local draft in two tabs can race on draft-Moment finalization.

@@ -30,6 +30,7 @@ const editor = (): QuillSurfaceHandle => ({
   setLink: vi.fn(() => true),
   toggleInline: vi.fn(),
   toggleLine: vi.fn(),
+  indent: vi.fn(),
   undo: vi.fn(),
 });
 
@@ -71,6 +72,64 @@ describe("EditorToolbar", () => {
     expect(surface.undo).toHaveBeenCalledOnce();
     expect(surface.redo).toHaveBeenCalledOnce();
     expect(screen.getByText("2 words").getAttribute("aria-live")).toBeNull();
+  });
+
+  it("marks the checklist control active for either task state", () => {
+    const { rerender } = render(
+      <EditorToolbar editor={editor()} state={state({ list: "unchecked" })} />,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Checklist" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    rerender(
+      <EditorToolbar editor={editor()} state={state({ list: "checked" })} />,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Checklist" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("shows list indent controls only on a list line and honours the bounds", async () => {
+    const surface = editor();
+    const { rerender } = render(
+      <EditorToolbar editor={surface} state={state({})} />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Indent list item" }),
+    ).toBeNull();
+
+    rerender(
+      <EditorToolbar editor={surface} state={state({ list: "bullet" })} />,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Outdent list item" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Indent list item" }),
+    );
+    expect(surface.indent).toHaveBeenCalledWith(1);
+
+    rerender(
+      <EditorToolbar
+        editor={surface}
+        state={state({ list: "bullet", indent: 5 })}
+      />,
+    );
+    expect(
+      screen
+        .getByRole("button", { name: "Indent list item" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Outdent list item" }),
+    );
+    expect(surface.indent).toHaveBeenCalledWith(-1);
   });
 
   it("preserves the editor selection on pointer interaction", () => {

@@ -191,11 +191,13 @@ describe("markdown shortcuts in the writing surface", () => {
   });
 
   describe("list markers are Quill's, narrowed to what Journiv stores", () => {
-    it("makes `- `, `* ` and `1. ` lists that round-trip", async () => {
+    it("makes `- `, `* `, `1. `, `[ ] ` and `[x] ` lists that round-trip", async () => {
       for (const [typed, list] of [
         ["- one", "bullet"],
         ["* one", "bullet"],
         ["1. one", "ordered"],
+        [literal("[ ] task"), "unchecked"],
+        [literal("[x] done"), "checked"],
       ] as const) {
         const { ref, editor } = mountEditor();
         await userEvent.type(editor, typed);
@@ -209,13 +211,8 @@ describe("markdown shortcuts in the writing surface", () => {
       }
     });
 
-    it("leaves `2. `, `10. ` and checkbox markers as literal text", async () => {
-      for (const marker of [
-        "2. two",
-        "10. ten",
-        literal("[ ] task"),
-        literal("[x] done"),
-      ]) {
+    it("leaves `2. ` and `10. ` as literal text", async () => {
+      for (const marker of ["2. two", "10. ten"]) {
         const { ref, editor } = mountEditor();
         await userEvent.type(editor, marker);
         expect(editor.querySelector("li"), marker).toBeNull();
@@ -223,6 +220,29 @@ describe("markdown shortcuts in the writing surface", () => {
         expect(isQuillDocumentDelta(ref.current?.getContents()), marker).toBe(
           true,
         );
+      }
+    });
+
+    it("reads the spaces before the marker as a nesting level, capped at 5", async () => {
+      for (const [typed, indent] of [
+        ["  - child", 1],
+        ["    - child", 2],
+        ["              - too deep", 5],
+      ] as const) {
+        const { ref, editor } = mountEditor();
+        await userEvent.type(editor, typed);
+        const item = editor.querySelector("li[data-list]");
+        expect(item, typed).not.toBeNull();
+        expect(item?.className, typed).toContain(`ql-indent-${indent}`);
+        const delta = ref.current?.getContents();
+        expect(isQuillDocumentDelta(delta), typed).toBe(true);
+        const listOp = (delta?.ops ?? []).find(
+          (op) =>
+            typeof op.insert === "string" &&
+            op.insert.includes("\n") &&
+            op.attributes?.list != null,
+        );
+        expect(listOp?.attributes?.indent, typed).toBe(indent);
       }
     });
 

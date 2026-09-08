@@ -12,9 +12,12 @@ import {
   Heading1,
   Heading2,
   Heading3,
+  IndentDecrease,
+  IndentIncrease,
   Italic,
   Link,
   List,
+  ListChecks,
   ListOrdered,
   Quote,
   ImagePlus,
@@ -36,6 +39,7 @@ import type {
   LineFormatValue,
   QuillSurfaceHandle,
 } from "./QuillSurface";
+import { MAX_LIST_INDENT } from "./deltaProfile";
 import { validateLinkUrl } from "./linkPolicy";
 import { MarkdownHelpDialog } from "./MarkdownHelpDialog";
 import {
@@ -78,6 +82,11 @@ export function EditorToolbar({
   const [linkError, setLinkError] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const linkActive = typeof state.formats.link === "string";
+  const listValue = state.formats.list;
+  const checklistActive = listValue === "checked" || listValue === "unchecked";
+  const onListLine = typeof listValue === "string";
+  const indentLevel =
+    typeof state.formats.indent === "number" ? state.formats.indent : 0;
 
   const toggleInline = (name: InlineFormat) => editor?.toggleInline(name);
   const toggleLine = (name: LineFormat, value: LineFormatValue) =>
@@ -172,6 +181,32 @@ export function EditorToolbar({
         >
           <ListOrdered aria-hidden="true" size={16} />
         </ToolbarButton>
+        <ToolbarButton
+          label="Checklist"
+          pressed={checklistActive}
+          disabled={disabled}
+          onClick={() => toggleLine("list", "unchecked")}
+        >
+          <ListChecks aria-hidden="true" size={16} />
+        </ToolbarButton>
+        {onListLine && (
+          <>
+            <ToolbarButton
+              label="Outdent list item"
+              disabled={disabled || indentLevel === 0}
+              onClick={() => editor?.indent(-1)}
+            >
+              <IndentDecrease aria-hidden="true" size={16} />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Indent list item"
+              disabled={disabled || indentLevel >= MAX_LIST_INDENT}
+              onClick={() => editor?.indent(1)}
+            >
+              <IndentIncrease aria-hidden="true" size={16} />
+            </ToolbarButton>
+          </>
+        )}
         <ToolbarButton
           label="Blockquote"
           pressed={state.formats.blockquote === true}

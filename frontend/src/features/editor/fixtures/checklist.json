@@ -1,0 +1,14 @@
+{
+  "ops": [
+    { "insert": "Trip packing" },
+    { "insert": "\n", "attributes": { "header": 3 } },
+    { "insert": "Passport" },
+    { "insert": "\n", "attributes": { "list": "checked" } },
+    { "insert": "Chargers" },
+    { "insert": "\n", "attributes": { "list": "checked" } },
+    { "insert": "Sunscreen" },
+    { "insert": "\n", "attributes": { "list": "unchecked" } },
+    { "insert": "Book the airport transfer" },
+    { "insert": "\n", "attributes": { "list": "unchecked" } }
+  ]
+}

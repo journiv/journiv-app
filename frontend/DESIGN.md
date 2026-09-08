@@ -101,9 +101,13 @@ that relationship rather than forcing light-mode hierarchy into dark mode.
 | dialog or drawer | shadow-lg |
 
 The reader is content: prose has a measured column, no card, and no paragraph
-dividers. Timeline rows are content-side list rows. Management screens,
-dialogs, and libraries are chrome: use a clear canvas, panels, fields, and
-grouping where controls belong together. A `Card` is one tool for a grouped or
+dividers. Task-list items are the one exception to "no controls in reading
+prose": they render an **inert** checkbox inside that same measured column and
+nested lists indent within it — ticking happens in the editor, never the reader
+([docs/features/editor.md](docs/features/editor.md) owns the list contract).
+Timeline rows are content-side list rows. Management screens, dialogs, and
+libraries are chrome: use a clear canvas, panels, fields, and grouping where
+controls belong together. A `Card` is one tool for a grouped or
 detached surface, not the default wrapper — reach for it when a group genuinely
 needs to read as a separate raised object, not to fill space.
 

@@ -12,7 +12,20 @@ export const JOURNIV_DELTA_FORMATS = [
   "header",
   "list",
   "blockquote",
+  "indent",
 ] as const;
+
+/** The four values Journiv stores for a `list` line: three markers + a task box. */
+export const LIST_VALUES = [
+  "bullet",
+  "ordered",
+  "checked",
+  "unchecked",
+] as const;
+export type ListValue = (typeof LIST_VALUES)[number];
+
+/** Deepest list nesting level Journiv stores (`indent` 1…5, list lines only). */
+export const MAX_LIST_INDENT = 5;
 
 export const EMPTY_DELTA: QuillDelta = { ops: [{ insert: "\n" }] };
 
@@ -58,10 +71,24 @@ function hasOnlyGate1Attributes(
         return false;
       continue;
     }
+    // `indent` is a nesting modifier, not a line format in its own right: it is
+    // only ever valid on a list line, so it never counts toward
+    // `lineFormatCount` and is checked here against its sibling `list`.
+    if (name === "indent") {
+      if (
+        !isLineInsert ||
+        !entries.some(([sibling]) => sibling === "list") ||
+        !Number.isInteger(value) ||
+        (value as number) < 1 ||
+        (value as number) > MAX_LIST_INDENT
+      )
+        return false;
+      continue;
+    }
     if (!LINE_FORMATS.has(name) || !isLineInsert) return false;
     if (name === "header" && value !== 1 && value !== 2 && value !== 3)
       return false;
-    if (name === "list" && value !== "bullet" && value !== "ordered")
+    if (name === "list" && !LIST_VALUES.includes(value as ListValue))
       return false;
     if (name === "blockquote" && value !== true) return false;
   }
@@ -220,6 +247,31 @@ export function stripUploadPlaceholders(delta: QuillDelta): QuillDelta {
 
 /** Kept here, not imported, so this module stays free of Quill and DOM. */
 export const UPLOAD_PLACEHOLDER_KEY = "journiv-upload";
+
+/**
+ * Drop `indent` from any line that is not a list line.
+ *
+ * `indent` is a list-only nesting modifier (see `hasOnlyGate1Attributes`). Quill
+ * keeps the attribute when a nested bullet is turned into a heading or plain
+ * paragraph, which would leave an orphan the document guard rejects. Applied by
+ * `QuillSurface.getContents()` so a save can never carry one.
+ */
+export function stripOrphanIndent(delta: QuillDelta): QuillDelta {
+  const ops = (delta.ops ?? []).map((operation) => {
+    const attributes = operation.attributes;
+    if (
+      !isRecord(attributes) ||
+      !("indent" in attributes) ||
+      "list" in attributes
+    )
+      return operation;
+    const { indent: _dropped, ...rest } = attributes;
+    return Object.keys(rest).length > 0
+      ? { ...operation, attributes: rest }
+      : { insert: operation.insert };
+  });
+  return { ops } as QuillDelta;
+}
 
 /**
  * Documents the editor can represent: Gate-1 text plus inline media.
