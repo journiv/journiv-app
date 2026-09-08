@@ -82,15 +82,36 @@ export function zonedWallTimeToUtcIso(
   return utc.toISOString();
 }
 
+const formatterCache = new Map<string, Intl.DateTimeFormat>();
+
+function dateTimeFormatter(
+  timezone: string,
+  options: Intl.DateTimeFormatOptions,
+) {
+  const stableOptions = Object.entries(options).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
+  const key = JSON.stringify([timezone, stableOptions]);
+  let formatter = formatterCache.get(key);
+  if (!formatter) {
+    // Every current caller uses the runtime-default locale (`undefined`), which
+    // is constant for the life of the page. If this helper gains an explicit
+    // locale parameter, that locale must become part of the cache key too.
+    formatter = new Intl.DateTimeFormat(undefined, {
+      ...options,
+      timeZone: timezone,
+    });
+    formatterCache.set(key, formatter);
+  }
+  return formatter;
+}
+
 function format(
   value: string,
   timezone: string,
   options: Intl.DateTimeFormatOptions,
 ) {
-  return new Intl.DateTimeFormat(undefined, {
-    ...options,
-    timeZone: timezone,
-  }).format(new Date(value));
+  return dateTimeFormatter(timezone, options).format(new Date(value));
 }
 
 export function formatTimeOfDay(utc: string, timezone: string) {

@@ -11,6 +11,10 @@
   min-height: 0;
   height: 100%;
   background: var(--card);
+  /* On-screen keyboard height, written at runtime by `useKeyboardInset` at the
+     compact width (0 otherwise). The compact toolbar translates up by this so it
+     docks above the keyboard on iOS. */
+  --jv-keyboard-inset: 0px;
 }
 
 .jv-editor__scroll {
@@ -18,6 +22,18 @@
   min-height: 0;
   overflow: hidden auto;
   overscroll-behavior: contain;
+  /* Height of the compact bottom formatting bar (30px control + var(--space-1)
+     padding either side). Used only in the compact scroll-padding below; the
+     regular-width band is a flex sibling above this scroll owner and never
+     overlaps it. */
+  --jv-bottom-bar-height: 40px;
+  /* Where a caret scrolled into view is allowed to land. Both the browser's own
+     caret tracking and Quill's `scrollRectIntoView` honour scroll-padding. The
+     top only needs a small breathing gutter now that the toolbar no longer
+     sits inside this scrollport; the bottom leaves room to see the next line.
+     Nothing here changes layout. */
+  scroll-padding-top: var(--space-6);
+  scroll-padding-bottom: var(--space-12);
 }
 
 .jv-editor__column {
@@ -29,14 +45,6 @@
 
 .jv-editor__column .jv-prose {
   max-width: none;
-}
-
-/* The prompt band sits between the header notice and the toolbar
-   (docs/features/prompts.md). The notice above already carries 24px below it,
-   so this only needs a gap from the toolbar underneath. The CTA Button is
-   already content-width; PromptBanner carries the matching gap in prompts.css. */
-.jv-editor__prompt-cta {
-  margin-block: 0 var(--space-4);
 }
 
 /* The title wraps. An <input> cannot, which clipped long titles on mobile. */
@@ -66,9 +74,13 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
+  /* Let the PageBar title shrink this rather than shove the actions off-edge
+     when a journal name is long or the pane is narrow. */
+  min-width: 0;
 }
 
 .jv-editor__journal select {
+  min-width: 0;
   min-height: 32px;
   padding: 0 var(--space-2);
   border: 1px solid var(--border);
@@ -76,23 +88,61 @@
   background: var(--popover);
   color: var(--foreground);
   font-size: 0.8125rem;
+  text-overflow: ellipsis;
 }
 
-.jv-editor__status {
+/* The single save indicator in the PageBar (SaveStatus), at every width. An
+   icon plus one word; a resting border so it reads as the control it is
+   (DESIGN.md), and its tone carried by icon + word, never colour alone. */
+.jv-save-status {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 6px;
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
   color: var(--muted-foreground);
   font-size: 0.78125rem;
   font-weight: 500;
+  white-space: nowrap;
+  transition: background var(--duration-fast);
+}
+
+.jv-save-status:hover {
+  background: var(--muted);
+}
+
+.jv-save-status > svg {
+  flex: 0 0 auto;
+}
+
+.jv-save-status[data-tone="unsaved"] {
+  color: var(--foreground);
+}
+
+.jv-save-status[data-tone="danger"] {
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+  color: var(--destructive);
+}
+
+.jv-save-status__detail {
+  width: min(20rem, calc(100vw - var(--space-6)));
 }
 
 .jv-editor__surface {
-  min-height: 18rem;
+  /* Keep short documents easy to resume: the Quill root remains the click
+     target through the quiet space below the last line. The 18rem floor keeps
+     the established compact treatment; 50svh gives taller panes a useful
+     writing field without introducing another responsive layout rule. */
+  min-height: max(18rem, 50svh);
 }
 
 .jv-editor__surface .ql-editor {
-  min-height: 18rem;
+  min-height: max(18rem, 50svh);
 }
 
 .jv-editor__upload-errors {
@@ -254,36 +304,58 @@
 
 /* ---- toolbar ----------------------------------------------------------- */
 
+/* Outer band: a non-scrolling flex sibling of the scroll owner (like PageBar),
+   full width, flat with a single hairline. Never a sticky layer over the prose.
+   At the compact width it re-orders below the scroll owner and docks above the
+   on-screen keyboard — see the max-width: 860px block. */
 .jv-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 2;
+  flex: 0 0 auto;
+  background: var(--card);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The measured row. `toolbarFit.ts` sizes the controls against this element's
+   client box, so its `var(--space-1)` padding and the 30px control / 2px gap
+   geometry must stay exactly as that arithmetic assumes. Centred on the same
+   47rem measure as `.jv-editor__column` so the controls sit above the writing. */
+.jv-toolbar__inner {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin: 0 0 var(--space-6);
+  width: 100%;
+  max-width: 47rem;
+  margin-inline: auto;
   padding: var(--space-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--card);
+  /* A strictly horizontal strip. `overflow-y` must be set explicitly: with only
+     `overflow-x` declared it computes to `auto`, which lets a touch drag jitter
+     the row up and down. `touch-action` keeps a swipe on this scroller from
+     panning any other axis. */
   overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
   scrollbar-width: thin;
 }
 
-/* 30px visual box; IconButton keeps the >=44px hit area via its ::after. */
-.jv-toolbar [data-slot="button"] {
+/* 30px visual box; IconButton keeps the >=44px hit area via its ::after.
+   Matched on the element, not on `[data-slot="button"]`: a control rendered
+   through a Base UI trigger (Moment details, More actions) carries that
+   primitive's own slot name instead, and was left at IconButton's default 36px
+   — visibly taller than every neighbour, and 6px of extra toolbar height. */
+.jv-toolbar button {
+  flex: 0 0 auto;
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
 }
 
-.jv-toolbar [data-slot="button"][aria-pressed="true"] {
+.jv-toolbar button[aria-pressed="true"] {
   color: var(--accent-foreground);
   background: var(--accent);
 }
 
 /* Groups keep related controls together as the toolbar grows. */
 .jv-toolbar__group {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -296,13 +368,59 @@
   background: var(--border);
 }
 
-.jv-toolbar__count {
-  flex: 0 0 auto;
-  margin-left: auto;
-  padding: 0 var(--space-2);
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-  white-space: nowrap;
+/* The document footer: the word count (docs/features/editor.md — T5) and the
+   shared people/tag chips as one bracketed unit below the prose, so the count is
+   never a stray line. The hairline and the gap off the prose live here now;
+   `.jv-moment-chips` brings its own in the reader but must not double them up
+   inside this wrapper. EntryEditorPage omits the whole footer until there is
+   something in it. */
+.jv-editor__foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-12);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+.jv-editor__foot .jv-moment-chips {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* `jv-meta` already gives the count its muted colour, size and tabular
+   numerals; the footer wrapper owns the spacing. Not a live region — see
+   EntryEditorPage. */
+.jv-editor__wordcount {
+  margin: 0;
+}
+
+/* ---- the More popover ----------------------------------------------------
+   Where the secondary formatting goes when the bar is too narrow to hold it at
+   a 30px visual size (toolbarFit.ts, docs/features/editor.md). It is the same
+   row of controls, given room to wrap — not a different control language — so
+   the writer recognises it from the wide layout. */
+
+.jv-toolbar__more {
+  width: auto;
+  max-width: calc(100vw - var(--space-6));
+  gap: var(--space-3);
+}
+
+.jv-toolbar__more-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  /* Wider targets than the bar: this panel is reached by touch, and it has the
+     room the bar did not. */
+  max-width: 15rem;
+}
+
+.jv-toolbar__more-controls button[aria-pressed="true"] {
+  color: var(--accent-foreground);
+  background: var(--accent);
 }
 
 /* The link dialog uses the shared `.jv-dialog` primitive — defined in
@@ -380,28 +498,76 @@
   .jv-details-popover {
     width: min(22rem, calc(100vw - var(--space-6)));
   }
+  /* One-pane layout: the PageBar carries the journal selector, save status,
+     Cancel and Done on a phone-width row. The save status drops to its icon and
+     the selector drops its "Journal" caption (both keep their name through
+     aria-label) so the row does not overflow. */
+  .jv-save-status__word,
+  .jv-editor__journal-label {
+    display: none;
+  }
+  .jv-save-status {
+    padding: var(--space-1);
+  }
   .jv-editor__column {
     padding-top: var(--space-6);
     padding-bottom: max(var(--space-16), env(safe-area-inset-bottom));
     padding-inline: max(var(--space-4), env(safe-area-inset-left))
       max(var(--space-4), env(safe-area-inset-right));
   }
-  /* Sticky within the existing single scroll owner. Keyboard-relative docking
-     is deliberately NOT attempted until real-device evidence requires it. */
+
+  /* Compact: the formatting band re-orders below the scroll owner and docks at
+     the bottom, above the on-screen keyboard. `useKeyboardInset.ts` writes the
+     live keyboard height to `--jv-keyboard-inset` on `.jv-editor` (and
+     `data-kbd="open"` while a keyboard is up). The band is off-screen until the
+     prose surface holds focus or a keyboard is up, so it never covers the
+     writing while the writer is only reading back, and title editing does not
+     raise it. */
   .jv-toolbar {
-    top: 0;
+    order: 1;
+    border-top: 1px solid var(--border);
+    border-bottom: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+    transform: translateY(100%);
+    transition: transform var(--duration-fast);
+  }
+  .jv-editor:has(.jv-editor__surface:focus-within) .jv-toolbar,
+  .jv-editor[data-kbd="open"] .jv-toolbar {
+    transform: translateY(calc(-1 * var(--jv-keyboard-inset, 0px)));
+  }
+  /* One scrolling row, not a collapsing bar: every control stays inline and the
+     writer swipes left/right to reach it (EditorToolbar passes `scrollable`).
+     The scrollbar is hidden — a bar under the thumb should not show one — and
+     overscroll is contained so a swipe past the end does not trigger the
+     browser's back gesture or pan the page. */
+  .jv-toolbar__inner {
+    max-width: none;
+    margin-inline: 0;
+    padding-inline: var(--space-2);
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+  .jv-toolbar__inner::-webkit-scrollbar {
+    display: none;
+  }
+  /* The docked band floats over the bottom of the scrollport on iOS (the layout
+     viewport does not shrink there), so the caret must clear both it and the
+     keyboard when writing near the end. */
+  .jv-editor__scroll {
+    scroll-padding-bottom: calc(
+      var(--jv-keyboard-inset, 0px) +
+      var(--jv-bottom-bar-height) +
+      var(--space-6)
+    );
   }
 }
 
-/* The local draft status line sits where the "does not autosave" notice sat,
-   below the entry header, visible at every width. */
+/* `LocalDraftStatus` now renders only the loud failure case below the header;
+   the calm "saved on this device" reassurance moved into the PageBar save
+   status (SaveStatus). */
 .jv-editor__notice[role="alert"] {
   color: var(--destructive);
   font-weight: 500;
-}
-
-.jv-editor__notice[role="status"] {
-  color: var(--success);
 }
 
 /* A caveat inside a recovery prompt's description: a warning the reader must

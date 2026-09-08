@@ -5,7 +5,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { Plus, Sparkles, TriangleAlert } from "lucide-react";
+import { Plus, TriangleAlert } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -36,6 +36,7 @@ import {
 } from "../../api/query/options";
 import { browserTimeZone } from "../../lib/datetime";
 import { defaultJournalId } from "../../lib/journalOrder";
+import { useCompactViewport } from "../../lib/useCompactViewport";
 import { uuid } from "../../lib/uuid";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import { MomentChips } from "../../components/journiv/MomentChips";
@@ -65,9 +66,11 @@ import {
 } from "./DraftRecovery";
 import { draftKeyFor } from "./draftRepository";
 import { EntryDateControl } from "./EntryDateControl";
+import { SaveStatus } from "./SaveStatus";
 import { acceptAttribute } from "./mediaUpload";
 import { UPLOAD_BLOT_NAME } from "./uploadPlaceholder";
 import { useDraftRecovery } from "./useDraftRecovery";
+import { useKeyboardInset } from "./useKeyboardInset";
 import { type DraftIdentity, useEntryDraft } from "./useEntryDraft";
 import { useLocalDraft } from "./useLocalDraft";
 import { useMediaAttachments } from "./useMediaAttachments";
@@ -466,6 +469,12 @@ function EntryEditorForm({
   const surfaceRef = useRef<QuillSurfaceHandle>(null);
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The editor root. `useKeyboardInset` writes the live on-screen-keyboard
+  // height onto it as a CSS variable so the compact toolbar can dock above the
+  // keyboard — imperatively, never as React state (a keystroke must not
+  // re-render this page). No-op above the compact width.
+  const editorRootRef = useRef<HTMLDivElement>(null);
+  useKeyboardInset(editorRootRef, useCompactViewport());
   // Media uploaded during THIS session, so cancel can clean up only what it
   // introduced and never pre-existing Moment media. A recovered draft's
   // attachments start here too: they were uploaded by an earlier run of this
@@ -903,6 +912,40 @@ function EntryEditorForm({
       );
     },
   });
+  const mutationRef = useRef(mutation);
+  mutationRef.current = mutation;
+
+  // The word count is document metadata, shown as a quiet line below the prose
+  // (docs/features/editor.md — T5), never on the toolbar. Reading time is only
+  // meaningful past a minute's worth of words, so it is dropped for short notes.
+  const wordCount = editorState.wordCount;
+  const readMinutes = Math.round(wordCount / 200);
+  const wordCountText =
+    `${wordCount} ${wordCount === 1 ? "word" : "words"}` +
+    (readMinutes >= 1 ? ` · ${readMinutes} min read` : "");
+  // The count and the people/tag chips share one footer unit below the prose, so
+  // the count is never a stray line. The footer is absent entirely until there
+  // is writing to count or a chip to show — a blank entry stays pure canvas.
+  const hasChips =
+    (momentForDisplay?.people?.length ?? 0) > 0 ||
+    (momentForDisplay?.tags?.length ?? 0) > 0;
+
+  // "Write from a prompt" leads the editor toolbar's insert group, but only as
+  // an empty-entry affordance (docs/features/prompts.md): offered while the
+  // document is still blank and withdrawn the moment the writer types, adds
+  // media, or picks a prompt. `EditorToolbar` renders the button and reserves
+  // its width in `toolbarFit`; this decides when it is offered at all.
+  const startedEmpty = !(initialContent.ops ?? []).some((op) =>
+    typeof op.insert === "string"
+      ? op.insert.trim().length > 0
+      : Boolean(op.insert),
+  );
+  const showPromptCta =
+    !bannerPromptText &&
+    !mutation.isPending &&
+    startedEmpty &&
+    wordCount === 0 &&
+    inlineMediaPathSet.size === 0;
 
   const [dateError, setDateError] = useState("");
   /**
@@ -956,18 +999,19 @@ function EntryEditorForm({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
+      const currentMutation = mutationRef.current;
       if (
         !isExplicitSaveShortcut(event) ||
-        mutation.isPending ||
+        currentMutation.isPending ||
         surfaceRef.current?.isComposing()
       )
         return;
       event.preventDefault();
-      mutation.mutate(false);
+      currentMutation.mutate(false);
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [mutation]);
+  }, []);
 
   async function goToReader(momentId: string, savedJournalId?: string) {
     if (routeJournalId) {
@@ -1014,7 +1058,7 @@ function EntryEditorForm({
   };
 
   return (
-    <div className="jv-editor">
+    <div className="jv-editor" ref={editorRootRef}>
       {/* One Cancel control at every width. Two controls with the same
           accessible name — even if one is display:none — is a trap. */}
       <PageBar
@@ -1024,9 +1068,12 @@ function EntryEditorForm({
               className="jv-editor__journal jv-meta"
               htmlFor="entry-journal"
             >
-              Journal
+              {/* Hidden on the one-pane layout to make room; the select keeps
+                  its name through aria-label there. */}
+              <span className="jv-editor__journal-label">Journal</span>
               <select
                 id="entry-journal"
+                aria-label="Journal"
                 value={journalId}
                 onChange={(event) => {
                   setJournalId(event.target.value);
@@ -1044,25 +1091,26 @@ function EntryEditorForm({
               </select>
             </label>
           ) : (
-            <span className="jv-editor__status">
-              {mutation.isPending
-                ? "Saving…"
-                : dirty
-                  ? "Unsaved changes"
-                  : "No changes"}
-            </span>
+            <SaveStatus
+              saving={mutation.isPending}
+              dirty={dirty}
+              hasMoment={Boolean(moment)}
+              localStatus={localDraft.status}
+            />
           )
         }
         actions={
           <>
+            {/* When the journal selector owns the title slot, the save status
+                moves in beside the actions — still at every width, not the
+                desktop-only text it used to be. */}
             {needsJournalSelector && (
-              <span className="jv-editor__status jv-desktop-only">
-                {mutation.isPending
-                  ? "Saving…"
-                  : dirty
-                    ? "Unsaved changes"
-                    : "No changes"}
-              </span>
+              <SaveStatus
+                saving={mutation.isPending}
+                dirty={dirty}
+                hasMoment={Boolean(moment)}
+                localStatus={localDraft.status}
+              />
             )}
             <Button
               variant="ghost"
@@ -1082,6 +1130,29 @@ function EntryEditorForm({
         }
       />
 
+      {/* A non-scrolling flex sibling of the scroll owner, like PageBar: a
+          full-width band under PageBar at regular width, and (via `order` in
+          editor.css) docked above the on-screen keyboard at compact, shown only
+          while the writing area has focus. Not a sticky layer over the prose. */}
+      <EditorToolbar
+        editor={surfaceRef}
+        state={editorState}
+        disabled={mutation.isPending}
+        onAddMedia={openMediaPicker}
+        onRemoveMedia={removeSelectedMedia}
+        onPickPrompt={
+          showPromptCta ? () => setPromptPickerOpen(true) : undefined
+        }
+        details={{
+          moment: momentForDisplay,
+          ensureMomentId,
+          onSaved: onDetailsSaved,
+          loggedAtUtc: effectiveLoggedAtUtc,
+          loggedTimezone: effectiveTimezone,
+          hasImmichMedia,
+        }}
+      />
+
       <div className="jv-editor__scroll">
         <div className="jv-editor__column">
           <EntryHeader
@@ -1089,6 +1160,10 @@ function EntryEditorForm({
             loggedTimezone={effectiveTimezone}
             moment={momentForDisplay}
             journal={activeJournals.find((item) => item.id === journalId)}
+            // Don't repeat the journal under the title when the PageBar is
+            // already showing it as the selector. When there is no selector
+            // (one journal, existing entry) the header stays its only home.
+            showJournal={!needsJournalSelector}
             dateControl={
               <EntryDateControl
                 loggedAtUtc={effectiveLoggedAtUtc}
@@ -1115,7 +1190,7 @@ function EntryEditorForm({
                     resizeTitle();
                     keepLocally();
                   }}
-                  placeholder="Give this a title (optional)"
+                  placeholder="Untitled"
                   disabled={mutation.isPending}
                   maxLength={300}
                 />
@@ -1128,11 +1203,10 @@ function EntryEditorForm({
             omittedTransientUploads={localDraft.omittedTransientUploads}
           />
 
-          {/* Prompt context sits between the header notice and the toolbar, in
-              its own band (docs/features/prompts.md). It is placed after
-              LocalDraftStatus so that component keeps its negative top margin
-              tight to the header. */}
-          {bannerPromptText ? (
+          {/* An answered prompt is named above the body in its own band
+              (docs/features/prompts.md). The invitation to pick one is not here
+              — it is an empty-state affordance by the writing field below. */}
+          {bannerPromptText && (
             <PromptBanner
               text={bannerPromptText}
               onRemove={() => {
@@ -1141,17 +1215,6 @@ function EntryEditorForm({
                 keepLocally();
               }}
             />
-          ) : (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="jv-editor__prompt-cta"
-              onClick={() => setPromptPickerOpen(true)}
-              disabled={mutation.isPending}
-            >
-              <Sparkles aria-hidden="true" size={15} />
-              Write from a prompt
-            </Button>
           )}
           <PromptPickerDialog
             open={promptPickerOpen}
@@ -1165,21 +1228,6 @@ function EntryEditorForm({
             }}
           />
 
-          <EditorToolbar
-            editor={surfaceRef.current}
-            state={editorState}
-            disabled={mutation.isPending}
-            onAddMedia={openMediaPicker}
-            onRemoveMedia={removeSelectedMedia}
-            details={{
-              moment: momentForDisplay,
-              ensureMomentId,
-              onSaved: onDetailsSaved,
-              loggedAtUtc: effectiveLoggedAtUtc,
-              loggedTimezone: effectiveTimezone,
-              hasImmichMedia,
-            }}
-          />
           <input
             ref={fileInputRef}
             className="sr-only"
@@ -1310,8 +1358,20 @@ function EntryEditorForm({
             </p>
           )}
 
-          {/* Same metadata, same rendering as the reader (docs/domain/moments.md). */}
-          <MomentChips moment={momentForDisplay} />
+          {/* Document metadata footer: the word count (docs/features/editor.md
+              — T5) and the same people/tag chips the reader shows
+              (docs/domain/moments.md) as one bracketed unit below the prose, so
+              the count never reads as a stray line. Absent until there is
+              writing to count or a chip to show. Deliberately not a live
+              region. */}
+          {(wordCount > 0 || hasChips) && (
+            <footer className="jv-editor__foot">
+              {wordCount > 0 && (
+                <p className="jv-editor__wordcount jv-meta">{wordCountText}</p>
+              )}
+              <MomentChips moment={momentForDisplay} />
+            </footer>
+          )}
         </div>
       </div>
     </div>

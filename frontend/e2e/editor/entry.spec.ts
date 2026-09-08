@@ -83,6 +83,30 @@ test.describe("entry journeys", () => {
     ).toBeVisible();
   });
 
+  test("clicking below short prose continues writing at the end", async ({
+    page,
+    data,
+  }) => {
+    const journal = await data.journal();
+    const body = data.label("Short entry");
+    const moment = await data.moment({ journalId: journal.id, body });
+
+    await page.goto(`/timeline/${moment.id}/edit`);
+    const editor = page.getByRole("textbox", { name: "Entry body" });
+    await expect(editor).toBeVisible();
+
+    const box = await editor.boundingBox();
+    expect(box).not.toBeNull();
+    expect(box?.height).toBeGreaterThanOrEqual(VIEWPORTS.desktop.height * 0.5);
+
+    await editor.click({
+      position: { x: 16, y: (box?.height ?? 0) - 16 },
+    });
+    await page.keyboard.type(" continued below");
+
+    await expect(editor).toContainText(`${body} continued below`);
+  });
+
   test("deleting an entry removes an entry-only moment from the timeline", async ({
     page,
     data,

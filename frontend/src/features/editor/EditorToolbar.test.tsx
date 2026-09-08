@@ -47,7 +47,7 @@ describe("EditorToolbar", () => {
     const surface = editor();
     render(
       <EditorToolbar
-        editor={surface}
+        editor={{ current: surface }}
         state={state({ bold: true, header: 2 })}
       />,
     );
@@ -71,12 +71,17 @@ describe("EditorToolbar", () => {
     expect(surface.toggleLine).toHaveBeenCalledWith("blockquote", true);
     expect(surface.undo).toHaveBeenCalledOnce();
     expect(surface.redo).toHaveBeenCalledOnce();
-    expect(screen.getByText("2 words").getAttribute("aria-live")).toBeNull();
+    // The word count is no longer a toolbar control — it lives below the prose
+    // (see EntryEditorPage.datetime.test.tsx).
+    expect(screen.queryByText(/\d+ words?/)).toBeNull();
   });
 
   it("marks the checklist control active for either task state", () => {
     const { rerender } = render(
-      <EditorToolbar editor={editor()} state={state({ list: "unchecked" })} />,
+      <EditorToolbar
+        editor={{ current: editor() }}
+        state={state({ list: "unchecked" })}
+      />,
     );
     expect(
       screen
@@ -84,7 +89,10 @@ describe("EditorToolbar", () => {
         .getAttribute("aria-pressed"),
     ).toBe("true");
     rerender(
-      <EditorToolbar editor={editor()} state={state({ list: "checked" })} />,
+      <EditorToolbar
+        editor={{ current: editor() }}
+        state={state({ list: "checked" })}
+      />,
     );
     expect(
       screen
@@ -96,14 +104,17 @@ describe("EditorToolbar", () => {
   it("shows list indent controls only on a list line and honours the bounds", async () => {
     const surface = editor();
     const { rerender } = render(
-      <EditorToolbar editor={surface} state={state({})} />,
+      <EditorToolbar editor={{ current: surface }} state={state({})} />,
     );
     expect(
       screen.queryByRole("button", { name: "Indent list item" }),
     ).toBeNull();
 
     rerender(
-      <EditorToolbar editor={surface} state={state({ list: "bullet" })} />,
+      <EditorToolbar
+        editor={{ current: surface }}
+        state={state({ list: "bullet" })}
+      />,
     );
     expect(
       screen
@@ -117,7 +128,7 @@ describe("EditorToolbar", () => {
 
     rerender(
       <EditorToolbar
-        editor={surface}
+        editor={{ current: surface }}
         state={state({ list: "bullet", indent: 5 })}
       />,
     );
@@ -133,7 +144,7 @@ describe("EditorToolbar", () => {
   });
 
   it("preserves the editor selection on pointer interaction", () => {
-    render(<EditorToolbar editor={editor()} state={state()} />);
+    render(<EditorToolbar editor={{ current: editor() }} state={state()} />);
     const eventResult = fireEvent.pointerDown(
       screen.getByRole("button", { name: "Bold" }),
     );
@@ -142,7 +153,7 @@ describe("EditorToolbar", () => {
 
   it("adds a safe link and rejects unsafe links without changing content", async () => {
     const surface = editor();
-    render(<EditorToolbar editor={surface} state={state()} />);
+    render(<EditorToolbar editor={{ current: surface }} state={state()} />);
     await userEvent.click(screen.getByRole("button", { name: "Add link" }));
     const input = screen.getByLabelText("Link URL");
     await userEvent.clear(input);
@@ -166,7 +177,7 @@ describe("EditorToolbar", () => {
     });
     render(
       <EditorToolbar
-        editor={surface}
+        editor={{ current: surface }}
         state={state({ link: "https://journiv.com" })}
       />,
     );
@@ -179,8 +190,30 @@ describe("EditorToolbar", () => {
     expect(surface.setLink).toHaveBeenCalledWith(false);
   });
 
+  it("offers the prompt affordance only when onPickPrompt is passed", async () => {
+    const onPickPrompt = vi.fn();
+    const { rerender } = render(
+      <EditorToolbar editor={{ current: editor() }} state={state()} />,
+    );
+    expect(
+      screen.queryByRole("button", { name: "Write from a prompt" }),
+    ).toBeNull();
+
+    rerender(
+      <EditorToolbar
+        editor={{ current: editor() }}
+        state={state()}
+        onPickPrompt={onPickPrompt}
+      />,
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Write from a prompt" }),
+    );
+    expect(onPickPrompt).toHaveBeenCalledOnce();
+  });
+
   it("opens the markdown shortcuts reference", async () => {
-    render(<EditorToolbar editor={editor()} state={state()} />);
+    render(<EditorToolbar editor={{ current: editor() }} state={state()} />);
     const help = screen.getByRole("button", { name: "Markdown shortcuts" });
     expect(help.getAttribute("aria-pressed")).toBeNull();
 

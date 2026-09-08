@@ -7,10 +7,110 @@ Quill boundary.
 ## Editing surface
 
 Reading and writing use the same EntryHeader and prose styles. PageBar has a
-journal selector when needed, save status, one Cancel, and one Done primary.
-The title is a growing textarea with an optional-title invitation. Toolbar
-controls keep a 30px visual size and 44px targets; pointer-down prevention on
-toolbar buttons preserves the editor selection and must remain.
+journal selector when needed, the save status, one Cancel, and one Done primary.
+The title is a growing textarea with an optional-title invitation. When the
+PageBar shows the journal selector the header passes `showJournal={false}` so the
+journal is not named twice; the reader has no such bar and keeps it in the
+header. Toolbar controls keep a 30px visual size and 44px targets; pointer-down
+prevention on toolbar buttons preserves the editor selection and must remain —
+including on the More trigger, which opens over live writing.
+
+The save status is one control (`SaveStatus`) in the PageBar at every width — an
+icon plus one word (`Saved` / `Unsaved` / `Saving…` / `No changes`), with the
+full sentence in a popover and as the button's accessible name. It folds in what
+was the separate "saved on this device as you write" line; only a local-copy
+*failure* still gets a loud in-flow alert below the header (`LocalDraftStatus`).
+Tone is carried by icon and word, never colour alone.
+
+The word count is document metadata, not a toolbar control. It shares one
+bracketed footer unit (`.jv-editor__foot`) with the people and tag chips below
+the prose — the count as a quiet line, then the same chips the reader shows
+(`~N min read` is appended only once there is a minute's worth of words). The
+whole footer is absent until there is writing to count or a chip to show, so a
+blank entry is pure writing canvas. It is not a live region — it must never be
+announced on every change.
+
+The toolbar is a non-scrolling flex sibling of the scroll owner, like PageBar —
+never a sticky layer over the prose. At the regular width it is a full-width band
+directly under PageBar; at the compact width it re-orders (CSS `order`) below the
+scroll owner and docks at the bottom, above the on-screen keyboard, and is shown
+only while the prose surface holds focus or a keyboard is up. `useKeyboardInset`
+tracks `window.visualViewport` and writes the live keyboard height to
+`--jv-keyboard-inset` (and `data-kbd="open"`) on the editor root — imperatively,
+never as React state, so viewport churn cannot re-render the page. This is a
+bounded exception to DESIGN.md's "no JS layout state": it offsets one
+fixed-height bar and drives no reflow.
+
+Because the band sits outside the scrollport at the regular width, its
+`scroll-padding-top` is now only a small breathing gutter. At the compact width
+the docked bar floats over the bottom of the scrollport on iOS (the layout
+viewport does not shrink there), so `scroll-padding-bottom` includes the live
+keyboard inset plus the bar height. Both the browser's own caret tracking and
+Quill's `scrollRectIntoView` honour scroll-padding, so a line scrolled into view
+lands clear of the bar rather than behind it.
+
+### Toolbar fit
+
+The toolbar holds more controls than a narrow pane can show at 30px, and
+shrinking them is not an option. This resolves two ways by width:
+
+- **Regular width:** `toolbarFit.ts` measures the bar's own container and gives
+  up groups to a "More actions" popover worst-earned first: list nesting is kept
+  longest, then headings, undo/redo, ordered list, blockquote, underline/strike,
+  and last the Markdown-help control. Bold, Italic, Bullet, Checklist, Link and
+  the insert group never move. The insert group leads the bar — Add media, then
+  Moment details, then (only while the entry is still empty) Write from a prompt
+  (docs/features/prompts.md); `toolbarPlan` reserves that button's width via
+  `hasPromptCta` only while it is shown. With the word count gone from this
+  group, the whole formatting set fits inline in the three-pane editor pane at
+  1440 with no More control at all.
+- **Compact width:** no collapse and no More popover — every control stays on the
+  bar and the row scrolls horizontally, the standard mobile toolbar pattern.
+  `EditorToolbar` reads `useCompactViewport()` and passes `scrollable` to
+  `toolbarPlan`, which then returns every group. The scrollbar is hidden and
+  overscroll is contained so a swipe past the end does not fire the browser back
+  gesture.
+
+Nesting is ranked first because it is the only *contextual* group: at the moment
+it exists at all, it is what the writer is doing, and on touch it is the only
+route to nesting there is. The cost is that the caret entering a list line can
+push the lowest-ranked group into the popover. That displacement is
+unavoidable — 64px has to come from somewhere — and the alternatives are worse:
+reserving the space permanently costs a real group at every width, and ranking
+nesting last buries Outdent/Indent in the popover even on a 1920px screen.
+
+Each group is rendered in exactly ONE place per width — on the bar or in the
+popover, never both with one copy hidden, which would put two controls with the
+same accessible name in the tree. That is why this is measured rather than a
+container query: the choice is not presentational. It measures its own
+container — the centred inner row of the band (`.jv-toolbar__inner`), not the
+full-width band chrome and not the window — which DESIGN.md allows as "a
+component reflowing at its own width" (`features/media/useVirtualGrid.ts`
+follows the same reasoning). An unmeasured width, and the compact scrolling bar,
+show every group.
+
+### Typing cost
+
+Nothing in the editor may do work proportional to the document on every
+keystroke, and a keystroke must not re-render the editor page:
+
+- `QuillSurface` hands `onStateChange` a new `EditorState` only when one of its
+  fields actually changed. Typing a letter into a paragraph alters no format, no
+  selection length and no selected embed, so it produces no host render.
+- The word count is recomputed on an interval (`WORD_COUNT_INTERVAL_MS`), not
+  per keystroke: counting words reads the whole document. It settles within one
+  interval of the last keystroke.
+- `onInlineMediaChange` fires only for a change that could alter the document's
+  embeds — an embed insert or a deletion — and only when the resulting paths
+  differ. Ordinary typing never reads the document for it.
+- `initialContent` is cloned when a surface is built, never on render.
+- The caret's media kind is read off the blot at that position, not by slicing a
+  Delta out of the document.
+
+`EditorToolbar` takes the surface as a **ref**, not as `ref.current` read during
+render. The handle is published during commit, so a render-time read is `null`
+on first render and only corrected by some later re-render — which the rules
+above deliberately removed.
 
 `/timeline/$momentId/edit` and its journal-scoped twin also take a `seedNote`
 search flag from Quick Log's "Continue as full entry" — see
@@ -223,14 +323,21 @@ protects this coupling.
 
 ## Known gaps
 
-- Toolbar overflow below roughly 700px needs a More popover, not smaller
-  targets — more pressing now the Checklist toggle is a permanent control.
+- At the compact width the docked bottom bar floats over the scrollport on iOS
+  (the layout viewport does not shrink for the keyboard there). A caret the
+  writer has themselves scrolled behind it stays there: nothing scrolls a caret
+  that is already inside the scrollport. At the regular width the band is outside
+  the scrollport, so this cannot happen.
 - The standalone export viewer (`journiv-viewer`, separate repo) has its own
   client-side Delta renderer and does not yet draw task boxes or nested lists;
   exported ZIPs carry the `checked`/`unchecked`/`indent` deltas regardless.
 - Reader task boxes are display-only; there is no way to tick one from the
   reader.
-- Media picker/caret/keyboard/slow-network behaviour lacks real-device coverage.
+- Caret preservation through the file chooser, pending-upload save refusal, and
+  placeholder-removal races have Chromium coverage at compact width. The
+  `visualViewport` keyboard docking for the compact toolbar is implemented but
+  still needs real-device verification on iOS Safari and Android Chrome, along
+  with the physical-device media picker.
 - Conflict resolution is refuse-or-overwrite; no merge exists.
 - Recovering the same local draft in two tabs can race on draft-Moment finalization.
 - Logged date has no arbitrary timezone selector.
@@ -239,4 +346,3 @@ protects this coupling.
 - Immich people sync_enabled is import-time only; suggestions are synchronous
   and unexplained when no eligible person appears; normalized people lack an
   appearance count.
-

@@ -34,8 +34,16 @@ function getSnapshot() {
  * both trees mounted with one hidden, duplicating every form control,
  * accessible name and `useId()` inside the overlay.
  *
- * Only the three adaptive overlays in `src/components/journiv/` may call this.
- * Feature code must never ask how wide the window is.
+ * Callers beyond the three adaptive overlays in `src/components/journiv/`:
+ *
+ * - `features/editor/useKeyboardInset` — gates a `visualViewport` listener that
+ *   docks one fixed-height bar above the on-screen keyboard.
+ * - `features/editor/EditorToolbar` — picks between the measured-collapse
+ *   toolbar and the compact horizontally scrolling one (which primitive to
+ *   render, like the adaptive overlays; not a layout measurement).
+ *
+ * Both are documented in docs/features/editor.md and DESIGN.md. Other feature
+ * code must never ask how wide the window is.
  */
 export function useCompactViewport(): boolean {
   // The snapshot is a boolean, so useSyncExternalStore's identity check is

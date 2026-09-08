@@ -235,6 +235,17 @@ page-shaped breakpoints or JS layout state. Every pane has one scroll owner;
 PageBar is its flex sibling, not a sticky layer over scrolling content.
 Safe-area insets apply to drawers and scrolling-pane bottoms.
 
+The one sanctioned reading of `window.visualViewport` is a control that must
+clear the on-screen keyboard — currently the editor's compact formatting bar
+([docs/features/editor.md](docs/features/editor.md)). It writes the keyboard
+height to a CSS variable and offsets a fixed-height bar; it drives no reflow and
+holds no React layout state. A new such case is a bounded exception, documented
+in its feature contract, not a general licence to measure the viewport.
+
+The shared `.jv-desktop-only` and `.jv-compact-only` helpers must remain in
+unlayered [src/styles/util.css](src/styles/util.css): a layered visibility rule
+loses to an unlayered feature `display` rule regardless of specificity.
+
 Use a named container query when a component must fit a pane, dialog, or card:
 the viewport can become narrower while that component becomes wider, so it is
 the wrong measurement. Put the container on the box that owns the available

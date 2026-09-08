@@ -26,6 +26,7 @@ export function EntryHeader({
   loggedTimezone,
   moment,
   journal,
+  showJournal = true,
   title,
   dateControl,
   kindLabel,
@@ -36,6 +37,12 @@ export function EntryHeader({
   /** Optional: a new entry has no Moment yet, so metadata is simply absent. */
   moment?: MomentResponse;
   journal?: JournalResponse;
+  /**
+   * Whether the journal belongs in the header metadata. The reader has no other
+   * place for it and leaves this `true`; the editor sets it `false` when its
+   * PageBar already shows the journal selector, so it is not named twice.
+   */
+  showJournal?: boolean;
   title?: ReactNode;
   /** Editor-only: replaces the static date/time line with an editable control. */
   dateControl?: ReactNode;
@@ -70,11 +77,12 @@ export function EntryHeader({
       {moment ? (
         <MomentMeta
           moment={moment}
-          journal={journal}
+          journal={showJournal ? journal : undefined}
           surface="reader"
           className="jv-entry-header__meta"
         />
       ) : (
+        showJournal &&
         journal && (
           <div className="jv-meta jv-meta-row jv-entry-header__meta">
             <span className="jv-meta-cell">

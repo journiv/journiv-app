@@ -69,6 +69,44 @@ describe("wallTimePartsInZone", () => {
   });
 });
 
+describe("date formatter cache", () => {
+  it("reuses a timezone and option set without mixing different zones", () => {
+    const OriginalDateTimeFormat = Intl.DateTimeFormat;
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+      Intl,
+      "DateTimeFormat",
+    );
+    let constructions = 0;
+    class CountingDateTimeFormat extends OriginalDateTimeFormat {
+      constructor(
+        locales?: Intl.LocalesArgument,
+        options?: Intl.DateTimeFormatOptions,
+      ) {
+        super(locales, options);
+        constructions += 1;
+      }
+    }
+    Object.defineProperty(Intl, "DateTimeFormat", {
+      ...originalDescriptor,
+      value: CountingDateTimeFormat,
+    });
+
+    try {
+      const utc = "2026-01-15T23:30:00.000Z";
+      const first = formatDayMedium(utc, "Pacific/Kiritimati");
+      const repeated = formatDayMedium(utc, "Pacific/Kiritimati");
+      const otherZone = formatDayMedium(utc, "Pacific/Honolulu");
+
+      expect(repeated).toBe(first);
+      expect(otherZone).not.toBe(first);
+      expect(constructions).toBe(2);
+    } finally {
+      if (originalDescriptor)
+        Object.defineProperty(Intl, "DateTimeFormat", originalDescriptor);
+    }
+  });
+});
+
 describe("dayGroupLabel", () => {
   it("uses the viewer's local year at the New Year boundary", () => {
     const resolvedOptions = Intl.DateTimeFormat.prototype.resolvedOptions;
