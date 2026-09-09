@@ -224,6 +224,27 @@ def test_render_nested_list_dedent_and_type_change():
     )
 
 
+def test_render_bullet_to_checklist_same_depth_is_new_list():
+    """A bullet item followed by a task item at the same depth is a new list,
+    not a plain <li> merged into (or missing) the checklist class."""
+    delta = {
+        "ops": [
+            {"insert": "A bullet"},
+            {"insert": "\n", "attributes": {"list": "bullet"}},
+            {"insert": "A task"},
+            {"insert": "\n", "attributes": {"list": "unchecked"}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == (
+        "<ul><li>A bullet</li></ul>"
+        '<ul class="checklist">'
+        '<li class="checklist-item" data-checked="false">'
+        '<input type="checkbox" disabled>A task</li>'
+        "</ul>"
+    )
+
+
 def test_render_nested_checklist_combined():
     """A task line can carry a nested task list."""
     delta = {

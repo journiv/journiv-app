@@ -6,6 +6,7 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 import {
+  Activity,
   CalendarDays,
   ChartNoAxesCombined,
   Clock3,
@@ -17,7 +18,12 @@ import {
   Plus,
   RefreshCw,
   Settings,
+  Smile,
+  Sparkles,
   Sun,
+  Tags,
+  Target,
+  Users,
   Zap,
 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -168,27 +174,43 @@ export function AppSidebar({
         <NavItem
           to="/settings/journaling/people"
           onNavigate={onNavigate}
-          nested
+          icon={<Users aria-hidden="true" size={16} />}
         >
           People
         </NavItem>
-        <NavItem to="/library/prompts" onNavigate={onNavigate} nested>
+        <NavItem
+          to="/library/prompts"
+          onNavigate={onNavigate}
+          icon={<Sparkles aria-hidden="true" size={16} />}
+        >
           Prompts
         </NavItem>
-        <NavItem to="/library/tags" onNavigate={onNavigate} nested>
+        <NavItem
+          to="/library/tags"
+          onNavigate={onNavigate}
+          icon={<Tags aria-hidden="true" size={16} />}
+        >
           Tags
         </NavItem>
-        <NavItem to="/settings/journaling/moods" onNavigate={onNavigate} nested>
+        <NavItem
+          to="/settings/journaling/moods"
+          onNavigate={onNavigate}
+          icon={<Smile aria-hidden="true" size={16} />}
+        >
           Moods
         </NavItem>
         <NavItem
           to="/settings/journaling/activities"
           onNavigate={onNavigate}
-          nested
+          icon={<Activity aria-hidden="true" size={16} />}
         >
           Activities
         </NavItem>
-        <NavItem to="/settings/journaling/goals" onNavigate={onNavigate} nested>
+        <NavItem
+          to="/settings/journaling/goals"
+          onNavigate={onNavigate}
+          icon={<Target aria-hidden="true" size={16} />}
+        >
           Goals
         </NavItem>
       </nav>
@@ -244,7 +266,6 @@ function NavItem({
   icon,
   children,
   onNavigate,
-  nested = false,
   view,
 }: {
   to:
@@ -258,7 +279,6 @@ function NavItem({
   icon?: ReactNode;
   children: ReactNode;
   onNavigate?: () => void;
-  nested?: boolean;
   /** Timeline / Calendar / Media share the `/timeline` route and differ only by
    *  the `view` search param, so the active one is chosen by that param too. */
   view?: "calendar" | "media";
@@ -278,11 +298,7 @@ function NavItem({
       to={to}
       search={view ? { q: "", view } : { q: "" }}
       onClick={onNavigate}
-      className={cx(
-        "jv-nav__item",
-        nested && "jv-nav__item--nested",
-        selected && "is-selected",
-      )}
+      className={cx("jv-nav__item", selected && "is-selected")}
       aria-current={selected ? "page" : undefined}
     >
       {icon}

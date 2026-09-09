@@ -34,23 +34,27 @@ def _render_list_entries(entries: List[Dict[str, Any]]) -> str:
     """
     parts: List[str] = []
     stack: List[str] = []          # open list tags, index == depth
+    checklist_stack: List[bool] = []  # is the list at that depth a checklist?
     li_open: List[bool] = []       # is an <li> awaiting close at this depth?
 
     def open_list(tag: str, is_checklist: bool) -> None:
         cls = ' class="checklist"' if is_checklist else ''
         parts.append(f'<{tag}{cls}>')
         stack.append(tag)
+        checklist_stack.append(is_checklist)
         li_open.append(False)
 
     def close_list() -> None:
         if li_open and li_open[-1]:
             parts.append('</li>')
         parts.append(f'</{stack.pop()}>')
+        checklist_stack.pop()
         li_open.pop()
 
     for entry in entries:
         tag = entry["tag"]
         checked = entry["checked"]
+        is_checklist = checked is not None
         # Cannot open a list more than one level below the current depth.
         target_depth = min(entry["indent"], len(stack))
 
@@ -60,11 +64,13 @@ def _render_list_entries(entries: List[Dict[str, Any]]) -> str:
 
         if len(stack) == target_depth:
             # Descend one level: the parent <li> stays open to hold the new list.
-            open_list(tag, checked is not None)
-        elif stack[-1] != tag:
-            # Same depth, different kind: it's a different list.
+            open_list(tag, is_checklist)
+        elif stack[-1] != tag or checklist_stack[-1] != is_checklist:
+            # Same depth, different kind (tag or task/plain-ness): it's a
+            # different list. Checked and unchecked task items both count as
+            # "checklist", so they stay siblings in the same <ul>.
             close_list()
-            open_list(tag, checked is not None)
+            open_list(tag, is_checklist)
         elif li_open[-1]:
             # Same list: finish the previous sibling before the next item.
             parts.append('</li>')
