@@ -144,8 +144,9 @@ const findDateTrigger = () =>
   );
 
 // The routed editor and calendar are lazy-loaded. Keep the whole-test budget
-// above their element-level waits for contended GitHub Actions runners.
-const ROUTED_EDITOR_TEST_TIMEOUT = 15_000;
+// above their two sequential 10 s element waits, with room for interactions
+// and the final mutation assertion on contended GitHub Actions runners.
+const ROUTED_EDITOR_TEST_TIMEOUT = 25_000;
 
 async function pickDay(
   user: ReturnType<typeof userEvent.setup>,
