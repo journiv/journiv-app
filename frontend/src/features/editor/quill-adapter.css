@@ -72,6 +72,13 @@
   padding-left: 8.4em;
 }
 
+/* The reader instance renders task boxes for reference only — ticking happens
+   in the editor. Quill already drops the pointer cursor on `.ql-disabled`;
+   this makes the box fully inert. */
+.jv-prose--reader .ql-editor li > .ql-ui {
+  pointer-events: none;
+}
+
 /* Task list. Quill core draws the ☐ / ☑ marker from the `.ql-ui` pseudo-element
    and colours it #777; re-point both at the muted token, and mute a completed
    item's text (no strikethrough — that is the `strike` inline mark). */
@@ -82,13 +89,6 @@
 
 .jv-prose.jv-prose .ql-editor li[data-list="checked"] {
   color: var(--muted-foreground);
-}
-
-/* The reader instance renders task boxes for reference only — ticking happens
-   in the editor. Quill already drops the pointer cursor on `.ql-disabled`;
-   this makes the box fully inert. */
-.jv-prose--reader .ql-editor li > .ql-ui {
-  pointer-events: none;
 }
 
 .jv-prose .ql-editor.ql-blank::before {

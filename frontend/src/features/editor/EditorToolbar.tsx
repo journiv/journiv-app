@@ -394,7 +394,6 @@ export function EditorToolbar({
                 <PopoverTitle className="jv-section-title">
                   More actions
                 </PopoverTitle>
-                {/* biome-ignore lint/a11y/useSemanticElements: role="toolbar" is the ARIA pattern for a row of formatting controls; <fieldset> is a form construct and wrong here. */}
                 <div
                   className="jv-toolbar__more-controls"
                   role="toolbar"
