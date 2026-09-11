@@ -143,6 +143,11 @@ const findDateTrigger = () =>
     { timeout: 10_000 },
   );
 
+// The routed editor and calendar are lazy-loaded. Keep the whole-test budget
+// above their two sequential 10 s element waits, with room for interactions
+// and the final mutation assertion on contended GitHub Actions runners.
+const ROUTED_EDITOR_TEST_TIMEOUT = 25_000;
+
 async function pickDay(
   user: ReturnType<typeof userEvent.setup>,
   label: string,
@@ -159,24 +164,28 @@ async function pickDay(
 }
 
 describe("editing an existing entry's date", () => {
-  it("persists immediately, keeping the Moment's own timezone", async () => {
-    const user = userEvent.setup();
-    await renderRoute("/timeline/moment-1/edit");
-    await findDateTrigger();
+  it(
+    "persists immediately, keeping the Moment's own timezone",
+    async () => {
+      const user = userEvent.setup();
+      await renderRoute("/timeline/moment-1/edit");
+      await findDateTrigger();
 
-    await pickDay(user, "20");
+      await pickDay(user, "20");
 
-    await waitFor(() => expect(api.updateMoment).toHaveBeenCalled());
-    expect(api.updateMoment).toHaveBeenCalledWith("moment-1", {
-      // 10:30 Vienna on the 20th — the wall-clock is preserved, the zone is the
-      // Moment's own, not the test machine's.
-      logged_at_utc: "2026-08-20T08:30:00.000Z",
-      logged_timezone: "Europe/Vienna",
-    });
-    // An immediate metadata write does not make the form dirty: the save status
-    // stays out of its "Unsaved" state.
-    expect(screen.queryByRole("button", { name: /^unsaved\b/i })).toBeNull();
-  });
+      await waitFor(() => expect(api.updateMoment).toHaveBeenCalled());
+      expect(api.updateMoment).toHaveBeenCalledWith("moment-1", {
+        // 10:30 Vienna on the 20th — the wall-clock is preserved, the zone is the
+        // Moment's own, not the test machine's.
+        logged_at_utc: "2026-08-20T08:30:00.000Z",
+        logged_timezone: "Europe/Vienna",
+      });
+      // An immediate metadata write does not make the form dirty: the save status
+      // stays out of its "Unsaved" state.
+      expect(screen.queryByRole("button", { name: /^unsaved\b/i })).toBeNull();
+    },
+    ROUTED_EDITOR_TEST_TIMEOUT,
+  );
 });
 
 describe("the word count", () => {
