@@ -23,7 +23,7 @@ import { IconButton } from "../../components/ui/icon-button";
 import { SearchInput } from "../../components/ui/search-input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { useJournalLookup } from "../../lib/useJournalLookup";
-import { useShell } from "../shell/shellContext";
+import { QUICK_LOG_ENABLED, useShell } from "../shell/shellContext";
 import { groupMomentsByDay } from "./dateGroups";
 import { MomentListItem } from "./MomentListItem";
 import { scopeSearchFrom, useMomentScope } from "./momentScope";
@@ -91,9 +91,11 @@ export function TimelinePage() {
         }
         title={<span className="jv-label jv-truncate">{scope.title}</span>}
         actions={
-          <IconButton label="Quick log" onClick={shell.openQuickLog}>
-            <Zap aria-hidden="true" size={19} />
-          </IconButton>
+          QUICK_LOG_ENABLED ? (
+            <IconButton label="Quick log" onClick={shell.openQuickLog}>
+              <Zap aria-hidden="true" size={19} />
+            </IconButton>
+          ) : undefined
         }
       />
 

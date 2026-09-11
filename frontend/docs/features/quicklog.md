@@ -12,6 +12,10 @@ a centred Dialog above it. It is not a route — it mounts in `AppShell` and is
 opened through `useShell().openQuickLog()`. `AppShell` remounts it with a fresh
 `key` on every open so each capture starts from clean state.
 
+Availability is controlled by the build-time `QUICK_LOG_ENABLED` release gate
+in `shellContext.ts`. While it is `false`, every user-facing entry point stays
+hidden; set it to `true` to include the feature in a release.
+
 Entry points (v1):
 
 - the sidebar, as a quieter `outline` sibling under the brand "New entry" button;
