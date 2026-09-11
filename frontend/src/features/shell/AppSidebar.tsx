@@ -42,7 +42,7 @@ import { groupJournals } from "../../lib/journalOrder";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { cx } from "../../lib/cx";
 import { startOidcLogout } from "../auth/oidc";
-import { useShell } from "./shellContext";
+import { QUICK_LOG_ENABLED, useShell } from "./shellContext";
 import "./shell.css";
 import { ToggleGroup, ToggleGroupItem } from "../../components/ui/toggle-group";
 
@@ -92,20 +92,22 @@ export function AppSidebar({
         New entry
       </Button>
 
-      {/* The quieter sibling of "New entry": a lightweight capture that opens
-          the Quick Log sheet rather than routing anywhere (docs/features/quicklog.md).
-          Outline, not brand — writing a full entry stays the emphasised action. */}
-      <Button
-        variant="outline"
-        className="jv-nav__quick-log"
-        onClick={() => {
-          onNavigate?.();
-          shell.openQuickLog();
-        }}
-      >
-        <Zap aria-hidden="true" size={16} />
-        Quick log
-      </Button>
+      {QUICK_LOG_ENABLED ? (
+        /* The quieter sibling of "New entry": a lightweight capture that opens
+           the Quick Log sheet rather than routing anywhere (docs/features/quicklog.md).
+           Outline, not brand — writing a full entry stays the emphasised action. */
+        <Button
+          variant="outline"
+          className="jv-nav__quick-log"
+          onClick={() => {
+            onNavigate?.();
+            shell.openQuickLog();
+          }}
+        >
+          <Zap aria-hidden="true" size={16} />
+          Quick log
+        </Button>
+      ) : null}
 
       <nav className="jv-nav__group" aria-label="Views">
         <NavItem

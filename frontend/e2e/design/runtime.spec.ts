@@ -216,10 +216,12 @@ test.describe("runtime design in dark mode", () => {
     await page.goto("/timeline");
     await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
 
-    const quickLog = page.getByRole("button", { name: "Quick log" });
-    await expect(quickLog).toBeVisible();
+    const restingOutlineControl = page.getByRole("button", {
+      name: "Light theme",
+    });
+    await expect(restingOutlineControl).toBeVisible();
 
-    const contrast = await quickLog.evaluate((control) => {
+    const contrast = await restingOutlineControl.evaluate((control) => {
       const toRgba = (color: string) => {
         const canvas = document.createElement("canvas");
         canvas.width = 1;
