@@ -22,6 +22,79 @@ def _normalize_header_level(value: Any) -> int:
     return level
 
 
+def _render_list_entries(entries: List[Dict[str, Any]]) -> str:
+    """
+    Render a flat run of list lines into a nested <ul>/<ol> tree.
+
+    Each entry is ``{"tag": "ul"|"ol", "indent": int, "checked": bool|None,
+    "content": str}``. `indent` is the Gate-1 nesting level (0..5); a level that
+    jumps more than one step deeper than the current stack is clamped so the
+    output can never be malformed. Task lines (`checked` not None) render a
+    disabled checkbox that carries the state to assistive tech.
+    """
+    parts: List[str] = []
+    stack: List[str] = []          # open list tags, index == depth
+    checklist_stack: List[bool] = []  # is the list at that depth a checklist?
+    li_open: List[bool] = []       # is an <li> awaiting close at this depth?
+
+    def open_list(tag: str, is_checklist: bool) -> None:
+        cls = ' class="checklist"' if is_checklist else ''
+        parts.append(f'<{tag}{cls}>')
+        stack.append(tag)
+        checklist_stack.append(is_checklist)
+        li_open.append(False)
+
+    def close_list() -> None:
+        if li_open and li_open[-1]:
+            parts.append('</li>')
+        parts.append(f'</{stack.pop()}>')
+        checklist_stack.pop()
+        li_open.pop()
+
+    for entry in entries:
+        tag = entry["tag"]
+        checked = entry["checked"]
+        is_checklist = checked is not None
+        # Cannot open a list more than one level below the current depth.
+        target_depth = min(entry["indent"], len(stack))
+
+        # Close anything deeper than the level this item belongs to.
+        while len(stack) > target_depth + 1:
+            close_list()
+
+        if len(stack) == target_depth:
+            # Descend one level: the parent <li> stays open to hold the new list.
+            open_list(tag, is_checklist)
+        elif stack[-1] != tag or checklist_stack[-1] != is_checklist:
+            # Same depth, different kind (tag or task/plain-ness): it's a
+            # different list. Checked and unchecked task items both count as
+            # "checklist", so they stay siblings in the same <ul>.
+            close_list()
+            open_list(tag, is_checklist)
+        elif li_open[-1]:
+            # Same list: finish the previous sibling before the next item.
+            parts.append('</li>')
+            li_open[-1] = False
+
+        if checked is None:
+            parts.append(f'<li>{entry["content"]}')
+        else:
+            state = 'true' if checked else 'false'
+            box = (
+                '<input type="checkbox" disabled checked>'
+                if checked
+                else '<input type="checkbox" disabled>'
+            )
+            parts.append(
+                f'<li class="checklist-item" data-checked="{state}">{box}{entry["content"]}'
+            )
+        li_open[-1] = True
+
+    while stack:
+        close_list()
+    return ''.join(parts)
+
+
 def _is_safe_url(
     url: str,
     *,
@@ -102,9 +175,14 @@ def render_delta_to_html(
     suppressed_media_types = {value.lower() for value in (suppress_media_types or set())}
     current_block: List[str] = []
     current_block_type: Optional[str] = None  # 'p', 'h1', 'h2', etc.
-    list_items: List[str] = []
-    list_type: Optional[str] = None  # 'ul' or 'ol'
+    # Each entry: {"tag": "ul"|"ol", "indent": int, "checked": bool|None,
+    # "content": str}. Rendered as a nested tree by `flush_list`.
+    list_entries: List[Dict[str, Any]] = []
     code_block_lines: List[str] = []
+
+    # Deepest list nesting Journiv stores (Gate-1 `indent` 1..5). Mirrors
+    # MAX_LIST_INDENT in the frontend deltaProfile.
+    MAX_LIST_INDENT = 5
 
     def flush_code_block():
         """Flush accumulated code block lines."""
@@ -115,13 +193,11 @@ def render_delta_to_html(
             code_block_lines = []
 
     def flush_list():
-        """Flush accumulated list items."""
-        nonlocal list_items, list_type
-        if list_items and list_type:
-            items_html = ''.join(f'<li>{item}</li>' for item in list_items)
-            html_parts.append(f'<{list_type}>{items_html}</{list_type}>')
-            list_items = []
-            list_type = None
+        """Flush accumulated list items as a (possibly nested) list tree."""
+        nonlocal list_entries
+        if list_entries:
+            html_parts.append(_render_list_entries(list_entries))
+            list_entries = []
 
     def flush_block():
         """Flush current text block as a paragraph or heading."""
@@ -195,7 +271,9 @@ def render_delta_to_html(
                         continue
 
                 elif list_attr:
-                    # List item
+                    # List item: bullet / ordered / task box, optionally nested
+                    # via the Gate-1 `indent` modifier. `_render_list_entries`
+                    # turns the flat run into the nested <ul>/<ol> tree.
                     flush_code_block()
 
                     carried_content = ""
@@ -204,15 +282,28 @@ def render_delta_to_html(
                     else:
                         flush_block()
 
-                    list_tag = 'ul' if list_attr == 'bullet' else 'ol'
+                    list_tag = 'ol' if list_attr == 'ordered' else 'ul'
+                    checked = (
+                        True if list_attr == 'checked'
+                        else False if list_attr == 'unchecked'
+                        else None
+                    )
+                    raw_indent = attributes.get("indent")
+                    indent = (
+                        raw_indent
+                        if isinstance(raw_indent, int) and not isinstance(raw_indent, bool)
+                        else 0
+                    )
+                    indent = max(0, min(indent, MAX_LIST_INDENT))
 
-                    if list_type and list_type != list_tag:
-                        flush_list()
-
-                    list_type = list_tag
                     formatted_line = carried_content or _apply_inline_formatting(line, attributes)
                     if formatted_line:
-                        list_items.append(formatted_line)
+                        list_entries.append({
+                            "tag": list_tag,
+                            "indent": indent,
+                            "checked": checked,
+                            "content": formatted_line,
+                        })
 
                     if is_newline:
                         continue

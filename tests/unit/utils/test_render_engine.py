@@ -156,6 +156,131 @@ def test_render_quill_list_separated_by_plain_paragraph():
     )
 
 
+def test_render_checklist_uses_ul_with_disabled_checkboxes():
+    """Task lists render as <ul class="checklist"> with state-carrying checkboxes, never <ol>."""
+    delta = {
+        "ops": [
+            {"insert": "Passport"},
+            {"insert": "\n", "attributes": {"list": "checked"}},
+            {"insert": "Sunscreen"},
+            {"insert": "\n", "attributes": {"list": "unchecked"}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == (
+        '<ul class="checklist">'
+        '<li class="checklist-item" data-checked="true">'
+        '<input type="checkbox" disabled checked>Passport</li>'
+        '<li class="checklist-item" data-checked="false">'
+        '<input type="checkbox" disabled>Sunscreen</li>'
+        "</ul>"
+    )
+    assert "<ol>" not in result
+
+
+def test_render_nested_bullet_list():
+    """`indent` nests a bullet list inside the preceding item."""
+    delta = {
+        "ops": [
+            {"insert": "Garden"},
+            {"insert": "\n", "attributes": {"list": "bullet"}},
+            {"insert": "Front bed"},
+            {"insert": "\n", "attributes": {"list": "bullet", "indent": 1}},
+            {"insert": "Weeding"},
+            {"insert": "\n", "attributes": {"list": "bullet", "indent": 2}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == (
+        "<ul><li>Garden"
+        "<ul><li>Front bed"
+        "<ul><li>Weeding</li></ul>"
+        "</li></ul>"
+        "</li></ul>"
+    )
+
+
+def test_render_nested_list_dedent_and_type_change():
+    """Dedenting closes the deeper list; a different kind at the same depth is a new list."""
+    delta = {
+        "ops": [
+            {"insert": "Steps"},
+            {"insert": "\n", "attributes": {"list": "ordered"}},
+            {"insert": "Measure"},
+            {"insert": "\n", "attributes": {"list": "ordered", "indent": 1}},
+            {"insert": "Back to top"},
+            {"insert": "\n", "attributes": {"list": "ordered"}},
+            {"insert": "A bullet now"},
+            {"insert": "\n", "attributes": {"list": "bullet"}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == (
+        "<ol><li>Steps"
+        "<ol><li>Measure</li></ol>"
+        "</li>"
+        "<li>Back to top</li></ol>"
+        "<ul><li>A bullet now</li></ul>"
+    )
+
+
+def test_render_bullet_to_checklist_same_depth_is_new_list():
+    """A bullet item followed by a task item at the same depth is a new list,
+    not a plain <li> merged into (or missing) the checklist class."""
+    delta = {
+        "ops": [
+            {"insert": "A bullet"},
+            {"insert": "\n", "attributes": {"list": "bullet"}},
+            {"insert": "A task"},
+            {"insert": "\n", "attributes": {"list": "unchecked"}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == (
+        "<ul><li>A bullet</li></ul>"
+        '<ul class="checklist">'
+        '<li class="checklist-item" data-checked="false">'
+        '<input type="checkbox" disabled>A task</li>'
+        "</ul>"
+    )
+
+
+def test_render_nested_checklist_combined():
+    """A task line can carry a nested task list."""
+    delta = {
+        "ops": [
+            {"insert": "Prune the roses"},
+            {"insert": "\n", "attributes": {"list": "unchecked"}},
+            {"insert": "Deadhead first"},
+            {"insert": "\n", "attributes": {"list": "checked", "indent": 1}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    assert result == (
+        '<ul class="checklist">'
+        '<li class="checklist-item" data-checked="false">'
+        '<input type="checkbox" disabled>Prune the roses'
+        '<ul class="checklist">'
+        '<li class="checklist-item" data-checked="true">'
+        '<input type="checkbox" disabled checked>Deadhead first</li>'
+        "</ul>"
+        "</li></ul>"
+    )
+
+
+def test_render_list_indent_is_clamped():
+    """An indent past the deepest stored level cannot produce malformed nesting."""
+    delta = {
+        "ops": [
+            {"insert": "Only item"},
+            {"insert": "\n", "attributes": {"list": "bullet", "indent": 9}},
+        ]
+    }
+    result = render_delta_to_html(delta)
+    # Orphan deep indent with no parent collapses to a single top-level list.
+    assert result == "<ul><li>Only item</li></ul>"
+
+
 def test_render_blockquote():
     """Test rendering blockquotes."""
     delta = {

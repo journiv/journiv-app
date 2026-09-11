@@ -173,8 +173,23 @@ describe("editing an existing entry's date", () => {
       logged_at_utc: "2026-08-20T08:30:00.000Z",
       logged_timezone: "Europe/Vienna",
     });
-    // An immediate metadata write does not make the form dirty.
-    expect(screen.queryByText("Unsaved changes")).toBeNull();
+    // An immediate metadata write does not make the form dirty: the save status
+    // stays out of its "Unsaved" state.
+    expect(screen.queryByRole("button", { name: /^unsaved\b/i })).toBeNull();
+  });
+});
+
+describe("the word count", () => {
+  it("sits below the prose, outside the toolbar, and is not a live region", async () => {
+    await renderRoute("/timeline/moment-1/edit");
+    // "Coffee." — one word — comes from the mounted editor's initial document.
+    const count = await screen.findByText(
+      /^\d+ words?\b/,
+      {},
+      { timeout: 10_000 },
+    );
+    expect(count.getAttribute("aria-live")).toBeNull();
+    expect(count.closest('[role="toolbar"]')).toBeNull();
   });
 });
 
@@ -187,8 +202,13 @@ describe("choosing a date for a new entry", () => {
 
     // Typing creates the first local draft, which adds its id to the URL.
     // Let that one-time router transition settle before changing `draftAt`.
-    // Subsequent draft writes reuse that id and cannot remount the editor.
-    await screen.findByText(/Saved locally/, {}, { timeout: 4_000 });
+    // Subsequent draft writes reuse that id and cannot remount the editor. The
+    // save status reflecting the stored-on-device copy is the signal it landed.
+    await screen.findByRole(
+      "button",
+      { name: /not in your journal yet/i },
+      { timeout: 4_000 },
+    );
     await pickDay(user, "20");
     // The date change is local for a new entry. Wait for React to commit it
     // before the immediate save below reads `draftAt` in its mutation.
@@ -203,6 +223,57 @@ describe("choosing a date for a new entry", () => {
     expect(
       wallTimePartsInZone(body.logged_at_utc as string, browserTimeZone()).day,
     ).toBe(20);
+  });
+});
+
+describe("the save shortcut", () => {
+  it("keeps one subscription across renders, waits for composition, and then saves", async () => {
+    const addEventListener = vi.spyOn(window, "addEventListener");
+
+    try {
+      const user = userEvent.setup();
+      await renderRoute("/timeline/moment-1/edit");
+      const editor = await screen.findByLabelText(
+        "Entry body",
+        {},
+        { timeout: 5_000 },
+      );
+      const title = screen.getByLabelText("Entry title");
+      const keydownSubscriptionCount = () =>
+        addEventListener.mock.calls.filter(([type]) => type === "keydown")
+          .length;
+      const subscriptionsAfterMount = keydownSubscriptionCount();
+
+      await user.type(title, " updated");
+      expect(keydownSubscriptionCount()).toBe(subscriptionsAfterMount);
+
+      editor.dispatchEvent(
+        new CompositionEvent("compositionstart", { bubbles: true }),
+      );
+      const composingSave = new KeyboardEvent("keydown", {
+        key: "s",
+        metaKey: true,
+        cancelable: true,
+      });
+      window.dispatchEvent(composingSave);
+      expect(composingSave.defaultPrevented).toBe(false);
+      expect(api.updateMoment).not.toHaveBeenCalled();
+
+      editor.dispatchEvent(
+        new CompositionEvent("compositionend", { bubbles: true }),
+      );
+      const save = new KeyboardEvent("keydown", {
+        key: "s",
+        metaKey: true,
+        cancelable: true,
+      });
+      window.dispatchEvent(save);
+
+      expect(save.defaultPrevented).toBe(true);
+      await waitFor(() => expect(api.updateMoment).toHaveBeenCalledTimes(1));
+    } finally {
+      addEventListener.mockRestore();
+    }
   });
 });
 

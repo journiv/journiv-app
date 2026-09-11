@@ -1,13 +1,10 @@
 /* Layout of the three panes, and the navigation rail. */
 
-/* The application canvas is `body` (`--muted`, index.css). The shell is one
-   rounded, bordered surface sitting on it, with the panes flush inside it
-   (DESIGN.md).
-
-   The outer border is `--border`, which in Minimal Neutral's light palette is
-   the same value as the canvas — so the shell's edge is carried by
-   `shadow-sm`, not by the line. That is Minimal Neutral's own relationship
-   between the two tokens; do not "fix" it by inventing a darker edge.
+/* The application canvas is `body` (`--muted`, index.css). The shell fills the
+   viewport edge to edge at every width — no outer margin, frame, radius, or
+   shadow — with the panes flush inside it, each painting its own surface
+   (`--sidebar`, `--background`, `--card`). The panes cover the canvas in every
+   page band, so `body`'s `--muted` only shows through browser overscroll.
 
    `--jv-seam` is the pane divider — a *faded* `--border`, not a full hairline.
    An A/B test (docs/features/personalization.md) compared hard `--border` seams, these faded
@@ -17,10 +14,7 @@
    carry a structural edge that would otherwise vanish. */
 
 .jv-shell {
-  /* The margin is the canvas showing around the shell, so the height has to
-     account for it in both the `vh` fallback and the `dvh` rule below. */
-  height: calc(100vh - 2 * var(--space-2));
-  margin: var(--space-2);
+  height: 100vh;
   overflow: hidden;
   display: grid;
   grid-template-columns:
@@ -28,15 +22,11 @@
     minmax(var(--list-width-min), var(--list-width-max))
     minmax(0, 1fr);
   --jv-seam: color-mix(in oklab, var(--border), transparent 60%);
-
-  border: 1px solid color-mix(in oklab, var(--border), transparent 45%);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
 }
 
 @supports (height: 100dvh) {
   .jv-shell {
-    height: calc(100dvh - 2 * var(--space-2));
+    height: 100dvh;
   }
 }
 
@@ -132,12 +122,6 @@
 .jv-nav__item:hover {
   color: var(--foreground);
   background: var(--muted);
-}
-
-/* Aligns the label with the journal rows above, whose leading colour dot
-   pushes their text to about the same offset. (`--space-5` is not a token.) */
-.jv-nav__item--nested {
-  padding-left: var(--space-8);
 }
 
 /* Selection is carried by surface AND a rail, never by colour alone. */
@@ -264,23 +248,10 @@
   }
 }
 
-/* One task per screen. Browser history is the navigation.
-   The shell goes full-bleed here: a phone should not spend 16px of its width
-   on a frame, and a rounded corner on a full-height pane reads as a mistake
-   rather than as elevation. */
+/* One task per screen. Browser history is the navigation. */
 @media (max-width: 860px) {
   .jv-shell {
     grid-template-columns: minmax(0, 1fr);
-    margin: 0;
-    height: 100vh;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-  }
-  @supports (height: 100dvh) {
-    .jv-shell {
-      height: 100dvh;
-    }
   }
   .jv-shell:not(.is-detail) .jv-shell__page {
     display: none;

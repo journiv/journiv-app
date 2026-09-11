@@ -1,12 +1,19 @@
-import { act, createRef } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import Quill from "quill";
+import { act, createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { deltasEqual, EMPTY_DELTA } from "./deltaProfile";
+import {
+  deltasEqual,
+  EMPTY_DELTA,
+  JOURNIV_DELTA_FORMATS,
+} from "./deltaProfile";
 import { CANONICAL_DELTA_FIXTURES } from "./fixtures";
-import { JOURNIV_DELTA_FORMATS } from "./deltaProfile";
-import { QuillSurface, type QuillSurfaceHandle } from "./QuillSurface";
+import {
+  QuillSurface,
+  type QuillSurfaceHandle,
+  WORD_COUNT_INTERVAL_MS,
+} from "./QuillSurface";
 
 describe("QuillSurface", () => {
   it("hydrates silently, reports words, and keeps one editor across state changes", async () => {
@@ -30,8 +37,14 @@ describe("QuillSurface", () => {
 
     await userEvent.type(editor, "Hello world");
     expect(changed).toHaveBeenCalled();
-    expect(stateChanged).toHaveBeenLastCalledWith(
-      expect.objectContaining({ wordCount: 2 }),
+    // The count is recomputed on an interval rather than per keystroke
+    // (WORD_COUNT_INTERVAL_MS), so it settles shortly after the typing stops.
+    await vi.waitFor(
+      () =>
+        expect(stateChanged).toHaveBeenLastCalledWith(
+          expect.objectContaining({ wordCount: 2 }),
+        ),
+      { timeout: WORD_COUNT_INTERVAL_MS * 4 },
     );
 
     view.rerender(
@@ -50,6 +63,46 @@ describe("QuillSurface", () => {
     expect(editor.getAttribute("aria-readonly")).toBe("true");
     expect(editor.closest(".jv-prose")?.className).toContain(
       "jv-prose--reader",
+    );
+  });
+
+  it("stays quiet while typing changes nothing the host renders", () => {
+    // The host re-renders the whole editor page from these callbacks, so
+    // ordinary typing — which changes no format, no selection length and no
+    // inline media — must not produce one per keystroke.
+    const stateChanged = vi.fn();
+    const inlineMediaChanged = vi.fn();
+    render(
+      <QuillSurface
+        editorId="steady"
+        initialContent={{ ops: [{ insert: "Some words here\n" }] }}
+        formats={[...JOURNIV_DELTA_FORMATS, "image", "video", "audio"]}
+        onStateChange={stateChanged}
+        onInlineMediaChange={inlineMediaChanged}
+      />,
+    );
+    const editor = screen.getByLabelText("Entry body");
+    const quill = Quill.find(editor.closest(".jv-prose") as Element) as Quill;
+
+    act(() => quill.setSelection(4, 0, "user"));
+    act(() => quill.insertText(4, "a", "user"));
+    const states = stateChanged.mock.calls.length;
+    const media = inlineMediaChanged.mock.calls.length;
+
+    act(() => {
+      for (let index = 0; index < 12; index += 1)
+        quill.insertText(5 + index, "b", "user");
+    });
+
+    expect(stateChanged.mock.calls.length).toBe(states);
+    expect(inlineMediaChanged.mock.calls.length).toBe(media);
+
+    // A real change still reaches the host on the very next edit.
+    act(() => quill.formatLine(0, 1, "header", 2, "user"));
+    expect(stateChanged).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        formats: expect.objectContaining({ header: 2 }),
+      }),
     );
   });
 
@@ -273,6 +326,89 @@ describe("QuillSurface", () => {
         formats: expect.objectContaining({ italic: true }),
       }),
     );
+  });
+
+  it("creates task lists and nests them without breaking the saveable Delta", async () => {
+    const ref = createRef<QuillSurfaceHandle>();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="checklist"
+        initialContent={{ ops: [{ insert: "Parent\nChild\n" }] }}
+      />,
+    );
+    const editor = screen.getByLabelText("Entry body");
+    const quill = Quill.find(editor.closest(".jv-prose") as Element) as Quill;
+
+    act(() => quill.setSelection(0, 12, "user"));
+    act(() => ref.current?.toggleLine("list", "unchecked"));
+    expect(editor.querySelectorAll('li[data-list="unchecked"]').length).toBe(2);
+    // The checklist value is inside the Gate-1 profile: getContents must not throw.
+    expect(() => ref.current?.getContents()).not.toThrow();
+
+    // Nest the second item one level via the imperative control.
+    act(() => quill.setSelection(9, 0, "user"));
+    act(() => ref.current?.indent(1));
+    const child = editor.querySelectorAll("li")[1];
+    expect(child?.className).toContain("ql-indent-1");
+    const nestedOp = ref.current
+      ?.getContents()
+      .ops?.find(
+        (op) =>
+          typeof op.insert === "string" &&
+          op.insert === "\n" &&
+          op.attributes?.indent === 1,
+      );
+    expect(nestedOp?.attributes).toMatchObject({
+      list: "unchecked",
+      indent: 1,
+    });
+
+    // Clamp: five nudges up then well past the floor.
+    for (let i = 0; i < 8; i += 1) act(() => ref.current?.indent(1));
+    expect(editor.querySelectorAll("li")[1]?.className).toContain(
+      "ql-indent-5",
+    );
+    for (let i = 0; i < 8; i += 1) act(() => ref.current?.indent(-1));
+    expect(editor.querySelectorAll("li")[1]?.className).not.toMatch(
+      /ql-indent-/,
+    );
+
+    // Turning the list off drops the orphaned nesting too.
+    act(() => quill.setSelection(9, 0, "user"));
+    act(() => ref.current?.indent(1));
+    act(() => ref.current?.toggleLine("list", "unchecked"));
+    expect(() => ref.current?.getContents()).not.toThrow();
+    expect(JSON.stringify(ref.current?.getContents())).not.toContain("indent");
+  });
+
+  it("indents a list line with Tab and outdents with Shift+Tab, capped", async () => {
+    const ref = createRef<QuillSurfaceHandle>();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="tab-indent"
+        initialContent={{
+          ops: [
+            { insert: "Item" },
+            { insert: "\n", attributes: { list: "bullet" } },
+          ],
+        }}
+      />,
+    );
+    const editor = screen.getByLabelText("Entry body");
+    const quill = Quill.find(editor.closest(".jv-prose") as Element) as Quill;
+
+    act(() => quill.setSelection(2, 0, "user"));
+    await userEvent.keyboard("{Tab}");
+    expect(editor.querySelector("li")?.className).toContain("ql-indent-1");
+
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(editor.querySelector("li")?.className ?? "").not.toMatch(
+      /ql-indent-/,
+    );
+    // A Delta round-trip stays valid throughout.
+    expect(() => ref.current?.getContents()).not.toThrow();
   });
 
   it("adds, edits, and removes a link without losing the selected text", () => {

@@ -310,6 +310,44 @@ function checkDeadTokens() {
   );
 }
 
+/** Visibility helpers exist specifically to override feature-level display
+ *  rules. If they move into a cascade layer, any unlayered feature rule wins
+ *  regardless of selector specificity and the helper silently stops working. */
+function checkVisibilityHelpersAreUnlayered() {
+  const indexCss = readFileSync("src/styles/index.css", "utf8");
+  const layeredStylesheets = new Set(
+    [
+      ...indexCss.matchAll(
+        /@import\s+["'](\.\/[^"']+)["']\s+layer(?:\([^)]*\))?\s*;/g,
+      ),
+    ].map(([, path]) => join("src/styles", path)),
+  );
+  const helpers = ["jv-desktop-only", "jv-compact-only"];
+  const violations = [];
+
+  for (const file of layeredStylesheets) {
+    const source = withoutComments(readFileSync(file, "utf8"));
+    for (const match of source.matchAll(/([^{}]+)\{/g)) {
+      const selector = match[1].trim();
+      if (selector.startsWith("@")) continue;
+      for (const helper of helpers) {
+        if (new RegExp(`\\.${helper}(?![a-zA-Z0-9_-])`).test(selector)) {
+          violations.push(`${file}  .${helper} is declared in a cascade layer`);
+        }
+      }
+    }
+  }
+
+  return report(
+    "visibility helper declared in a cascade layer",
+    violations,
+    `Move .jv-desktop-only and .jv-compact-only to an unlayered stylesheet,\n` +
+      `currently src/styles/util.css. A layered rule loses to an unlayered\n` +
+      `feature rule regardless of specificity, so a helper that must beat\n` +
+      `component display CSS cannot live in a layer.`,
+  );
+}
+
 /** Every `[text](src/...)` link in DESIGN.md must resolve to a real file or
  *  directory. A stale link (a rename the doc missed) sends the next agent
  *  looking for a file that isn't there. */
@@ -433,6 +471,7 @@ function checkTokenFacts() {
 
 failed += checkUndefinedCustomProperties();
 failed += checkDeadTokens();
+failed += checkVisibilityHelpersAreUnlayered();
 failed += checkDesignMdLinks();
 failed += checkBreakpoints();
 failed += checkTokenFacts();

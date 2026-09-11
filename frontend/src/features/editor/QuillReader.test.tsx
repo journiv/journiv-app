@@ -20,6 +20,32 @@ describe("QuillReader", () => {
     }
   });
 
+  it("renders task lists and nested lists, with the checkboxes inert", () => {
+    render(
+      <QuillReader
+        content={{
+          ops: [
+            { insert: "Done" },
+            { insert: "\n", attributes: { list: "checked" } },
+            { insert: "Todo" },
+            { insert: "\n", attributes: { list: "unchecked" } },
+            { insert: "Sub-task" },
+            { insert: "\n", attributes: { list: "unchecked", indent: 1 } },
+          ],
+        }}
+        entryId="tasks"
+      />,
+    );
+    const editor = screen.getByLabelText("Entry content");
+    expect(editor.querySelector('li[data-list="checked"]')?.textContent).toBe(
+      "Done",
+    );
+    expect(editor.querySelectorAll('li[data-list="unchecked"]').length).toBe(2);
+    expect(editor.querySelector(".ql-indent-1")?.textContent).toBe("Sub-task");
+    // The reader is disabled, so Quill never wires the checkbox toggle.
+    expect(editor.closest(".ql-container")?.className).toContain("ql-disabled");
+  });
+
   it("renders the inline image URL the backend hydrated into the document", () => {
     render(
       <QuillReader

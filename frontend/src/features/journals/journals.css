@@ -1,11 +1,11 @@
 /* The Journals management pane: create, rename, recolour, favourite, reorder,
    archive and delete. This is chrome, not reading content (DESIGN.md), so
-   it is composed the way Settings is — a management canvas carrying a panel of
-   rows, roomier than a Timeline row. The canvas stays `--background` (the list
-   column's own surface): this pane carries the New journal control directly on
-   it, and a `--muted` canvas would erase that control's edge in dark, where
-   Minimal Neutral gives `--muted`, `--secondary`, `--border` and `--input` the
-   same value (DESIGN.md, DESIGN.md). The panel below is what provides the separation. */
+   it is composed the way Settings is — sections sitting directly on the pane
+   surface, grouping carried by hairlines rather than a raised card. The canvas
+   stays `--background` (the list column's own surface): this pane carries the
+   New journal control directly on it, and a `--muted` canvas would erase that
+   control's edge in dark, where Minimal Neutral gives `--muted`, `--secondary`,
+   `--border` and `--input` the same value (DESIGN.md). */
 
 .jv-journals__header {
   flex: 0 0 auto;
@@ -29,7 +29,7 @@
   min-height: 0;
   overflow: hidden auto;
   overscroll-behavior: contain;
-  padding: 0 var(--space-2) var(--space-8);
+  padding: 0 var(--space-4) var(--space-8);
 }
 
 @media (max-width: 860px) {
@@ -38,30 +38,23 @@
   }
 }
 
-/* Journals are objects being managed, so the list is a panel raised off that
-   canvas — the same card relationship Settings uses (DESIGN.md, docs/features/journals.md). */
+/* The list sits flat on the pane surface — no raised card — the same
+   management-surface treatment Settings uses (DESIGN.md, docs/features/journals.md).
+   Rows have no dividers and highlight the same way Timeline's do
+   (timeline.css `.jv-moment`): a rounded fill on hover, rhythm doing the
+   separating. */
 .jv-jlist {
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow-xs);
 }
 
-/* Rows are flush inside the panel and separated by hairlines; the panel's own
-   radius clips the ends, so a row carries none of its own. */
 .jv-jrow {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   padding-right: var(--space-2);
-}
-
-.jv-jrow + .jv-jrow {
-  border-top: 1px solid var(--border);
+  border-radius: var(--radius-md);
 }
 
 .jv-jrow:hover {
@@ -129,7 +122,7 @@
 
 .jv-jrow--skeleton {
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-2);
 }
 
 /* ---- archived disclosure --------------------------------------------------- */
@@ -140,7 +133,7 @@
 }
 
 .jv-journals__archived-summary {
-  padding: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-2);
   color: var(--muted-foreground);
   font-size: 0.8125rem;
   font-weight: 600;

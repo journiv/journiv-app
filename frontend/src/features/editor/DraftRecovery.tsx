@@ -178,13 +178,35 @@ export function DraftMediaUnreachable({
 }
 
 /**
- * The quiet line that replaced "Journiv does not autosave yet".
+ * The message for a local-draft state where nothing could be stored.
  *
- * It sits where that notice sat — below the entry header, visible at every
- * width, unlike the `PageBar` save status which the journal selector hides on
- * compact layouts. It must never overstate what happened: `Saved locally` is
- * set only once a write has actually landed, and a browser that will not store
- * anything says so rather than staying quiet.
+ * Shared by the inline alert below and by the PageBar save status
+ * (`SaveStatus`), so the two never drift apart. `null` for every state that did
+ * manage to store a copy — those are the calm case the save status owns.
+ */
+export function localDraftFailureMessage(status: DraftStatus): string | null {
+  switch (status) {
+    case "failed":
+      return "Journiv couldn’t keep a local copy of this writing. Press Done before leaving this page.";
+    case "unavailable":
+      return "This browser won’t keep a local copy. Press Done before leaving this page.";
+    case "unsupported":
+      // Nothing was stored, and the line must not imply otherwise. This entry
+      // holds something a draft cannot represent, and a partial copy would lose
+      // it on recovery.
+      return "Journiv can’t keep a local copy of this entry — it contains something this editor cannot store safely. Press Done before leaving this page.";
+    default:
+      return null;
+  }
+}
+
+/**
+ * The in-flow draft-failure notice below the entry header.
+ *
+ * The healthy "saved on this device as you write" reassurance moved into the
+ * PageBar save status (`SaveStatus`); this component now renders only when
+ * something needs a loud, in-flow warning — a storage failure, or uploads that
+ * are missing from the stored copy.
  */
 export function LocalDraftStatus({
   status,
@@ -193,31 +215,15 @@ export function LocalDraftStatus({
   status: DraftStatus;
   omittedTransientUploads: number;
 }) {
-  const failure =
-    status === "failed"
-      ? "Journiv couldn’t keep a local copy of this writing. Press Done before leaving this page."
-      : status === "unavailable"
-        ? "This browser won’t keep a local copy. Press Done before leaving this page."
-        : status === "unsupported"
-          ? // Nothing was stored, and the line must not imply otherwise. This
-            // entry holds something a draft cannot represent, and a partial
-            // copy would lose it on recovery.
-            "Journiv can’t keep a local copy of this entry — it contains something this editor cannot store safely. Press Done before leaving this page."
-          : null;
+  const failure = localDraftFailureMessage(status);
 
   return (
     <>
-      <p
-        className="jv-caption jv-editor__notice"
-        role={failure ? "alert" : status === "idle" ? "note" : "status"}
-      >
-        {failure ??
-          (status === "saving"
-            ? "Saving locally…"
-            : status === "saved"
-              ? "Saved locally · not in your journal yet"
-              : "Saved on this device as you write. Press Done to save it to your journal.")}
-      </p>
+      {failure && (
+        <p className="jv-caption jv-editor__notice" role="alert">
+          {failure}
+        </p>
+      )}
       {status === "saved" && omittedTransientUploads > 0 && (
         <p className="jv-editor__error" role="alert">
           {omittedTransientUploads === 1

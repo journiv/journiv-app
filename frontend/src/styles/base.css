@@ -136,21 +136,11 @@ img {
   overflow: hidden;
 }
 
-/* Visibility helpers tied to the product's one layout breakpoint.
-   Prefer these over JS breakpoint state. */
-.jv-compact-only {
-  display: none;
-}
-
-@media (max-width: 1100px) {
-  /* Doubled for specificity so a component's own display rule cannot win. */
-  .jv-desktop-only.jv-desktop-only {
-    display: none;
-  }
-  .jv-compact-only {
-    display: revert;
-  }
-}
+/* The width-visibility helpers (`.jv-desktop-only` / `.jv-compact-only`) are
+   NOT here: this file is imported into `@layer base`, and a layered rule loses
+   to any unlayered feature rule regardless of specificity. They live in
+   util.css, which is unlayered, so their doubled specificity works as intended.
+   See src/styles/index.css. */
 
 .jv-stack {
   display: flex;

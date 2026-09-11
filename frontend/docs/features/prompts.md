@@ -18,8 +18,14 @@ Two surfaces, one shared component:
   sidebar entry sits in the **Library** group, nested, like Tags — the route
   name mirrors how Tags graduated to `/library/tags`.
 - **The editor prompt picker** — `PromptPickerDialog`, an `AppAdaptiveDialog`
-  (centred dialog above 860px, bottom sheet at/below), opened from the "Write
-  from a prompt" control between the entry header and the body.
+  (centred dialog above 860px, bottom sheet at/below), opened from a "Write from
+  a prompt" button that leads the editor toolbar's insert group (after Add media
+  and Moment details). That button is an empty-state control: it shows only
+  while the entry has no content and is withdrawn the moment the writer types,
+  adds media, or picks a prompt — `EntryEditorPage` passes `onPickPrompt` to
+  `EditorToolbar` only while it applies, and `toolbarFit` reserves its width
+  (`hasPromptCta`) only while it is shown. An answered prompt is then named by
+  `PromptBanner` above the body.
 
 Both mount `PromptBrowser` (`src/features/prompts/PromptBrowser.tsx`). Its
 Discover tab owns the daily hero, filter bar, results grid and paged loading;

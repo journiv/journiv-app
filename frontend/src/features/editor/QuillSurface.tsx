@@ -16,6 +16,8 @@ import {
   isQuillDocumentDelta,
   isReaderDocumentDelta,
   JOURNIV_DELTA_FORMATS,
+  MAX_LIST_INDENT,
+  stripOrphanIndent,
   stripUploadPlaceholders,
 } from "./deltaProfile";
 import { installMarkdownShortcuts } from "./markdownShortcuts";
@@ -79,6 +81,11 @@ export interface QuillSurfaceHandle {
   isComposing(): boolean;
   toggleInline(name: InlineFormat): void;
   toggleLine(name: LineFormat, value: LineFormatValue): void;
+  /**
+   * Nudges the nesting level of the current list line by one step, clamped to
+   * 0…MAX_LIST_INDENT. A no-op when the caret is not on a list line.
+   */
+  indent(direction: 1 | -1): void;
   setLink(value: string | false): boolean;
   undo(): void;
   redo(): void;
@@ -86,12 +93,31 @@ export interface QuillSurfaceHandle {
 
 export type InlineFormat = "bold" | "italic" | "underline" | "strike";
 export type LineFormat = "header" | "list" | "blockquote";
-export type LineFormatValue = 1 | 2 | 3 | "bullet" | "ordered" | true;
+export type LineFormatValue =
+  | 1
+  | 2
+  | 3
+  | "bullet"
+  | "ordered"
+  | "checked"
+  | "unchecked"
+  | true;
 
 /** Transient class + lifetime for the "just added from the tray" ring
  *  (styled in editor.css, honoured-down by prefers-reduced-motion there). */
 const MEDIA_FLASH_CLASS = "jv-prose__media-flash";
 const MEDIA_FLASH_MS = 1200;
+
+/**
+ * How often the word count may be recomputed while someone is typing.
+ *
+ * Counting words means reading the whole document, so the count is deliberately
+ * decoupled from the keystroke rate: a change arms this interval, everything
+ * typed inside it is coalesced, and the recount happens once at the end. Typing
+ * continuously therefore costs two recounts a second instead of one per key,
+ * and the count still settles within one interval of the last keystroke.
+ */
+export const WORD_COUNT_INTERVAL_MS = 500;
 
 export type EditorState = {
   formats: Record<string, unknown>;
@@ -175,18 +201,73 @@ function indexFromPoint(
   }
 }
 
-/** The media kind at a document position, if the op there is a media embed. */
+/**
+ * The media kind at a document position, if the blot there is a media embed.
+ *
+ * Read off the blot rather than out of a Delta: this runs on every keystroke,
+ * and `getContents(index, 1)` slices the whole document to look at one op —
+ * O(document) work to answer a question about one position. Walking to the blot
+ * costs the same as Quill's own selection bookkeeping and allocates nothing.
+ */
 function mediaKindAt(quill: Quill, index?: number): InlineMediaKind | null {
   if (typeof index !== "number") return null;
+  // A selected embed reads as a one-character range; a collapsed caret sitting
+  // just after one counts too, which is where Backspace lands.
   for (const candidate of [index, index - 1]) {
     if (candidate < 0) continue;
-    const [op] = quill.getContents(candidate, 1).ops ?? [];
-    const insert = op?.insert;
-    if (!insert || typeof insert === "string") continue;
-    const kind = Object.keys(insert)[0] as InlineMediaKind;
-    if ((INLINE_MEDIA_KINDS as readonly string[]).includes(kind)) return kind;
+    const [leaf] = quill.getLeaf(candidate);
+    const kind = (leaf as { statics?: { blotName?: string } } | null)?.statics
+      ?.blotName;
+    if (kind && (INLINE_MEDIA_KINDS as readonly string[]).includes(kind))
+      return kind as InlineMediaKind;
   }
   return null;
+}
+
+/** Whether two `getFormat()` results describe the same active formatting.
+ *  Quill returns an array when a range spans conflicting values. */
+function sameFormatValue(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (!Array.isArray(left) || !Array.isArray(right)) return false;
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
+function sameEditorState(
+  left: EditorState | null,
+  right: EditorState,
+): boolean {
+  if (
+    left === null ||
+    left.focused !== right.focused ||
+    left.selectionLength !== right.selectionLength ||
+    left.wordCount !== right.wordCount ||
+    left.selectedMedia !== right.selectedMedia
+  )
+    return false;
+  const names = Object.keys(left.formats);
+  return (
+    names.length === Object.keys(right.formats).length &&
+    names.every((name) =>
+      sameFormatValue(left.formats[name], right.formats[name]),
+    )
+  );
+}
+
+/**
+ * Whether a change could have altered which media the document holds.
+ *
+ * Only an embed insert or a deletion can. Ordinary typing cannot, so it never
+ * pays for the full document read `inlineMediaPaths` needs.
+ */
+function mayChangeInlineMedia(delta: Delta): boolean {
+  return (delta.ops ?? []).some(
+    (operation) =>
+      operation.delete != null ||
+      (operation.insert != null && typeof operation.insert !== "string"),
+  );
 }
 
 export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
@@ -214,9 +295,11 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
     const emitStateRef = useRef<((range: Range | null) => void) | null>(null);
     // Content changes alone must not discard unsaved edits, but a deliberate
     // surface reinitialization (new entry or placeholder) must use its latest
-    // content rather than the component's mount-time value.
-    const initialContentRef = useRef(cloneDelta(initialContent));
-    initialContentRef.current = cloneDelta(initialContent);
+    // content rather than the component's mount-time value. Held by reference
+    // and copied only where it is read — deep-cloning it on every render meant
+    // a full JSON round-trip of the document on every keystroke.
+    const initialContentRef = useRef(initialContent);
+    initialContentRef.current = initialContent;
     const readOnlyRef = useRef(readOnly);
     readOnlyRef.current = readOnly;
     const ariaLabelRef = useRef(ariaLabel);
@@ -267,9 +350,12 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           if (!contents) throw new Error("Editor is not ready");
           // A pending upload placeholder is client-only state and must never
           // leave the editor. Strip before validating, so a document that is
-          // mid-upload still yields a valid saveable Delta.
-          const stripped = stripUploadPlaceholders(
-            contents as unknown as QuillDelta,
+          // mid-upload still yields a valid saveable Delta. `stripOrphanIndent`
+          // then drops any `indent` left on a line whose `list` was removed
+          // (e.g. a nested bullet turned into a heading) — an orphan indent is
+          // outside the Gate-1 profile and would fail the guard below.
+          const stripped = stripOrphanIndent(
+            stripUploadPlaceholders(contents as unknown as QuillDelta),
           );
           if (!validateRef.current(stripped))
             throw new Error("Editor returned an invalid document Delta");
@@ -472,12 +558,44 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
         },
         toggleLine: (name, value) => {
           withSelection((quill, range) => {
-            const active = quill.getFormat(range)[name] === value;
+            const length = Math.max(range.length, 1);
+            const current = quill.getFormat(range)[name];
+            // The single Checklist control owns both task states, so pressing it
+            // on a `checked` line must also read as active and turn the list
+            // off, not silently flip the line to `unchecked`.
+            const isChecklistToggle =
+              name === "list" && (value === "checked" || value === "unchecked");
+            const active = isChecklistToggle
+              ? current === "checked" || current === "unchecked"
+              : current === value;
+            quill.formatLine(
+              range.index,
+              length,
+              name,
+              active ? false : value,
+              "user",
+            );
+            // Removing the list also removes its nesting: an orphan `indent` is
+            // not a valid Journiv line and would leave the row visually inset.
+            if (name === "list" && active) {
+              quill.formatLine(range.index, length, "indent", false, "user");
+            }
+          });
+        },
+        indent: (direction) => {
+          withSelection((quill, range) => {
+            if (quill.getFormat(range).list == null) return;
+            const currentIndent = Number(quill.getFormat(range).indent) || 0;
+            const nextIndent = Math.min(
+              MAX_LIST_INDENT,
+              Math.max(0, currentIndent + direction),
+            );
+            if (nextIndent === currentIndent) return;
             quill.formatLine(
               range.index,
               Math.max(range.length, 1),
-              name,
-              active ? false : value,
+              "indent",
+              nextIndent || false,
               "user",
             );
           });
@@ -553,8 +671,10 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
         quill.root.setAttribute("role", "textbox");
         quill.root.setAttribute("aria-multiline", "true");
       }
+      // Cloned here, once per surface, so Quill can never mutate the caller's
+      // document (a query cache entry, or a recovered draft record).
       const initialDelta = new Delta(
-        (initialContentRef.current.ops ?? []).map((operation) => ({
+        (cloneDelta(initialContentRef.current).ops ?? []).map((operation) => ({
           insert: operation.insert,
           ...(operation.attributes ? { attributes: operation.attributes } : {}),
         })),
@@ -563,56 +683,173 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
       // Belt and braces: loading a document is not something to undo.
       quill.history.clear();
 
-      // Quill's built-in "list autofill" keyboard binding turns
-      // `1.`/`2.`/`- `/`* `/`[ ] `/`[x] ` into a list on space. Journiv keeps
-      // ordered lists to a `1.` trigger (Quill renumbers the items itself) and
-      // has no checklist format — an `unchecked`/`checked` value is outside the
-      // Gate-1 allowlist and makes `getContents()` throw — so the prefix is
-      // narrowed to the three kinds Journiv stores. Headings and quotes are
-      // handled separately by markdownShortcuts.ts.
+      // Nudge the current list line's nesting by one step, clamped to
+      // 0…MAX_LIST_INDENT. `indent` is a Journiv list-only modifier, so this is
+      // the single place keyboard indenting is allowed to write it.
+      const applyListIndent = (index: number, direction: 1 | -1) => {
+        const [line, offset] = quill.getLine(index);
+        if (!line) return;
+        const lineStart = index - offset;
+        const format = quill.getFormat(
+          lineStart,
+          Math.max(line.length() - 1, 1),
+        );
+        if (format.list == null) return;
+        const current = Number(format.indent) || 0;
+        const next = Math.min(
+          MAX_LIST_INDENT,
+          Math.max(0, current + direction),
+        );
+        if (next === current) return;
+        quill.history.cutoff();
+        quill.formatLine(lineStart, 1, "indent", next || false, "user");
+        quill.history.cutoff();
+      };
+
+      // Quill's built-in "list autofill" binding turns
+      // `1.`/`2.`/`- `/`* `/`[ ] `/`[x] ` into a list on space. Journiv narrows
+      // the ordered trigger to a bare `1.` (Quill renumbers the rest itself) and
+      // reads the leading whitespace the marker was typed after as a nesting
+      // level, so `\t- ` / `  - ` start an indented item. `[ ] ` / `[x] ` map to
+      // the task-list values. Headings and quotes stay with markdownShortcuts.ts.
       for (const binding of quill.keyboard.bindings[" "] ?? []) {
         if (
-          binding.prefix instanceof RegExp &&
-          binding.prefix.source.includes("\\[x\\]")
-        ) {
-          binding.prefix = /^\s*?(1\.|-|\*)$/;
-        }
+          !(binding.prefix instanceof RegExp) ||
+          !binding.prefix.source.includes("\\[x\\]")
+        )
+          continue;
+        binding.prefix = /^\s*?(1\.|-|\*|\[ ?\]|\[x\])$/;
+        binding.handler = (range, context) => {
+          if (quill.scroll.query("list") == null) return true;
+          const prefix: string = context.prefix ?? "";
+          const [line, offset] = quill.getLine(range.index);
+          if (!line || offset > prefix.length) return true;
+          const leading = prefix.match(/^\s*/u)?.[0] ?? "";
+          const marker = prefix.slice(leading.length);
+          const value =
+            marker === "-" || marker === "*"
+              ? "bullet"
+              : marker === "[x]"
+                ? "checked"
+                : marker === "[]" || marker === "[ ]"
+                  ? "unchecked"
+                  : "ordered";
+          const tabs = (leading.match(/\t/gu) ?? []).length;
+          const spaces = leading.length - tabs;
+          const indent = Math.min(
+            MAX_LIST_INDENT,
+            tabs + Math.floor(spaces / 2),
+          );
+          const lineFormats: Record<string, unknown> = { list: value };
+          if (indent > 0) lineFormats.indent = indent;
+          quill.insertText(range.index, " ", "user");
+          quill.history.cutoff();
+          quill.updateContents(
+            new Delta()
+              .retain(range.index - offset)
+              .delete(prefix.length + 1)
+              .retain(line.length() - 2 - offset)
+              .retain(1, lineFormats),
+            "user",
+          );
+          quill.history.cutoff();
+          quill.setSelection(range.index - prefix.length, "silent");
+          return false;
+        };
       }
 
-      const getWordCount = () => {
+      // Tab / Shift+Tab nest and un-nest a list line (capped at
+      // MAX_LIST_INDENT). Quill only offers these bindings when the line
+      // already carries `blockquote`, `indent` or `list`; on a non-list line
+      // Journiv swallows the key rather than letting the fallback insert a
+      // literal tab or push an `indent` a blockquote may not carry.
+      for (const binding of quill.keyboard.bindings.Tab ?? []) {
+        const formats = Array.isArray(binding.format) ? binding.format : [];
+        if (!formats.includes("indent") || !formats.includes("list")) continue;
+        const direction: 1 | -1 = binding.shiftKey ? -1 : 1;
+        binding.handler = (range) => {
+          applyListIndent(range.index, direction);
+          return false;
+        };
+      }
+
+      const countWords = () => {
         const text = quill.getText().trim();
         return text ? text.split(/\s+/u).length : 0;
       };
+
+      /**
+       * Editor state is a render input, so it is only handed out when it has
+       * actually changed. Typing a letter into a paragraph moves the caret but
+       * changes no format, no selection length and no selected embed — without
+       * this, every keystroke re-rendered the whole editor page for a value
+       * identical to the one already on screen.
+       */
+      let lastState: EditorState | null = null;
+      // Read by `emitState`, refreshed on the interval below. Never counted
+      // inline: that walks the whole document.
+      let wordCount = countWords();
+
       const emitState = (range: Range | null) => {
         if (range) lastRangeRef.current = range;
         const activeRange = range ?? lastRangeRef.current;
-        stateChangeRef.current?.({
+        const next: EditorState = {
           formats: activeRange ? quill.getFormat(activeRange) : {},
           focused: range !== null,
           selectionLength: activeRange?.length ?? 0,
-          wordCount: getWordCount(),
+          wordCount,
           selectedMedia: mediaKindAt(quill, activeRange?.index),
-        });
+        };
+        if (sameEditorState(lastState, next)) return;
+        lastState = next;
+        stateChangeRef.current?.(next);
       };
       emitStateRef.current = emitState;
 
+      let wordCountTimer: number | null = null;
+      /** Recount once at the end of the current interval, coalescing every
+       *  change made inside it (see WORD_COUNT_INTERVAL_MS). */
+      const scheduleWordCount = () => {
+        if (wordCountTimer !== null) return;
+        wordCountTimer = window.setTimeout(() => {
+          wordCountTimer = null;
+          const next = countWords();
+          if (next === wordCount) return;
+          wordCount = next;
+          emitState(quill.getSelection());
+        }, WORD_COUNT_INTERVAL_MS);
+      };
+
+      // The gallery only needs telling when the set of inline media changes;
+      // the paths themselves are compared so an unrelated edit near an embed
+      // does not hand the host a fresh array to re-key on.
+      let lastMediaPaths: string[] | null = null;
       const emitInlineMedia = () => {
-        inlineMediaChangeRef.current?.(
-          inlineMediaPaths(quill.getContents() as unknown as QuillDelta),
+        const paths = inlineMediaPaths(
+          quill.getContents() as unknown as QuillDelta,
         );
+        if (
+          lastMediaPaths !== null &&
+          lastMediaPaths.length === paths.length &&
+          paths.every((path, index) => path === lastMediaPaths?.[index])
+        )
+          return;
+        lastMediaPaths = paths;
+        inlineMediaChangeRef.current?.(paths);
       };
       // The starting document may already carry inline media (an existing
       // entry), so report it once before any edit.
       emitInlineMedia();
 
       const handleTextChange = (
-        _delta: Delta,
+        delta: Delta,
         _oldContents: Delta,
         source: string,
       ) => {
         if (source === "user") userChangeRef.current?.();
+        scheduleWordCount();
         emitState(quill.getSelection());
-        emitInlineMedia();
+        if (mayChangeInlineMedia(delta)) emitInlineMedia();
       };
       const handleSelectionChange = (range: Range | null) => {
         emitState(range);
@@ -712,6 +949,7 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
 
       return () => {
         teardownMarkdown();
+        if (wordCountTimer !== null) window.clearTimeout(wordCountTimer);
         quill.off("text-change", handleTextChange);
         quill.off("selection-change", handleSelectionChange);
         quill.root.removeEventListener(

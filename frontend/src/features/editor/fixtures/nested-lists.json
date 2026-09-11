@@ -1,0 +1,20 @@
+{
+  "ops": [
+    { "insert": "Garden" },
+    { "insert": "\n", "attributes": { "list": "bullet" } },
+    { "insert": "Front bed" },
+    { "insert": "\n", "attributes": { "list": "bullet", "indent": 1 } },
+    { "insert": "Weeding" },
+    { "insert": "\n", "attributes": { "list": "bullet", "indent": 2 } },
+    { "insert": "Steps" },
+    { "insert": "\n", "attributes": { "list": "ordered" } },
+    { "insert": "Measure" },
+    { "insert": "\n", "attributes": { "list": "ordered", "indent": 1 } },
+    { "insert": "Cut to length" },
+    { "insert": "\n", "attributes": { "list": "ordered", "indent": 1 } },
+    { "insert": "Prune the roses" },
+    { "insert": "\n", "attributes": { "list": "unchecked" } },
+    { "insert": "Deadhead first" },
+    { "insert": "\n", "attributes": { "list": "unchecked", "indent": 1 } }
+  ]
+}

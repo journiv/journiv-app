@@ -34,3 +34,27 @@
     transform: rotate(360deg);
   }
 }
+
+/* Visibility helpers tied to the product's one layout breakpoint. Prefer these
+ * over JS breakpoint state.
+ *
+ * They live here, not in base.css, because base.css is imported into
+ * `@layer base` (src/styles/index.css) so that element resets cannot beat a
+ * Tailwind utility. Layer order beats specificity, so a layered
+ * `.jv-desktop-only.jv-desktop-only { display: none }` lost to any unlayered
+ * component rule that set `display` at all — `.jv-integrations__back` did, and
+ * stayed visible below 1100px.
+ * Unlayered, the doubled specificity does what its comment always claimed. */
+.jv-compact-only {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  /* Doubled for specificity so a component's own display rule cannot win. */
+  .jv-desktop-only.jv-desktop-only {
+    display: none;
+  }
+  .jv-compact-only {
+    display: revert;
+  }
+}

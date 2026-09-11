@@ -101,9 +101,13 @@ that relationship rather than forcing light-mode hierarchy into dark mode.
 | dialog or drawer | shadow-lg |
 
 The reader is content: prose has a measured column, no card, and no paragraph
-dividers. Timeline rows are content-side list rows. Management screens,
-dialogs, and libraries are chrome: use a clear canvas, panels, fields, and
-grouping where controls belong together. A `Card` is one tool for a grouped or
+dividers. Task-list items are the one exception to "no controls in reading
+prose": they render an **inert** checkbox inside that same measured column and
+nested lists indent within it — ticking happens in the editor, never the reader
+([docs/features/editor.md](docs/features/editor.md) owns the list contract).
+Timeline rows are content-side list rows. Management screens, dialogs, and
+libraries are chrome: use a clear canvas, panels, fields, and grouping where
+controls belong together. A `Card` is one tool for a grouped or
 detached surface, not the default wrapper — reach for it when a group genuinely
 needs to read as a separate raised object, not to fill space.
 
@@ -230,6 +234,17 @@ Components may reflow at their own documented container-query width. Do not add
 page-shaped breakpoints or JS layout state. Every pane has one scroll owner;
 PageBar is its flex sibling, not a sticky layer over scrolling content.
 Safe-area insets apply to drawers and scrolling-pane bottoms.
+
+The one sanctioned reading of `window.visualViewport` is a control that must
+clear the on-screen keyboard — currently the editor's compact formatting bar
+([docs/features/editor.md](docs/features/editor.md)). It writes the keyboard
+height to a CSS variable and offsets a fixed-height bar; it drives no reflow and
+holds no React layout state. A new such case is a bounded exception, documented
+in its feature contract, not a general licence to measure the viewport.
+
+The shared `.jv-desktop-only` and `.jv-compact-only` helpers must remain in
+unlayered [src/styles/util.css](src/styles/util.css): a layered visibility rule
+loses to an unlayered feature `display` rule regardless of specificity.
 
 Use a named container query when a component must fit a pane, dialog, or card:
 the viewport can become narrower while that component becomes wider, so it is

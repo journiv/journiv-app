@@ -1,11 +1,11 @@
-import Quill from "quill";
 import { act, render } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import Quill from "quill";
 import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { INLINE_MEDIA_KINDS } from "./deltaProfile";
 import { EditorToolbar } from "./EditorToolbar";
 import { EDITOR_FORMATS } from "./EntryEditorPage";
-import { INLINE_MEDIA_KINDS } from "./deltaProfile";
 import {
   type EditorState,
   QuillSurface,
@@ -16,9 +16,11 @@ const SIGNED = "/api/v1/media/media-1/signed?sig=a";
 
 function mountWithMedia(kind: string) {
   const ref = createRef<QuillSurfaceHandle>();
+  const onStateChange = vi.fn();
   const view = render(
     <QuillSurface
       ref={ref}
+      onStateChange={onStateChange}
       editorId={`removal-${kind}`}
       initialContent={
         {
@@ -36,7 +38,7 @@ function mountWithMedia(kind: string) {
   const quill = Quill.find(host) as Quill;
   /** Places the caret on the embed, as clicking it would. */
   const selectMedia = () => act(() => quill.setSelection(7, 1, "user"));
-  return { ref, view, quill, selectMedia };
+  return { ref, view, quill, selectMedia, onStateChange };
 }
 
 describe("removing inline media from the writing", () => {
@@ -58,6 +60,31 @@ describe("removing inline media from the writing", () => {
       expect(serialized).toContain("before");
       expect(serialized).toContain("after");
       expect(serialized).not.toContain(SIGNED);
+      view.unmount();
+    },
+  );
+
+  it.each([...INLINE_MEDIA_KINDS])(
+    "tells the toolbar a %s is under the caret so the control can appear",
+    (kind) => {
+      // Drives the contextual "Remove <kind>" control: without this the toolbar
+      // never learns the caret is on an embed.
+      const { view, selectMedia, onStateChange } = mountWithMedia(kind);
+      selectMedia();
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selectedMedia: kind }),
+      );
+
+      act(() =>
+        (
+          Quill.find(
+            view.container.querySelector(".jv-prose") as Element,
+          ) as Quill
+        ).setSelection(2, 0, "user"),
+      );
+      expect(onStateChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ selectedMedia: null }),
+      );
       view.unmount();
     },
   );
@@ -116,7 +143,7 @@ describe("contextual media controls", () => {
   it("offers no remove control until media is selected", () => {
     const view = render(
       <EditorToolbar
-        editor={null}
+        editor={{ current: null }}
         state={baseState(null)}
         onAddMedia={vi.fn()}
         onRemoveMedia={vi.fn()}
@@ -133,7 +160,7 @@ describe("contextual media controls", () => {
     const onRemoveMedia = vi.fn();
     const view = render(
       <EditorToolbar
-        editor={null}
+        editor={{ current: null }}
         state={baseState(kind as EditorState["selectedMedia"])}
         onAddMedia={vi.fn()}
         onRemoveMedia={onRemoveMedia}
