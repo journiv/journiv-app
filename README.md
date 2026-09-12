@@ -144,6 +144,21 @@ Need help or want to report an issue?
 ---
 
 ## Disclaimer
-**AI/LLM Usage**
+**AI-Assisted Development**
 
-This repository contains portions of code, documentation, or text generated with the assistance of AI/LLM tools. All outputs have been reviewed and adapted by the author to the best of their ability before inclusion.
+Journiv is a personal source avaliable project developed outside of my full-time work as a software engineer. It grew out of a need I had for many years for a capable, private, self-hosted journaling application. I could not find an existing option that matched what I wanted, so Journiv started as a project to build one.
+
+AI-powered software development tools have made it practical for me to develop and maintain a project of this scope in the limited time available outside of work. Without these tools, I realistically would not have the time to build many of the features and experiences that Journiv provides today.
+
+AI assistance has been used most extensively in the development of the latest React frontend (V2), including implementation, refactoring, testing, code review assistance, and documentation. Other parts of the repository also contains portions of code, documentation, or text generated with the assistance of AI/LLM tools.
+
+AI tools are used as development aids, while product requirements, architecture, design decisions, and release decisions remain human-directed.
+
+The level of manual review varies by area of the codebase. Backend changes are generally read and reviewed at the code level, with an understanding of the Python implementation and surrounding application behavior. For the React frontend, review is more heavily focused on the resulting user experience and application behavior through hands-on UI testing, automated tests, and targeted inspection of the generated code rather than a line-by-line review of every change.
+
+AI-assisted contributions are refined, tested, and iterated on as part of the normal development process, with the goal of meeting the same functional, maintainability, security, and quality expectations as the rest of the project.
+
+AI use during development is separate from Journiv's runtime behavior. Journiv does not require an LLM service in order to run, and the use of AI coding tools during development does not cause journal entries or other private user content to be sent to an AI provider.
+
+Journiv recognizes that people have different preferences and comfort levels around AI-assisted software development. This disclosure is intended to be clear about how Journiv is built so that users and contributors can make an informed decision about whether the project is right for them.
+
