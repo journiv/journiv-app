@@ -1,9 +1,21 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import UUID
 
 import pytest
 
 from app.integrations import immich
+
+ALBUM_ID = "33333333-3333-3333-3333-333333333333"
+ASSET_ID = "11111111-1111-1111-1111-111111111111"
+ASSET_ID2 = "22222222-2222-2222-2222-222222222222"
+
+
+def _patch_client(client: MagicMock):
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=client)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    return patch("app.integrations.immich._client", return_value=cm)
 
 
 class TestImmichAlbum:
@@ -76,110 +88,56 @@ class TestImmichAlbum:
     @pytest.mark.asyncio
     async def test_get_album_id_by_name_found(self):
         """Test get_album_id_by_name finds the correct album."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "Target Album"
-
-        albums_response = [
-            {"id": "id-1", "albumName": "Other Album"},
-            {"id": "target-id", "albumName": "Target Album"},
-            {"id": "id-2", "albumName": "Another Album"},
+        albums = [
+            MagicMock(id="id-1", album_name="Other Album"),
+            MagicMock(id="target-id", album_name="Target Album"),
+            MagicMock(id="id-2", album_name="Another Album"),
         ]
+        client = MagicMock()
+        client.albums.get_all_albums = AsyncMock(return_value=albums)
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
+        with _patch_client(client):
+            result = await immich.get_album_id_by_name("http://immich.test", "test-key", "Target Album")
 
-            mock_response = MagicMock()
-            mock_response.json.return_value = albums_response
-            mock_response.raise_for_status = MagicMock()
-            mock_client.get.return_value = mock_response
-
-            # Execute
-            result = await immich.get_album_id_by_name(base_url, api_key, album_name)
-
-            # Verify
-            assert result == "target-id"
-            mock_client.get.assert_called_once()
-            assert mock_client.get.call_args[0][0] == f"{base_url}/api/albums"
+        assert result == "target-id"
+        client.albums.get_all_albums.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_get_album_id_by_name_not_found(self):
         """Test get_album_id_by_name returns None if not found."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "Non Existent"
+        client = MagicMock()
+        client.albums.get_all_albums = AsyncMock(
+            return_value=[MagicMock(id="id-1", album_name="Other Album")]
+        )
 
-        albums_response = [
-            {"id": "id-1", "albumName": "Other Album"},
-        ]
+        with _patch_client(client):
+            result = await immich.get_album_id_by_name("http://immich.test", "test-key", "Non Existent")
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
-
-            mock_response = MagicMock()
-            mock_response.json.return_value = albums_response
-            mock_client.get.return_value = mock_response
-
-            # Execute
-            result = await immich.get_album_id_by_name(base_url, api_key, album_name)
-
-            # Verify
-            assert result is None
+        assert result is None
 
     @pytest.mark.asyncio
     async def test_create_album_success(self):
-        """Test create_album calls correct endpoint."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_name = "New Album"
-        new_id = "new-uuid"
+        """Test create_album returns the new id and sends the album name."""
+        client = MagicMock()
+        client.albums.create_album = AsyncMock(return_value=MagicMock(id="new-uuid"))
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
+        with _patch_client(client):
+            result = await immich.create_album("http://immich.test", "test-key", "New Album")
 
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"id": new_id}
-            mock_response.raise_for_status = MagicMock()
-            mock_client.post.return_value = mock_response
-
-            # Execute
-            result = await immich.create_album(base_url, api_key, album_name)
-
-            # Verify
-            assert result == new_id
-            mock_client.post.assert_called_once()
-            args, kwargs = mock_client.post.call_args
-            assert args[0] == f"{base_url}/api/albums"
-            assert kwargs['json']['albumName'] == album_name
+        assert result == "new-uuid"
+        assert client.albums.create_album.call_args.args[0].album_name == "New Album"
 
     @pytest.mark.asyncio
     async def test_add_assets_to_album(self):
-        """Test add_assets_to_album calls correct endpoint."""
-        base_url = "http://immich.test"
-        api_key = "test-key"
-        album_id = "album-uuid"
-        asset_ids = ["asset-1", "asset-2"]
+        """Test add_assets_to_album passes UUIDs to the immichpy client."""
+        client = MagicMock()
+        client.albums.add_assets_to_album = AsyncMock()
 
-        with patch("httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__.return_value = mock_client
-            mock_client_cls.return_value = mock_client
+        with _patch_client(client):
+            await immich.add_assets_to_album(
+                "http://immich.test", "test-key", ALBUM_ID, [ASSET_ID, ASSET_ID2]
+            )
 
-            mock_response = MagicMock()
-            mock_response.raise_for_status = MagicMock()
-            mock_client.put.return_value = mock_response
-
-            # Execute
-            await immich.add_assets_to_album(base_url, api_key, album_id, asset_ids)
-
-            # Verify
-            mock_client.put.assert_called_once()
-            args, kwargs = mock_client.put.call_args
-            assert args[0] == f"{base_url}/api/albums/{album_id}/assets"
-            assert kwargs['json']['ids'] == asset_ids
+        args = client.albums.add_assets_to_album.call_args.args
+        assert args[0] == UUID(ALBUM_ID)
+        assert args[1].ids == [UUID(ASSET_ID), UUID(ASSET_ID2)]
