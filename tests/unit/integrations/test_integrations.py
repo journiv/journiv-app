@@ -20,6 +20,7 @@ from app.integrations.schemas import (
     IntegrationStatusResponse,
 )
 from app.models.activity import Activity
+from app.models.enums import UserRole
 from app.models.integration import AssetType, Integration, IntegrationProvider
 from app.models.mood import Mood
 
@@ -137,6 +138,7 @@ class TestIntegrationService:
         mock_session = MagicMock()
         mock_user = MagicMock()
         mock_user.id = "user-123"
+        mock_user.role = UserRole.ADMIN  # base_url override is admin-only
 
         # Mock the provider's connect function to return a user ID
         with patch('app.integrations.immich.connect', new_callable=AsyncMock) as mock_connect:

@@ -34,6 +34,11 @@ from app.core.config import settings
 from app.core.encryption import decrypt_token, encrypt_token
 from app.core.logging_config import log_debug, log_error, log_info, log_warning
 from app.core.scoped_cache import ScopedCache
+from app.core.ssrf_guard import (
+    ALLOWED_HOST_EXTENSION,
+    ALLOWED_SCHEME_EXTENSION,
+    SSRFProtectedTransport,
+)
 from app.core.time_utils import utc_now
 from app.integrations import immich
 from app.integrations.schemas import (
@@ -42,6 +47,7 @@ from app.integrations.schemas import (
     IntegrationSettingsUpdateRequest,
     IntegrationStatusResponse,
 )
+from app.models.enums import UserRole
 from app.models.integration import (
     AssetType,
     ImportMode,
@@ -70,7 +76,7 @@ async def _get_proxy_client() -> httpx.AsyncClient:
                     follow_redirects=True,
                     timeout=_proxy_timeout,
                     limits=_proxy_limits,
-                    transport=httpx.AsyncHTTPTransport(retries=2),
+                    transport=SSRFProtectedTransport(retries=2),
                 )
     assert _proxy_client is not None
     return _proxy_client
@@ -217,6 +223,16 @@ async def connect_integration(
         4. Create or update Integration record
         5. Return connection response
     """
+    # Only an instance admin may point an integration at a non-default host.
+    # The shipped UI never sends base_url (it always uses the instance's
+    # configured server); letting any signed-up user supply an arbitrary
+    # host here would let them make the server fetch from a destination of
+    # their choosing, so a regular user's request is rejected outright.
+    if base_url is not None and user.role != UserRole.ADMIN:
+        raise ValueError(
+            "Only an administrator can set a custom base URL for this integration."
+        )
+
     # Resolve base URL
     final_base_url = str(base_url) if base_url else get_default_base_url(provider)
     if not final_base_url:
@@ -814,7 +830,14 @@ async def fetch_proxy_asset(
     # Make request
     client = await _get_proxy_client()
     try:
-        request = client.build_request("GET", url, headers=headers)
+        allowed_url = httpx.URL(integration_base_url)
+        request = client.build_request(
+            "GET", url, headers=headers,
+            extensions={
+                ALLOWED_HOST_EXTENSION: allowed_url.host,
+                ALLOWED_SCHEME_EXTENSION: allowed_url.scheme,
+            },
+        )
         # The timeout is already configured on the client itself at initialization
         response = await client.send(request, stream=True)
         return response
