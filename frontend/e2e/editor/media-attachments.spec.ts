@@ -138,7 +138,7 @@ test.describe("editor media attachments", () => {
       page.getByRole("status", { name: "Uploading photo" }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page.getByRole("alert")).toHaveText(
       "Wait for uploads to finish before saving",
     );
@@ -196,9 +196,8 @@ test.describe("editor media attachments", () => {
       page.getByRole("status", { name: "Uploading photo" }),
     ).toBeVisible();
 
-    await page.getByRole("button", { name: "More actions" }).click();
     await page
-      .getByRole("toolbar", { name: "More actions" })
+      .getByRole("toolbar", { name: "Editor actions" })
       .getByRole("button", { name: "Undo" })
       .click();
     await expect(

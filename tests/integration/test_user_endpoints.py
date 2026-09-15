@@ -17,6 +17,11 @@ def test_get_and_update_profile(api_client: JournivApiClient, api_user: ApiUser)
     )
     assert updated["name"] == "Updated Test User"
 
+    # GET /users/me is backed by the auth cache in production. The mutation
+    # must invalidate that token's snapshot so a reload sees the committed row.
+    reloaded = api_client.current_user(api_user.access_token)
+    assert reloaded["name"] == "Updated Test User"
+
 
 def test_settings_round_trip(api_client: JournivApiClient, api_user: ApiUser):
     """Settings endpoint should return and persist preferences."""

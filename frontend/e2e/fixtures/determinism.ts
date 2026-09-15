@@ -45,8 +45,8 @@ export type ThemeMode = "light" | "dark";
  *     precondition for deterministic capture);
  *   - seed the auth session when there is one.
  *
- *  It runs on every navigation, so the session write is guarded: a token the app
- *  refreshed mid-test must survive the next page load.
+ *  It runs on every navigation, so both writes are guarded: an appearance the
+ *  test changes and a token the app refreshes must survive the next page load.
  */
 export function buildInitScript(options: {
   theme: ThemeMode;
@@ -55,8 +55,12 @@ export function buildInitScript(options: {
 }) {
   return `(() => {
     try {
-      localStorage.setItem("journiv.theme", ${JSON.stringify(options.theme)});
-      localStorage.removeItem("journiv.userTheme");
+      const appearanceSeed = "journiv.e2e.appearance-seeded";
+      if (!sessionStorage.getItem(appearanceSeed)) {
+        localStorage.setItem("journiv.theme", ${JSON.stringify(options.theme)});
+        localStorage.removeItem("journiv.userTheme");
+        sessionStorage.setItem(appearanceSeed, "1");
+      }
     } catch {}
     const session = ${JSON.stringify(options.session)};
     if (session) {

@@ -428,6 +428,17 @@ export const momentMediaQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.momentMedia(id),
     queryFn: () => api.momentMedia(id),
+    // Upload returns before thumbnail/metadata processing finishes. Keep a
+    // reader that is already showing Processing frames live until every item
+    // reaches a terminal state; otherwise its viewer collection stays stale.
+    refetchInterval: (query) =>
+      query.state.data?.some(
+        (item) =>
+          item.upload_status === "pending" ||
+          item.upload_status === "processing",
+      )
+        ? 1500
+        : false,
     // Signed URLs expire. Keeping this short means an ordinary revisit
     // re-signs rather than rendering a dead URL.
     staleTime: 60_000,

@@ -21,7 +21,7 @@ test.describe("entry journeys", () => {
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === "/api/v1/moments",
     );
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await created;
 
     await expect(page.getByRole("heading", { name: title })).toBeVisible();
@@ -64,7 +64,7 @@ test.describe("entry journeys", () => {
         response.request().method() === "PUT" &&
         new URL(response.url()).pathname === `/api/v1/moments/${moment.id}`,
     );
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await updated;
 
     await expect(
@@ -116,7 +116,8 @@ test.describe("entry journeys", () => {
     const moment = await data.moment({ journalId: journal.id, title });
 
     await page.goto(`/timeline/${moment.id}`);
-    await page.getByRole("button", { name: "Delete entry" }).click();
+    await page.getByRole("button", { name: "Entry actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete entry…" }).click();
     const dialog = page.getByRole("alertdialog");
     await expect(
       dialog.getByRole("heading", { name: `Delete “${title}”?` }),
@@ -149,7 +150,8 @@ test.describe("entry journeys", () => {
     await data.tags(moment.id, [tag]);
 
     await page.goto(`/timeline/${moment.id}`);
-    await page.getByRole("button", { name: "Delete entry" }).click();
+    await page.getByRole("button", { name: "Entry actions" }).click();
+    await page.getByRole("menuitem", { name: "Delete entry…" }).click();
     const deleted = page.waitForResponse(
       (response) =>
         response.request().method() === "DELETE" &&
@@ -234,7 +236,7 @@ test.describe("entry journeys", () => {
         response.request().method() === "PUT" &&
         new URL(response.url()).pathname === `/api/v1/moments/${moment.id}`,
     );
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await moved;
 
     await page.goto(`/journals/${destination.id}`);
@@ -301,14 +303,14 @@ test.describe("entry journeys", () => {
     await page.keyboard.type(nestedItem);
 
     await expect(
-      page
-        .getByRole("status")
-        .filter({ hasText: "Saved locally · not in your journal yet" }),
+      page.getByRole("button", {
+        name: /^Unsaved\. Saved on this device, not in your journal yet\./,
+      }),
     ).toBeVisible();
     await expect(page).toHaveURL((url) =>
       Boolean(url.searchParams.get("draft")),
     );
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page).toHaveURL(
       (url) =>
         url.pathname.startsWith(`/journals/${journal.id}/`) &&
@@ -385,15 +387,15 @@ test.describe("mobile editor", () => {
 
     await expect(editor).toContainText(body);
     await expect(
-      page
-        .getByRole("status")
-        .filter({ hasText: "Saved locally · not in your journal yet" }),
+      page.getByRole("button", {
+        name: /^Unsaved\. Saved on this device, not in your journal yet\./,
+      }),
     ).toBeVisible();
     await expect(page).toHaveURL((url) =>
       Boolean(url.searchParams.get("draft")),
     );
 
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page).toHaveURL(
       (url) =>
         url.pathname.startsWith(`/journals/${journal.id}/`) &&
