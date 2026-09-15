@@ -9,6 +9,7 @@ import {
 import { BookOpenText, Compass, Library, Loader2 } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { sessionStore } from "../../api/auth/session";
+import { getBootMode } from "../offline/offlineMode";
 import { StatusView } from "../../components/journiv/StatusView";
 import { LoginPage } from "../../features/auth/LoginPage";
 import { OidcFinishPage } from "../../features/auth/OidcFinishPage";
@@ -247,14 +248,48 @@ const rootRoute = createRootRoute({
     </main>
   ),
 });
+
+/** Offline-restricted sessions may enter only the cached reading routes. An
+ *  editor deep link falls back to its reader; every other server-mutation
+ *  surface falls back to the cached timeline. */
+function offlineReadOnlyDestination(pathname: string): string | null {
+  const timelineEdit = pathname.match(/^\/timeline\/([^/]+)\/edit$/);
+  if (timelineEdit) return `/timeline/${timelineEdit[1]}`;
+  const journalEdit = pathname.match(/^\/journals\/([^/]+)\/([^/]+)\/edit$/);
+  if (journalEdit) return `/journals/${journalEdit[1]}/${journalEdit[2]}`;
+  if (pathname === "/timeline/new") return "/timeline";
+  const journalNew = pathname.match(/^\/journals\/([^/]+)\/new$/);
+  if (journalNew) return `/journals/${journalNew[1]}`;
+
+  const cachedReadRoute =
+    pathname === "/" ||
+    pathname === "/timeline" ||
+    /^\/timeline\/[^/]+$/.test(pathname) ||
+    /^\/journals\/[^/]+$/.test(pathname) ||
+    /^\/journals\/[^/]+\/[^/]+$/.test(pathname);
+  return cachedReadRoute ? null : "/timeline";
+}
+
 const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "protected",
   beforeLoad: ({ location }) => {
     // `main.tsx` awaits the boot session restore before the router ever
     // renders, so this read is synchronous and needs no async router work.
-    if (!sessionStore.getAccessToken())
+    // A live access token is the primary path; offline-restricted (cached
+    // content, mutations disabled -- src/app/offline/offlineMode.ts) is the
+    // one additional case that also renders the shell rather than /login.
+    const authenticated = Boolean(sessionStore.getAccessToken());
+    const offlineRestricted = getBootMode() === "offline-restricted";
+    if (!authenticated && !offlineRestricted)
       throw redirect({ to: "/login", search: { returnTo: location.href } });
+    if (offlineRestricted) {
+      const destination = offlineReadOnlyDestination(location.pathname);
+      if (destination) {
+        const hash = location.hash ? `#${location.hash}` : "";
+        throw redirect({ href: `${destination}${location.searchStr}${hash}` });
+      }
+    }
   },
   component: AppShell,
 });

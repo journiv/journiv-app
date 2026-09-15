@@ -78,7 +78,8 @@ describe("UpdateBar", () => {
       await screen.findByRole("alertdialog", { name: "Restart to update?" }),
     ).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "Restart" }));
+    expect(screen.getByText(/may discard unsaved changes/i)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Restart anyway" }));
     expect(reloadAndActivate).toHaveBeenCalledWith(true);
   });
 

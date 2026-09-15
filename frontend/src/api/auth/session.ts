@@ -114,11 +114,25 @@ function retryPendingLogout() {
     });
 }
 
-let offlineCachePurge: (() => void) | undefined;
-/** Phase 5 registers the offline query-cache purge here so session.ts does
- *  not need to depend on the offline cache module. */
-export function registerOfflineCachePurge(purge: () => void) {
+let offlineCachePurge: ((userId: string | undefined) => void) | undefined;
+/** main.tsx registers the offline query-cache purge here so session.ts does
+ *  not need to depend on the offline cache module (src/app/offline/). */
+export function registerOfflineCachePurge(
+  purge: (userId: string | undefined) => void,
+) {
   offlineCachePurge = purge;
+}
+
+let offlineCacheSubscribe: ((userId: string) => void) | undefined;
+/** main.tsx registers the offline query-cache (re)subscription here, called
+ *  from adopt(). Boot only knows the hint's userId, if any; a fresh sign-in
+ *  (login/signup/OIDC) happens with no hint yet, so without this the
+ *  subscription main.tsx started at boot never learns the userId and no
+ *  query is ever persisted for that session. */
+export function registerOfflineCacheSubscribe(
+  subscribe: (userId: string) => void,
+) {
+  offlineCacheSubscribe = subscribe;
 }
 
 let refreshInFlight: Promise<RestoreResult> | undefined;
@@ -157,7 +171,6 @@ async function performRefresh(): Promise<RestoreResult> {
   if (superseded()) return "superseded";
   if (response.status === 401 || response.status === 403) {
     clear();
-    offlineCachePurge?.();
     return "unauthenticated";
   }
   if (!response.ok) return "offline";
@@ -201,13 +214,16 @@ function adopt({
   accessToken = token;
   writeHint({ version: 1, userId, signedInAt: new Date().toISOString() });
   clearTombstone();
+  offlineCacheSubscribe?.(userId);
   notify();
 }
 
 function clear() {
+  const userId = readHint()?.userId;
   sessionGeneration += 1;
   accessToken = null;
   clearHint();
+  offlineCachePurge?.(userId);
   notify();
 }
 
@@ -218,6 +234,7 @@ export function resetSessionForTests() {
   accessToken = null;
   refreshInFlight = undefined;
   offlineCachePurge = undefined;
+  offlineCacheSubscribe = undefined;
   listeners.clear();
 }
 
@@ -258,7 +275,6 @@ export async function signOut(): Promise<void> {
   const token = accessToken;
   writeTombstone();
   clear();
-  offlineCachePurge?.();
   try {
     const response = await fetch(`${apiBaseUrl()}/api/v1/auth/logout`, {
       method: "POST",

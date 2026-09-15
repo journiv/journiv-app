@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 import {
   activateWaitingServiceWorker,
   getUpdateState,
@@ -11,16 +11,10 @@ import {
  * register a second worker instance. See registerServiceWorker.ts.
  */
 export function usePwaUpdate() {
-  const [needRefresh, setNeedRefresh] = useState(
+  const needRefresh = useSyncExternalStore(
+    subscribeToUpdateState,
     () => getUpdateState().needRefresh,
-  );
-
-  useEffect(
-    () =>
-      subscribeToUpdateState(() => {
-        setNeedRefresh(getUpdateState().needRefresh);
-      }),
-    [],
+    () => false,
   );
 
   return {

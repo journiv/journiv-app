@@ -324,3 +324,29 @@
     padding-right: calc(var(--space-4) + env(safe-area-inset-right));
   }
 }
+
+/* ---- offline-restricted bar (docs/features/pwa.md) ----------------------- */
+
+/* Fixed at the top of the viewport, mirroring .jv-update-bar's fixed-bottom
+   placement -- not layered over any pane's own scroll owner. Top, not
+   bottom: the update bar already owns the bottom, and the two are mutually
+   exclusive in practice (nothing to update while offline) but must not
+   collide if they ever coincide. */
+.jv-offline-bar {
+  position: fixed;
+  z-index: 32;
+  inset: 0 0 auto 0;
+  display: flex;
+  align-items: center;
+  padding: var(--space-2) var(--space-4);
+  padding-top: calc(var(--space-2) + env(safe-area-inset-top));
+  background: var(--muted);
+  border-bottom: 1px solid var(--border);
+}
+
+@media (display-mode: standalone) {
+  .jv-offline-bar {
+    padding-left: calc(var(--space-4) + env(safe-area-inset-left));
+    padding-right: calc(var(--space-4) + env(safe-area-inset-right));
+  }
+}

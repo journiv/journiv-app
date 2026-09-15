@@ -51,8 +51,8 @@ export function UpdateBar() {
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title="Restart to update?"
-        description="Your unsaved draft is already saved on this device and will be restored after the restart."
-        confirmLabel="Restart"
+        description="Restarting may discard unsaved changes. Save your entry first, or continue only if you are willing to lose them."
+        confirmLabel="Restart anyway"
         onConfirm={() => {
           setConfirmOpen(false);
           void applyUpdate();

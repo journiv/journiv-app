@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createAppRouter } from ".";
-import { sessionStore } from "../../api/auth/session";
+import { resetSessionForTests, sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { ApiError } from "../../api/client/errors";
 import { Toaster } from "../../components/ui/toast";
@@ -19,6 +19,7 @@ import type {
   UserResponse,
 } from "../../api/generated/types.gen";
 import { createAppQueryClient } from "../queryClient";
+import { initBootMode, resetBootModeForTests } from "../offline/offlineMode";
 
 vi.mock("../../api/client/api", () => ({
   api: {
@@ -136,7 +137,10 @@ const prompt: PromptResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
+  resetSessionForTests();
+  resetBootModeForTests();
   sessionStore.adopt({ accessToken: "access", userId: "user-1" });
+  initBootMode("restored");
   vi.mocked(api.me).mockResolvedValue(user);
   vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
   vi.mocked(api.journals).mockResolvedValue([journal, otherJournal]);
@@ -291,6 +295,29 @@ function stubPdfDownloadDom() {
 }
 
 describe("Phase B routes", () => {
+  it.each([
+    ["/timeline/new", "/timeline"],
+    ["/timeline/moment-1/edit?q=rain", "/timeline/moment-1"],
+    ["/journals/journal-1/moment-1/edit", "/journals/journal-1/moment-1"],
+    ["/settings/data/import", "/timeline"],
+  ])(
+    "redirects offline-restricted mutation route %s to %s",
+    async (path, destination) => {
+      initBootMode("offline");
+
+      const view = await renderRoute(path);
+
+      await waitFor(() =>
+        expect(view.router.state.location.pathname).toBe(destination),
+      );
+      if (path.includes("?q=rain")) {
+        expect(view.router.state.location.search.q).toBe("rain");
+      }
+      expect(api.createMoment).not.toHaveBeenCalled();
+      expect(api.updateMoment).not.toHaveBeenCalled();
+    },
+  );
+
   it("shows a read-only prompt attribution for a prompted Moment", async () => {
     vi.mocked(api.moment).mockResolvedValue({
       ...moment,

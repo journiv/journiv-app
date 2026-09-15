@@ -105,6 +105,18 @@ describe("installPrompt", () => {
     expect(isIosSafari()).toBe(false);
   });
 
+  it("isIosSafari identifies touch-capable iPadOS with a macOS user agent", () => {
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+      platform: "MacIntel",
+      maxTouchPoints: 5,
+    });
+
+    expect(isIosSafari()).toBe(true);
+  });
+
   it("isIosSafari is false on Android Chrome", () => {
     stubUserAgent(
       "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0 Mobile Safari/537.36",

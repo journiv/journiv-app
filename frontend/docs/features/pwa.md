@@ -96,11 +96,11 @@ the bottom of the shell, not a toast (DESIGN.md: a waiting update is standing
 state, not a one-shot outcome). `applyUpdate` is never called without an
 explicit click. When the mounted editor has unsaved changes
 (`ShellContext.hasUnsavedDraft`, set by `EntryEditorPage.tsx`), clicking
-"Restart to update" shows an `AppConfirmDialog` first, saying the draft is
-already safe on this device (`useLocalDraft` already flushes on `pagehide`)
-and will be restored after the restart -- only confirming there calls
-`applyUpdate`. Dismissing the bar hides it until the next page load, not
-forever.
+"Restart to update" shows an `AppConfirmDialog` first, warning that unsaved
+changes may be lost. `hasUnsavedDraft` reports dirty editor state, not proof
+that the latest local-draft write succeeded, so the UI must not promise
+restoration from that flag alone. Only confirming calls `applyUpdate`.
+Dismissing the bar hides it until the next page load, not forever.
 
 ## Install
 
@@ -118,6 +118,104 @@ Install row shows exactly one of: already-installed, the Share instructions
 (iOS), an "Install Journiv" button (a captured prompt is available), or an
 honest sentence when none applies (an unsupported browser, or plain HTTP) --
 never a disabled button with no reason.
+
+## Bounded offline read cache
+
+`src/app/offline/` persists a bounded, per-user slice of the TanStack Query
+cache to a dedicated IndexedDB database, `journiv-offline` (version 1, one
+`queryCache` object store) -- deliberately separate from the `journiv`
+database `draftRepository.ts` owns, since that database's version ladder
+belongs to drafts.
+
+**Allowlist, never denylist** (`persistedQueries.ts`). A query persists only
+when its key is one of: `current-user`, `user-settings`, `instance-config`,
+`journals`, `tags`, `people`, `moods`, `activities`, `goals`, the *unfiltered*
+`["moments", {}]` timeline, and `["moment", id]` for an entry the user
+actually opened. Everything else -- `["export", …]`, `["import", …]`,
+`["admin", …]`, `["integrations", …]`, `["prompts","library",…]`, any
+*filtered* `["moments", {...}]`, and `["moment", id, "media"]` (offline media
+viewing is out of scope) -- is excluded by construction. A query must also
+have `status: "success"` with data present and be no older than
+`MAX_AGE_MS` (7 days). A hand-maintained `CACHE_SCHEMA_VERSION` buster in
+`offlineCache.ts` invalidates old shapes on a format change -- never the
+build hash, which would wipe the cache on every deploy, precisely when
+offline capability matters most. A 120-query cap (`MAX_PERSISTED_QUERIES`)
+is enforced by a custom `serialize` in the persister, the only place that
+can act across the whole dehydrated client rather than per-query.
+
+**No Cache Storage entry, ever, for `/api`, `/media`, or `/pub`** (Phase 3's
+guard). This is the IndexedDB-only alternative for offline *reading*.
+Cached `["moment", id]` entries still carry inline signed media URLs baked
+into the Delta by the backend (`docs/features/reader.md`) -- there is no
+allowlist rule that strips them, so the reader must render its existing
+media-placeholder fallback when a persisted URL has expired, keyed by media
+id the same way a live re-sign already reloads a slide in place. See
+`docs/known-gaps.md` for the follow-up that would remove this residue
+entirely (canonicalising stored Deltas the way drafts already do).
+
+**Hydrate before first render, never `PersistQueryClientProvider`.** That
+provider restores inside a `useEffect`, so children render before
+restoration finishes and an offline launch paints an empty shell that fills
+in a frame later -- exactly what this phase exists to avoid. `main.tsx`
+instead calls `hydrateOfflineCache` (a 2s-bounded, try/catch'd
+`persistQueryClientRestore`) concurrently with the session restore via
+`Promise.all`, resolves the boot mode, and only then renders once. A slow or
+blocked IndexedDB degrades to an empty cache rather than holding the boot
+splash open. Restoration is staged in a temporary `QueryClient`; only a
+result that completes before the timeout and still belongs to the active
+session/preference lifecycle is committed to the live client. A late IndexedDB
+read therefore cannot repopulate data after sign-out, a user switch, or an
+offline-reading opt-out.
+
+**Boot mode** (`offlineMode.ts`) is derived once from the restore result and
+the session hint, then kept current without a reload: `"restored"` → normal;
+`"unauthenticated"` → the login route; `"offline"` with a hint → offline-
+restricted (the shell renders with cached content); `"offline"` with no hint
+→ the login route too, since `LoginPage` already fails closed honestly when
+`instanceConfig` can't load offline. The router's `protectedRoute` guard
+allows both a live access token and offline-restricted; nothing else. A
+later successful `attemptRefresh()` (the original background attempt from
+boot, or the retry an `online` event triggers -- `useOnlineStatus.ts`)
+upgrades offline-restricted to normal in place; a definite 401/403 or an
+explicit sign-out moves to unauthenticated the same way. `navigator.onLine`
+never decides any of this by itself -- Journiv is self-hosted and frequently
+LAN-reachable while the OS reports no connectivity; it only ever decides
+*when* to check, both at boot and while running.
+
+The route guard admits only cached reading destinations while the mode is
+offline-restricted: timeline and journal lists plus their Moment readers.
+Editor deep links redirect to the corresponding reader; new-entry, Settings,
+Import, Library-management, and other mutation-oriented routes redirect to a
+cached read route. Normal authenticated routing and unauthenticated login
+redirects are unchanged.
+
+In offline-restricted mode, `OfflineBar` (`src/features/shell/`) states
+plainly that content is cached, with a relative timestamp from the freshest
+query in the cache. The sidebar's "New entry" action is disabled with a
+reason rather than left to fail; controls embedded inside otherwise readable
+routes still have the narrower gap documented in `docs/known-gaps.md`.
+
+**A fresh sign-in has no hint yet at boot.** `main.tsx` subscribes the
+offline cache to whatever `userId` the session hint names *at boot* --
+`undefined` for a browser that has never signed in. `sessionStore.adopt()`
+(login, signup, OIDC finish) therefore also fires a registered callback
+(`registerOfflineCacheSubscribe`) that (re)subscribes with the newly-known
+`userId`, or nothing would ever be persisted for a session that started with
+a fresh login rather than a cookie-restored one.
+
+**Settings → "Install & offline"** carries the disclosure and controls
+(§8.5 of the implementation plan): offline reading ships **on by default** --
+an explicit owner decision, disclosure plus an opt-out, not an opt-in
+privacy control, and there is no first-run consent prompt. Turning the
+switch off purges the cache immediately and stops persisting
+(`setOfflineReadingEnabled`). A storage-used estimate reads
+`navigator.storage.estimate()`; `navigator.storage.persist()` is requested
+once real usage exists, never on a blank first launch. **What this means for
+security**: cached entries are protected by the device and browser profile,
+not the server session -- someone with the unlocked device can read them in
+airplane mode after the server-side session has expired. That is inherent to
+any useful offline reading, not a defect, and is written down here rather
+than left to be discovered.
 
 ## Deployment security
 

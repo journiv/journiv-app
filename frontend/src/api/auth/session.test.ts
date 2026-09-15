@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   attemptRefresh,
+  registerOfflineCachePurge,
+  registerOfflineCacheSubscribe,
   resetSessionForTests,
   sessionStore,
   signOut,
@@ -56,6 +58,16 @@ describe("sessionStore", () => {
     sessionStore.clear();
     expect(sessionStore.getAccessToken()).toBeNull();
     expect(sessionStore.readHint()).toBeNull();
+  });
+
+  it("clear() tears down and purges the signed-in user's offline cache", () => {
+    const purge = vi.fn();
+    registerOfflineCachePurge(purge);
+    sessionStore.adopt({ accessToken: "access-1", userId: "user-1" });
+
+    sessionStore.clear();
+
+    expect(purge).toHaveBeenCalledWith("user-1");
   });
 
   it("restore() succeeds against a reachable server", async () => {
@@ -245,5 +257,18 @@ describe("sessionStore", () => {
     localStorage.setItem("journiv.logout-pending.v1", "1");
     sessionStore.adopt({ accessToken: "access-1", userId: "user-1" });
     expect(localStorage.getItem("journiv.logout-pending.v1")).toBeNull();
+  });
+
+  it("adopt() (re)subscribes the offline cache with the now-known userId", () => {
+    // A fresh sign-in (login/signup/OIDC) has no session hint yet at boot,
+    // so main.tsx's boot-time subscription never learns the userId on its
+    // own -- without this callback nothing would ever get persisted for a
+    // session that started with a fresh login rather than a restore.
+    const subscribe = vi.fn();
+    registerOfflineCacheSubscribe(subscribe);
+
+    sessionStore.adopt({ accessToken: "access-1", userId: "user-42" });
+
+    expect(subscribe).toHaveBeenCalledWith("user-42");
   });
 });

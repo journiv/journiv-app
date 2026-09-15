@@ -1,5 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetSessionForTests, sessionStore } from "../../../api/auth/session";
+import { closeOfflineDb, offlineKv } from "../../../app/offline/db";
+import { resetOfflineCacheForTests } from "../../../app/offline/offlineCache";
 import { resetInstallPromptForTests } from "../../../app/pwa/installPrompt";
 import { AppSettingsPage } from "./AppSettingsPage";
 
@@ -19,11 +23,12 @@ function fireBeforeInstallPrompt() {
 }
 
 describe("AppSettingsPage", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     resetInstallPromptForTests();
-    vi.spyOn(window, "matchMedia").mockImplementation(
-      () => ({ matches: false }) as MediaQueryList,
-    );
+    resetOfflineCacheForTests();
+    resetSessionForTests();
+    localStorage.clear();
+    await closeOfflineDb();
   });
 
   afterEach(() => {
@@ -76,14 +81,63 @@ describe("AppSettingsPage", () => {
   });
 
   it("shows an already-installed state, no button", () => {
+    const target = new EventTarget();
     vi.spyOn(window, "matchMedia").mockImplementation(
       (query: string) =>
-        ({ matches: query === "(display-mode: standalone)" }) as MediaQueryList,
+        ({
+          matches: query === "(display-mode: standalone)",
+          media: query,
+          addEventListener: target.addEventListener.bind(target),
+          removeEventListener: target.removeEventListener.bind(target),
+        }) as unknown as MediaQueryList,
     );
     render(<AppSettingsPage />);
     expect(screen.getByText(/is installed on this device/i)).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: /install journiv/i }),
     ).toBeNull();
+  });
+
+  it("restores the switch and explains how to retry when the preference cannot be stored", async () => {
+    vi.spyOn(localStorage, "setItem").mockImplementationOnce(() => {
+      throw new Error("storage blocked");
+    });
+    render(<AppSettingsPage />);
+
+    await userEvent.click(
+      screen.getByRole("switch", { name: "Offline reading" }),
+    );
+
+    await waitFor(() =>
+      expect(
+        screen
+          .getByRole("switch", { name: "Offline reading" })
+          .getAttribute("aria-checked"),
+      ).toBe("true"),
+    );
+    expect(screen.getByRole("alert").textContent).toMatch(
+      /allows site storage.*try again/i,
+    );
+  });
+
+  it("keeps the clear dialog open and reports a failed erase", async () => {
+    sessionStore.adopt({ accessToken: "access", userId: "user-1" });
+    vi.spyOn(offlineKv, "removeItem").mockRejectedValueOnce(
+      new Error("storage blocked"),
+    );
+    render(<AppSettingsPage />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Clear offline data" }),
+    );
+    const dialog = screen.getByRole("alertdialog");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Clear" }),
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toMatch(
+      /couldn’t be cleared.*try again/i,
+    );
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
   });
 });
