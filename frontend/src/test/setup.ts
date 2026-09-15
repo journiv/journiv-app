@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { cleanup } from "@testing-library/react";
+import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { closeDraftDb } from "../features/editor/draftRepository";
 import { installMatchMediaStub, resetTestViewportWidth } from "./viewport";
@@ -10,6 +10,12 @@ import { installMatchMediaStub, resetTestViewportWidth } from "./viewport";
  * anything" path, and the real behaviour would go unverified.
  */
 const realSetTimeout = globalThis.setTimeout;
+
+// Lazy route and widget chunks can take longer than Testing Library's
+// one-second default to transform when the full suite runs in parallel on CI.
+// Keep async UI assertions below Vitest's five-second per-test timeout while
+// allowing normal Suspense boundaries enough time to resolve under load.
+configure({ asyncUtilTimeout: 3000 });
 
 afterEach(async () => {
   // An adaptive-overlay test that narrows the viewport must not leak that

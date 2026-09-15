@@ -6,6 +6,23 @@ import {
   resetBootModeForTests,
 } from "./offlineMode";
 
+/**
+ * The real offline-restricted precondition: a *previous* page load left the
+ * hint in localStorage and this one has no access token yet. `adopt()` is not
+ * a substitute -- it also sets the in-memory token, which is the one state
+ * that proves the session is live and rules offline-restricted out.
+ */
+function hintFromAPreviousSession(userId = "user-1") {
+  localStorage.setItem(
+    "journiv.session-hint.v1",
+    JSON.stringify({
+      version: 1,
+      userId,
+      signedInAt: new Date().toISOString(),
+    }),
+  );
+}
+
 describe("offlineMode", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -30,7 +47,7 @@ describe("offlineMode", () => {
   it("offline with a hint -> offline-restricted", () => {
     // A prior sign-in wrote the hint; a network failure while offline never
     // clears it (docs/features/pwa.md).
-    sessionStore.adopt({ accessToken: "a", userId: "user-1" });
+    hintFromAPreviousSession();
     initBootMode("offline");
     expect(getBootMode()).toBe("offline-restricted");
   });
@@ -41,7 +58,7 @@ describe("offlineMode", () => {
   });
 
   it("a later restore success upgrades offline-restricted to normal in place", () => {
-    sessionStore.adopt({ accessToken: "a", userId: "user-1" });
+    hintFromAPreviousSession();
     initBootMode("offline");
     expect(getBootMode()).toBe("offline-restricted");
 
@@ -49,8 +66,20 @@ describe("offlineMode", () => {
     expect(getBootMode()).toBe("normal");
   });
 
+  it("a refresh that landed before initBootMode wins over a stale 'offline'", () => {
+    // The LAN case the owner called out: navigator.onLine is false, restore()
+    // returns "offline" provisionally and leaves the refresh running, and the
+    // server answers while main.tsx is still awaiting hydrateOfflineCache().
+    // The token is set before anything has subscribed, so the notify() that
+    // would have corrected the mode is already gone -- trusting the stale
+    // result would strand an authenticated session behind OfflineBar.
+    sessionStore.adopt({ accessToken: "live", userId: "user-1" });
+    initBootMode("offline");
+    expect(getBootMode()).toBe("normal");
+  });
+
   it("a later definite 401 moves offline-restricted to unauthenticated", () => {
-    sessionStore.adopt({ accessToken: "a", userId: "user-1" });
+    hintFromAPreviousSession();
     initBootMode("offline");
     expect(getBootMode()).toBe("offline-restricted");
 

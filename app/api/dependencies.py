@@ -149,13 +149,23 @@ async def get_current_user(
 async def get_current_user_optional(
     request: Request,
     session: Annotated[Session, Depends(get_session)],
-    cookie_token: Annotated[Optional[str], Cookie(alias="access_token")] = None,
 ) -> Optional[User]:
     """Resolve the current user if credentials are present and valid, else None.
 
     Never raises. For endpoints that must succeed for any caller (e.g.
     logout) but should still attribute the action when a valid session
     happens to be present.
+
+    Bearer header only. `get_current_user`'s `access_token` cookie fallback
+    is deliberately NOT forwarded (`cookie_token=None`): that fallback is
+    dead code today only because the `oauth2_scheme` above it has
+    `auto_error=True` and rejects a header-less request first
+    (frontend/docs/known-gaps.md). This dependency must tolerate missing
+    credentials, so it parses only the Authorization header directly; passing
+    a cookie through would reactivate ambient cookie authentication on an
+    unauthenticated endpoint and publish `access_token` as a documented cookie
+    parameter in the OpenAPI schema. Journiv never sets that cookie, so this
+    costs nothing.
     """
     scheme, token = get_authorization_scheme_param(
         request.headers.get("Authorization")
@@ -164,7 +174,7 @@ async def get_current_user_optional(
         token = None
     try:
         return await get_current_user(
-            token=token, session=session, cookie_token=cookie_token
+            token=token, session=session, cookie_token=None
         )
     except HTTPException:
         return None

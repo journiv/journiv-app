@@ -208,6 +208,60 @@ describe("offlineCache", () => {
     });
   });
 
+  describe("switching accounts in one page load", () => {
+    it("persists the second user's queries under the second user's key", async () => {
+      // Signing out does not reload the page: AppSidebar calls signOut() and
+      // the session subscriber navigates to /login in-SPA. Boot already
+      // subscribed with the hint's userId, then adopt() subscribes again for
+      // whoever signs in next. Both subscriptions are for the same
+      // QueryClient, so the second must replace the first -- otherwise the
+      // new user's entries are written into the previous user's slot, where
+      // that user's next boot would hydrate them.
+      const queryClient = new QueryClient();
+      subscribeOfflineCache(queryClient, "user-A");
+      subscribeOfflineCache(queryClient, "user-B");
+
+      queryClient.setQueryData(queryKeys.journals, [{ id: "b-only" }]);
+
+      await vi.waitFor(
+        async () => {
+          const raw = await offlineKv.getItem("journiv.query-cache.user-B");
+          expect(raw).toContain("b-only");
+        },
+        { timeout: 3000, interval: 100 },
+      );
+
+      const leaked = await offlineKv.getItem("journiv.query-cache.user-A");
+      expect(leaked ?? "").not.toContain("b-only");
+    }, 5000);
+  });
+
+  describe("purge while a subscription is live", () => {
+    it("does not let the running subscription write the cache straight back", async () => {
+      const queryClient = new QueryClient();
+      subscribeOfflineCache(queryClient, USER_ID);
+      queryClient.setQueryData(queryKeys.journals, [{ id: "j1" }]);
+      await vi.waitFor(
+        async () => {
+          expect(await offlineKv.getItem(STORAGE_KEY)).toContain("j1");
+        },
+        { timeout: 3000, interval: 100 },
+      );
+
+      // What signOut()/a definite 401 do via registerOfflineCachePurge.
+      await purgeOfflineCache(USER_ID);
+      // AppShell clears the query cache on the same sign-out. That is a cache
+      // event, so a subscription still running would flush a fresh snapshot
+      // into the slot the purge just deleted -- recreating it right after the
+      // user asked for it to go.
+      queryClient.clear();
+      // Long enough for a still-live throttled persister to flush again.
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+
+      expect(await offlineKv.getItem(STORAGE_KEY)).toBeNull();
+    }, 8000);
+  });
+
   describe("subscribe -> restore round trip", () => {
     it("a query subscribeOfflineCache saves is readable by hydrateOfflineCache in a fresh client", async () => {
       const writer = new QueryClient();

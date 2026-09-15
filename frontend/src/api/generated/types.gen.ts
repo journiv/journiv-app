@@ -5673,16 +5673,10 @@ export type LogoutApiV1AuthLogoutPostData = {
 
 export type LogoutApiV1AuthLogoutPostErrors = {
     /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-    /**
      * Internal server error
      */
     500: unknown;
 };
-
-export type LogoutApiV1AuthLogoutPostError = LogoutApiV1AuthLogoutPostErrors[keyof LogoutApiV1AuthLogoutPostErrors];
 
 export type LogoutApiV1AuthLogoutPostResponses = {
     /**

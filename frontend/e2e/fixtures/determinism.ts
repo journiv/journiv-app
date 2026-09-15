@@ -37,22 +37,45 @@ export type ThemeMode = "light" | "dark";
 
 /** The init script every context runs before the app boots.
  *
- *  Three jobs, all of them about starting from a known appearance:
+ *  Two jobs, both about starting from a known appearance:
  *   - pin the theme, so a test never inherits the CI machine's
  *     `prefers-color-scheme`;
  *   - clear personalization, so a stray accent colour or font scale from a
  *     previous run cannot bleed into a comparison (e2e/README.md names this as a
- *     precondition for deterministic capture);
- *   - seed the auth session when there is one.
+ *     precondition for deterministic capture).
  *
- *  It runs on every navigation, so both writes are guarded: an appearance the
- *  test changes and a token the app refreshes must survive the next page load.
+ *  It runs on every navigation, so the appearance writes are guarded: an
+ *  appearance the test changes must survive the next page load.
+ *
+ *  The refresh token itself is a separate concern: it lives only in an
+ *  `HttpOnly` cookie page script can never read or write, so `test.ts`'s
+ *  `context` fixture injects it directly via `context.addCookies()` instead
+ *  of through this script (docs/features/authentication.md). The session
+ *  *hint* (`journiv.session-hint.v1`) is an ordinary localStorage breadcrumb
+ *  though, and a real returning user's browser already carries one from
+ *  signing in through the UI -- `sessionHint` here recreates that half of
+ *  the state so offline-mode specs boot into offline-restricted instead of
+ *  bouncing to /login (src/app/offline/offlineMode.ts). Like the appearance,
+ *  it is seeded only once per tab: restoring it on every document load would
+ *  recreate a hint that logout deliberately removed.
  */
 export function buildInitScript(options: {
   theme: ThemeMode;
-  sessionKey: string;
-  session: { version: 1; accessToken: string; refreshToken: string } | null;
+  sessionHint?: { userId: string };
 }) {
+  const hintScript = options.sessionHint
+    ? `const sessionHintSeed = "journiv.e2e.session-hint-seeded";
+      if (!sessionStorage.getItem(sessionHintSeed)) {
+        localStorage.setItem("journiv.session-hint.v1", ${JSON.stringify(
+          JSON.stringify({
+            version: 1,
+            userId: options.sessionHint.userId,
+            signedInAt: new Date(0).toISOString(),
+          }),
+        )});
+        sessionStorage.setItem(sessionHintSeed, "1");
+      }`
+    : "";
   return `(() => {
     try {
       const appearanceSeed = "journiv.e2e.appearance-seeded";
@@ -61,17 +84,7 @@ export function buildInitScript(options: {
         localStorage.removeItem("journiv.userTheme");
         sessionStorage.setItem(appearanceSeed, "1");
       }
+      ${hintScript}
     } catch {}
-    const session = ${JSON.stringify(options.session)};
-    if (session) {
-      try {
-        if (!sessionStorage.getItem(${JSON.stringify(options.sessionKey)})) {
-          sessionStorage.setItem(
-            ${JSON.stringify(options.sessionKey)},
-            JSON.stringify(session),
-          );
-        }
-      } catch {}
-    }
   })();`;
 }

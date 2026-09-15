@@ -68,6 +68,7 @@ describe("AppSettingsPage", () => {
   });
 
   it("shows Share instructions on iOS Safari, no button", () => {
+    vi.stubGlobal("isSecureContext", true);
     vi.stubGlobal("navigator", {
       ...navigator,
       userAgent:
@@ -75,6 +76,27 @@ describe("AppSettingsPage", () => {
     });
     render(<AppSettingsPage />);
     expect(screen.getByText(/Add to Home Screen/i)).toBeTruthy();
+    expect(screen.queryByText(/won't work offline/i)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /install journiv/i }),
+    ).toBeNull();
+  });
+
+  it("warns that an iOS install over plain HTTP won't work offline", () => {
+    // jsdom's default test origin is not a secure context -- the exact
+    // plain-HTTP-on-iPhone case this row must warn about instead of quietly
+    // implying full offline support (a real user hit this as a silent black
+    // screen: Add to Home Screen succeeds over HTTP since it needs no
+    // service worker, but nothing was ever precached for offline use).
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      userAgent:
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/604.1",
+    });
+    render(<AppSettingsPage />);
+    expect(screen.getByText(/Add to Home Screen/i)).toBeTruthy();
+    expect(screen.getByText(/doesn't use HTTPS/i)).toBeTruthy();
+    expect(screen.getByText(/won't work offline/i)).toBeTruthy();
     expect(
       screen.queryByRole("button", { name: /install journiv/i }),
     ).toBeNull();

@@ -15,8 +15,9 @@ import { API_URL } from "../env";
  *  breaks the fixtures at `npm run typecheck` instead of at 3am in a flaky
  *  assertion.
  *
- *  It does NOT use `src/api/client/api.ts`: that façade reads `import.meta.env`
- *  and `sessionStorage`, neither of which exists in Playwright's Node process.
+ *  It does NOT use `src/api/client/api.ts`: that façade reads
+ *  `import.meta.env` and the in-memory access token session.ts holds as
+ *  module state, neither of which exists in Playwright's Node process.
  */
 export function createJournivClient(accessToken?: string): Client {
   return createClient({
@@ -36,6 +37,7 @@ export interface JournivCredentials {
 export interface JournivTokens {
   accessToken: string;
   refreshToken: string;
+  userId: string;
 }
 
 /** Turns the two backend policies that break account creation into errors that
@@ -93,9 +95,14 @@ export async function registerAndLogin(
   if (!loggedIn.data.refresh_token)
     throw new Error("Legacy login did not return a refresh token.");
 
+  const userId = loggedIn.data.user.id;
+  if (typeof userId !== "string" || !userId)
+    throw new Error("Login response is missing a user id");
+
   return {
     accessToken: loggedIn.data.access_token,
     refreshToken: loggedIn.data.refresh_token,
+    userId,
   };
 }
 

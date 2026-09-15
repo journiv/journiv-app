@@ -119,6 +119,17 @@ Install row shows exactly one of: already-installed, the Share instructions
 honest sentence when none applies (an unsupported browser, or plain HTTP) --
 never a disabled button with no reason.
 
+**iOS + plain HTTP is the one case that looks like it works but doesn't.**
+"Add to Home Screen" needs no service worker, so it succeeds over plain HTTP
+-- but nothing was ever precached, so the installed icon has no offline
+fallback at all: a real user hit this as a launch-time black screen with no
+error, not a graceful degrade. The Share instructions therefore carry an
+explicit caveat on an insecure context (`window.isSecureContext === false`)
+rather than silently implying full offline support. There is no code fix for
+the underlying limitation -- service workers require a secure context, full
+stop (`docs/known-gaps.md`) -- only for making sure the person installing
+finds out before they rely on it offline.
+
 ## Bounded offline read cache
 
 `src/app/offline/` persists a bounded, per-user slice of the TanStack Query

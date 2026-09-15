@@ -1,8 +1,12 @@
 import { test as base, expect } from "@playwright/test";
 import type { Client } from "@/api/generated/client";
-import { workerEmail, workerPassword } from "../env";
+import { BASE_URL, workerEmail, workerPassword } from "../env";
 import { createJournivClient, deleteAccount, registerAndLogin } from "./api";
-import { SESSION_STORAGE_KEY, type JournivWorkerUser } from "./auth";
+import {
+  REFRESH_COOKIE_NAME,
+  REFRESH_COOKIE_PATH,
+  type JournivWorkerUser,
+} from "./auth";
 import { DataFactory } from "./data";
 import { buildInitScript, type ThemeMode } from "./determinism";
 
@@ -64,29 +68,49 @@ export const test = base.extend<Options & Fixtures, WorkerFixtures>({
     { scope: "worker" },
   ],
 
-  // Overriding `context` (rather than using `storageState`) is not a style
-  // choice: Journiv keeps its tokens in sessionStorage, and Playwright's
-  // storageState only persists cookies and localStorage. An init script is the
-  // only way to have the app already signed in when it boots.
+  // The durable credential is the `journiv_refresh` `HttpOnly` cookie
+  // (docs/features/authentication.md) -- page script can never read or write
+  // it, so an init script cannot seed it the way the old sessionStorage token
+  // was seeded. `context.addCookies()` is a Playwright API operating on the
+  // browser context directly, not page script, so it is not subject to that
+  // restriction. The app's own boot sequence (main.tsx) then exchanges the
+  // cookie for a fresh in-memory access token on first load, exactly as it
+  // would for a real returning user -- no access token is injected here.
   //
   // Note the worker account is created even for `session: "none"` — the fixture
   // is requested unconditionally here. One extra registration per worker is a
   // fair price for there being exactly one way to get an account.
   context: async ({ context, session, theme, journivUser }, use) => {
+    // A real returning user's browser already carries the session hint
+    // (journiv.session-hint.v1) from when they signed in through the UI --
+    // it is what lets a boot with no reachable network land in
+    // offline-restricted mode instead of bouncing to /login
+    // (src/app/offline/offlineMode.ts). Injecting only the refresh cookie
+    // recreates the cookie half of that state but not this half, so seed it
+    // here too rather than leaving every offline-mode spec to fake it.
     await context.addInitScript(
       buildInitScript({
         theme,
-        sessionKey: SESSION_STORAGE_KEY,
-        session:
-          session === "none"
-            ? null
-            : {
-                version: 1,
-                accessToken: journivUser.accessToken,
-                refreshToken: journivUser.refreshToken,
-              },
+        sessionHint:
+          session === "user" ? { userId: journivUser.userId } : undefined,
       }),
     );
+    if (session === "user") {
+      // Playwright rejects `url` combined with `path` on the same cookie (it
+      // treats them as alternatives) -- a scoped path narrower than the
+      // origin's root needs `domain` + `path` instead.
+      await context.addCookies([
+        {
+          domain: new URL(BASE_URL).hostname,
+          name: REFRESH_COOKIE_NAME,
+          value: journivUser.refreshToken,
+          path: REFRESH_COOKIE_PATH,
+          httpOnly: true,
+          secure: false,
+          sameSite: "Lax",
+        },
+      ]);
+    }
     await use(context);
   },
 

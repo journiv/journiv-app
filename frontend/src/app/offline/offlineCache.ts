@@ -144,6 +144,10 @@ export function subscribeOfflineCache(
   queryClient: QueryClient,
   userId: string | undefined,
 ): () => void {
+  // Always replace the existing subscription. Boot subscribes with the hinted
+  // user id, and adopt() subscribes again after sign-in; keeping the first
+  // subscription would write the new user's queries under the previous user's
+  // storage key. Bumping the lifecycle also invalidates any in-flight restore.
   stopPersisting();
   cacheLifecycle += 1;
   activeClient = queryClient;
@@ -168,6 +172,10 @@ export function teardownOfflineCache() {
 export async function purgeOfflineCache(
   userId: string | undefined,
 ): Promise<void> {
+  // Before removeClient(), always: a subscription still running would flush
+  // the in-memory query cache straight back into the slot we just deleted,
+  // silently undoing the purge a sign-out or a definite 401 just performed.
+  stopPersisting();
   if (!userId) return;
   await persisterFor(userId).removeClient();
 }

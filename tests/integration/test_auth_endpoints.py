@@ -146,6 +146,33 @@ def test_logout_clears_cookie_with_expired_or_malformed_token(
     )
 
 
+def test_logout_ignores_an_access_token_cookie(
+    api_client: JournivApiClient, api_user: ApiUser
+):
+    """Logout authenticates from the Bearer header only.
+
+    `get_current_user` still has a fallback that accepts a cookie named
+    `access_token` as a full credential, and the API has no CSRF protection
+    (frontend/docs/known-gaps.md). That fallback is unreachable only because
+    every dependency in front of it rejects a header-less request first.
+    Logout is the one endpoint that deliberately does not, so it is the one
+    place the fallback could come back to life -- assert it stays dead. The
+    call still succeeds (logout always does); what must not happen is the
+    cookie being *consulted* as a credential.
+    """
+    response = api_client.request(
+        "POST", "/auth/logout", cookies={"access_token": api_user.access_token}
+    )
+    assert response.status_code == 200
+    # This suite calls a separately running server, so a local mock cannot
+    # observe its audit logger. The same-process assertion that
+    # `log_user_action` is untouched lives in tests/unit/test_auth_contract.py.
+    # The schema half of this -- that `access_token` is not a documented
+    # cookie parameter on this operation -- is asserted in-process by
+    # tests/unit/test_openapi_contract.py, which does not need a running
+    # server on the revision under test.
+
+
 def test_logout_is_idempotent(api_client: JournivApiClient, api_user: ApiUser):
     """Calling logout twice must be indistinguishable from calling it once."""
     first = api_client.request("POST", "/auth/logout", token=api_user.access_token)

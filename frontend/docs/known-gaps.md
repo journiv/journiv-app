@@ -45,9 +45,9 @@ when working on that area.
   request that fails honestly offline. Threading a shared disabled state and
   reason into those remaining controls is a follow-up.
 - **The reader's inline media-placeholder path was not directly modified.**
-  The offline read cache relies on the reader's *existing* by-media-id
+  The offline read cache relies on the reader's _existing_ by-media-id
   fallback (the one a live re-signed URL already reloads in place,
-  `docs/features/reader.md`) to also cover an *expired* signed URL served
+  `docs/features/reader.md`) to also cover an _expired_ signed URL served
   from the offline cache. This was not independently re-verified against a
   persisted, offline-served entry — only against the live re-sign path it
   already had. Confirm this on a real device per the manual test matrix

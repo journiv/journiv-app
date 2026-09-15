@@ -158,7 +158,6 @@ async def test_get_current_user_optional_returns_user_for_valid_token():
         session = MagicMock()
         result = await dependencies.get_current_user_optional(
             request=MagicMock(headers={"Authorization": "Bearer valid_token"}),
-            cookie_token=None,
             session=session,
         )
 
@@ -172,7 +171,7 @@ async def test_get_current_user_optional_returns_none_without_credentials():
 
     session = MagicMock()
     result = await dependencies.get_current_user_optional(
-        request=MagicMock(headers={}), cookie_token=None, session=session
+        request=MagicMock(headers={}), session=session
     )
     assert result is None
 
@@ -185,7 +184,6 @@ async def test_get_current_user_optional_returns_none_for_invalid_token():
         session = MagicMock()
         result = await dependencies.get_current_user_optional(
             request=MagicMock(headers={"Authorization": "Bearer garbage"}),
-            cookie_token=None,
             session=session,
         )
         assert result is None
@@ -201,9 +199,28 @@ async def test_get_current_user_optional_returns_none_for_operational_error():
     ), patch("app.api.dependencies.logger.exception") as mock_log_exception:
         result = await dependencies.get_current_user_optional(
             request=MagicMock(headers={"Authorization": "Bearer valid_token"}),
-            cookie_token=None,
             session=MagicMock(),
         )
 
     assert result is None
     mock_log_exception.assert_called_once_with("Optional authentication failed")
+
+
+def test_get_current_user_optional_takes_no_cookie_parameter():
+    """The `access_token` cookie fallback must not be reachable from here.
+
+    `get_current_user`'s cookie fallback is dead only because the
+    `oauth2_scheme` ahead of it has `auto_error=True`
+    (frontend/docs/known-gaps.md). This optional dependency must accept a
+    request with no credentials, so accepting a `cookie_token` would reactivate
+    ambient cookie auth on `/auth/logout` *and* publish `access_token` as a
+    documented cookie parameter in the OpenAPI schema. Asserting on the
+    signature keeps that from being reintroduced by a well-meaning "pass it
+    through too".
+    """
+    import inspect
+
+    from app.api import dependencies
+
+    parameters = inspect.signature(dependencies.get_current_user_optional).parameters
+    assert "cookie_token" not in parameters

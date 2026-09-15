@@ -43,9 +43,11 @@ test.describe("authentication", { tag: "@smoke" }, () => {
     });
   });
 
-  // Proves the single most load-bearing piece of this framework: the injected
-  // sessionStorage session. Every authenticated spec in the repo depends on it,
-  // and nothing else would tell us if SESSION_STORAGE_KEY drifted from the app.
+  // Proves the single most load-bearing piece of this framework: the
+  // journiv_refresh cookie test.ts's context fixture injects via
+  // context.addCookies(). Every authenticated spec in the repo depends on
+  // it, and nothing else would tell us if REFRESH_COOKIE_NAME drifted from
+  // the app (docs/features/authentication.md).
   test("an injected session starts the app signed in", async ({ page }) => {
     await page.goto("/timeline");
 
