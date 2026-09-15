@@ -15,6 +15,7 @@ import { IconButton } from "../../components/ui/icon-button";
 import type { SettingsSection } from "../settings/SettingsModal";
 import { AppSidebar } from "./AppSidebar";
 import { ShellContext } from "./shellContext";
+import { UpdateBar } from "./UpdateBar";
 import { cx } from "../../lib/cx";
 import "./shell.css";
 
@@ -49,6 +50,7 @@ export function AppShell() {
   // leaving it mounted on close lets the overlay animate out.
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [quickLogKey, setQuickLogKey] = useState(0);
+  const [hasUnsavedDraft, setHasUnsavedDraft] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
   const currentUser = useQuery(currentUserQuery());
@@ -90,6 +92,8 @@ export function AppShell() {
           setQuickLogKey((key) => key + 1);
           setQuickLogOpen(true);
         },
+        hasUnsavedDraft,
+        setHasUnsavedDraft,
       }}
     >
       <div className={cx("jv-shell", detailActive && "is-detail")}>
@@ -140,6 +144,8 @@ export function AppShell() {
             />
           </Suspense>
         )}
+
+        <UpdateBar />
       </div>
     </ShellContext.Provider>
   );

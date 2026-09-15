@@ -15,6 +15,7 @@ export type SettingsRouteTo =
   | "/settings/profile"
   | "/settings/security"
   | "/settings/appearance"
+  | "/settings/app"
   | "/settings/admin/users"
   | "/settings/admin/updates-license"
   | "/settings/integrations"
@@ -29,6 +30,7 @@ export type SettingsNavItem = {
     | "profile"
     | "security"
     | "appearance"
+    | "app"
     | "users"
     | "updatesLicense"
     | "integrations"
@@ -62,6 +64,10 @@ export const SETTINGS_NAV: SettingsNavGroup[] = [
     items: [
       { id: "appearance", label: "Theme & time", to: "/settings/appearance" },
     ],
+  },
+  {
+    label: "App",
+    items: [{ id: "app", label: "Install & offline", to: "/settings/app" }],
   },
   {
     label: "Integrations",

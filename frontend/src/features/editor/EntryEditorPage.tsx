@@ -50,6 +50,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { PromptBanner } from "../prompts/PromptBanner";
 import { PromptPickerDialog } from "../prompts/PromptPickerDialog";
 import { prependPromptHeading } from "../prompts/promptSeed";
+import { useShell } from "../shell/shellContext";
 import { prependPlainParagraph } from "./bodySeed";
 import {
   EMPTY_DELTA,
@@ -570,6 +571,15 @@ function EntryEditorForm({
   const journalDirty = journalId !== initialJournalId;
   const dirty =
     titleDirty || journalDirty || bodyDirty || metaDirty || promptDirty;
+
+  // Read by the PWA update bar (docs/features/pwa.md) to confirm before a
+  // restart -- useLocalDraft below already flushes on pagehide, so the
+  // restart itself never loses writing; this only decides whether to ask.
+  const { setHasUnsavedDraft } = useShell();
+  useEffect(() => {
+    setHasUnsavedDraft(dirty);
+    return () => setHasUnsavedDraft(false);
+  }, [dirty, setHasUnsavedDraft]);
 
   /**
    * The local safety net. Not autosave: Done is still the only thing that puts

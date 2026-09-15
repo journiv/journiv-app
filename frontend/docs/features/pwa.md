@@ -87,6 +87,38 @@ of the root worker's registration; the root worker's own fetch handler must
 still never claim a `/legacy/` navigation, which is what the denylist entry
 guarantees.
 
+## Update UX
+
+`registerType: "prompt"` means a waiting worker never takes over on its own.
+`src/app/pwa/usePwaUpdate.ts` exposes `{ updateReady, applyUpdate }`, read by
+`UpdateBar` (`src/features/shell/UpdateBar.tsx`) -- persistent chrome fixed to
+the bottom of the shell, not a toast (DESIGN.md: a waiting update is standing
+state, not a one-shot outcome). `applyUpdate` is never called without an
+explicit click. When the mounted editor has unsaved changes
+(`ShellContext.hasUnsavedDraft`, set by `EntryEditorPage.tsx`), clicking
+"Restart to update" shows an `AppConfirmDialog` first, saying the draft is
+already safe on this device (`useLocalDraft` already flushes on `pagehide`)
+and will be restored after the restart -- only confirming there calls
+`applyUpdate`. Dismissing the bar hides it until the next page load, not
+forever.
+
+## Install
+
+`src/app/pwa/installPrompt.ts` captures `beforeinstallprompt` at module load
+(`preventDefault()`, keep the deferred event) so the event is never missed
+before Settings mounts, and clears it on `appinstalled`. `isStandalone()`
+checks `display-mode: standalone` and iOS's `navigator.standalone`;
+`isIosSafari()` exists because iOS never fires `beforeinstallprompt` at all --
+the only install route there is Share → Add to Home Screen.
+
+Settings → **Install & offline** (`src/features/settings/app/AppSettingsPage.tsx`,
+after Appearance in `settingsNav.ts`) is the only place install ever appears --
+never an unsolicited banner or interstitial (DESIGN.md product character). Its
+Install row shows exactly one of: already-installed, the Share instructions
+(iOS), an "Install Journiv" button (a captured prompt is available), or an
+honest sentence when none applies (an unsupported browser, or plain HTTP) --
+never a disabled button with no reason.
+
 ## Deployment security
 
 The shipped deployment is same-origin: FastAPI serves both the frontend and

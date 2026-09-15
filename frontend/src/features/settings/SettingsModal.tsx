@@ -25,6 +25,7 @@ import { settingsItem, type SettingsNavItem } from "./settingsNav";
 import { ProfilePage } from "./profile/ProfilePage";
 import { SecurityPage } from "./security/SecurityPage";
 import { AppearancePage } from "./appearance/AppearancePage";
+import { AppSettingsPage } from "./app/AppSettingsPage";
 import { IntegrationsPage } from "./integrations/IntegrationsPage";
 import { ImportPage } from "./backup/ImportPage";
 import { ExportPage } from "./backup/ExportPage";
@@ -270,6 +271,7 @@ export function SettingsModal({ section }: { section: SettingsSection }) {
                   {section === "profile" && <ProfilePage />}
                   {section === "security" && <SecurityPage />}
                   {section === "appearance" && <AppearancePage />}
+                  {section === "app" && <AppSettingsPage />}
                   {section === "integrations" && <IntegrationsPage />}
                   {section === "users" && isAdmin && <UsersPage />}
                   {section === "updatesLicense" && isAdmin && (

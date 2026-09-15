@@ -371,6 +371,13 @@ const settingsAppearanceRoute = createRoute({
   staticData: { settings: "appearance" },
   component: SettingsBackground,
 });
+const settingsAppRoute = createRoute({
+  getParentRoute: () => protectedRoute,
+  path: "/settings/app",
+  validateSearch: timelineSearch,
+  staticData: { settings: "app" },
+  component: SettingsBackground,
+});
 const settingsUsersRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings/admin/users",
@@ -607,6 +614,7 @@ const routeTree = rootRoute.addChildren([
     settingsProfileRoute,
     settingsSecurityRoute,
     settingsAppearanceRoute,
+    settingsAppRoute,
     settingsUsersRoute,
     settingsUpdatesLicenseRoute,
     settingsTagsRedirectRoute,
@@ -653,6 +661,7 @@ declare module "@tanstack/react-router" {
       | "profile"
       | "security"
       | "appearance"
+      | "app"
       | "users"
       | "updatesLicense"
       | "integrations"
