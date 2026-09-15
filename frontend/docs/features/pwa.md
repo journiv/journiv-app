@@ -51,10 +51,48 @@ plain computed style) -- do not eyeball an oklch-to-hex conversion.
 reusing the `any` 192 icon. Never add a Quick Log shortcut -- it ships behind
 `QUICK_LOG_ENABLED = false` (`src/features/shell/shellContext.ts`).
 
-## Same-origin only
+## Service worker and offline shell
 
-Session restore and the manifest/service-worker topology assume the frontend
-and API share an origin -- the shipped deployment (FastAPI serves both). A
-plain-HTTP deployment gets no installed-app experience: service workers
-require a secure context, and this is accepted, not worked around
-(`docs/known-gaps.md`).
+`vite-plugin-pwa`'s `generateSW` strategy (`vite.config.ts`) produces
+`service-worker.js` at scope `/` -- the exact filename and root scope the
+backend already special-cases (`app/frontend.py` `NO_CACHE_FILENAMES` and its
+`Service-Worker-Allowed: /` header). `registerType: "prompt"` with
+`clientsClaim: false` / `skipWaiting: false` is load-bearing, not stylistic:
+either set true and a new worker takes over mid-session, serving new assets to
+an old page on the next navigation -- effectively reloading a user out from
+under themselves while they are mid-sentence in the editor.
+
+`src/app/pwa/registerServiceWorker.ts` wraps the vanilla
+`virtual:pwa-register` (not the React `useRegisterSW` hook) and is called
+once from `main.tsx`, after `retireRootFlutterWorker()` resolves and after
+first render -- registering earlier would compete with the boot session
+restore for the connection and slow down what the user sees first. It is the
+single source of truth for update state (`needRefresh` / `offlineReady`); a
+future update-bar UI reads `getUpdateState()` / `subscribeToUpdateState()`
+rather than mounting the React hook, which would register the worker a
+second time.
+
+**No `/api`, `/media`, `/pub`, or any authenticated response ever enters
+Cache Storage.** `workbox.runtimeCaching` is deliberately `[]` and
+`navigateFallbackDenylist` excludes those prefixes (plus `/legacy/` and
+`/flutter_service_worker.js`, so the root worker never answers a Flutter
+navigation with the React shell). Offline reading is a separate, bounded
+IndexedDB query cache (`src/app/offline/`), not Cache Storage. Verify this
+by pathname, not raw URL -- `Request.url` is absolute, so a
+`/^\/(api|media|pub)\//` test against it silently never matches.
+
+`/legacy/` keeps its own service worker at `/legacy/flutter_service_worker.js`,
+scoped to `/legacy/`. That more specific scope wins control there regardless
+of the root worker's registration; the root worker's own fetch handler must
+still never claim a `/legacy/` navigation, which is what the denylist entry
+guarantees.
+
+## Deployment security
+
+The shipped deployment is same-origin: FastAPI serves both the frontend and
+API. An explicit cross-origin API is supported only over HTTPS or on a loopback
+address because session restore sends the refresh cookie with credentialed
+requests. Same-origin LAN HTTP requires the backend's explicit
+`ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP=true` opt-in and does not provide the
+installed-app experience because service workers require a secure context
+(except on loopback origins).

@@ -13,6 +13,7 @@ import {
   readUiExperiment,
 } from "./features/theme/uiExperiment";
 import { retireRootFlutterWorker } from "./app/retireRootFlutterWorker";
+import { registerServiceWorker } from "./app/pwa/registerServiceWorker";
 import { sessionStore } from "./api/auth/session";
 import { Toaster } from "./components/ui/toast";
 
@@ -48,6 +49,10 @@ async function boot() {
       </QueryClientProvider>
     </StrictMode>,
   );
+
+  // After first render, not before: a registration competing with the boot
+  // restore request above would slow down the launch the user sees.
+  registerServiceWorker();
 }
 
 void boot();

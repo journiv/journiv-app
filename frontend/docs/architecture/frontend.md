@@ -13,6 +13,8 @@ visual-verification work. It is not a visual design specification; use
 | `src/components/journiv/` | a product pattern shared by at least two features |
 | `src/api/` | generated client, hand-written wrapper, auth, query keys/options |
 | `src/app/` | router, query client, global light/dark theme |
+| `src/app/pwa/` | manifest shortcuts list, service-worker registration and update state (`docs/features/pwa.md`) |
+| `src/app/offline/` | bounded offline read cache, offline-restricted mode (`docs/features/pwa.md`) |
 | `src/features/<feature>/` | feature UI and scoped CSS |
 | `src/lib/` | shared pure helpers and lookup logic |
 | `src/test/` | Vitest setup and viewport helpers |
