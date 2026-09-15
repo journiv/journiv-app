@@ -10,7 +10,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
 COPY frontend/ ./
-RUN npm run build
+RUN npm run build && test -f dist/index.html
 
 # =========================
 # Stage 2: Python Builder

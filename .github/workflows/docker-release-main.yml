@@ -15,18 +15,38 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Build exactly the revision that triggered this run. This keeps the
+          # frontend source and the image's immutable SHA tag in lockstep.
+          ref: ${{ github.sha }}
+
+      - name: Require main as the release source
+        run: |
+          set -eo pipefail
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "ERROR: The :main image may only be released from main (got $GITHUB_REF)."
+            exit 1
+          fi
 
       - name: Determine backend root
         run: |
           set -eo pipefail
           if [ -f "Dockerfile" ] && [ -d "app" ]; then
-            echo "BACKEND_DIR=." >> "$GITHUB_ENV"
+            backend_dir=.
           elif [ -f "journiv-backend/Dockerfile" ] && [ -d "journiv-backend/app" ]; then
-            echo "BACKEND_DIR=journiv-backend" >> "$GITHUB_ENV"
+            backend_dir=journiv-backend
           else
             echo "ERROR: Could not locate backend root (expected Dockerfile + app/)"
             exit 1
           fi
+
+          if [ ! -f "$backend_dir/frontend/package.json" ] || \
+             [ ! -f "$backend_dir/frontend/package-lock.json" ]; then
+            echo "ERROR: React frontend source is missing from the Docker build context"
+            exit 1
+          fi
+
+          echo "BACKEND_DIR=$backend_dir" >> "$GITHUB_ENV"
 
       - name: Download Plus native modules (latest release)
         env:
