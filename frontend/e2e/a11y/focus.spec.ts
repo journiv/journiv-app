@@ -10,13 +10,21 @@ test.describe("accessibility behaviours", () => {
     const moment = await data.moment({ journalId: journal.id, title });
     await page.goto(`/timeline/${moment.id}`);
 
-    const trigger = page.getByRole("button", { name: "Delete entry" });
+    const trigger = page.getByRole("button", { name: "Entry actions" });
     await trigger.focus();
     await expect(trigger).toBeFocused();
 
     await page.keyboard.press("Enter");
+    const deleteAction = page.getByRole("menuitem", {
+      name: "Delete entry…",
+    });
+    await deleteAction.focus();
+    await expect(deleteAction).toBeFocused();
+    await page.keyboard.press("Enter");
 
-    const dialog = page.getByRole("dialog", { name: `Delete “${title}”?` });
+    const dialog = page.getByRole("alertdialog", {
+      name: `Delete “${title}”?`,
+    });
     await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
 
     await page.keyboard.press("Escape");

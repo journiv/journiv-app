@@ -29,6 +29,23 @@ class DeleteResponse(BaseModel):
     message: str
 
 
+def _invalidate_request_auth_cache(request: Request) -> None:
+    """Drop the cached user snapshot associated with this request's token."""
+    cache = _get_user_cache()
+    if not cache:
+        return
+
+    auth_header = request.headers.get("Authorization")
+    token_value = None
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token_value = auth_header.split(" ", 1)[1].strip()
+    if not token_value:
+        token_value = request.cookies.get("access_token")
+    if token_value:
+        token_hash = hashlib.sha256(token_value.encode("utf-8")).hexdigest()
+        cache.delete(scope_id=token_hash, cache_type="auth")
+
+
 @router.get(
     "/me",
     response_model=UserResponse,
@@ -73,7 +90,8 @@ async def get_current_user_info(
 async def update_current_user(
     user_update: UserUpdate,
     current_user: Annotated[User, Depends(get_current_user)],
-    session: Annotated[Session, Depends(get_session)]
+    session: Annotated[Session, Depends(get_session)],
+    request: Request,
 ):
     """
     Update current user profile.
@@ -113,6 +131,11 @@ async def update_current_user(
         ) from None
 
     log_user_action(current_user.email, "Updated user", request_id="")
+
+    # Authentication caches the complete User snapshot by access token. If it
+    # survives this mutation, the next GET /users/me returns the old profile
+    # until the cache TTL expires even though the database commit succeeded.
+    _invalidate_request_auth_cache(request)
 
     # Get timezone from settings
     timezone = user_service.get_user_timezone(updated_user.id)
@@ -168,15 +191,7 @@ async def delete_current_user(
                 value={"deleted": True},
                 ttl_seconds=settings.auth_user_cache_ttl_seconds,
             )
-            auth_header = request.headers.get("Authorization")
-            token_value = None
-            if auth_header and auth_header.lower().startswith("bearer "):
-                token_value = auth_header.split(" ", 1)[1].strip()
-            if not token_value:
-                token_value = request.cookies.get("access_token")
-            if token_value:
-                token_hash = hashlib.sha256(token_value.encode("utf-8")).hexdigest()
-                cache.delete(scope_id=token_hash, cache_type="auth")
+            _invalidate_request_auth_cache(request)
 
         log_user_action(current_user.email, "Deleted user", request_id="")
 

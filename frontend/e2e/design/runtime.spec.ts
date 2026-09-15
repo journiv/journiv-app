@@ -56,9 +56,10 @@ test.describe("runtime design", () => {
     await page.goto("/timeline");
     await expect(page.getByRole("region", { name: "Timeline" })).toBeVisible();
 
-    // ListViewSwitch renders this as the registered Button `outline` variant.
+    // ListViewSwitch renders this link with the registered Button `outline`
+    // variant; its link semantics keep aria-current valid.
     const shadow = await page
-      .getByRole("button", { name: "List view" })
+      .getByRole("link", { name: "List view" })
       .evaluate((control) => getComputedStyle(control).boxShadow);
 
     expect(shadow).not.toBe("none");

@@ -42,7 +42,7 @@ test.describe("error states", () => {
     await editor.click();
     await page.keyboard.press("ControlOrMeta+A");
     await page.keyboard.type(body);
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
 
     await expect(page.getByRole("alert")).toBeVisible();
     await expect(page.getByRole("button", { name: "Retry" })).toBeVisible();

@@ -16,9 +16,8 @@ test.describe("Insights", { tag: "@smoke" }, () => {
     page,
     data,
   }) => {
-    const journal = await data.journal({
-      title: data.label("Insights journal"),
-    });
+    const journalTitle = data.label("Insights journal");
+    const journal = await data.journal({ title: journalTitle });
     for (let i = 0; i < 3; i++) {
       await data.moment({
         journalId: journal.id,
@@ -67,11 +66,12 @@ test.describe("Insights", { tag: "@smoke" }, () => {
       page.getByRole("combobox", { name: "Trend period" }),
     ).toHaveCount(0);
     const perJournal = page.getByRole("region", { name: "Per journal" });
+    const journalRow = perJournal.getByRole("row").filter({
+      has: page.getByRole("link", { name: journalTitle }),
+    });
+    await expect(journalRow).toBeVisible();
     await expect(
-      perJournal.getByRole("cell", { name: data.label("Insights journal") }),
-    ).toBeVisible();
-    await expect(
-      perJournal.getByRole("cell", { name: "3", exact: true }),
+      journalRow.getByRole("cell", { name: "3", exact: true }),
     ).toBeVisible();
 
     // Mood tab with nothing logged: the deterministic assertion is the empty

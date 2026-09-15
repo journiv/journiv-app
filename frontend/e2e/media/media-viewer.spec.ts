@@ -1,10 +1,16 @@
 import { expect, test } from "../fixtures/test";
 
 /** A small, valid PNG generated in the browser. */
-async function pngFixture(page: {
-  evaluate: (fn: () => string) => Promise<string>;
-}) {
-  const dataUrl = await page.evaluate(() => {
+async function pngFixture(
+  page: {
+    evaluate: (
+      fn: (variant: number) => string,
+      variant: number,
+    ) => Promise<string>;
+  },
+  variant = 0,
+) {
+  const dataUrl = await page.evaluate((imageVariant) => {
     const canvas = document.createElement("canvas");
     canvas.width = 24;
     canvas.height = 24;
@@ -12,12 +18,13 @@ async function pngFixture(page: {
     if (!context) throw new Error("Canvas is unavailable");
     for (let y = 0; y < canvas.height; y += 1) {
       for (let x = 0; x < canvas.width; x += 1) {
-        context.fillStyle = (x + y) % 2 === 0 ? "#405DE6" : "#F2EFEA";
+        context.fillStyle =
+          (x + y + imageVariant) % 3 === 0 ? "#405DE6" : "#F2EFEA";
         context.fillRect(x, y, 1, 1);
       }
     }
     return canvas.toDataURL("image/png");
-  });
+  }, variant);
   return Buffer.from(dataUrl.slice(dataUrl.indexOf(",") + 1), "base64");
 }
 
@@ -37,25 +44,27 @@ test.describe("reader media viewer", () => {
       await page
         .getByRole("button", { name: "Add photo, video or audio" })
         .click();
+      const fileChooser = page.waitForEvent("filechooser");
       const uploaded = page.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
           new URL(response.url()).pathname === "/api/v1/media/upload" &&
           response.status() === 201,
       );
-      await page.setInputFiles('input[type="file"]', {
+      await page.getByRole("button", { name: "Choose files" }).click();
+      await (await fileChooser).setFiles({
         name: `viewer-${i}.png`,
         mimeType: "image/png",
-        buffer: await pngFixture(page),
+        buffer: await pngFixture(page, i),
       });
       mediaIds.push((await (await uploaded).json()).id as string);
     }
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page).toHaveURL(
       (url) => url.pathname === `/timeline/${moment.id}`,
     );
 
-    const triggers = page.getByRole("button", { name: /^View photo/ });
+    const triggers = page.getByRole("button", { name: /^View image/ });
     await expect(triggers).toHaveCount(2);
 
     // Open the first photo.
@@ -64,6 +73,11 @@ test.describe("reader media viewer", () => {
     const viewer = page.getByRole("dialog", { name: "Media viewer" });
     await expect(viewer).toBeVisible();
     const firstId = new URL(page.url()).searchParams.get("media");
+
+    // Upload completion precedes media processing. The reader polls while an
+    // item is pending, and the second slide becoming navigable is the visible
+    // signal that the viewer's ready-media collection has caught up.
+    await expect(viewer.getByRole("button", { name: "Next" })).toBeEnabled();
 
     // Advance: the id changes but the history entry is replaced, not pushed.
     await page.keyboard.press("ArrowRight");
@@ -126,19 +140,21 @@ test.describe("reader media viewer", () => {
       await page
         .getByRole("button", { name: "Add photo, video or audio" })
         .click();
+      const fileChooser = page.waitForEvent("filechooser");
       const uploaded = page.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
           new URL(response.url()).pathname === "/api/v1/media/upload" &&
           response.status() === 201,
       );
-      await page.setInputFiles('input[type="file"]', {
+      await page.getByRole("button", { name: "Choose files" }).click();
+      await (await fileChooser).setFiles({
         name: filename,
         mimeType: "image/png",
         buffer: await pngFixture(page),
       });
       const id = (await (await uploaded).json()).id as string;
-      await page.getByRole("button", { name: "Done" }).click();
+      await page.getByRole("button", { name: "Done", exact: true }).click();
       await expect(page).toHaveURL(
         (url) => url.pathname === `/timeline/${momentId}`,
       );
@@ -149,7 +165,7 @@ test.describe("reader media viewer", () => {
     const secondMediaId = await uploadPhoto(second.id, "second-viewer.png");
 
     await page.goto(`/timeline/${first.id}`);
-    await page.getByRole("button", { name: /^View photo/ }).click();
+    await page.getByRole("button", { name: /^View image/ }).click();
     await expect(
       page.getByRole("dialog", { name: "Media viewer" }),
     ).toBeVisible();

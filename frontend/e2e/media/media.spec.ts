@@ -37,20 +37,22 @@ test.describe("media attachments", () => {
       .getByRole("button", { name: "Add photo, video or audio" })
       .click();
 
+    const fileChooser = page.waitForEvent("filechooser");
     const uploaded = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
         new URL(response.url()).pathname === "/api/v1/media/upload" &&
         response.status() === 201,
     );
-    await page.setInputFiles('input[type="file"]', {
+    await page.getByRole("button", { name: "Choose files" }).click();
+    await (await fileChooser).setFiles({
       name: "e2e-photo.png",
       mimeType: "image/png",
       buffer: await imageFixture(page),
     });
     await uploaded;
 
-    await page.getByRole("button", { name: "Done" }).click();
+    await page.getByRole("button", { name: "Done", exact: true }).click();
     await expect(page).toHaveURL(
       (url) => url.pathname === `/timeline/${moment.id}`,
     );
@@ -80,7 +82,9 @@ test.describe("media attachments", () => {
     await page
       .getByRole("button", { name: "Add photo, video or audio" })
       .click();
-    await page.setInputFiles('input[type="file"]', {
+    const fileChooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: "Choose files" }).click();
+    await (await fileChooser).setFiles({
       name: "e2e-not-media.txt",
       mimeType: "text/plain",
       buffer: Buffer.from("This is not an image, video, or audio file."),

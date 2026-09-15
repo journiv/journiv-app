@@ -16,9 +16,9 @@ test.describe("local editor drafts", () => {
     await page.keyboard.type(body);
 
     await expect(
-      page
-        .getByRole("status")
-        .filter({ hasText: "Saved locally · not in your journal yet" }),
+      page.getByRole("button", {
+        name: /^Unsaved\. Saved on this device, not in your journal yet\./,
+      }),
     ).toBeVisible();
     await expect(page).toHaveURL((url) =>
       Boolean(url.searchParams.get("draft")),

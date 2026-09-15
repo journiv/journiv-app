@@ -120,7 +120,8 @@ export function ReaderPage() {
   // moment has no media at all (the query never runs). Only then is an unknown
   // `?media=` id genuinely stale rather than not-loaded-yet.
   const mediaSettled =
-    (media.isSuccess || (moment.data?.media_count ?? 0) === 0) &&
+    (media.isSuccess ||
+      (moment.isSuccess && (moment.data.media_count ?? 0) === 0)) &&
     !media.isFetching;
   const activeViewerId =
     mediaParam && viewerItems.some((item) => item.id === mediaParam)
