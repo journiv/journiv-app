@@ -622,6 +622,7 @@ async def fetch_immich_person_thumbnail(
     external_person_id: str,
 ) -> httpx.Response:
     """Fetch a streamed Immich person thumbnail using stored Journiv credentials."""
+    from app.core.ssrf_guard import ALLOWED_HOST_EXTENSION, ALLOWED_SCHEME_EXTENSION
     from app.integrations.service import _get_proxy_client, get_integration_credentials
 
     if not re.match(r"^[a-zA-Z0-9_-]+$", external_person_id):
@@ -631,7 +632,12 @@ async def fetch_immich_person_thumbnail(
     api_key = decrypt_token(encrypted_token)
     url = immich.get_person_thumbnail_url(base_url, external_person_id)
     client = await _get_proxy_client()
-    return await client.send(
-        client.build_request("GET", url, headers={"x-api-key": api_key}),
-        stream=True,
+    allowed_url = httpx.URL(base_url)
+    request = client.build_request(
+        "GET", url, headers={"x-api-key": api_key},
+        extensions={
+            ALLOWED_HOST_EXTENSION: allowed_url.host,
+            ALLOWED_SCHEME_EXTENSION: allowed_url.scheme,
+        },
     )
+    return await client.send(request, stream=True)
