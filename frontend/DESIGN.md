@@ -61,10 +61,10 @@ must never colour the mark; equally the mark's raw hex must not appear anywhere
 else. It sits in the sidebar next to the "Journiv" wordmark (which carries the
 name, so the SVG is `aria-hidden`), and centred and enlarged above the heading
 on the auth card, where it stands alone and takes an `aria-label` instead. The
-same geometry ships as `public/favicon.svg`,
-`public/favicon.ico` and `public/apple-touch-icon.png`; regenerate all three
-together if it ever changes. This is not a PWA install contract — there is no
-web app manifest or maskable icon yet.
+same geometry ships pixel-identical everywhere the mark appears — favicon,
+touch icon, and PWA install assets; see
+[`docs/features/pwa.md`](docs/features/pwa.md) for that asset inventory and
+how to regenerate it.
 
 The only extra roles are line-strong, danger-surface, danger-border, success,
 and theme-independent on-media values. They derive from semantic roles where

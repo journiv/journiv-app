@@ -21,6 +21,7 @@ and nearby tests.
 | Prompts: the `/library/prompts` library, the editor prompt picker, `prompt_id` | [`features/prompts.md`](features/prompts.md) |
 | personalization/theme import | [`features/personalization.md`](features/personalization.md) |
 | login, signup, or OIDC | [`features/authentication.md`](features/authentication.md) |
+| installability, service worker, offline, app updates | [`features/pwa.md`](features/pwa.md) |
 | an unresolved issue | the relevant document's **Known gaps**, then [`known-gaps.md`](known-gaps.md) only if cross-cutting |
 
 ## Ownership

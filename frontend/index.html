@@ -2,20 +2,38 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <meta
       name="theme-color"
       content="#ffffff"
       media="(prefers-color-scheme: light)"
     />
+    <!--
+      #171717 is oklch(0.205 0 0) -- src/styles/tokens.css's dark
+      --background -- resolved to sRGB via getComputedStyle in a real
+      browser, not eyeballed. Keep this in sync if that token changes.
+    -->
     <meta
       name="theme-color"
-      content="#0a0a0a"
+      content="#171717"
       media="(prefers-color-scheme: dark)"
     />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <!-- Deprecated in favour of the name above, but current iOS installed
+         behaviour is a primary goal here and older WebKit builds still key
+         off it -- the cost of keeping both is one line. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <!-- Not black-translucent: that pushes content under the status bar and
+         fights the existing safe-area inset rules (src/features/shell/shell.css). -->
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Journiv" />
     <title>Journiv</title>
     <script>
       (() => {
