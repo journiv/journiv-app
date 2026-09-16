@@ -4868,12 +4868,16 @@ export type Token = {
  * TokenRefresh
  *
  * Token refresh schema.
+ *
+ * refresh_token is optional so a PWA client can rely on the
+ * `journiv_refresh` HttpOnly cookie instead of a request body; the Flutter
+ * client at /legacy/ still supplies it in the body.
  */
 export type TokenRefresh = {
     /**
      * Refresh Token
      */
-    refresh_token: string;
+    refresh_token?: string | null;
 };
 
 /**
@@ -5582,7 +5586,10 @@ export type LoginApiV1AuthLoginPostResponses = {
 export type LoginApiV1AuthLoginPostResponse = LoginApiV1AuthLoginPostResponses[keyof LoginApiV1AuthLoginPostResponses];
 
 export type RefreshTokenApiV1AuthRefreshPostData = {
-    body: TokenRefresh;
+    /**
+     * Body
+     */
+    body?: TokenRefresh | null;
     path?: never;
     query?: never;
     url: '/api/v1/auth/refresh';
@@ -5665,10 +5672,6 @@ export type LogoutApiV1AuthLogoutPostData = {
 };
 
 export type LogoutApiV1AuthLogoutPostErrors = {
-    /**
-     * Not authenticated
-     */
-    401: unknown;
     /**
      * Validation Error
      */
@@ -13405,34 +13408,6 @@ export type ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses = {
 
 export type ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponse = ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses[keyof ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses];
 
-export type DownloadPublishedEntryPdfPubIdentifierPdfGetData = {
-    body?: never;
-    path: {
-        /**
-         * Identifier
-         */
-        identifier: string;
-    };
-    query?: never;
-    url: '/pub/{identifier}/pdf';
-};
-
-export type DownloadPublishedEntryPdfPubIdentifierPdfGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type DownloadPublishedEntryPdfPubIdentifierPdfGetError = DownloadPublishedEntryPdfPubIdentifierPdfGetErrors[keyof DownloadPublishedEntryPdfPubIdentifierPdfGetErrors];
-
-export type DownloadPublishedEntryPdfPubIdentifierPdfGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
 export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetData = {
     body?: never;
     path?: never;
@@ -13554,6 +13529,34 @@ export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchRe
 
 export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponse = UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses[keyof UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses];
 
+export type DownloadPublishedEntryPdfPubIdentifierPdfGetData = {
+    body?: never;
+    path: {
+        /**
+         * Identifier
+         */
+        identifier: string;
+    };
+    query?: never;
+    url: '/pub/{identifier}/pdf';
+};
+
+export type DownloadPublishedEntryPdfPubIdentifierPdfGetErrors = {
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DownloadPublishedEntryPdfPubIdentifierPdfGetError = DownloadPublishedEntryPdfPubIdentifierPdfGetErrors[keyof DownloadPublishedEntryPdfPubIdentifierPdfGetErrors];
+
+export type DownloadPublishedEntryPdfPubIdentifierPdfGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: unknown;
+};
+
 export type GetPublishedEntryPubIdentifierGetData = {
     body?: never;
     path: {
@@ -13562,14 +13565,7 @@ export type GetPublishedEntryPubIdentifierGetData = {
          */
         identifier: string;
     };
-    query?: {
-        /**
-         * Embed
-         *
-         * Render simplified embed-friendly view
-         */
-        embed?: boolean;
-    };
+    query?: never;
     url: '/pub/{identifier}';
 };
 

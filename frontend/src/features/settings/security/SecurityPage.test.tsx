@@ -36,7 +36,7 @@ const passwordUser: UserResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({ version: 1, accessToken: "a" });
+  sessionStore.adopt({ accessToken: "a", userId: "user-1" });
   vi.mocked(api.me).mockResolvedValue(passwordUser);
   vi.mocked(api.userSettings).mockResolvedValue({
     user_id: "user-1",
@@ -238,6 +238,6 @@ describe("Settings · Security", () => {
     expect(
       await within(dialog).findByText(/couldn’t confirm that your account/i),
     ).toBeTruthy();
-    expect(sessionStore.read()).not.toBeNull();
+    expect(sessionStore.getAccessToken()).not.toBeNull();
   });
 });

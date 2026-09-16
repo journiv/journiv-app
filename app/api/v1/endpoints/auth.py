@@ -387,7 +387,6 @@ async def logout(
     request: Request,
     response: Response,
     current_user: Annotated[Optional[User], Depends(get_current_user_optional)],
-    session: Annotated[Session, Depends(get_session)],
 ):
     """
     Logout user. Tokens are stateless and don't need revocation.

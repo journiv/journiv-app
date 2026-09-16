@@ -1,7 +1,7 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useId, useRef, useState } from "react";
-import { sessionStore } from "../../api/auth/session";
+import { sessionStore, userIdFromAuthResponse } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { ApiError } from "../../api/client/errors";
 import { instanceConfigQuery } from "../../api/query/options";
@@ -96,9 +96,9 @@ export function SignUpPage() {
       registered = true;
       const tokens = await api.login(trimmedEmail, password);
       queryClient.clear();
-      sessionStore.write({
-        version: 1,
+      sessionStore.adopt({
         accessToken: tokens.access_token,
+        userId: userIdFromAuthResponse(tokens.user),
       });
       await navigate({ href: returnTo });
     } catch (caught) {

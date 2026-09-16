@@ -4,7 +4,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { InstanceConfigResponse } from "../../api/generated";
-import { sessionStore } from "../../api/auth/session";
+import { resetSessionForTests, sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { ApiError } from "../../api/client/errors";
 import { queryKeys } from "../../api/query/keys";
@@ -66,11 +66,14 @@ async function completeForm(options?: { password?: string; confirm?: string }) {
 describe("SignUpPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorage.clear();
+    localStorage.clear();
+    resetSessionForTests();
     vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
     vi.mocked(api.register).mockResolvedValue({} as never);
     vi.mocked(api.login).mockResolvedValue({
       access_token: "new-access",
+      refresh_token: "new-refresh",
+      user: { id: "user-1" },
     } as never);
   });
 
@@ -180,10 +183,7 @@ describe("SignUpPage", () => {
 
   it("normalizes supported fields, signs in, stores the session and returns", async () => {
     const view = await renderSignUp();
-    sessionStore.write({
-      version: 1,
-      accessToken: "previous-access",
-    });
+    sessionStore.adopt({ accessToken: "previous-access", userId: "prev-user" });
     view.queryClient.setQueryData(queryKeys.promptAnalytics, {
       prompts_answered: 7,
     });
@@ -199,10 +199,8 @@ describe("SignUpPage", () => {
       }),
     );
     expect(api.login).toHaveBeenCalledWith("rowan@example.com", "memory-lane");
-    expect(sessionStore.read()).toEqual({
-      version: 1,
-      accessToken: "new-access",
-    });
+    expect(sessionStore.getAccessToken()).toBe("new-access");
+    expect(sessionStore.readHint()?.userId).toBe("user-1");
     expect(
       view.queryClient.getQueryData(queryKeys.promptAnalytics),
     ).toBeUndefined();
@@ -299,7 +297,7 @@ describe("SignUpPage", () => {
       "ROWAN@Example.com",
     );
     expect(api.login).not.toHaveBeenCalled();
-    expect(sessionStore.read()).toBeNull();
+    expect(sessionStore.getAccessToken()).toBeNull();
   });
 
   it("moves to a sign-in recovery state when registration alone succeeds", async () => {
@@ -316,7 +314,7 @@ describe("SignUpPage", () => {
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Create account" })).toBeNull();
     expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
-    expect(sessionStore.read()).toBeNull();
+    expect(sessionStore.getAccessToken()).toBeNull();
   });
 
   it("rejects external returnTo values", async () => {

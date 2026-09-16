@@ -34,6 +34,8 @@ services:
       - journiv-internal
     environment:
       SERVICE_ROLE: plus-service
+      ENVIRONMENT: production
+      ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP: ${ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP:-false}
       DB_DRIVER: sqlite
       DATABASE_URL: sqlite:////data/journiv.db
       PLUS_SERVICE_URL: ""

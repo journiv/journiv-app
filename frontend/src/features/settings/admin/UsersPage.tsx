@@ -8,7 +8,7 @@ import {
   UserX,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { sessionStore } from "../../../api/auth/session";
+import { signOut } from "../../../api/auth/session";
 import { api } from "../../../api/client/api";
 import { ApiError } from "../../../api/client/errors";
 import type {
@@ -71,8 +71,7 @@ function writeReason(error: unknown, fallback: string) {
 }
 
 function signOutAndReload() {
-  sessionStore.clear();
-  window.location.assign("/login");
+  void signOut().then(() => window.location.assign("/login"));
 }
 
 type Editor =

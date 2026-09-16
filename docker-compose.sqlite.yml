@@ -9,7 +9,12 @@
 #   SECRET_KEY  - Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
 #   DOMAIN_NAME - Needed when running in same-origin SPA mode (ENABLE_CORS=false)
 
-x-common-valkey-env: &common-valkey-env
+x-common-environment: &common-environment
+  DB_DRIVER: sqlite
+  DATABASE_URL: sqlite:////data/journiv.db
+  ENVIRONMENT: production
+  # Production stays fail-closed unless a trusted-LAN operator explicitly opts in.
+  ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP: ${ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP:-false}
   REDIS_URL: redis://valkey:6379/0
   CELERY_BROKER_URL: redis://valkey:6379/0
   CELERY_RESULT_BACKEND: redis://valkey:6379/0
@@ -19,9 +24,6 @@ x-celery-common: &celery-common
   env_file: .env
   volumes:
     - ./data:/data
-  environment:
-    DB_DRIVER: sqlite
-    DATABASE_URL: sqlite:////data/journiv.db
   depends_on:
     valkey:
       condition: service_healthy
@@ -46,9 +48,6 @@ x-app-common: &app-common
   env_file: .env
   volumes:
     - ./data:/data
-  environment:
-    DB_DRIVER: sqlite
-    DATABASE_URL: sqlite:////data/journiv.db
   depends_on:
     valkey:
       condition: service_healthy
@@ -96,9 +95,8 @@ services:
       --max-memory-per-child=${CELERY_WORKER_MAX_MEMORY_PER_CHILD_KB:-300000}
       --max-tasks-per-child=${CELERY_WORKER_MAX_TASKS_PER_CHILD:-200}
     environment:
-      <<: *common-valkey-env
+      <<: *common-environment
       SERVICE_ROLE: celery-worker
-      ENVIRONMENT: production
     healthcheck:
       <<: *celery-healthcheck
 
@@ -107,9 +105,8 @@ services:
     container_name: journiv-celery-beat
     command: celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
     environment:
-      <<: *common-valkey-env
+      <<: *common-environment
       SERVICE_ROLE: celery-beat
-      ENVIRONMENT: production
       REDBEAT_REDIS_URL: redis://valkey:6379/2
     healthcheck:
       <<: *celery-healthcheck
@@ -120,9 +117,8 @@ services:
     ports:
       - "${APP_PORT:-8000}:8000"
     environment:
-      <<: *common-valkey-env
+      <<: *common-environment
       SERVICE_ROLE: app
-      ENVIRONMENT: production
       RATE_LIMIT_STORAGE_URI: redis://valkey:6379/1
     networks:
       - backend
@@ -146,9 +142,8 @@ services:
     profiles: ["admin"]
     command: ["sleep", "infinity"]
     environment:
-      <<: *common-valkey-env
+      <<: *common-environment
       SERVICE_ROLE: admin-cli
-      ENVIRONMENT: production
     # No healthcheck needed for idle container
     healthcheck:
       disable: true

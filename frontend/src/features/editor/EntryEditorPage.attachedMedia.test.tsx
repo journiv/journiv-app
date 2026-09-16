@@ -133,7 +133,7 @@ const attachedMedia: MomentMediaResponse[] = [
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({ version: 1, accessToken: "a" });
+  sessionStore.adopt({ accessToken: "a", userId: "user-1" });
   vi.mocked(api.me).mockResolvedValue(user);
   vi.mocked(api.journals).mockResolvedValue([journal]);
   vi.mocked(api.moments).mockResolvedValue({ items: [moment] } as never);

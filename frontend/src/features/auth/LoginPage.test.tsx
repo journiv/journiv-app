@@ -3,7 +3,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sessionStore } from "../../api/auth/session";
+import { resetSessionForTests, sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { queryKeys } from "../../api/query/keys";
 import type { InstanceConfigResponse } from "../../api/generated";
@@ -48,10 +48,13 @@ async function renderLogin(path = "/login") {
 describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorage.clear();
+    localStorage.clear();
+    resetSessionForTests();
     vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
     vi.mocked(api.login).mockResolvedValue({
       access_token: "access-token",
+      refresh_token: "refresh-token",
+      user: { id: "user-1" },
     } as never);
   });
 
@@ -138,10 +141,7 @@ describe("LoginPage", () => {
 
   it("stores a password session and returns to the intended route", async () => {
     const view = await renderLogin("/login?returnTo=%2Fsignup");
-    sessionStore.write({
-      version: 1,
-      accessToken: "previous-access",
-    });
+    sessionStore.adopt({ accessToken: "previous-access", userId: "prev-user" });
     view.queryClient.setQueryData(queryKeys.promptAnalytics, {
       prompts_answered: 7,
     });
@@ -160,10 +160,8 @@ describe("LoginPage", () => {
       "person@example.com",
       "private-password",
     );
-    expect(sessionStore.read()).toEqual({
-      version: 1,
-      accessToken: "access-token",
-    });
+    expect(sessionStore.getAccessToken()).toBe("access-token");
+    expect(sessionStore.readHint()?.userId).toBe("user-1");
     expect(
       view.queryClient.getQueryData(queryKeys.promptAnalytics),
     ).toBeUndefined();
@@ -192,6 +190,6 @@ describe("LoginPage", () => {
     expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe(
       "still-here",
     );
-    expect(sessionStore.read()).toBeNull();
+    expect(sessionStore.getAccessToken()).toBeNull();
   });
 });

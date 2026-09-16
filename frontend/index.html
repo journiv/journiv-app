@@ -28,7 +28,25 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!--
+        Boot splash: shown while main.tsx awaits the session restore
+        (src/api/auth/session.ts) before its first render. React replaces
+        this on first render, so it also doubles as the installed app's
+        launch screen — see docs/features/pwa.md.
+      -->
+      <div
+        style="position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--background)"
+      >
+        <img
+          src="/favicon.svg"
+          alt="Journiv"
+          width="56"
+          height="56"
+          style="width: 56px; height: 56px"
+        />
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -14,6 +14,10 @@ x-base-env: &base-env
   DB_DRIVER: postgres
   POSTGRES_HOST: postgres
   POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  ENVIRONMENT: development
+  # This development stack intentionally supports access from a trusted LAN
+  # over HTTP. Never copy this opt-in into an internet-facing deployment.
+  ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP: "true"
 
 x-dev-common: &dev-common
   build: .
@@ -79,7 +83,6 @@ services:
     environment:
       <<: *base-env
       SERVICE_ROLE: celery-worker
-      ENVIRONMENT: development
     restart: unless-stopped
     healthcheck:
       <<: *celery-healthcheck
@@ -97,7 +100,6 @@ services:
     environment:
       <<: *base-env
       SERVICE_ROLE: celery-beat
-      ENVIRONMENT: development
       REDBEAT_REDIS_URL: redis://valkey:6379/2
     restart: unless-stopped
     deploy:
@@ -123,7 +125,6 @@ services:
     environment:
       <<: *base-env
       SERVICE_ROLE: app
-      ENVIRONMENT: development
     deploy:
       resources:
         limits:
@@ -144,7 +145,6 @@ services:
     environment:
       <<: *base-env
       SERVICE_ROLE: admin-cli
-      ENVIRONMENT: development
     # No healthcheck needed for idle container
     healthcheck:
       disable: true

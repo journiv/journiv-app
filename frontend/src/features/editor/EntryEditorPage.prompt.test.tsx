@@ -94,10 +94,7 @@ const createdMoment = {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({
-    version: 1,
-    accessToken: "access",
-  });
+  sessionStore.adopt({ accessToken: "access", userId: "user-1" });
   vi.mocked(api.me).mockResolvedValue(user);
   vi.mocked(api.journals).mockResolvedValue([journal]);
   vi.mocked(api.moments).mockResolvedValue({ items: [] } as never);

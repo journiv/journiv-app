@@ -39,7 +39,9 @@ export const registerApiV1AuthRegisterPost = <ThrowOnError extends boolean = fal
  *
  * Login with email and password.
  *
- * Returns access token, refresh token, and user information.
+ * Returns an access token and user information. Legacy clients also receive
+ * the refresh token in the response body; the PWA receives it only as an
+ * HttpOnly cookie.
  */
 export const loginApiV1AuthLoginPost = <ThrowOnError extends boolean = false>(options: Options<LoginApiV1AuthLoginPostData, ThrowOnError>): RequestResult<LoginApiV1AuthLoginPostResponses, LoginApiV1AuthLoginPostErrors, ThrowOnError> => (options.client ?? client).post<LoginApiV1AuthLoginPostResponses, LoginApiV1AuthLoginPostErrors, ThrowOnError>({
     url: '/api/v1/auth/login',
@@ -59,17 +61,22 @@ export const loginApiV1AuthLoginPost = <ThrowOnError extends boolean = false>(op
  * using the same refresh token until it expires. This ensures
  * users must re-login periodically, improving security for self-hosted deployments.
  *
+ * Accepts the refresh token either in the request body (the /legacy/
+ * Flutter client) or via the journiv_refresh HttpOnly cookie (the React
+ * PWA). The cookie is refreshed on success so its Max-Age slides; the
+ * JWT's own exp claim is unchanged and still governs the 7-day window.
+ *
  * The client should:
  * 1. Keep using the same refresh token
  * 2. Use the new access token for API requests
  * 3. Re-login when the refresh token expires
  */
-export const refreshTokenApiV1AuthRefreshPost = <ThrowOnError extends boolean = false>(options: Options<RefreshTokenApiV1AuthRefreshPostData, ThrowOnError>): RequestResult<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError> => (options.client ?? client).post<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError>({
+export const refreshTokenApiV1AuthRefreshPost = <ThrowOnError extends boolean = false>(options?: Options<RefreshTokenApiV1AuthRefreshPostData, ThrowOnError>): RequestResult<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError> => (options?.client ?? client).post<RefreshTokenApiV1AuthRefreshPostResponses, RefreshTokenApiV1AuthRefreshPostErrors, ThrowOnError>({
     url: '/api/v1/auth/refresh',
     ...options,
     headers: {
         'Content-Type': 'application/json',
-        ...options.headers
+        ...options?.headers
     }
 });
 
@@ -78,7 +85,8 @@ export const refreshTokenApiV1AuthRefreshPost = <ThrowOnError extends boolean = 
  *
  * OAuth2 compatible login endpoint for Swagger UI.
  *
- * Use email in username field. Returns access and refresh tokens.
+ * Use email in username field. Legacy clients receive access and refresh
+ * tokens; browser clients can select the PWA cookie contract.
  */
 export const loginForAccessTokenApiV1AuthTokenPost = <ThrowOnError extends boolean = false>(options: Options<LoginForAccessTokenApiV1AuthTokenPostData, ThrowOnError>): RequestResult<LoginForAccessTokenApiV1AuthTokenPostResponses, LoginForAccessTokenApiV1AuthTokenPostErrors, ThrowOnError> => (options.client ?? client).post<LoginForAccessTokenApiV1AuthTokenPostResponses, LoginForAccessTokenApiV1AuthTokenPostErrors, ThrowOnError>({
     ...urlSearchParamsBodySerializer,
@@ -95,13 +103,19 @@ export const loginForAccessTokenApiV1AuthTokenPost = <ThrowOnError extends boole
  *
  * Logout user. Tokens are stateless and don't need revocation.
  *
+ * Invariant: the only backend effect of this endpoint is to clear the
+ * refresh cookie, idempotently. It never mutates a user, a session
+ * record, a token store, or anything else, and behaves identically on
+ * the first call and the tenth. Authentication is used only to decide
+ * whether the action can be attributed in the audit log — it is
+ * deliberately callable with an expired, missing, or absent access
+ * token, which is exactly the situation after an offline logout retry
+ * or any 15-minute access-token expiry. If a future change gives this
+ * endpoint any other effect, it must stop being callable unauthenticated.
+ *
  * Client should discard both access and refresh tokens after logout.
  */
-export const logoutApiV1AuthLogoutPost = <ThrowOnError extends boolean = false>(options?: Options<LogoutApiV1AuthLogoutPostData, ThrowOnError>): RequestResult<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError> => (options?.client ?? client).post<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError>({
-    security: [{ scheme: 'bearer', type: 'http' }],
-    url: '/api/v1/auth/logout',
-    ...options
-});
+export const logoutApiV1AuthLogoutPost = <ThrowOnError extends boolean = false>(options?: Options<LogoutApiV1AuthLogoutPostData, ThrowOnError>): RequestResult<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError> => (options?.client ?? client).post<LogoutApiV1AuthLogoutPostResponses, LogoutApiV1AuthLogoutPostErrors, ThrowOnError>({ url: '/api/v1/auth/logout', ...options });
 
 /**
  * Oidc Login
@@ -125,12 +139,13 @@ export const oidcCallbackApiV1AuthOidcCallbackGet = <ThrowOnError extends boolea
 /**
  * Oidc Exchange
  *
- * Exchange one-time ticket for access/refresh tokens.
+ * Exchange a one-time ticket for authentication credentials.
  *
  * The SPA calls this endpoint with the ticket received from the callback redirect.
  * Tickets are single-use and expire after 60 seconds. A missing or malformed
  * body is a 422 (FastAPI request validation); a well-formed but unknown or
- * expired ticket is a 400.
+ * expired ticket is a 400. Legacy clients receive the refresh token in the
+ * response body; the PWA receives it only as an HttpOnly cookie.
  */
 export const oidcExchangeApiV1AuthOidcExchangePost = <ThrowOnError extends boolean = false>(options: Options<OidcExchangeApiV1AuthOidcExchangePostData, ThrowOnError>): RequestResult<OidcExchangeApiV1AuthOidcExchangePostResponses, OidcExchangeApiV1AuthOidcExchangePostErrors, ThrowOnError> => (options.client ?? client).post<OidcExchangeApiV1AuthOidcExchangePostResponses, OidcExchangeApiV1AuthOidcExchangePostErrors, ThrowOnError>({
     url: '/api/v1/auth/oidc/exchange',
@@ -2393,13 +2408,6 @@ export const reorderActivityGroupsApiV1ActivityGroupsReorderPut = <ThrowOnError 
 });
 
 /**
- * Download Published Entry Pdf
- *
- * Download a published entry as PDF.
- */
-export const downloadPublishedEntryPdfPubIdentifierPdfGet = <ThrowOnError extends boolean = false>(options: Options<DownloadPublishedEntryPdfPubIdentifierPdfGetData, ThrowOnError>): RequestResult<DownloadPublishedEntryPdfPubIdentifierPdfGetResponses, DownloadPublishedEntryPdfPubIdentifierPdfGetErrors, ThrowOnError> => (options.client ?? client).get<DownloadPublishedEntryPdfPubIdentifierPdfGetResponses, DownloadPublishedEntryPdfPubIdentifierPdfGetErrors, ThrowOnError>({ url: '/pub/{identifier}/pdf', ...options });
-
-/**
  * Tag analytics (Plus)
  *
  * Return aggregate tag analytics for the authenticated user.
@@ -2450,6 +2458,13 @@ export const updatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatch 
         ...options.headers
     }
 });
+
+/**
+ * Download Published Entry Pdf
+ *
+ * Download a published entry as PDF.
+ */
+export const downloadPublishedEntryPdfPubIdentifierPdfGet = <ThrowOnError extends boolean = false>(options: Options<DownloadPublishedEntryPdfPubIdentifierPdfGetData, ThrowOnError>): RequestResult<DownloadPublishedEntryPdfPubIdentifierPdfGetResponses, DownloadPublishedEntryPdfPubIdentifierPdfGetErrors, ThrowOnError> => (options.client ?? client).get<DownloadPublishedEntryPdfPubIdentifierPdfGetResponses, DownloadPublishedEntryPdfPubIdentifierPdfGetErrors, ThrowOnError>({ url: '/pub/{identifier}/pdf', ...options });
 
 /**
  * Render a published entry as HTML

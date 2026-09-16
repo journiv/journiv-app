@@ -58,7 +58,7 @@ class FakeXhr {
 beforeEach(() => {
   FakeXhr.instances = [];
   vi.stubGlobal("XMLHttpRequest", FakeXhr);
-  sessionStore.write({ version: 1, accessToken: "tok" });
+  sessionStore.adopt({ accessToken: "tok", userId: "user-1" });
 });
 afterEach(() => {
   vi.unstubAllGlobals();
