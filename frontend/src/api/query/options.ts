@@ -8,6 +8,7 @@ import { retryTransient } from "../client/errors";
 import {
   normalizeMomentFilters,
   queryKeys,
+  sameMomentScope,
   type CalendarFilters,
   type MediaFilters,
   type MomentFilters,
@@ -470,6 +471,17 @@ export const momentsQuery = (filters: MomentFilters) => {
             cursor_logged_at_utc: page.next_cursor_logged_at_utc,
             cursor_id: page.next_cursor_id,
           }
+        : undefined,
+    // Keep the previous page visible while a search narrows within the same
+    // scope; a scope-subject change (All moments -> a person, journal A ->
+    // journal B) must show the skeleton instead, because the retained rows'
+    // titles and row link targets would otherwise belong to the old scope
+    // (DESIGN.md "Navigation loading" — "Retained content must stay
+    // truthful"). The function form (not the bare `keepPreviousData`
+    // sentinel) is what makes that conditional.
+    placeholderData: (previousData, previousQuery) =>
+      sameMomentScope(previousQuery?.queryKey[1], normalized)
+        ? previousData
         : undefined,
   });
 };

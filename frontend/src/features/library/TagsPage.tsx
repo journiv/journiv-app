@@ -141,6 +141,7 @@ export function TagsPage() {
   return (
     <LibraryWorkspace
       title="Tags"
+      isLoading={loading}
       actions={
         <>
           {unusedCount > 0 && (

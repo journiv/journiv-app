@@ -23,6 +23,7 @@ import { IconButton } from "../../components/ui/icon-button";
 import { SearchInput } from "../../components/ui/search-input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { useJournalLookup } from "../../lib/useJournalLookup";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { QUICK_LOG_ENABLED, useShell } from "../shell/shellContext";
 import { groupMomentsByDay } from "./dateGroups";
 import { MomentListItem } from "./MomentListItem";
@@ -77,6 +78,10 @@ export function TimelinePage() {
       search: search.q || undefined,
     }),
   );
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "timeline",
+    data.isLoading || scope.isResolving,
+  );
   const moments = data.data?.pages.flatMap((page) => page.items) ?? [];
   const groups = groupMomentsByDay(moments);
 
@@ -122,7 +127,12 @@ export function TimelinePage() {
         />
       </header>
 
-      <div className="jv-list" aria-live="polite">
+      <div
+        ref={scrollRef}
+        className="jv-list"
+        aria-live="polite"
+        aria-busy={data.isPlaceholderData || undefined}
+      >
         {(data.isLoading || scope.isResolving) && <TimelineSkeleton />}
 
         {(data.isError || scope.isError) && !data.isLoading && (
@@ -217,7 +227,7 @@ export function TimelinePage() {
             <Button
               variant="secondary"
               onClick={() => data.fetchNextPage()}
-              disabled={data.isFetchingNextPage}
+              disabled={data.isFetchingNextPage || data.isPlaceholderData}
             >
               {data.isFetchingNextPage ? "Loading…" : "Load more"}
             </Button>

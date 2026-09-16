@@ -46,6 +46,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { colorFromArgb, ENTITY_COLOR_PRESETS } from "../../lib/color";
 import { cx } from "../../lib/cx";
 import { JOURNAL_ICONS } from "../../lib/journalIcons";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
 import { viewMomentsAction } from "./viewMomentsAction";
@@ -175,6 +176,11 @@ export function ActivitiesPage() {
   const qc = useQueryClient();
   const activitiesResult = useQuery(activitiesQuery());
   const groupsResult = useQuery(activityGroupsQuery());
+  const loading = activitiesResult.isLoading || groupsResult.isLoading;
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "library:Activities",
+    loading,
+  );
   const activities = activitiesResult.data ?? [];
   const groups = groupsResult.data ?? [];
 
@@ -235,7 +241,6 @@ export function ActivitiesPage() {
     },
   });
 
-  const loading = activitiesResult.isLoading || groupsResult.isLoading;
   const loadError = activitiesResult.isError || groupsResult.isError;
   const normalizedSearch = search.trim().toLowerCase();
   const searching = normalizedSearch.length > 0;
@@ -305,7 +310,7 @@ export function ActivitiesPage() {
         </div>
       </header>
 
-      <div className="jv-library__scroll">
+      <div className="jv-library__scroll" ref={scrollRef}>
         <div className="jv-library__body">
           <SearchInput
             className="jv-search-wrap"

@@ -430,3 +430,102 @@
   letter-spacing: -0.02em;
   white-space: nowrap;
 }
+
+/* ---- route fallback geometry (RouteFallback.tsx, DESIGN.md "Navigation
+   loading") -------------------------------------------------------------
+   These mirror only the geometry of a lazy feature's own root class
+   (`.jv-library` span-two canvas; `.jv-reader` / `.jv-editor` flex column)
+   without depending on that feature's stylesheet, which has not downloaded
+   yet when the fallback paints. Kept here, in the always-loaded stylesheet. */
+
+.jv-route-workspace {
+  grid-column: span 2;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--background);
+}
+
+/* Mirrors `.jv-library__header` exactly, measure included: the fallback's
+   heading placeholder and the real heading must occupy the same box, or the
+   title slides sideways by half the leftover width the moment the chunk
+   resolves — the geometry shift this whole file exists to prevent. */
+.jv-route-workspace__header {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: var(--library-measure);
+  margin-inline: auto;
+  padding-block: var(--space-8) var(--space-4);
+  padding-inline: var(--space-4);
+}
+
+@media (max-width: 1100px) {
+  .jv-route-workspace__header {
+    padding-bottom: var(--space-2);
+  }
+
+  /* The PageBar already names the pane below desktop, so library.css hides
+     `.jv-library__heading` here; the placeholder has to disappear with it. */
+  .jv-route-workspace__heading {
+    display: none;
+  }
+}
+
+@media (max-width: 860px) {
+  .jv-route-workspace {
+    grid-column: span 1;
+  }
+
+  .jv-route-workspace__header {
+    padding-block: var(--space-4) var(--space-2);
+  }
+}
+
+.jv-route-detail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--card);
+}
+
+.jv-route-fallback__rows {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+/* ---- pane enter motion (DESIGN.md "Icons, motion, and accessibility") ---
+   One restrained fade-and-lift, applied at the pane/workspace root only —
+   never per card, row, skeleton, or nested pane — so navigating to a screen
+   (or, below 860px, toggling from list to page) reads as a single settled
+   motion rather than a cascade. `.jv-shell__list` / `.jv-shell__page` are
+   shell.css's list/detail pane roots; `.jv-library` is the span-two
+   workspace root (Tags, People, Insights, …) — declared here, not
+   duplicated in either stylesheet, so a rule in either can safely change
+   without touching this one. `.jv-route-fallback` is excluded because a
+   route fallback is transient geometry, not a screen to animate onto
+   (DESIGN.md "Navigation loading") — and `ListPaneFallback` reuses
+   `.jv-shell__list` itself, so without the exclusion the same screen would
+   fade in twice: once as the placeholder, once as the real pane replacing
+   it. The global `prefers-reduced-motion` reset (base.css) already
+   neutralises this animation; nothing extra is needed here. */
+@keyframes jv-pane-enter {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.jv-shell__list:not(.jv-route-fallback),
+.jv-shell__page:not(.jv-route-fallback),
+.jv-library {
+  animation: jv-pane-enter var(--duration-enter) var(--ease);
+}

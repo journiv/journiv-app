@@ -17,6 +17,16 @@ AppAdaptiveMenu action data; destructive actions use AppConfirmDialog. The
 shared Library patterns belong in components/journiv only because multiple
 entities consume them.
 
+Every section is a sibling route, so opening a tag's detail (or an entity's
+"View moments") and returning fully remounts the section — `LibraryWorkspace`
+and the manual People/Moods/Activities/Goals pages restore that scroll
+position via `usePaneScrollRestoration` (`src/lib/`) rather than landing back
+at the top (DESIGN.md "Navigation loading"). While a section's own chunk is
+still loading, its route renders the shared span-two `WorkspacePaneFallback`
+(`src/components/journiv/RouteFallback.tsx`), never a centred spinner or a
+single-column flash — the section's own richer skeleton takes over once the
+chunk and its first query resolve.
+
 ## People and groups
 
 People combine complete people and group responses into directory sections.

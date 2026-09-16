@@ -992,4 +992,88 @@ describe("Phase B routes", () => {
       expect(view.router.state.location.search.q).toBe("rain");
     });
   });
+
+  it("shows the skeleton, never the previous scope's rows, when the Timeline scope subject changes", async () => {
+    const tagMoment: MomentResponse = {
+      ...moment,
+      id: "moment-tagged",
+      entry: {
+        ...momentEntry,
+        id: "entry-tagged",
+        title: "Tag scoped moment",
+      },
+    };
+    let resolveAllMoments: ((page: MomentPageResponse) => void) | undefined;
+    const pendingAllMoments = new Promise<MomentPageResponse>((resolve) => {
+      resolveAllMoments = resolve;
+    });
+    vi.mocked(api.moments).mockImplementation(async (params) =>
+      params.tag_ids ? { items: [tagMoment] } : pendingAllMoments,
+    );
+
+    const view = await renderRoute("/timeline?tag=tag-1");
+    expect(await screen.findByText("Tag scoped moment")).toBeTruthy();
+
+    await userEvent.click(screen.getByRole("link", { name: /All moments/ }));
+    await waitFor(() =>
+      expect(view.router.state.location.pathname).toBe("/timeline"),
+    );
+
+    // The tag-scoped row must not keep rendering under the "All moments"
+    // title it no longer belongs to — its link target would still point at
+    // the old scope (DESIGN.md "Navigation loading" — "Retained content must
+    // stay truthful"). The honest state is the skeleton.
+    expect(screen.queryByText("Tag scoped moment")).toBeNull();
+    expect(
+      screen.getByRole("status", { name: "Loading moments" }),
+    ).toBeTruthy();
+
+    resolveAllMoments?.(page);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("status", { name: "Loading moments" }),
+      ).toBeNull(),
+    );
+    expect(await screen.findByText("A rainy morning")).toBeTruthy();
+  });
+
+  it("keeps the previous Timeline results visible and busy while a search narrows the same scope", async () => {
+    const searchMoment: MomentResponse = {
+      ...moment,
+      id: "moment-coffee",
+      entry: { ...momentEntry, id: "entry-coffee", title: "Coffee talk" },
+    };
+    let resolveSearch: ((page: MomentPageResponse) => void) | undefined;
+    const pendingSearch = new Promise<MomentPageResponse>((resolve) => {
+      resolveSearch = resolve;
+    });
+    vi.mocked(api.moments).mockImplementation(async (params) =>
+      params.search === "coffee" ? pendingSearch : page,
+    );
+
+    const view = await renderRoute("/timeline");
+    expect(await screen.findByText("A rainy morning")).toBeTruthy();
+
+    const input = await screen.findByRole("textbox", { name: /^Search/ });
+    await userEvent.type(input, "coffee");
+    await waitFor(() =>
+      expect(view.router.state.location.search.q).toBe("coffee"),
+    );
+
+    // Same scope, only the search narrowed: the previous row stays on screen,
+    // marked busy, rather than being replaced by a skeleton.
+    expect(screen.getByText("A rainy morning")).toBeTruthy();
+    expect(
+      screen
+        .getByText("A rainy morning")
+        .closest(".jv-list")
+        ?.getAttribute("aria-busy"),
+    ).toBe("true");
+
+    resolveSearch?.({ items: [searchMoment] });
+    await waitFor(() =>
+      expect(screen.queryByText("A rainy morning")).toBeNull(),
+    );
+    expect(await screen.findByText("Coffee talk")).toBeTruthy();
+  });
 });

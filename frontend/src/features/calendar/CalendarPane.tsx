@@ -24,6 +24,7 @@ import { StatusView } from "../../components/journiv/StatusView";
 import { cx } from "../../lib/cx";
 import { todayInTimezone } from "../../lib/datetime";
 import { useJournalLookup } from "../../lib/useJournalLookup";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useMoodLookup } from "../../lib/useMoodLookup";
 import { useShell } from "../shell/AppShell";
 import { MomentListItem } from "../timeline/MomentListItem";
@@ -62,7 +63,6 @@ export function CalendarPane() {
   const journals = useJournalLookup();
   const moods = useMoodLookup();
   const scopeJournal = journals.get(params.journalId);
-
   const timezone = viewerTimezone();
   const today = todayInTimezone(timezone);
   const month =
@@ -76,6 +76,10 @@ export function CalendarPane() {
 
   const calendar = useQuery(
     momentCalendarQuery({ journal_id: params.journalId, start, end }),
+  );
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "calendar",
+    calendar.isLoading,
   );
   const byDay = new Map<string, MomentCalendarItem>(
     (calendar.data ?? []).map((item) => [item.logged_date_tz, item]),
@@ -195,7 +199,7 @@ export function CalendarPane() {
         </div>
       </header>
 
-      <div className="jv-calendar__scroll">
+      <div className="jv-calendar__scroll" ref={scrollRef}>
         {calendar.isError ? (
           <StatusView
             role="alert"

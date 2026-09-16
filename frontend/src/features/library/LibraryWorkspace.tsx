@@ -2,6 +2,7 @@ import { Menu } from "lucide-react";
 import type { ReactNode } from "react";
 import { PageBar } from "../../components/journiv/PageBar";
 import { IconButton } from "../../components/ui/icon-button";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
 import "./library.css";
 
@@ -17,15 +18,24 @@ export function LibraryWorkspace({
   title,
   intro,
   actions,
+  isLoading,
   children,
 }: {
   title: string;
   intro?: string;
   /** The header's right-side cluster: the one primary plus any secondaries. */
   actions?: ReactNode;
+  isLoading?: boolean;
   children: ReactNode;
 }) {
   const shell = useShell();
+  // Distinct Library sections mount `LibraryWorkspace` from sibling routes
+  // (Tags, Insights, Prompts), so the title already gives each an
+  // independent scroll-restoration identity without a new prop.
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    `library:${title}`,
+    isLoading,
+  );
   return (
     <main className="jv-library" aria-label={title}>
       <PageBar
@@ -44,7 +54,7 @@ export function LibraryWorkspace({
         </div>
         {actions && <div className="jv-library__actions">{actions}</div>}
       </header>
-      <div className="jv-library__scroll">
+      <div className="jv-library__scroll" ref={scrollRef}>
         <div className="jv-library__body">{children}</div>
       </div>
     </main>

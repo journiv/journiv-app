@@ -20,6 +20,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { StatusView } from "../../components/journiv/StatusView";
 import { cx } from "../../lib/cx";
 import { useJournalLookup } from "../../lib/useJournalLookup";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
 import { groupMediaByMonth } from "./mediaGroups";
 import "./media.css";
@@ -35,9 +36,12 @@ export function MediaPane() {
   const shell = useShell();
   const journals = useJournalLookup();
   const scopeJournal = journals.get(params.journalId);
-
   const data = useInfiniteQuery(
     mediaLibraryQuery({ journal_id: params.journalId }),
+  );
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "media",
+    data.isLoading,
   );
   const items = data.data?.pages.flatMap((page) => page.items) ?? [];
   const groups = groupMediaByMonth(items);
@@ -84,7 +88,7 @@ export function MediaPane() {
         </div>
       </header>
 
-      <div className="jv-media-grid__scroll">
+      <div className="jv-media-grid__scroll" ref={scrollRef}>
         {data.isLoading && <MediaGridSkeleton />}
 
         {data.isError && (

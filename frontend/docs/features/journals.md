@@ -9,8 +9,12 @@ colour dot or curated icon in that colour.
 
 The management route is a list-pane surface with one scroll owner and one
 primary New journal action. Active journals use a divided management panel;
-archived journals are a counted, collapsed details group. Loading uses row
-skeletons and empty/error use StatusView.
+archived journals are a counted, collapsed details group. While the route's own
+chunk is loading, its Suspense fallback is the shared `ListPaneFallback`
+(`src/components/journiv/RouteFallback.tsx`), never a centred spinner; once the
+chunk and the journals query resolve, loading uses row skeletons and
+empty/error use StatusView. Back into the list restores its scroll position
+via `usePaneScrollRestoration`.
 
 Ordering is the backend order: favourite first, then position, then creation.
 The shared journal-order helper is canonical. Move actions swap only within the

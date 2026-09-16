@@ -62,6 +62,7 @@ import {
 } from "../../lib/color";
 import { cx } from "../../lib/cx";
 import { JOURNAL_ICONS } from "../../lib/journalIcons";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
 import { GoalHistoryDialog } from "./GoalHistoryDialog";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
@@ -220,6 +221,14 @@ export function GoalsPage() {
   const goalsResult = useQuery(goalsQuery());
   const categoriesResult = useQuery(goalCategoriesQuery());
   const activitiesResult = useQuery(activitiesQuery());
+  const loading =
+    goalsResult.isLoading ||
+    categoriesResult.isLoading ||
+    activitiesResult.isLoading;
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "library:Goals",
+    loading,
+  );
   const goals = goalsResult.data ?? [];
   const categories = categoriesResult.data ?? [];
   const activities = activitiesResult.data ?? [];
@@ -283,10 +292,6 @@ export function GoalsPage() {
     },
   });
 
-  const loading =
-    goalsResult.isLoading ||
-    categoriesResult.isLoading ||
-    activitiesResult.isLoading;
   const loadError =
     goalsResult.isError || categoriesResult.isError || activitiesResult.isError;
   const normalizedSearch = search.trim().toLowerCase();
@@ -359,7 +364,7 @@ export function GoalsPage() {
         </div>
       </header>
 
-      <div className="jv-library__scroll">
+      <div className="jv-library__scroll" ref={scrollRef}>
         <div className="jv-library__body">
           <SearchInput
             className="jv-search-wrap"

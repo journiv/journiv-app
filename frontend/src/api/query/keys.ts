@@ -28,6 +28,32 @@ export function normalizeMomentFilters(filters: MomentFilters) {
   };
 }
 
+type NormalizedMomentFilters = ReturnType<typeof normalizeMomentFilters>;
+
+/** Whether two normalized `momentsQuery` filter sets describe the same
+ *  scope — used to decide whether `momentsQuery`'s `placeholderData` may keep
+ *  showing the previous page while a new one loads, or must fall back to the
+ *  skeleton because the subject itself changed (DESIGN.md "Navigation
+ *  loading").
+ *
+ *  Scope identity is *everything except* `search`: two filter sets that agree
+ *  on the rest describe one subject being refined by a search term, while any
+ *  other difference is a genuine subject change. Deliberately expressed by
+ *  removing `search` rather than by listing the scope fields — a hand-kept
+ *  list silently treats a filter added later as "same scope", which is the
+ *  one way this helper can be wrong. Both sides come from
+ *  `normalizeMomentFilters`, whose spread order is fixed, so the remaining
+ *  keys serialize in the same order for the same subject. */
+export function sameMomentScope(
+  a: NormalizedMomentFilters | undefined,
+  b: NormalizedMomentFilters | undefined,
+): boolean {
+  if (!a || !b) return false;
+  const { search: _aSearch, ...aScope } = a;
+  const { search: _bSearch, ...bScope } = b;
+  return JSON.stringify(aScope) === JSON.stringify(bScope);
+}
+
 export type CalendarFilters = {
   journal_id?: string;
   start: string;

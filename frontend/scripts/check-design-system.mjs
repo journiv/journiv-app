@@ -81,6 +81,7 @@ const TOKEN_FACTS = [
   "reader-measure",
   "tap-target",
   "duration-fast",
+  "duration-enter",
 ];
 
 function walk(dir, extensions) {

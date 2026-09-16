@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { momentsQuery } from "./options";
-import { normalizeMomentFilters, queryKeys } from "./keys";
+import { normalizeMomentFilters, queryKeys, sameMomentScope } from "./keys";
 
 describe("moment query policy", () => {
   it("normalizes blank search filters and produces deterministic keys", () => {
@@ -42,5 +42,54 @@ describe("moment query policy", () => {
     expect(key({ goal_id: "g1" })).not.toEqual(all);
     expect(key({ person_id: "p1" })).not.toEqual(key({ person_id: "p2" }));
     expect(key({ person_id: "p1" })).not.toEqual(key({ tag_id: "p1" }));
+  });
+});
+
+describe("sameMomentScope", () => {
+  const norm = normalizeMomentFilters;
+
+  it("treats a search change within the same scope as the same scope", () => {
+    expect(
+      sameMomentScope(norm({ search: "vac" }), norm({ search: "vacation" })),
+    ).toBe(true);
+    expect(sameMomentScope(norm({}), norm({ search: "vacation" }))).toBe(true);
+    expect(
+      sameMomentScope(
+        norm({ journal_id: "j1", search: "a" }),
+        norm({ journal_id: "j1", search: "b" }),
+      ),
+    ).toBe(true);
+  });
+
+  it("treats a scope-subject change as a different scope", () => {
+    expect(sameMomentScope(norm({}), norm({ person_id: "p1" }))).toBe(false);
+    expect(
+      sameMomentScope(norm({ person_id: "p1" }), norm({ person_id: "p2" })),
+    ).toBe(false);
+    expect(
+      sameMomentScope(norm({ journal_id: "j1" }), norm({ journal_id: "j2" })),
+    ).toBe(false);
+    expect(
+      sameMomentScope(norm({ journal_id: "j1" }), norm({ tag_id: "j1" })),
+    ).toBe(false);
+  });
+
+  it("covers every scope field, including ones no entity view sets", () => {
+    // Scope identity is defined by removing `search`, not by listing fields,
+    // so a filter the helper was never explicitly taught about — the
+    // calendar's day range — still separates two scopes.
+    expect(
+      sameMomentScope(
+        norm({ start_date: "2026-01-01", end_date: "2026-01-01" }),
+        norm({ start_date: "2026-01-02", end_date: "2026-01-02" }),
+      ),
+    ).toBe(false);
+    expect(sameMomentScope(norm({ start_date: "2026-01-01" }), norm({}))).toBe(
+      false,
+    );
+  });
+
+  it("has no previous scope to compare against on first load", () => {
+    expect(sameMomentScope(undefined, norm({}))).toBe(false);
   });
 });
