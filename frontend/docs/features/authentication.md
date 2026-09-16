@@ -28,7 +28,7 @@ storage rules:
 
 | Credential          | Lifetime | Lives in                                | JS-readable             |
 | ------------------- | -------- | --------------------------------------- | ----------------------- |
-| Access token (JWT)  | 15 min   | a module-level variable                 | no — dies with the page |
+| Access token (JWT)  | 15 min   | a module-level variable                 | yes — memory only; dies with the page |
 | Refresh token (JWT) | 7 days   | the `journiv_refresh` `HttpOnly` cookie | no                      |
 
 Nothing durable is ever written to `localStorage` or `sessionStorage`. The one

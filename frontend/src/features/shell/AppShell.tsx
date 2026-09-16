@@ -70,7 +70,7 @@ export function AppShell() {
     if (
       currentUser.isError &&
       currentUser.error instanceof ApiError &&
-      currentUser.error.status === 401
+      (currentUser.error.status === 401 || currentUser.error.status === 403)
     )
       sessionStore.clear();
     return unsubscribe;

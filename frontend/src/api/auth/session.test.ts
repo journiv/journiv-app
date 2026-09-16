@@ -161,6 +161,52 @@ describe("sessionStore", () => {
     expect(b).toBe("restored");
   });
 
+  it("does not restore a session when logout completes during refresh", async () => {
+    sessionStore.adopt({ accessToken: "old-access", userId: "old-user" });
+    let resolveRefresh: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((request: RequestInfo | URL) => {
+        const url = request.toString();
+        if (url.endsWith("/api/v1/auth/refresh")) {
+          return new Promise<Response>((resolve) => {
+            resolveRefresh = resolve;
+          });
+        }
+        return Promise.resolve(Response.json({ message: "ok" }));
+      }),
+    );
+
+    const refresh = attemptRefresh();
+    await signOut();
+    resolveRefresh(Response.json({ access_token: "stale-access" }));
+
+    expect(await refresh).toBe("superseded");
+    expect(sessionStore.getAccessToken()).toBeNull();
+  });
+
+  it("does not clear a newly adopted account when an older refresh is rejected", async () => {
+    sessionStore.adopt({ accessToken: "old-access", userId: "old-user" });
+    let resolveRefresh: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveRefresh = resolve;
+          }),
+      ),
+    );
+
+    const refresh = attemptRefresh();
+    sessionStore.adopt({ accessToken: "new-access", userId: "new-user" });
+    resolveRefresh(new Response(null, { status: 401 }));
+
+    expect(await refresh).toBe("superseded");
+    expect(sessionStore.getAccessToken()).toBe("new-access");
+    expect(sessionStore.readHint()?.userId).toBe("new-user");
+  });
+
   it("signOut() writes the tombstone before the network call and removes it on success", async () => {
     sessionStore.adopt({ accessToken: "access-1", userId: "user-1" });
     let tombstonePresentDuringCall = false;

@@ -13,7 +13,11 @@ import { apiBaseUrl } from "../client/baseUrl";
  */
 export type SessionHint = { version: 1; userId: string; signedInAt: string };
 
-export type RestoreResult = "restored" | "unauthenticated" | "offline";
+export type RestoreResult =
+  | "restored"
+  | "unauthenticated"
+  | "offline"
+  | "superseded";
 
 type SessionListener = (accessToken: string | null) => void;
 
@@ -26,6 +30,7 @@ const LEGACY_SESSION_KEY = "journiv.session.v1";
 const RESTORE_TIMEOUT_MS = 5000;
 
 let accessToken: string | null = null;
+let sessionGeneration = 0;
 const listeners = new Set<SessionListener>();
 
 function notify() {
@@ -132,6 +137,8 @@ export function attemptRefresh(): Promise<RestoreResult> {
 }
 
 async function performRefresh(): Promise<RestoreResult> {
+  const generation = sessionGeneration;
+  const superseded = () => generation !== sessionGeneration;
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl()}/api/v1/auth/refresh`, {
@@ -140,17 +147,17 @@ async function performRefresh(): Promise<RestoreResult> {
       signal: AbortSignal.timeout(RESTORE_TIMEOUT_MS),
     });
   } catch {
+    if (superseded()) return "superseded";
     // Network error or timeout: the server's reachability is unknown, not
     // "no" — never clear the hint here (docs/architecture/frontend.md,
     // src/api/client/errors.ts).
     return "offline";
   }
 
+  if (superseded()) return "superseded";
   if (response.status === 401 || response.status === 403) {
-    accessToken = null;
-    clearHint();
+    clear();
     offlineCachePurge?.();
-    notify();
     return "unauthenticated";
   }
   if (!response.ok) return "offline";
@@ -159,8 +166,10 @@ async function performRefresh(): Promise<RestoreResult> {
   try {
     body = (await response.json()) as { access_token?: string };
   } catch {
+    if (superseded()) return "superseded";
     return "offline";
   }
+  if (superseded()) return "superseded";
   if (!body.access_token) return "offline";
 
   accessToken = body.access_token;
@@ -188,6 +197,7 @@ function adopt({
   accessToken: string;
   userId: string;
 }) {
+  sessionGeneration += 1;
   accessToken = token;
   writeHint({ version: 1, userId, signedInAt: new Date().toISOString() });
   clearTombstone();
@@ -195,6 +205,7 @@ function adopt({
 }
 
 function clear() {
+  sessionGeneration += 1;
   accessToken = null;
   clearHint();
   notify();
@@ -203,6 +214,7 @@ function clear() {
 /** Test-only: session.ts holds module-level singletons (the in-memory token,
  *  the single-flight refresh, subscribers) that must not leak between tests. */
 export function resetSessionForTests() {
+  sessionGeneration += 1;
   accessToken = null;
   refreshInFlight = undefined;
   offlineCachePurge = undefined;
