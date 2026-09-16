@@ -7,10 +7,15 @@ from typing import Annotated
 from urllib.parse import urlencode, urlparse
 
 from authlib.integrations.starlette_client import OAuthError
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlmodel import Session, select
 
+from app.core.auth_cookies import (
+    AUTH_CLIENT_HEADER,
+    AuthClient,
+    deliver_refresh_token,
+)
 from app.core.config import settings
 from app.core.database import get_session
 from app.core.logging_config import log_error, log_info, log_user_action, log_warning
@@ -361,19 +366,26 @@ async def oidc_callback(
 @router.post(
     "/exchange",
     response_model=LoginResponse,
+    response_model_exclude_none=True,
     responses={
         400: {"description": "Invalid or expired ticket"},
         404: {"description": "OIDC authentication is not enabled"},
     },
 )
-async def oidc_exchange(request: Request, body: OidcTicketExchangeRequest):
+async def oidc_exchange(
+    request: Request,
+    response: Response,
+    body: OidcTicketExchangeRequest,
+    client: Annotated[AuthClient, Header(alias=AUTH_CLIENT_HEADER)] = "legacy",
+):
     """
-    Exchange one-time ticket for access/refresh tokens.
+    Exchange a one-time ticket for authentication credentials.
 
     The SPA calls this endpoint with the ticket received from the callback redirect.
     Tickets are single-use and expire after 60 seconds. A missing or malformed
     body is a 422 (FastAPI request validation); a well-formed but unknown or
-    expired ticket is a 400.
+    expired ticket is a 400. Legacy clients receive the refresh token in the
+    response body; the PWA receives it only as an HttpOnly cookie.
     """
     if not settings.oidc_enabled:
         raise HTTPException(
@@ -392,9 +404,13 @@ async def oidc_exchange(request: Request, body: OidcTicketExchangeRequest):
     # Delete ticket after first use (one-time use)
     request.app.state.cache.delete(f"ticket:{ticket}")
 
+    response_refresh_token = deliver_refresh_token(
+        response, ticket_data["refresh_token"], client
+    )
+
     return LoginResponse(
         access_token=ticket_data["access_token"],
-        refresh_token=ticket_data["refresh_token"],
+        refresh_token=response_refresh_token,
         token_type="bearer",
         user=ticket_data["user"],
     )

@@ -71,7 +71,6 @@ describe("SignUpPage", () => {
     vi.mocked(api.register).mockResolvedValue({} as never);
     vi.mocked(api.login).mockResolvedValue({
       access_token: "new-access",
-      refresh_token: "new-refresh",
     } as never);
   });
 
@@ -184,7 +183,6 @@ describe("SignUpPage", () => {
     sessionStore.write({
       version: 1,
       accessToken: "previous-access",
-      refreshToken: "previous-refresh",
     });
     view.queryClient.setQueryData(queryKeys.promptAnalytics, {
       prompts_answered: 7,
@@ -204,7 +202,6 @@ describe("SignUpPage", () => {
     expect(sessionStore.read()).toEqual({
       version: 1,
       accessToken: "new-access",
-      refreshToken: "new-refresh",
     });
     expect(
       view.queryClient.getQueryData(queryKeys.promptAnalytics),

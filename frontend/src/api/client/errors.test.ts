@@ -10,11 +10,10 @@ describe("API errors keep the status", () => {
     resetAuthRefreshForTests();
     // Node's `Request` rejects a relative URL, which the browser accepts. The
     // base is a test detail; the status plumbing is what is under test.
-    vi.stubEnv("VITE_API_BASE_URL", "http://journiv.test");
+    vi.stubEnv("VITE_API_BASE_URL", "https://journiv.test");
     sessionStore.write({
       version: 1,
       accessToken: "access",
-      refreshToken: "refresh",
     });
   });
 

@@ -99,7 +99,6 @@ export function SignUpPage() {
       sessionStore.write({
         version: 1,
         accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token,
       });
       await navigate({ href: returnTo });
     } catch (caught) {

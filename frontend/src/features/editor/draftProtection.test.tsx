@@ -147,7 +147,6 @@ beforeEach(() => {
   sessionStore.write({
     version: 1,
     accessToken: "access",
-    refreshToken: "refresh",
   });
   vi.mocked(api.me).mockResolvedValue(user);
   vi.mocked(api.journals).mockResolvedValue([journal]);

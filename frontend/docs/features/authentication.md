@@ -16,8 +16,12 @@ non-empty password because the self-hosted backend does. OIDC can be mixed mode
 or OIDC-only. Its normal browser navigation stores returnTo, and oidc-finish
 exchanges the one-time ticket exactly once before replacing the route.
 
+The React client keeps only the short-lived access token in session storage.
+Its refresh credential is delivered and reused only through the path-scoped
+HttpOnly cookie; the legacy Flutter client continues to use a response/body
+refresh token contract.
+
 Do not expose raw backend detail, provider identity assumptions, or automatic
 provisioning promises. Use generic single-sign-on wording. At compact widths,
 top-align and tighten the Card for keyboard usability without changing its
 hierarchy.
-

@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
@@ -22,7 +21,7 @@ from app.api.v1.api import api_router
 from app.api.v1.endpoints import public
 from app.core.cache import create_cache
 from app.core.config import settings
-from app.core.cors import CORS_ALLOW_HEADERS, CORS_EXPOSE_HEADERS
+from app.core.cors import add_cors_middleware
 from app.core.database import init_db
 from app.core.exceptions import (
     EntryNotFoundError,
@@ -154,15 +153,7 @@ except ImportError:
 cors_enabled = bool(settings.enable_cors)
 cors_origins = settings.cors_origins or []
 if cors_enabled:
-    app.add_middleware(
-        cast(Any, CORSMiddleware),
-        allow_origins=cors_origins,
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-        allow_headers=CORS_ALLOW_HEADERS,
-        expose_headers=CORS_EXPOSE_HEADERS,
-        max_age=3600,
-    )
+    add_cors_middleware(app, cors_origins)
     log_info(f"CORS enabled for origins: {cors_origins}")
 else:
     log_info("CORS disabled (same-origin SPA mode)")

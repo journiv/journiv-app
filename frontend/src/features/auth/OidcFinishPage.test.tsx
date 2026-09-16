@@ -54,15 +54,11 @@ describe("OidcFinishPage", () => {
     vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
     vi.mocked(api.oidcExchange).mockResolvedValue({
       access_token: "oidc-access",
-      refresh_token: "oidc-refresh",
     } as never);
   });
 
   it("exchanges a ticket exactly once, stores the session and returns", async () => {
-    let completeExchange!: (tokens: {
-      access_token: string;
-      refresh_token: string;
-    }) => void;
+    let completeExchange!: (tokens: { access_token: string }) => void;
     vi.mocked(api.oidcExchange).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -74,7 +70,6 @@ describe("OidcFinishPage", () => {
     sessionStore.write({
       version: 1,
       accessToken: "previous-access",
-      refreshToken: "previous-refresh",
     });
     view.queryClient.setQueryData(queryKeys.promptAnalytics, {
       prompts_answered: 7,
@@ -85,7 +80,6 @@ describe("OidcFinishPage", () => {
     ).toBeTruthy();
     completeExchange({
       access_token: "oidc-access",
-      refresh_token: "oidc-refresh",
     });
     await waitFor(() =>
       expect(view.router.state.location.pathname).toBe("/signup"),
@@ -95,7 +89,6 @@ describe("OidcFinishPage", () => {
     expect(sessionStore.read()).toEqual({
       version: 1,
       accessToken: "oidc-access",
-      refreshToken: "oidc-refresh",
     });
     expect(
       view.queryClient.getQueryData(queryKeys.promptAnalytics),

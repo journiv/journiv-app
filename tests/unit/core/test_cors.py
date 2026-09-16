@@ -1,17 +1,24 @@
-import os
-
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from app.core.cors import add_cors_middleware
 
 FRONTEND_ORIGIN = "http://localhost:7357"
 
-os.environ["ENABLE_CORS"] = "true"
-os.environ["CORS_ORIGINS"] = FRONTEND_ORIGIN
 
-from app.main import app  # noqa: E402
+def _create_test_app() -> FastAPI:
+    app = FastAPI()
+    add_cors_middleware(app, [FRONTEND_ORIGIN])
+
+    @app.get("/api/v1/memory")
+    def memory() -> dict[str, str]:
+        return {"status": "ok"}
+
+    return app
 
 
 def test_video_range_preflight_is_allowed() -> None:
-    client = TestClient(app)
+    client = TestClient(_create_test_app())
 
     response = client.options(
         "/api/v1/memory",
@@ -23,11 +30,13 @@ def test_video_range_preflight_is_allowed() -> None:
     )
 
     assert response.status_code == 200
-    assert "range" in response.headers["access-control-allow-headers"].lower()
+    allowed_headers = response.headers["access-control-allow-headers"].lower()
+    assert "range" in allowed_headers
+    assert "x-journiv-client" in allowed_headers
 
 
 def test_video_range_response_headers_are_exposed() -> None:
-    client = TestClient(app)
+    client = TestClient(_create_test_app())
 
     response = client.get("/api/v1/memory", headers={"Origin": FRONTEND_ORIGIN})
 

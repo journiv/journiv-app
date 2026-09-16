@@ -52,7 +52,6 @@ describe("LoginPage", () => {
     vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
     vi.mocked(api.login).mockResolvedValue({
       access_token: "access-token",
-      refresh_token: "refresh-token",
     } as never);
   });
 
@@ -142,7 +141,6 @@ describe("LoginPage", () => {
     sessionStore.write({
       version: 1,
       accessToken: "previous-access",
-      refreshToken: "previous-refresh",
     });
     view.queryClient.setQueryData(queryKeys.promptAnalytics, {
       prompts_answered: 7,
@@ -165,7 +163,6 @@ describe("LoginPage", () => {
     expect(sessionStore.read()).toEqual({
       version: 1,
       accessToken: "access-token",
-      refreshToken: "refresh-token",
     });
     expect(
       view.queryClient.getQueryData(queryKeys.promptAnalytics),

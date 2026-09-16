@@ -133,3 +133,71 @@ async def test_get_current_user_detached_cache_hit():
              mock_get_context.assert_not_called()
 
     dependencies._user_cache = None
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_returns_user_for_valid_token():
+    from app.api import dependencies
+
+    dependencies._user_cache = None
+    user = User(
+        id=uuid.uuid4(),
+        email="optional@example.com",
+        password="hashedpassword",
+        name="Optional User",
+        role=UserRole.USER,
+        is_active=True,
+    )
+
+    with patch.object(dependencies.settings, "redis_url", None), \
+         patch("app.api.dependencies.verify_token") as mock_verify, \
+         patch("app.api.dependencies.UserService") as mock_user_service:
+        mock_verify.return_value = {"sub": str(user.id)}
+        mock_user_service.return_value.get_user_by_id.return_value = user
+
+        session = MagicMock()
+        result = await dependencies.get_current_user_optional(
+            token="valid_token", cookie_token=None, session=session
+        )
+
+        assert result is not None
+        assert result.id == user.id
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_returns_none_without_credentials():
+    from app.api import dependencies
+
+    session = MagicMock()
+    result = await dependencies.get_current_user_optional(
+        token=None, cookie_token=None, session=session
+    )
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_returns_none_for_invalid_token():
+    from app.api import dependencies
+
+    with patch("app.api.dependencies.verify_token", side_effect=Exception("bad token")):
+        session = MagicMock()
+        result = await dependencies.get_current_user_optional(
+            token="garbage", cookie_token=None, session=session
+        )
+        assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_current_user_optional_returns_none_for_operational_error():
+    from app.api import dependencies
+
+    with patch(
+        "app.api.dependencies.get_current_user",
+        side_effect=RuntimeError("cache unavailable"),
+    ), patch("app.api.dependencies.logger.exception") as mock_log_exception:
+        result = await dependencies.get_current_user_optional(
+            token="valid_token", cookie_token=None, session=MagicMock()
+        )
+
+    assert result is None
+    mock_log_exception.assert_called_once_with("Optional authentication failed")

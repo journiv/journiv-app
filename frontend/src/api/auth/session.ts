@@ -1,7 +1,6 @@
 export type AuthSession = {
   version: 1;
   accessToken: string;
-  refreshToken: string;
 };
 
 type SessionListener = (session: AuthSession | null) => void;
@@ -19,13 +18,19 @@ export const sessionStore = {
       const value: unknown = JSON.parse(sessionStorage.getItem(key) ?? "null");
       if (!value || typeof value !== "object") return null;
       const session = value as AuthSession;
-      return session.version === 1 &&
-        typeof session.accessToken === "string" &&
-        session.accessToken.length > 0 &&
-        typeof session.refreshToken === "string" &&
-        session.refreshToken.length > 0
-        ? session
-        : null;
+      if (
+        session.version !== 1 ||
+        typeof session.accessToken !== "string" ||
+        session.accessToken.length === 0
+      )
+        return null;
+      const sanitized = {
+        version: 1,
+        accessToken: session.accessToken,
+      } as const;
+      if ("refreshToken" in value)
+        sessionStorage.setItem(key, JSON.stringify(sanitized));
+      return sanitized;
     } catch {
       return null;
     }

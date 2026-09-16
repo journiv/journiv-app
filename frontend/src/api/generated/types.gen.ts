@@ -2769,7 +2769,7 @@ export type LoginResponse = {
     /**
      * Refresh Token
      */
-    refresh_token: string;
+    refresh_token?: string | null;
     /**
      * Token Type
      */
@@ -5540,6 +5540,12 @@ export type RegisterApiV1AuthRegisterPostResponse = RegisterApiV1AuthRegisterPos
 
 export type LoginApiV1AuthLoginPostData = {
     body: UserLogin;
+    headers?: {
+        /**
+         * X-Journiv-Client
+         */
+        'X-Journiv-Client'?: 'legacy' | 'pwa';
+    };
     path?: never;
     query?: never;
     url: '/api/v1/auth/login';
@@ -5610,6 +5616,12 @@ export type RefreshTokenApiV1AuthRefreshPostResponse = RefreshTokenApiV1AuthRefr
 
 export type LoginForAccessTokenApiV1AuthTokenPostData = {
     body: BodyLoginForAccessTokenApiV1AuthTokenPost;
+    headers?: {
+        /**
+         * X-Journiv-Client
+         */
+        'X-Journiv-Client'?: 'legacy' | 'pwa';
+    };
     path?: never;
     query?: never;
     url: '/api/v1/auth/token';
@@ -5714,6 +5726,12 @@ export type OidcCallbackApiV1AuthOidcCallbackGetErrors = {
 
 export type OidcExchangeApiV1AuthOidcExchangePostData = {
     body: OidcTicketExchangeRequest;
+    headers?: {
+        /**
+         * X-Journiv-Client
+         */
+        'X-Journiv-Client'?: 'legacy' | 'pwa';
+    };
     path?: never;
     query?: never;
     url: '/api/v1/auth/oidc/exchange';

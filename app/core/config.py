@@ -1,12 +1,14 @@
 """
 Application configuration using pydantic-settings.
 """
+import ipaddress
 import json
 import logging
 import os
 import secrets
 from pathlib import Path
 from typing import Annotated, Any, Dict, List, Optional, cast
+from urllib.parse import urlsplit
 
 from pydantic import Field, ValidationInfo, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -51,7 +53,8 @@ class Settings(BaseSettings):
     debug: bool = False
     environment: str = "development"
     domain_name: str = ""
-    domain_scheme: str = "http"  # Protocol scheme: "http" (default, for development) or "https" (required for production, especially when behind reverse proxy). Used to generate correct public redirect URLs for OIDC callbacks and logout.
+    domain_scheme: str = "http"  # Public URL scheme. HTTPS is required for network deployments unless insecure cookie auth is explicitly allowed.
+    allow_insecure_cookie_auth_over_http: bool = False
 
     # API
     api_v1_prefix: str = "/api/v1"
@@ -694,6 +697,27 @@ class Settings(BaseSettings):
 
         return v
 
+    @staticmethod
+    def _is_loopback_domain(domain_name: str) -> bool:
+        """Return whether DOMAIN_NAME identifies a loopback-only host."""
+        if not domain_name:
+            return False
+
+        try:
+            hostname = urlsplit(f"//{domain_name}").hostname
+        except ValueError:
+            return False
+
+        if not hostname:
+            return False
+        if hostname.lower() == "localhost":
+            return True
+
+        try:
+            return ipaddress.ip_address(hostname).is_loopback
+        except ValueError:
+            return False
+
     @field_validator('ffprobe_timeout', 'ffmpeg_timeout')
     @classmethod
     def validate_timeout_settings(cls, v: int) -> int:
@@ -905,6 +929,36 @@ class Settings(BaseSettings):
             error_message = "Production configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
             raise ValueError(error_message)
 
+        return self
+
+    @model_validator(mode='after')
+    def validate_cookie_auth_http_safety(self) -> 'Settings':
+        """Require an explicit opt-in before cookies can be sent over LAN HTTP."""
+        if self.domain_scheme != "http":
+            return self
+
+        if self._is_loopback_domain(self.domain_name):
+            return self
+
+        # An omitted domain is normal for local development. In production it
+        # may be auto-detected as a LAN address after settings validation, so it
+        # must be treated as network-accessible here.
+        if not self.domain_name and self.environment != "production":
+            return self
+
+        if not self.allow_insecure_cookie_auth_over_http:
+            raise ValueError(
+                "Credentialed browser authentication over non-loopback HTTP is disabled. "
+                "Configure HTTPS (DOMAIN_SCHEME=https), or explicitly set "
+                "ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP=true for an isolated trusted LAN."
+            )
+
+        logger.critical(
+            "SECURITY WARNING: ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP=true permits "
+            "passwords and refresh cookies to travel over unencrypted HTTP. Attackers "
+            "on the network may intercept account credentials. Use this only on an "
+            "isolated trusted LAN; HTTPS is strongly recommended."
+        )
         return self
 
     @model_validator(mode='after')

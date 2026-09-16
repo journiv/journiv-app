@@ -1,5 +1,33 @@
-import { describe, expect, it } from "vitest";
-import { filenameFromContentDisposition } from "./api";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { api, filenameFromContentDisposition } from "./api";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+});
+
+describe("browser authentication contract", () => {
+  it.each([
+    ["password login", () => api.login("person@example.com", "password")],
+    ["OIDC exchange", () => api.oidcExchange("one-time-ticket")],
+  ])("identifies the PWA for %s", async (_name, authenticate) => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://journiv.test");
+    let capturedRequest: Request | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: RequestInfo | URL) => {
+        capturedRequest =
+          request instanceof Request ? request : new Request(request);
+        return Response.json({ access_token: "access-token", user: {} });
+      }),
+    );
+
+    await authenticate();
+
+    expect(capturedRequest?.headers.get("X-Journiv-Client")).toBe("pwa");
+    expect(capturedRequest?.credentials).toBe("include");
+  });
+});
 
 describe("filenameFromContentDisposition", () => {
   it("decodes an RFC 5987 filename* value", () => {
