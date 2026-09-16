@@ -41,17 +41,18 @@ test.describe("reader media viewer", () => {
     const mediaIds: string[] = [];
     await page.goto(`/timeline/${moment.id}/edit`);
     for (let i = 0; i < 2; i += 1) {
+      const fileChooser = page.waitForEvent("filechooser");
       await page
         .getByRole("button", { name: "Add photo, video or audio" })
         .click();
-      const fileChooser = page.waitForEvent("filechooser");
+      const chooseFiles = page.getByRole("button", { name: "Choose files" });
+      if (await chooseFiles.isVisible()) await chooseFiles.click();
       const uploaded = page.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
           new URL(response.url()).pathname === "/api/v1/media/upload" &&
           response.status() === 201,
       );
-      await page.getByRole("button", { name: "Choose files" }).click();
       await (await fileChooser).setFiles({
         name: `viewer-${i}.png`,
         mimeType: "image/png",
@@ -137,17 +138,18 @@ test.describe("reader media viewer", () => {
     // Give each route an attachment through the production upload flow.
     const uploadPhoto = async (momentId: string, filename: string) => {
       await page.goto(`/timeline/${momentId}/edit`);
+      const fileChooser = page.waitForEvent("filechooser");
       await page
         .getByRole("button", { name: "Add photo, video or audio" })
         .click();
-      const fileChooser = page.waitForEvent("filechooser");
+      const chooseFiles = page.getByRole("button", { name: "Choose files" });
+      if (await chooseFiles.isVisible()) await chooseFiles.click();
       const uploaded = page.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
           new URL(response.url()).pathname === "/api/v1/media/upload" &&
           response.status() === 201,
       );
-      await page.getByRole("button", { name: "Choose files" }).click();
       await (await fileChooser).setFiles({
         name: filename,
         mimeType: "image/png",
