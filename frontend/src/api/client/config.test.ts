@@ -1,10 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sessionStore } from "../auth/session";
-import {
-  apiBaseUrl,
-  authenticatedFetch,
-  resetAuthRefreshForTests,
-} from "./config";
+import { resetSessionForTests, sessionStore } from "../auth/session";
+import { apiBaseUrl } from "./baseUrl";
+import { authenticatedFetch } from "./config";
 
 describe("credentialed API base URL", () => {
   afterEach(() => vi.unstubAllEnvs());
@@ -31,12 +28,9 @@ describe("credentialed API base URL", () => {
 
 describe("authenticatedFetch", () => {
   beforeEach(() => {
-    sessionStorage.clear();
-    resetAuthRefreshForTests();
-    sessionStore.write({
-      version: 1,
-      accessToken: "expired-access",
-    });
+    localStorage.clear();
+    resetSessionForTests();
+    sessionStore.adopt({ accessToken: "expired-access", userId: "user-1" });
   });
 
   afterEach(() => vi.restoreAllMocks());
@@ -79,7 +73,7 @@ describe("authenticatedFetch", () => {
 
     expect([first.status, second.status]).toEqual([200, 200]);
     expect(refreshCalls).toBe(1);
-    expect(sessionStore.read()?.accessToken).toBe("renewed-access");
+    expect(sessionStore.getAccessToken()).toBe("renewed-access");
   });
 
   it("clears the session when refresh is rejected", async () => {
@@ -99,6 +93,29 @@ describe("authenticatedFetch", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(sessionStore.read()).toBeNull();
+    expect(sessionStore.getAccessToken()).toBeNull();
+    expect(sessionStore.readHint()).toBeNull();
+  });
+
+  it("leaves the session intact when refresh cannot reach the server", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: RequestInfo | URL) => {
+        const url =
+          request instanceof Request ? request.url : request.toString();
+        if (url.endsWith("/api/v1/auth/refresh")) {
+          throw new TypeError("Failed to fetch");
+        }
+        return new Response(null, { status: 401 });
+      }),
+    );
+
+    const response = await authenticatedFetch(
+      new Request("http://journiv.test/api/v1/moments"),
+    );
+
+    expect(response.status).toBe(401);
+    // A network error while refreshing is not proof of sign-out.
+    expect(sessionStore.getAccessToken()).toBe("expired-access");
   });
 });

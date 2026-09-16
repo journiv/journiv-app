@@ -157,7 +157,9 @@ async def test_get_current_user_optional_returns_user_for_valid_token():
 
         session = MagicMock()
         result = await dependencies.get_current_user_optional(
-            token="valid_token", cookie_token=None, session=session
+            request=MagicMock(headers={"Authorization": "Bearer valid_token"}),
+            cookie_token=None,
+            session=session,
         )
 
         assert result is not None
@@ -170,7 +172,7 @@ async def test_get_current_user_optional_returns_none_without_credentials():
 
     session = MagicMock()
     result = await dependencies.get_current_user_optional(
-        token=None, cookie_token=None, session=session
+        request=MagicMock(headers={}), cookie_token=None, session=session
     )
     assert result is None
 
@@ -182,7 +184,9 @@ async def test_get_current_user_optional_returns_none_for_invalid_token():
     with patch("app.api.dependencies.verify_token", side_effect=Exception("bad token")):
         session = MagicMock()
         result = await dependencies.get_current_user_optional(
-            token="garbage", cookie_token=None, session=session
+            request=MagicMock(headers={"Authorization": "Bearer garbage"}),
+            cookie_token=None,
+            session=session,
         )
         assert result is None
 
@@ -196,7 +200,9 @@ async def test_get_current_user_optional_returns_none_for_operational_error():
         side_effect=RuntimeError("cache unavailable"),
     ), patch("app.api.dependencies.logger.exception") as mock_log_exception:
         result = await dependencies.get_current_user_optional(
-            token="valid_token", cookie_token=None, session=MagicMock()
+            request=MagicMock(headers={"Authorization": "Bearer valid_token"}),
+            cookie_token=None,
+            session=MagicMock(),
         )
 
     assert result is None

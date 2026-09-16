@@ -31,7 +31,7 @@ import type {
   JournalResponse,
   UserResponse,
 } from "../../api/generated/types.gen";
-import { sessionStore } from "../../api/auth/session";
+import { signOut } from "../../api/auth/session";
 import { useTheme, type ThemeMode } from "../../app/theme";
 import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
@@ -250,7 +250,7 @@ export function AppSidebar({
             label="Log out"
             onClick={() => {
               const useSingleSignOut = user?.is_oidc_user === true;
-              sessionStore.clear();
+              void signOut();
               onNavigate?.();
               if (useSingleSignOut) startOidcLogout();
             }}

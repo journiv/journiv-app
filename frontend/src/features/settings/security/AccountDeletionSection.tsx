@@ -1,5 +1,5 @@
 import { useId, useState } from "react";
-import { sessionStore } from "../../../api/auth/session";
+import { signOut } from "../../../api/auth/session";
 import { api } from "../../../api/client/api";
 import {
   AppAdaptiveDialog,
@@ -42,7 +42,7 @@ export function AccountDeletionSection() {
     setFailure(undefined);
     try {
       await api.deleteMe();
-      sessionStore.clear();
+      await signOut();
       window.location.assign("/login");
     } catch {
       // A failed response is not proof the account survived; the backend may

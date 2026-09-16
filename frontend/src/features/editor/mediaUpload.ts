@@ -139,12 +139,9 @@ export function uploadMedia({
 
     request.open("POST", "/api/v1/media/upload");
     request.timeout = UPLOAD_TIMEOUT_MS;
-    const session = sessionStore.read();
-    if (session) {
-      request.setRequestHeader(
-        "Authorization",
-        `Bearer ${session.accessToken}`,
-      );
+    const accessToken = sessionStore.getAccessToken();
+    if (accessToken) {
+      request.setRequestHeader("Authorization", `Bearer ${accessToken}`);
     }
 
     request.upload.addEventListener("progress", (event) => {

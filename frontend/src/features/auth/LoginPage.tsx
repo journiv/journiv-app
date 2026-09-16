@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useRef, useState } from "react";
-import { sessionStore } from "../../api/auth/session";
+import { sessionStore, userIdFromAuthResponse } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { instanceConfigQuery } from "../../api/query/options";
 import { Alert, AlertDescription } from "../../components/ui/alert";
@@ -41,9 +41,9 @@ export function LoginPage() {
         String(form.get("password")),
       );
       queryClient.clear();
-      sessionStore.write({
-        version: 1,
+      sessionStore.adopt({
         accessToken: tokens.access_token,
+        userId: userIdFromAuthResponse(tokens.user),
       });
       await navigate({ href: returnTo });
     } catch {

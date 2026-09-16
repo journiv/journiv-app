@@ -3,7 +3,7 @@ import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sessionStore } from "../../api/auth/session";
+import { resetSessionForTests, sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import { queryKeys } from "../../api/query/keys";
 import type { InstanceConfigResponse } from "../../api/generated";
@@ -50,15 +50,22 @@ async function renderFinish(path: string) {
 describe("OidcFinishPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    sessionStorage.clear();
+    localStorage.clear();
+    resetSessionForTests();
     vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
     vi.mocked(api.oidcExchange).mockResolvedValue({
       access_token: "oidc-access",
+      refresh_token: "oidc-refresh",
+      user: { id: "user-1" },
     } as never);
   });
 
   it("exchanges a ticket exactly once, stores the session and returns", async () => {
-    let completeExchange!: (tokens: { access_token: string }) => void;
+    let completeExchange!: (tokens: {
+      access_token: string;
+      refresh_token: string;
+      user: { id: string };
+    }) => void;
     vi.mocked(api.oidcExchange).mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -67,10 +74,7 @@ describe("OidcFinishPage", () => {
     );
     oidcReturnToStore.write("/signup");
     const view = await renderFinish("/oidc-finish?ticket=one-time-ticket");
-    sessionStore.write({
-      version: 1,
-      accessToken: "previous-access",
-    });
+    sessionStore.adopt({ accessToken: "previous-access", userId: "prev-user" });
     view.queryClient.setQueryData(queryKeys.promptAnalytics, {
       prompts_answered: 7,
     });
@@ -80,16 +84,16 @@ describe("OidcFinishPage", () => {
     ).toBeTruthy();
     completeExchange({
       access_token: "oidc-access",
+      refresh_token: "oidc-refresh",
+      user: { id: "user-1" },
     });
     await waitFor(() =>
       expect(view.router.state.location.pathname).toBe("/signup"),
     );
     expect(api.oidcExchange).toHaveBeenCalledTimes(1);
     expect(api.oidcExchange).toHaveBeenCalledWith("one-time-ticket");
-    expect(sessionStore.read()).toEqual({
-      version: 1,
-      accessToken: "oidc-access",
-    });
+    expect(sessionStore.getAccessToken()).toBe("oidc-access");
+    expect(sessionStore.readHint()?.userId).toBe("user-1");
     expect(
       view.queryClient.getQueryData(queryKeys.promptAnalytics),
     ).toBeUndefined();
@@ -106,7 +110,7 @@ describe("OidcFinishPage", () => {
     ).toBeTruthy();
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(api.oidcExchange).not.toHaveBeenCalled();
-    expect(sessionStore.read()).toBeNull();
+    expect(sessionStore.getAccessToken()).toBeNull();
   });
 
   it("shows a safe recovery state for an expired or reused ticket", async () => {
@@ -124,7 +128,7 @@ describe("OidcFinishPage", () => {
     expect(recovery.getAttribute("href")).toContain(
       "returnTo=%2Ftimeline%2Fmoment-1%3Fq%3Drain",
     );
-    expect(sessionStore.read()).toBeNull();
+    expect(sessionStore.getAccessToken()).toBeNull();
   });
 
   it("does not send an overlong ticket from a crafted URL", async () => {

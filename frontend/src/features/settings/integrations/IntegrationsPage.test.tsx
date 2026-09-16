@@ -62,7 +62,7 @@ const connected: IntegrationStatusResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({ version: 1, accessToken: "a" });
+  sessionStore.adopt({ accessToken: "a", userId: "user-1" });
   vi.mocked(api.me).mockResolvedValue({
     id: "user-1",
     email: "writer@example.com",

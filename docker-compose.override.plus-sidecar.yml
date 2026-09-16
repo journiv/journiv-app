@@ -33,6 +33,9 @@ services:
       - journiv-internal    # internal network for sidecar ↔ app/db communication
     environment:
       SERVICE_ROLE: plus-service
+      ENVIRONMENT: development
+      # Development-only opt-in for trusted LAN access over HTTP.
+      ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP: "true"
       PLUS_SERVICE_URL: ""
       DB_DRIVER: postgres
       POSTGRES_HOST: postgres

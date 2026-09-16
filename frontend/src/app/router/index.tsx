@@ -251,7 +251,9 @@ const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "protected",
   beforeLoad: ({ location }) => {
-    if (!sessionStore.read())
+    // `main.tsx` awaits the boot session restore before the router ever
+    // renders, so this read is synchronous and needs no async router work.
+    if (!sessionStore.getAccessToken())
       throw redirect({ to: "/login", search: { returnTo: location.href } });
   },
   component: AppShell,

@@ -1,4 +1,4 @@
-import { apiBaseUrl } from "../../api/client/config";
+import { apiBaseUrl } from "../../api/client/baseUrl";
 import { buttonVariants } from "../../components/ui/button";
 import { cx } from "../../lib/cx";
 import { safeReturnTo } from "./returnTo";

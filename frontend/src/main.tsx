@@ -13,10 +13,12 @@ import {
   readUiExperiment,
 } from "./features/theme/uiExperiment";
 import { retireRootFlutterWorker } from "./app/retireRootFlutterWorker";
+import { sessionStore } from "./api/auth/session";
 import { Toaster } from "./components/ui/toast";
 
-const root = document.getElementById("root");
-if (!root) throw new Error("Missing application root");
+const rootElement = document.getElementById("root");
+if (!rootElement) throw new Error("Missing application root");
+const root = createRoot(rootElement);
 const queryClient = createAppQueryClient();
 applyTheme(readTheme());
 // Personalization layer (colour / font / text size) — a <style> we render from
@@ -26,14 +28,26 @@ applyUserTheme(readUserTheme());
 // and pane separation, toggled from Settings → Appearance. Appended after the
 // user theme so it wins while active. Remove with uiExperiment.ts.
 applyUiExperiment(readUiExperiment());
-void retireRootFlutterWorker();
 
-createRoot(root).render(
-  <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <Toaster>
-        <RouterProvider router={router} />
-      </Toaster>
-    </QueryClientProvider>
-  </StrictMode>,
-);
+async function boot() {
+  // Must finish before the service worker registers (Phase 3) and before the
+  // session restore request goes out, so a stale root-scoped Flutter worker
+  // can never intercept either.
+  await retireRootFlutterWorker();
+  // The route guard (src/app/router/index.tsx) reads the resolved session
+  // synchronously, so it must not render until this settles. The boot splash
+  // in index.html is what the user sees meanwhile.
+  await sessionStore.restore();
+
+  root.render(
+    <StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <Toaster>
+          <RouterProvider router={router} />
+        </Toaster>
+      </QueryClientProvider>
+    </StrictMode>,
+  );
+}
+
+void boot();

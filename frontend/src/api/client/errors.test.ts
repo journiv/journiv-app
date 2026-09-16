@@ -1,20 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sessionStore } from "../auth/session";
+import { resetSessionForTests, sessionStore } from "../auth/session";
 import { api } from "./api";
 import { ApiError, isConflict, isNotFound, retryTransient } from "./errors";
-import { resetAuthRefreshForTests } from "./config";
 
 describe("API errors keep the status", () => {
   beforeEach(() => {
-    sessionStorage.clear();
-    resetAuthRefreshForTests();
+    localStorage.clear();
+    resetSessionForTests();
     // Node's `Request` rejects a relative URL, which the browser accepts. The
     // base is a test detail; the status plumbing is what is under test.
     vi.stubEnv("VITE_API_BASE_URL", "https://journiv.test");
-    sessionStore.write({
-      version: 1,
-      accessToken: "access",
-    });
+    sessionStore.adopt({ accessToken: "access", userId: "user-1" });
   });
 
   afterEach(() => {

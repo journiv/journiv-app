@@ -136,10 +136,7 @@ const prompt: PromptResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({
-    version: 1,
-    accessToken: "access",
-  });
+  sessionStore.adopt({ accessToken: "access", userId: "user-1" });
   vi.mocked(api.me).mockResolvedValue(user);
   vi.mocked(api.instanceConfig).mockResolvedValue(instanceConfig);
   vi.mocked(api.journals).mockResolvedValue([journal, otherJournal]);
@@ -898,14 +895,19 @@ describe("Phase B routes", () => {
   });
 
   it("clears the temporary session and returns to login on logout", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ message: "ok" })),
+    );
     const view = await renderRoute("/timeline");
     await screen.findByText("phase-b@example.com");
 
     await userEvent.click(screen.getByRole("button", { name: "Log out" }));
 
     await screen.findByRole("heading", { name: "Welcome back" });
-    expect(sessionStore.read()).toBeNull();
+    expect(sessionStore.getAccessToken()).toBeNull();
     expect(view.router.state.location.pathname).toBe("/login");
+    vi.unstubAllGlobals();
   });
 
   it("resolves /insights to the Insights workspace with default tab and period", async () => {

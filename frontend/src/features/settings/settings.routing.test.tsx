@@ -112,10 +112,7 @@ const moment: MomentResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({
-    version: 1,
-    accessToken: "access",
-  });
+  sessionStore.adopt({ accessToken: "access", userId: "user-1" });
   vi.mocked(api.me).mockResolvedValue(user);
   vi.mocked(api.userSettings).mockResolvedValue(settings);
   vi.mocked(api.instanceConfig).mockResolvedValue(instance);

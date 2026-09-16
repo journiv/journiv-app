@@ -5,10 +5,16 @@
 #   docker compose -f docker-compose.dev.sqlite.yml up -d
 # Note: dev compose files uses the main tag (docker image from main # branch) for development purposes. Do not run this for production # use prod compose files instead which uses the latest tag.
 
-x-common-valkey-env: &common-valkey-env
+x-dev-environment: &dev-environment
+  DB_DRIVER: sqlite
+  DATABASE_URL: sqlite:////data/journiv.db
+  ENVIRONMENT: development
   REDIS_URL: redis://valkey:6379/0
   CELERY_BROKER_URL: redis://valkey:6379/0
   CELERY_RESULT_BACKEND: redis://valkey:6379/0
+  # This development stack intentionally supports access from a trusted LAN
+  # over HTTP. Never copy this opt-in into an internet-facing deployment.
+  ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP: "true"
 
 x-dev-common: &dev-common
   build: .
@@ -20,10 +26,7 @@ x-dev-common: &dev-common
   depends_on:
     valkey:
       condition: service_healthy
-  environment:
-    DB_DRIVER: sqlite
-    DATABASE_URL: sqlite:////data/journiv.db
-    ENVIRONMENT: development
+  environment: *dev-environment
 
 x-celery-healthcheck: &celery-healthcheck
   interval: 30s
@@ -51,7 +54,7 @@ services:
     container_name: journiv-dev-celery-worker
     command: celery -A app.core.celery_app worker --loglevel=info
     environment:
-      <<: *common-valkey-env
+      <<: *dev-environment
       SERVICE_ROLE: celery-worker
     restart: unless-stopped
     healthcheck:
@@ -68,7 +71,7 @@ services:
     container_name: journiv-dev-celery-beat
     command: celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
     environment:
-      <<: *common-valkey-env
+      <<: *dev-environment
       SERVICE_ROLE: celery-beat
       REDBEAT_REDIS_URL: redis://valkey:6379/2
     restart: unless-stopped
@@ -93,7 +96,7 @@ services:
     ports:
       - "${APP_PORT:-8000}:8000"
     environment:
-      <<: *common-valkey-env
+      <<: *dev-environment
       SERVICE_ROLE: app
     deploy:
       resources:
@@ -113,7 +116,7 @@ services:
     profiles: ["admin"]
     command: ["sleep", "infinity"]
     environment:
-      <<: *common-valkey-env
+      <<: *dev-environment
       SERVICE_ROLE: admin-cli
     # No healthcheck needed for idle container
     healthcheck:

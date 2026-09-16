@@ -7,8 +7,9 @@ import uuid
 from importlib import import_module
 from typing import Annotated, Any, Dict, Optional, cast
 
-from fastapi import Cookie, Depends, HTTPException, status
+from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from fastapi.security.utils import get_authorization_scheme_param
 from jose import ExpiredSignatureError, JWTError
 from sqlmodel import Session, select
 
@@ -145,13 +146,8 @@ async def get_current_user(
     return user
 
 
-oauth2_scheme_optional = OAuth2PasswordBearer(
-    tokenUrl="/api/v1/auth/token", auto_error=False
-)
-
-
 async def get_current_user_optional(
-    token: Annotated[Optional[str], Depends(oauth2_scheme_optional)],
+    request: Request,
     session: Annotated[Session, Depends(get_session)],
     cookie_token: Annotated[Optional[str], Cookie(alias="access_token")] = None,
 ) -> Optional[User]:
@@ -161,8 +157,15 @@ async def get_current_user_optional(
     logout) but should still attribute the action when a valid session
     happens to be present.
     """
+    scheme, token = get_authorization_scheme_param(
+        request.headers.get("Authorization")
+    )
+    if scheme.lower() != "bearer":
+        token = None
     try:
-        return await get_current_user(token=token, session=session, cookie_token=cookie_token)
+        return await get_current_user(
+            token=token, session=session, cookie_token=cookie_token
+        )
     except HTTPException:
         return None
     except Exception:

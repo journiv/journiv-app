@@ -9,6 +9,7 @@ import {
 import { X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { sessionStore } from "../../api/auth/session";
+import { ApiError } from "../../api/client/errors";
 import { currentUserQuery } from "../../api/query/options";
 import { IconButton } from "../../components/ui/icon-button";
 import type { SettingsSection } from "../settings/SettingsModal";
@@ -60,12 +61,26 @@ export function AppShell() {
         search: { returnTo: location.href },
       });
     };
-    const unsubscribe = sessionStore.subscribe((session) => {
-      if (!session) signOut();
+    const unsubscribe = sessionStore.subscribe((accessToken) => {
+      if (!accessToken) signOut();
     });
-    if (currentUser.isError) sessionStore.clear();
+    // Only a definite "no" from a reachable server clears the session here.
+    // An unanswered request (offline, DNS, timeout) is not proof of sign-out
+    // — docs/architecture/frontend.md, src/api/client/errors.ts.
+    if (
+      currentUser.isError &&
+      currentUser.error instanceof ApiError &&
+      (currentUser.error.status === 401 || currentUser.error.status === 403)
+    )
+      sessionStore.clear();
     return unsubscribe;
-  }, [currentUser.isError, location.href, queryClient, router]);
+  }, [
+    currentUser.isError,
+    currentUser.error,
+    location.href,
+    queryClient,
+    router,
+  ]);
 
   return (
     <ShellContext.Provider

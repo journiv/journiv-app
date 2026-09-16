@@ -15,6 +15,9 @@ x-base-env: &base-env
   CELERY_RESULT_BACKEND: redis://valkey:6379/0
   DB_DRIVER: postgres
   POSTGRES_HOST: postgres
+  ENVIRONMENT: production
+  # Production stays fail-closed unless a trusted-LAN operator explicitly opts in.
+  ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP: ${ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP:-false}
 
 x-celery-common: &celery-common
   image: swalabtech/journiv-app:${APP_VERSION:-latest}
@@ -158,7 +161,6 @@ services:
       <<: *base-env
       SERVICE_ROLE: app
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      ENVIRONMENT: production
       RATE_LIMIT_STORAGE_URI: redis://valkey:6379/1
     networks:
       - backend

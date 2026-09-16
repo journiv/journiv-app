@@ -2,7 +2,7 @@ import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../api/client/api";
-import { sessionStore } from "../../api/auth/session";
+import { sessionStore, userIdFromAuthResponse } from "../../api/auth/session";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { buttonVariants } from "../../components/ui/button";
 import { Spinner } from "../../components/ui/spinner";
@@ -31,9 +31,9 @@ export function OidcFinishPage() {
       .oidcExchange(ticket)
       .then(async (tokens) => {
         queryClient.clear();
-        sessionStore.write({
-          version: 1,
+        sessionStore.adopt({
           accessToken: tokens.access_token,
+          userId: userIdFromAuthResponse(tokens.user),
         });
         oidcReturnToStore.clear();
         await navigate({ href: returnTo, replace: true });
