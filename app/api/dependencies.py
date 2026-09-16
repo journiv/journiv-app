@@ -145,6 +145,31 @@ async def get_current_user(
     return user
 
 
+oauth2_scheme_optional = OAuth2PasswordBearer(
+    tokenUrl="/api/v1/auth/token", auto_error=False
+)
+
+
+async def get_current_user_optional(
+    token: Annotated[Optional[str], Depends(oauth2_scheme_optional)],
+    session: Annotated[Session, Depends(get_session)],
+    cookie_token: Annotated[Optional[str], Cookie(alias="access_token")] = None,
+) -> Optional[User]:
+    """Resolve the current user if credentials are present and valid, else None.
+
+    Never raises. For endpoints that must succeed for any caller (e.g.
+    logout) but should still attribute the action when a valid session
+    happens to be present.
+    """
+    try:
+        return await get_current_user(token=token, session=session, cookie_token=cookie_token)
+    except HTTPException:
+        return None
+    except Exception:
+        logger.exception("Optional authentication failed")
+        return None
+
+
 async def get_current_user_detached(
     token: Annotated[Optional[str], Depends(oauth2_scheme)],
     cookie_token: Annotated[Optional[str], Cookie(alias="access_token")] = None,

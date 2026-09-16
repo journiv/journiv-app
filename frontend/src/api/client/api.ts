@@ -94,7 +94,6 @@ import {
   mergePeopleApiV1PeopleSourceIdMergeTargetIdPost,
   mergeTagsApiV1TagsSourceIdMergeTargetIdPost,
   oidcExchangeApiV1AuthOidcExchangePost,
-  refreshTokenApiV1AuthRefreshPost,
   registerApiV1AuthRegisterPost,
   registerLicenseApiV1InstanceLicenseRegisterPost,
   removePersonProfileImageApiV1PeoplePersonIdProfileImageDelete,
@@ -179,6 +178,7 @@ const options = () => ({
   client: configureApiClient(),
   throwOnError: true as const,
 });
+const pwaAuthHeaders = { "X-Journiv-Client": "pwa" as const };
 const data = <T>(result: Promise<{ data: T }>) =>
   result.then((response) => response.data);
 
@@ -209,19 +209,19 @@ export const api = {
   register: (body: UserCreate) =>
     data(registerApiV1AuthRegisterPost({ ...options(), body })),
   login: (email: string, password: string) =>
-    data(loginApiV1AuthLoginPost({ ...options(), body: { email, password } })),
+    data(
+      loginApiV1AuthLoginPost({
+        ...options(),
+        body: { email, password },
+        headers: pwaAuthHeaders,
+      }),
+    ),
   oidcExchange: (ticket: string) =>
     data(
       oidcExchangeApiV1AuthOidcExchangePost({
         ...options(),
         body: { ticket },
-      }),
-    ),
-  refresh: (refresh_token: string) =>
-    data(
-      refreshTokenApiV1AuthRefreshPost({
-        ...options(),
-        body: { refresh_token },
+        headers: pwaAuthHeaders,
       }),
     ),
   me: () => data(getCurrentUserInfoApiV1UsersMeGet(options())),

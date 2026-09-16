@@ -34,7 +34,6 @@ export function OidcFinishPage() {
         sessionStore.write({
           version: 1,
           accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token,
         });
         oidcReturnToStore.clear();
         await navigate({ href: returnTo, replace: true });

@@ -90,6 +90,8 @@ export async function registerAndLogin(
         "Signing in the E2E account",
       ),
     );
+  if (!loggedIn.data.refresh_token)
+    throw new Error("Legacy login did not return a refresh token.");
 
   return {
     accessToken: loggedIn.data.access_token,

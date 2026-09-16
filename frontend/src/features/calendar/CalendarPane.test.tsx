@@ -86,7 +86,7 @@ const dayPage: MomentPageResponse = { items: [moment] };
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({ version: 1, accessToken: "a", refreshToken: "r" });
+  sessionStore.write({ version: 1, accessToken: "a" });
   vi.mocked(api.me).mockResolvedValue(user);
   vi.mocked(api.journals).mockResolvedValue([journal]);
   vi.mocked(api.moods).mockResolvedValue([mood]);

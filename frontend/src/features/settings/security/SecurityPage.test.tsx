@@ -36,7 +36,7 @@ const passwordUser: UserResponse = {
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
-  sessionStore.write({ version: 1, accessToken: "a", refreshToken: "r" });
+  sessionStore.write({ version: 1, accessToken: "a" });
   vi.mocked(api.me).mockResolvedValue(passwordUser);
   vi.mocked(api.userSettings).mockResolvedValue({
     user_id: "user-1",

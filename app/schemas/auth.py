@@ -21,7 +21,7 @@ class Token(BaseModel):
 class LoginResponse(BaseModel):
     """Login response schema with tokens and user info."""
     access_token: str
-    refresh_token: str
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     user: dict
 
@@ -71,5 +71,10 @@ class UserLogin(BaseModel):
 
 
 class TokenRefresh(BaseModel):
-    """Token refresh schema."""
-    refresh_token: str
+    """Token refresh schema.
+
+    refresh_token is optional so a PWA client can rely on the
+    `journiv_refresh` HttpOnly cookie instead of a request body; the Flutter
+    client at /legacy/ still supplies it in the body.
+    """
+    refresh_token: Optional[str] = None

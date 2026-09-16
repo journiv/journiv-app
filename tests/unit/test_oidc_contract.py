@@ -9,6 +9,7 @@ from app.api.v1.endpoints.oidc import (
     _frontend_url,
     _request_frontend,
 )
+from app.core.auth_cookies import AUTH_CLIENT_HEADER, REFRESH_COOKIE_NAME
 from app.core.config import settings
 from app.main import app
 
@@ -69,12 +70,10 @@ def test_oidc_exchange_openapi_requires_typed_ticket_body():
 
 
 def test_oidc_redirect_endpoints_document_their_runtime_status():
-    login_responses = _openapi_operation(
-        "/api/v1/auth/oidc/login", "get"
-    )["responses"]
-    callback_responses = _openapi_operation(
-        "/api/v1/auth/oidc/callback", "get"
-    )["responses"]
+    login_responses = _openapi_operation("/api/v1/auth/oidc/login", "get")["responses"]
+    callback_responses = _openapi_operation("/api/v1/auth/oidc/callback", "get")[
+        "responses"
+    ]
 
     assert "302" in login_responses
     assert "200" not in login_responses
@@ -127,17 +126,63 @@ def test_oidc_exchange_preserves_single_use_ticket_behavior(monkeypatch):
     app.state.cache = cache
     client = TestClient(app)
 
-    response = client.post(
-        "/api/v1/auth/oidc/exchange", json={"ticket": "one-time"}
-    )
+    response = client.post("/api/v1/auth/oidc/exchange", json={"ticket": "one-time"})
     assert response.status_code == 200
     assert response.json()["access_token"] == "access-token"
 
-    replay = client.post(
-        "/api/v1/auth/oidc/exchange", json={"ticket": "one-time"}
-    )
+    replay = client.post("/api/v1/auth/oidc/exchange", json={"ticket": "one-time"})
     assert replay.status_code == 400
     assert replay.json()["detail"] == "Invalid or expired ticket"
+
+
+def test_oidc_exchange_sets_refresh_cookie(monkeypatch):
+    cache = _TicketCache()
+    cache.set(
+        "ticket:cookie-ticket",
+        {
+            "access_token": "access-token",
+            "refresh_token": "refresh-token-value",
+            "user": {"id": "user-id", "email": "person@example.com"},
+        },
+    )
+    monkeypatch.setattr(settings, "oidc_enabled", True)
+    monkeypatch.setattr(settings, "domain_scheme", "http")
+    app.state.cache = cache
+    client = TestClient(app)
+
+    response = client.post(
+        "/api/v1/auth/oidc/exchange",
+        json={"ticket": "cookie-ticket"},
+        headers={AUTH_CLIENT_HEADER: "pwa"},
+    )
+    assert response.status_code == 200
+    assert "refresh_token" not in response.json()
+    assert response.cookies[REFRESH_COOKIE_NAME] == "refresh-token-value"
+    set_cookie = response.headers["set-cookie"]
+    assert "HttpOnly" in set_cookie
+    assert "access_token" not in set_cookie.split("=")[0]
+
+
+def test_oidc_exchange_preserves_legacy_refresh_token_contract(monkeypatch):
+    cache = _TicketCache()
+    cache.set(
+        "ticket:legacy-ticket",
+        {
+            "access_token": "access-token",
+            "refresh_token": "refresh-token-value",
+            "user": {"id": "user-id", "email": "person@example.com"},
+        },
+    )
+    monkeypatch.setattr(settings, "oidc_enabled", True)
+    app.state.cache = cache
+
+    response = TestClient(app).post(
+        "/api/v1/auth/oidc/exchange", json={"ticket": "legacy-ticket"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["refresh_token"] == "refresh-token-value"
+    assert response.cookies.get(REFRESH_COOKIE_NAME) is None
 
 
 def test_oidc_exchange_rejects_invalid_body_with_422(monkeypatch):

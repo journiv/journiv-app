@@ -89,6 +89,14 @@ class JournivApiClient:
     def close(self) -> None:
         self._client.close()
 
+    def clear_cookies(self) -> None:
+        """Drop any cookies (e.g. journiv_refresh) the shared session client picked up.
+
+        api_client is session-scoped, so a test that logs in or exchanges
+        tokens must clear cookies afterward or leak state into later tests.
+        """
+        self._client.cookies.clear()
+
     def wait_for_health(self, endpoint: str = "/health", *, timeout: int = 60) -> None:
         """
         Poll the health endpoint until the application is ready.

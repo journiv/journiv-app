@@ -1,6 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../auth/session";
-import { authenticatedFetch, resetAuthRefreshForTests } from "./config";
+import {
+  apiBaseUrl,
+  authenticatedFetch,
+  resetAuthRefreshForTests,
+} from "./config";
+
+describe("credentialed API base URL", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("accepts HTTPS and loopback HTTP URLs", () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://journiv.example.com");
+    expect(apiBaseUrl()).toBe("https://journiv.example.com");
+
+    vi.stubEnv("VITE_API_BASE_URL", "http://127.0.0.1:8000");
+    expect(apiBaseUrl()).toBe("http://127.0.0.1:8000");
+
+    vi.stubEnv("VITE_API_BASE_URL", "http://127.0.0.2:8000");
+    expect(apiBaseUrl()).toBe("http://127.0.0.2:8000");
+  });
+
+  it("rejects cross-origin LAN HTTP before credentials are configured", () => {
+    vi.stubEnv("VITE_API_BASE_URL", "http://192.168.1.10:8000");
+
+    expect(() => apiBaseUrl()).toThrow(
+      "VITE_API_BASE_URL must use HTTPS for credentialed cross-origin requests",
+    );
+  });
+});
 
 describe("authenticatedFetch", () => {
   beforeEach(() => {
@@ -9,7 +36,6 @@ describe("authenticatedFetch", () => {
     sessionStore.write({
       version: 1,
       accessToken: "expired-access",
-      refreshToken: "valid-refresh",
     });
   });
 
@@ -25,6 +51,8 @@ describe("authenticatedFetch", () => {
             : new Request(new URL(request.toString(), "http://journiv.test"));
         if (candidate.url.endsWith("/api/v1/auth/refresh")) {
           refreshCalls += 1;
+          expect(init?.credentials).toBe("include");
+          expect(init?.body).toBeUndefined();
           await Promise.resolve();
           return Response.json({ access_token: "renewed-access" });
         }

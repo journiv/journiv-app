@@ -12,6 +12,70 @@ def make_settings(**kwargs):
     return Settings(_env_file=None, **kwargs)
 
 
+class TestCookieAuthHttpSafety:
+    """Test explicit opt-in requirements for credentialed browser HTTP."""
+
+    base_settings = {
+        "allow_insecure_cookie_auth_over_http": False,
+        "secret_key": "test-secret-key-for-testing-only-32-chars",
+        "db_driver": "sqlite",
+        "database_url": DEFAULT_SQLITE_URL,
+    }
+
+    @pytest.mark.parametrize("domain_name", ["localhost", "127.0.0.1:8000", "[::1]:8000"])
+    def test_loopback_http_is_allowed_without_opt_in(self, domain_name):
+        settings = make_settings(
+            **self.base_settings,
+            environment="production",
+            domain_name=domain_name,
+            domain_scheme="http",
+        )
+
+        assert settings.allow_insecure_cookie_auth_over_http is False
+
+    def test_lan_http_is_rejected_without_opt_in(self):
+        with pytest.raises(ValidationError) as exc_info:
+            make_settings(
+                **self.base_settings,
+                environment="production",
+                domain_name="192.168.1.10:8000",
+                domain_scheme="http",
+            )
+
+        assert "ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP=true" in str(exc_info.value)
+
+    def test_production_http_without_domain_is_rejected_without_opt_in(self):
+        with pytest.raises(ValidationError):
+            make_settings(
+                **self.base_settings,
+                environment="production",
+                domain_name="",
+                domain_scheme="http",
+            )
+
+    def test_lan_http_opt_in_logs_strong_warning(self, caplog):
+        with caplog.at_level("CRITICAL"):
+            settings = make_settings(
+                **(self.base_settings | {"allow_insecure_cookie_auth_over_http": True}),
+                environment="production",
+                domain_name="192.168.1.10:8000",
+                domain_scheme="http",
+            )
+
+        assert settings.allow_insecure_cookie_auth_over_http is True
+        assert "passwords and refresh cookies" in caplog.text
+
+    def test_https_is_allowed_without_opt_in(self):
+        settings = make_settings(
+            **self.base_settings,
+            environment="production",
+            domain_name="journiv.example.com",
+            domain_scheme="https",
+        )
+
+        assert settings.allow_insecure_cookie_auth_over_http is False
+
+
 class TestDBDriverValidation:
     """Test DB_DRIVER field validation and requirements."""
 
@@ -172,6 +236,7 @@ class TestDBDriverValidation:
             db_driver="postgres",
             postgres_password="test-password",
             environment="production",
+            domain_scheme="https",
         )
         assert settings.db_driver == "postgres"
         effective_url = settings.effective_database_url

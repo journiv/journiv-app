@@ -77,12 +77,19 @@ docker run -d \
   -p 8000:8000 \
   -e SECRET_KEY=your-secret-key-here \
   -e DOMAIN_NAME=192.168.1.1 \
+  -e ALLOW_INSECURE_COOKIE_AUTH_OVER_HTTP=true \
   -v journiv_data:/data \
   --restart unless-stopped \
   swalabtech/journiv-app:latest
 ```
 
 **Access Journiv:** Open `http://192.168.1.1:8000` (replace with your server IP) in your browser to try it out.
+
+> [!WARNING]
+> The insecure HTTP opt-in above exists for isolated, trusted LANs only. HTTP
+> exposes passwords and refresh cookies to interception by other devices on the
+> network. Use `DOMAIN_SCHEME=https` for any internet-accessible or untrusted
+> network deployment.
 
 **For complete installation guide see [installation guide](https://journiv.com/docs/installation).**
 
@@ -161,4 +168,3 @@ AI-assisted contributions are refined, tested, and iterated on as part of the no
 AI use during development is separate from Journiv's runtime behavior. Journiv does not require an LLM service in order to run, and the use of AI coding tools during development does not cause journal entries or other private user content to be sent to an AI provider.
 
 Journiv recognizes that people have different preferences and comfort levels around AI-assisted software development. This disclosure is intended to be clear about how Journiv is built so that users and contributors can make an informed decision about whether the project is right for them.
-
