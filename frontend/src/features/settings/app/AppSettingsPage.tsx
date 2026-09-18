@@ -141,7 +141,9 @@ export function AppSettingsPage() {
   const installDescription = standalone
     ? "Journiv is installed on this device."
     : ios
-      ? "On iPhone or iPad: tap Share, then Add to Home Screen."
+      ? secureContext
+        ? "On iPhone or iPad: tap Share, then Add to Home Screen."
+        : "On iPhone or iPad: tap Share, then Add to Home Screen. This connection isn't secure because it doesn't use HTTPS, so the installed app won't work offline — only the online-only shortcut."
       : canPrompt
         ? "Add Journiv to this device's home screen or app list for a faster launch and no browser chrome."
         : secureContext

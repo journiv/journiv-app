@@ -114,6 +114,12 @@ export default defineConfig(({ mode }) => {
             /^\/api\//,
             /^\/media\//,
             /^\/pub\//,
+            // Reserved by the backend (app/frontend.py BACKEND_ROOTS) and
+            // 404s there today. Without this the worker would answer a
+            // /plus navigation with the React shell from precache, so the
+            // first real Plus page shipped would be shadowed by the shell
+            // for every already-installed client.
+            /^\/plus(?:\/|$)/,
             /^\/static\//,
             /^\/docs/,
             /^\/redoc/,

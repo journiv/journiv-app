@@ -4,6 +4,10 @@ import { VIEWPORTS } from "./e2e/viewports";
 
 export default defineConfig({
   testDir: "./e2e",
+  // e2e/pwa/* needs a real build and vite preview (the service worker is
+  // disabled in dev) -- it has its own playwright.pwa.config.ts and
+  // `npm run test:e2e:pwa`, not this project.
+  testIgnore: ["pwa/**"],
   fullyParallel: true,
   // A stray `test.only` locally is a debugging aid; in CI it silently drops
   // coverage, so it fails the run instead.

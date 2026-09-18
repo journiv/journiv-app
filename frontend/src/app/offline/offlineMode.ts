@@ -57,8 +57,17 @@ let syncStarted = false;
  * 401/403, or an explicit sign-out, moves to unauthenticated the same way.
  */
 export function initBootMode(restoreResult: RestoreResult) {
+  // A live access token outranks restoreResult. When navigator.onLine is
+  // false, restore() returns "offline" *provisionally* and leaves the refresh
+  // running; on a LAN-reachable server that request can land while main.tsx
+  // is still awaiting hydrateOfflineCache(). The token is then already set by
+  // the time this runs, and trusting the stale "offline" would strand a fully
+  // authenticated session behind OfflineBar for the rest of its life -- the
+  // notify() that would have corrected it fired before anything subscribed.
   setBootMode(
-    deriveInitialBootMode(restoreResult, sessionStore.readHint() !== null),
+    sessionStore.getAccessToken()
+      ? "normal"
+      : deriveInitialBootMode(restoreResult, sessionStore.readHint() !== null),
   );
   if (syncStarted) return;
   syncStarted = true;

@@ -303,6 +303,11 @@ describe("Phase B routes", () => {
   ])(
     "redirects offline-restricted mutation route %s to %s",
     async (path, destination) => {
+      // A real offline boot has the persisted hint from beforeEach's adopt(),
+      // but no live in-memory access token. A live token correctly outranks a
+      // provisional offline restore result (offlineMode.ts).
+      resetSessionForTests();
+      resetBootModeForTests();
       initBootMode("offline");
 
       const view = await renderRoute(path);

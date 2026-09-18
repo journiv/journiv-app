@@ -246,6 +246,7 @@ frontend/docs/design/reference
 # Committed screenshot baselines live in frontend/e2e/__screenshots__/ and are
 # deliberately NOT ignored.
 frontend/test-results/
+frontend/test-results-pwa/
 frontend/playwright-report/
 frontend/blob-report/
 frontend/.playwright/

@@ -1,7 +1,9 @@
-import { deleteCurrentUserApiV1UsersMeDelete } from "@/api/generated";
+import {
+  deleteCurrentUserApiV1UsersMeDelete,
+  loginApiV1AuthLoginPost,
+} from "@/api/generated";
 import { runId } from "../env";
 import { createJournivClient } from "../fixtures/api";
-import { SESSION_STORAGE_KEY } from "../fixtures/auth";
 import { expect, test } from "../fixtures/test";
 
 test.describe("authentication journeys", () => {
@@ -68,18 +70,22 @@ test.describe("authentication journeys", () => {
         await page.getByRole("button", { name: "Create account" }).click();
 
         await expect(page).toHaveURL((url) => url.pathname === "/timeline");
-        accessToken = await page.evaluate((sessionKey) => {
-          const stored = sessionStorage.getItem(sessionKey);
-          if (!stored) return undefined;
-          const session = JSON.parse(stored) as { accessToken?: unknown };
-          return typeof session.accessToken === "string"
-            ? session.accessToken
-            : undefined;
-        }, SESSION_STORAGE_KEY);
-        expect(accessToken).toBeTruthy();
         await expect(
           page.getByRole("button", { name: "Log out" }),
         ).toBeVisible();
+
+        // The signed-in proof above is the URL and the Log out button, not a
+        // token: the access token now lives only in an in-memory variable
+        // inside session.ts, unreachable from the browser's storage
+        // (docs/features/authentication.md). A follow-up API login with the
+        // same credentials gets a token for the cleanup delete below,
+        // independent of whatever the page itself is holding.
+        const logIn = await loginApiV1AuthLoginPost({
+          client: createJournivClient(),
+          body: { email, password },
+        });
+        if (logIn.error === undefined && logIn.data)
+          accessToken = logIn.data.access_token;
       } finally {
         if (accessToken) {
           const deleted = await deleteCurrentUserApiV1UsersMeDelete({
@@ -126,6 +132,25 @@ test.describe("authentication journeys", () => {
     await expect(
       page.getByRole("heading", { name: "Welcome back" }),
     ).toBeVisible();
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("journiv.session-hint.v1"),
+      ),
+    ).toBeNull();
+
+    // The fixture init script runs again for a reload. If refresh is
+    // unreachable, it must not recreate the hint that logout removed and
+    // misclassify this tab as an offline authenticated session.
+    await page.route("**/api/v1/auth/refresh", (route) => route.abort());
+    await page.reload();
+    await expect(
+      page.getByRole("heading", { name: "Welcome back" }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() =>
+        localStorage.getItem("journiv.session-hint.v1"),
+      ),
+    ).toBeNull();
 
     // Back asks the client router to revisit /timeline in the same document,
     // after the logout action has cleared its session. The route guard must

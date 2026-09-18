@@ -49,6 +49,14 @@ NO_CACHE_FILENAMES = frozenset(
         "manifest.json",
         "service-worker.js",
         "version.json",
+        # Defence in depth: the current build emits none of these (it uses
+        # manifest.json / service-worker.js above, configured in
+        # vite.config.ts), but vite-plugin-pwa's own defaults use these
+        # names. A future rename to the defaults must not silently ship a
+        # week-cached manifest or service worker.
+        "manifest.webmanifest",
+        "sw.js",
+        "registerSW.js",
     }
 )
 
