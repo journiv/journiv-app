@@ -3,7 +3,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { VitePWA } from "vite-plugin-pwa";
-import { manifestShortcuts } from "./src/app/pwa/manifestShortcuts";
+import { manifestShortcuts } from "./src/app/pwa/manifestShortcuts.ts";
 
 const srcDir = fileURLToPath(new URL("./src", import.meta.url));
 const shortcutIcons = [
@@ -27,10 +27,17 @@ export default defineConfig(({ mode }) => {
       react(),
       tailwindcss(),
       VitePWA({
-        // registerType/workbox/service-worker filename land in Phase 3
-        // (docs/features/pwa.md); this call only establishes the manifest.
+        // We register the worker explicitly in src/app/pwa/registerServiceWorker.ts,
+        // after retireRootFlutterWorker() and after first render -- injecting it
+        // here would race the boot session restore. See docs/features/pwa.md.
         injectRegister: null,
+        registerType: "prompt",
+        // The backend no-caches this exact filename (app/frontend.py
+        // NO_CACHE_FILENAMES) and sets Service-Worker-Allowed: / for it.
+        filename: "service-worker.js",
         manifestFilename: "manifest.json",
+        scope: "/",
+        base: "/",
         includeAssets: ["favicon.svg", "favicon.ico", "apple-touch-icon.png"],
         manifest: {
           id: "/",
@@ -87,6 +94,41 @@ export default defineConfig(({ mode }) => {
           })),
         },
         devOptions: { enabled: false },
+        workbox: {
+          globPatterns: ["**/*.{js,css,html,svg,png,ico,woff2}"],
+          // Install art, not shell: manifest screenshots are shown once, by
+          // the browser's install dialog, while online. They are not worth
+          // precaching into the offline shell.
+          globIgnores: ["**/pwa/screenshot-*"],
+          maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+          inlineWorkboxRuntime: true,
+          cleanupOutdatedCaches: true,
+          // Not stylistic: with either set true, a new worker takes over
+          // mid-session and the next navigation serves new assets to an old
+          // page -- reloading out from under a user who is mid-sentence in
+          // the editor. registerType: "prompt" requires both false.
+          clientsClaim: false,
+          skipWaiting: false,
+          navigateFallback: "/index.html",
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/media\//,
+            /^\/pub\//,
+            /^\/static\//,
+            /^\/docs/,
+            /^\/redoc/,
+            /^\/openapi\.json$/,
+            // Stops the root worker from answering a Flutter navigation with
+            // the React shell mid-rollback; /legacy/ has its own SW scope.
+            /^\/legacy\//,
+            /^\/flutter_service_worker\.js$/,
+          ],
+          // Deliberate and load-bearing, not an oversight: no /api, /media or
+          // /pub response may ever enter Cache Storage. Offline reading goes
+          // through the IndexedDB query cache (src/app/offline/) instead --
+          // per-user, bounded, allowlisted, and clearable.
+          runtimeCaching: [],
+        },
       }),
     ],
     resolve: {
@@ -94,6 +136,16 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: process.env.PORT ? Number(process.env.PORT) : undefined,
+      proxy: {
+        "/api": backendProxy,
+        "/media": backendProxy,
+      },
+    },
+    // The service worker is disabled in dev (devOptions.enabled: false), so
+    // PWA/offline behaviour can only be exercised against a real build via
+    // `vite preview` (e2e/pwa/*, docs/features/pwa.md) -- it needs the same
+    // proxy `server` has.
+    preview: {
       proxy: {
         "/api": backendProxy,
         "/media": backendProxy,

@@ -4,7 +4,7 @@
     "target": "ES2024",
     "useDefineForClassFields": true,
     "lib": ["ES2024", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    "types": ["vite/client", "vite-plugin-pwa/client"],
     "allowJs": false,
     "skipLibCheck": true,
     "esModuleInterop": true,

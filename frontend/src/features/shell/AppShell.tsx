@@ -9,12 +9,15 @@ import {
 import { X } from "lucide-react";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { sessionStore } from "../../api/auth/session";
+import { useBootMode } from "../../app/offline/offlineMode";
 import { ApiError } from "../../api/client/errors";
 import { currentUserQuery } from "../../api/query/options";
 import { IconButton } from "../../components/ui/icon-button";
 import type { SettingsSection } from "../settings/SettingsModal";
 import { AppSidebar } from "./AppSidebar";
+import { OfflineBar } from "./OfflineBar";
 import { ShellContext } from "./shellContext";
+import { UpdateBar } from "./UpdateBar";
 import { cx } from "../../lib/cx";
 import "./shell.css";
 
@@ -49,9 +52,11 @@ export function AppShell() {
   // leaving it mounted on close lets the overlay animate out.
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [quickLogKey, setQuickLogKey] = useState(0);
+  const [hasUnsavedDraft, setHasUnsavedDraft] = useState(false);
   const router = useRouter();
   const queryClient = useQueryClient();
   const currentUser = useQuery(currentUserQuery());
+  const offline = useBootMode() === "offline-restricted";
 
   useEffect(() => {
     const signOut = () => {
@@ -90,9 +95,12 @@ export function AppShell() {
           setQuickLogKey((key) => key + 1);
           setQuickLogOpen(true);
         },
+        hasUnsavedDraft,
+        setHasUnsavedDraft,
       }}
     >
       <div className={cx("jv-shell", detailActive && "is-detail")}>
+        {offline && <OfflineBar />}
         <Dialog.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
           <Dialog.Portal>
             <Dialog.Backdrop className="z-30 fixed inset-0 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0" />
@@ -140,6 +148,8 @@ export function AppShell() {
             />
           </Suspense>
         )}
+
+        <UpdateBar />
       </div>
     </ShellContext.Provider>
   );

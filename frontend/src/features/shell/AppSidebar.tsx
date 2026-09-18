@@ -32,6 +32,7 @@ import type {
   UserResponse,
 } from "../../api/generated/types.gen";
 import { signOut } from "../../api/auth/session";
+import { useBootMode } from "../../app/offline/offlineMode";
 import { useTheme, type ThemeMode } from "../../app/theme";
 import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
@@ -61,6 +62,7 @@ export function AppSidebar({
   const { journals, isLoading, isError, refetch } = useJournalLookup();
   const navigate = useNavigate();
   const shell = useShell();
+  const offline = useBootMode() === "offline-restricted";
   // Where Settings was opened from, so closing it returns here (docs/features/settings.md).
   const fromHref = useRouterState({ select: (state) => state.location.href });
   // The rail lists active journals in the canonical order — favourites sort to
@@ -83,10 +85,20 @@ export function AppSidebar({
       <Button
         variant="brand"
         className="jv-nav__new"
-        nativeButton={false}
-        render={
-          <Link to="/timeline/new" search={{ q: "" }} onClick={onNavigate} />
-        }
+        disabled={offline}
+        title={offline ? "New entries need a connection" : undefined}
+        {...(offline
+          ? {}
+          : {
+              nativeButton: false,
+              render: (
+                <Link
+                  to="/timeline/new"
+                  search={{ q: "" }}
+                  onClick={onNavigate}
+                />
+              ),
+            })}
       >
         <Plus aria-hidden="true" size={16} />
         New entry

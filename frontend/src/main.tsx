@@ -13,7 +13,19 @@ import {
   readUiExperiment,
 } from "./features/theme/uiExperiment";
 import { retireRootFlutterWorker } from "./app/retireRootFlutterWorker";
-import { sessionStore } from "./api/auth/session";
+import {
+  hydrateOfflineCache,
+  purgeOfflineCache,
+  subscribeOfflineCache,
+  teardownOfflineCache,
+} from "./app/offline/offlineCache";
+import { initBootMode } from "./app/offline/offlineMode";
+import { registerServiceWorker } from "./app/pwa/registerServiceWorker";
+import {
+  registerOfflineCachePurge,
+  registerOfflineCacheSubscribe,
+  sessionStore,
+} from "./api/auth/session";
 import { Toaster } from "./components/ui/toast";
 
 const rootElement = document.getElementById("root");
@@ -29,15 +41,41 @@ applyUserTheme(readUserTheme());
 // user theme so it wins while active. Remove with uiExperiment.ts.
 applyUiExperiment(readUiExperiment());
 
+// The offline cache module has no dependency on session.ts (avoids a
+// cycle); session.ts calls back through these registrations instead: purge
+// on logout / a definite 401, and (re)subscribe from adopt() -- a fresh
+// sign-in has no hint yet at boot, so without this the subscription boot
+// started never learns the userId and nothing gets persisted for it.
+registerOfflineCachePurge((userId) => {
+  teardownOfflineCache();
+  void purgeOfflineCache(userId).catch(() => {
+    // Session teardown must complete even if browser storage cannot be erased.
+  });
+});
+registerOfflineCacheSubscribe((userId) => {
+  subscribeOfflineCache(queryClient, userId);
+});
+
 async function boot() {
-  // Must finish before the service worker registers (Phase 3) and before the
-  // session restore request goes out, so a stale root-scoped Flutter worker
-  // can never intercept either.
+  // Must finish before the service worker registers and before the session
+  // restore request goes out, so a stale root-scoped Flutter worker can
+  // never intercept either.
   await retireRootFlutterWorker();
-  // The route guard (src/app/router/index.tsx) reads the resolved session
-  // synchronously, so it must not render until this settles. The boot splash
-  // in index.html is what the user sees meanwhile.
-  await sessionStore.restore();
+
+  const hint = sessionStore.readHint();
+  // Concurrent, not sequential: an offline cold launch must paint cached
+  // content in well under a second, not stare at the splash for the full
+  // restore timeout before hydration even starts (docs/features/pwa.md).
+  const [restoreResult] = await Promise.all([
+    sessionStore.restore(),
+    hydrateOfflineCache(queryClient, hint?.userId),
+  ]);
+  initBootMode(restoreResult);
+  const unsubscribeOfflineCache = subscribeOfflineCache(
+    queryClient,
+    sessionStore.readHint()?.userId,
+  );
+  void unsubscribeOfflineCache; // kept alive for the app's lifetime
 
   root.render(
     <StrictMode>
@@ -48,6 +86,10 @@ async function boot() {
       </QueryClientProvider>
     </StrictMode>,
   );
+
+  // After first render, not before: a registration competing with the boot
+  // restore request above would slow down the launch the user sees.
+  registerServiceWorker();
 }
 
 void boot();

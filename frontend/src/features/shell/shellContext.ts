@@ -9,11 +9,19 @@ export type ShellContextValue = {
   openNavigation: () => void;
   /** Opens the Quick Log capture sheet (docs/features/quicklog.md). */
   openQuickLog: () => void;
+  /** Whether the mounted editor has unsaved changes. useLocalDraft already
+   *  flushes a safety-net copy on pagehide, so this only gates the PWA
+   *  update bar's confirmation (docs/features/pwa.md) -- it is not a save
+   *  guarantee by itself. */
+  hasUnsavedDraft: boolean;
+  setHasUnsavedDraft: (value: boolean) => void;
 };
 
 export const ShellContext = createContext<ShellContextValue>({
   openNavigation: () => {},
   openQuickLog: () => {},
+  hasUnsavedDraft: false,
+  setHasUnsavedDraft: () => {},
 });
 
 /** Panes and the sidebar read this for shell-level affordances (the compact
