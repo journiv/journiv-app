@@ -81,6 +81,7 @@ Spacing: 4 / 8 / 12 / 16 / 24 / 32 / 48 / 64 as `--space-1` through
 - `--reader-measure` 68ch.
 - `--tap-target` 44px.
 - `--duration-fast` 110ms.
+- `--duration-enter` 160ms.
 
 DM Sans is the bundled system font. The reader font owns reading and editor
 prose; no remote fonts. Use existing role classes in
@@ -171,8 +172,31 @@ own this composition; feature code fills them, it does not re-skin them.
 | selected | accent plus a 3px brand rail and aria-current |
 | focus-visible | existing native/product outline or upstream registry ring |
 | disabled | opacity 0.55 and cursor not-allowed |
-| loading | shape-matching Skeleton or pane-level StatusView |
+| loading | shape-matching Skeleton, or pane-level StatusView for empty/error — see "Navigation loading" |
 | error | human message, pane-level StatusView, and retry where possible |
+
+**Navigation loading.** Navigation loading must preserve the destination's
+layout geometry. Do not replace application navigation with a centred activity
+spinner when a destination skeleton or cached surface can be shown. Skeletons
+represent initial content absence; background revalidation must not blank
+already-usable content.
+
+Code loading (the module is not downloaded yet) and data loading (the
+component exists, the query has no data yet) are different problems with one
+shared requirement: neither may change the pane's geometry. A route-level
+Suspense fallback owns **geometry** — the pane element, its grid placement,
+its surface and its bar. The feature owns its **data** skeleton. A route
+fallback must not reproduce a feature's skeleton markup.
+
+A centred spinner remains correct for a genuinely indeterminate in-place wait
+(a running job, a media transcode), never for arriving at a screen.
+
+**Retained content must stay truthful.** Never render one semantic scope's
+data beneath another scope's title, controls or links merely to avoid a
+skeleton. Keeping previous results is correct when the *same* subject is being
+refined (a search term narrowing within one scope); it is wrong when the
+subject itself changed (All moments -> a person, journal A -> journal B). A
+skeleton during a genuine subject change is the honest answer.
 
 Selection is never colour-only. Secondary row overflow actions may be hidden
 only on fine hover pointers, must remain in the accessibility tree and tab
@@ -208,8 +232,11 @@ segmented controls grow their own target only on coarse pointers so hit areas
 do not overlap.
 
 Use the existing fast transition token for product hover and selected state.
-Registry dialogs and drawers retain upstream entry motion. Honour reduced
-motion globally; do not add decorative animation.
+A pane, page, or workspace root additionally gets one settled fade-and-lift on
+arrival using `--duration-enter`, applied once at that root — never per card,
+row, skeleton, or nested pane. Registry dialogs and drawers retain upstream
+entry motion. Honour reduced motion globally; do not add decorative
+animation.
 
 - Every control has visible focus.
 - Body text and new foreground/background pairs meet AA in both themes.

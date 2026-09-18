@@ -2,15 +2,21 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  lazyRouteComponent,
   Outlet,
   type RouterHistory,
   redirect,
 } from "@tanstack/react-router";
-import { BookOpenText, Compass, Library, Loader2 } from "lucide-react";
-import { lazy, Suspense } from "react";
+import { BookOpenText, Compass, Library } from "lucide-react";
+import { Suspense } from "react";
 import { sessionStore } from "../../api/auth/session";
 import { getBootMode } from "../offline/offlineMode";
 import { StatusView } from "../../components/journiv/StatusView";
+import {
+  DetailPaneFallback,
+  ListPaneFallback,
+  WorkspacePaneFallback,
+} from "../../components/journiv/RouteFallback";
 import { LoginPage } from "../../features/auth/LoginPage";
 import { OidcFinishPage } from "../../features/auth/OidcFinishPage";
 import { SignUpPage } from "../../features/auth/SignUpPage";
@@ -18,53 +24,62 @@ import { safeReturnTo } from "../../features/auth/returnTo";
 import { AppShell } from "../../features/shell/AppShell";
 import { Workspace } from "../../features/shell/Workspace";
 
-const ReaderPage = lazy(async () => ({
-  default: (await import("../../features/reader/ReaderPage")).ReaderPage,
-}));
-const EntryEditorPage = lazy(async () => ({
-  default: (await import("../../features/editor/EntryEditorPage"))
-    .EntryEditorPage,
-}));
-const JournalsPage = lazy(async () => ({
-  default: (await import("../../features/journals/JournalsPage")).JournalsPage,
-}));
-const PeoplePage = lazy(async () => ({
-  default: (await import("../../features/library/PeoplePage")).PeoplePage,
-}));
-const ActivitiesPage = lazy(async () => ({
-  default: (await import("../../features/library/ActivitiesPage"))
-    .ActivitiesPage,
-}));
-const GoalsPage = lazy(async () => ({
-  default: (await import("../../features/library/GoalsPage")).GoalsPage,
-}));
-const MoodsPage = lazy(async () => ({
-  default: (await import("../../features/library/MoodsPage")).MoodsPage,
-}));
-const TagsPage = lazy(async () => ({
-  default: (await import("../../features/library/TagsPage")).TagsPage,
-}));
-const TagDetailPage = lazy(async () => ({
-  default: (await import("../../features/library/TagDetailPage")).TagDetailPage,
-}));
-const InsightsPage = lazy(async () => ({
-  default: (await import("../../features/insights/InsightsPage")).InsightsPage,
-}));
-const PromptLibraryPage = lazy(async () => ({
-  default: (await import("../../features/prompts/PromptLibraryPage"))
-    .PromptLibraryPage,
-}));
-
-function DetailLoading({ label }: { label: string }) {
-  return (
-    <div className="jv-pane-status" role="status">
-      <StatusView
-        icon={<Loader2 className="jv-spin" size={20} />}
-        title={label}
-      />
-    </div>
-  );
-}
+/**
+ * `lazyRouteComponent` (not plain `React.lazy`) wraps every route-level chunk:
+ * it is a drop-in Suspense-throwing component like `React.lazy`, but also
+ * exposes a static `.preload()` that starts the same dynamic import without
+ * mounting anything. The router calls `route.options.component.preload()` on
+ * `<Link>` hover/touch under `defaultPreload: "intent"` — plain `React.lazy`
+ * has no such hook, which is why hovering a sidebar item prefetched nothing
+ * before this change. Where a route's `component` wraps the lazy page in a
+ * manual `<Suspense>` (for a pane-content fallback, or a static sibling),
+ * that wrapper re-exposes `.preload` itself, below, so the router still finds
+ * it on `route.options.component`.
+ */
+const ReaderPage = lazyRouteComponent(
+  () => import("../../features/reader/ReaderPage"),
+  "ReaderPage",
+);
+const EntryEditorPage = lazyRouteComponent(
+  () => import("../../features/editor/EntryEditorPage"),
+  "EntryEditorPage",
+);
+const JournalsPage = lazyRouteComponent(
+  () => import("../../features/journals/JournalsPage"),
+  "JournalsPage",
+);
+const PeoplePage = lazyRouteComponent(
+  () => import("../../features/library/PeoplePage"),
+  "PeoplePage",
+);
+const ActivitiesPage = lazyRouteComponent(
+  () => import("../../features/library/ActivitiesPage"),
+  "ActivitiesPage",
+);
+const GoalsPage = lazyRouteComponent(
+  () => import("../../features/library/GoalsPage"),
+  "GoalsPage",
+);
+const MoodsPage = lazyRouteComponent(
+  () => import("../../features/library/MoodsPage"),
+  "MoodsPage",
+);
+const TagsPage = lazyRouteComponent(
+  () => import("../../features/library/TagsPage"),
+  "TagsPage",
+);
+const TagDetailPage = lazyRouteComponent(
+  () => import("../../features/library/TagDetailPage"),
+  "TagDetailPage",
+);
+const InsightsPage = lazyRouteComponent(
+  () => import("../../features/insights/InsightsPage"),
+  "InsightsPage",
+);
+const PromptLibraryPage = lazyRouteComponent(
+  () => import("../../features/prompts/PromptLibraryPage"),
+  "PromptLibraryPage",
+);
 
 function NothingSelected() {
   return (
@@ -81,7 +96,7 @@ function NothingSelected() {
 function JournalsIndex() {
   return (
     <>
-      <Suspense fallback={<DetailLoading label="Loading journals…" />}>
+      <Suspense fallback={<ListPaneFallback label="Loading journals…" />}>
         <JournalsPage />
       </Suspense>
       <section className="jv-shell__page" aria-label="Journal detail">
@@ -96,6 +111,10 @@ function JournalsIndex() {
     </>
   );
 }
+// The route component is this wrapper, not `JournalsPage` itself — re-expose
+// `.preload` so `<Link>` hover still finds it (see `lazyRouteComponent` note
+// above `ReaderPage`).
+JournalsIndex.preload = JournalsPage.preload;
 
 /** The inert Journiv view painted behind the Settings modal. Settings is an
  *  overlay with real routes (docs/features/settings.md): the route renders the ordinary
@@ -112,22 +131,24 @@ function SettingsBackground() {
 function ReaderDetail() {
   return (
     <Workspace>
-      <Suspense fallback={<DetailLoading label="Loading entry…" />}>
+      <Suspense fallback={<DetailPaneFallback label="Loading entry…" />}>
         <ReaderPage />
       </Suspense>
     </Workspace>
   );
 }
+ReaderDetail.preload = ReaderPage.preload;
 
 function EditorDetail() {
   return (
     <Workspace>
-      <Suspense fallback={<DetailLoading label="Loading editor…" />}>
+      <Suspense fallback={<DetailPaneFallback label="Loading editor…" />}>
         <EntryEditorPage />
       </Suspense>
     </Workspace>
   );
 }
+EditorDetail.preload = EntryEditorPage.preload;
 
 const isMonth = (v: unknown): v is string =>
   typeof v === "string" && /^\d{4}-\d{2}$/.test(v);
@@ -440,25 +461,33 @@ const settingsTagsRedirectRoute = createRoute({
  *  columns; opening a tag *pushes* to the detail (marketplace-style), it does
  *  not open a third pane (docs/features/library.md). So neither route carries `detailPane`
  *  and each renders one component. */
+function TagsRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading Tags…" />}>
+      <TagsPage />
+    </Suspense>
+  );
+}
+TagsRoute.preload = TagsPage.preload;
 const libraryTagsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/library/tags",
   validateSearch: timelineSearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading Tags…" />}>
-      <TagsPage />
-    </Suspense>
-  ),
+  component: TagsRoute,
 });
+function TagDetailRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading tag…" />}>
+      <TagDetailPage />
+    </Suspense>
+  );
+}
+TagDetailRoute.preload = TagDetailPage.preload;
 const libraryTagRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/library/tags/$tagId",
   validateSearch: timelineSearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading tag…" />}>
-      <TagDetailPage />
-    </Suspense>
-  ),
+  component: TagDetailRoute,
 });
 /** Insights is a wide analysis workspace like Library, but read-only: one
  *  component, no detail pane, no `Workspace`. `tab` selects the Overview / Mood /
@@ -483,68 +512,92 @@ const promptLibrarySearch = (
 ): { tab: "discover" | "insights" } => ({
   tab: search.tab === "insights" ? "insights" : "discover",
 });
+function InsightsRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading Insights…" />}>
+      <InsightsPage />
+    </Suspense>
+  );
+}
+InsightsRoute.preload = InsightsPage.preload;
 const insightsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/insights",
   validateSearch: insightsSearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading Insights…" />}>
-      <InsightsPage />
-    </Suspense>
-  ),
+  component: InsightsRoute,
 });
 /** The prompt library is a wide Library-style workspace: one component, no
  *  detail pane. Choosing a prompt opens `/timeline/new?prompt=` rather than a
  *  third pane (docs/features/prompts.md). */
+function PromptLibraryRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading Prompts…" />}>
+      <PromptLibraryPage />
+    </Suspense>
+  );
+}
+PromptLibraryRoute.preload = PromptLibraryPage.preload;
 const libraryPromptsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/library/prompts",
   validateSearch: promptLibrarySearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading Prompts…" />}>
-      <PromptLibraryPage />
-    </Suspense>
-  ),
+  component: PromptLibraryRoute,
 });
+function PeopleRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading People…" />}>
+      <PeoplePage />
+    </Suspense>
+  );
+}
+PeopleRoute.preload = PeoplePage.preload;
 const settingsPeopleRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings/journaling/people",
   validateSearch: timelineSearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading People…" />}>
-      <PeoplePage />
-    </Suspense>
-  ),
+  component: PeopleRoute,
 });
+function MoodsRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading Moods…" />}>
+      <MoodsPage />
+    </Suspense>
+  );
+}
+MoodsRoute.preload = MoodsPage.preload;
 const settingsMoodsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings/journaling/moods",
   validateSearch: timelineSearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading Moods…" />}>
-      <MoodsPage />
-    </Suspense>
-  ),
+  component: MoodsRoute,
 });
+function ActivitiesRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading Activities…" />}>
+      <ActivitiesPage />
+    </Suspense>
+  );
+}
+ActivitiesRoute.preload = ActivitiesPage.preload;
 const settingsActivitiesRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings/journaling/activities",
   validateSearch: timelineSearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading Activities…" />}>
-      <ActivitiesPage />
-    </Suspense>
-  ),
+  component: ActivitiesRoute,
 });
+function GoalsRoute() {
+  return (
+    <Suspense fallback={<WorkspacePaneFallback label="Loading Goals…" />}>
+      <GoalsPage />
+    </Suspense>
+  );
+}
+GoalsRoute.preload = GoalsPage.preload;
 const settingsGoalsRoute = createRoute({
   getParentRoute: () => protectedRoute,
   path: "/settings/journaling/goals",
   validateSearch: timelineSearch,
-  component: () => (
-    <Suspense fallback={<DetailLoading label="Loading Goals…" />}>
-      <GoalsPage />
-    </Suspense>
-  ),
+  component: GoalsRoute,
 });
 const settingsIntegrationsRoute = createRoute({
   getParentRoute: () => protectedRoute,

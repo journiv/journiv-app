@@ -50,6 +50,7 @@ import {
   ENTITY_COLOR_PRESETS,
 } from "../../lib/color";
 import { cx } from "../../lib/cx";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
 import { viewMomentsAction } from "./viewMomentsAction";
@@ -182,6 +183,11 @@ export function MoodsPage() {
   const qc = useQueryClient();
   const moodsResult = useQuery(moodsQuery());
   const groupsResult = useQuery(moodGroupsQuery());
+  const loading = moodsResult.isLoading || groupsResult.isLoading;
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "library:Moods",
+    loading,
+  );
   const moods = moodsResult.data ?? [];
   const groups = groupsResult.data ?? [];
 
@@ -243,7 +249,6 @@ export function MoodsPage() {
     },
   });
 
-  const loading = moodsResult.isLoading || groupsResult.isLoading;
   const loadError = moodsResult.isError || groupsResult.isError;
   const normalizedSearch = search.trim().toLowerCase();
   const searching = normalizedSearch.length > 0;
@@ -314,7 +319,7 @@ export function MoodsPage() {
         </div>
       </header>
 
-      <div className="jv-library__scroll">
+      <div className="jv-library__scroll" ref={scrollRef}>
         <div className="jv-library__body">
           <SearchInput
             className="jv-search-wrap"

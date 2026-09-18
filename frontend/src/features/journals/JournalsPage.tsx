@@ -9,6 +9,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { StatusView } from "../../components/journiv/StatusView";
 import { groupJournals, reorderWithinGroup } from "../../lib/journalOrder";
 import { useJournalLookup } from "../../lib/useJournalLookup";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
 import { DeleteJournalDialog } from "./DeleteJournalDialog";
 import { JournalFormDialog, type JournalFormValues } from "./JournalFormDialog";
@@ -22,6 +23,10 @@ export function JournalsPage() {
   const { journals, isLoading, isError, refetch } = useJournalLookup();
   const { create, update, toggleFavorite, setArchived, reorder, remove } =
     useJournalMutations();
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "journals",
+    isLoading,
+  );
 
   const [formOpen, setFormOpen] = useState(false);
   const [formJournal, setFormJournal] = useState<JournalResponse | undefined>();
@@ -105,7 +110,7 @@ export function JournalsPage() {
         </Button>
       </header>
 
-      <div className="jv-journals__scroll">
+      <div className="jv-journals__scroll" ref={scrollRef}>
         {isLoading && (
           <ul className="jv-jlist" role="status" aria-label="Loading journals">
             {["a", "b", "c", "d"].map((k) => (

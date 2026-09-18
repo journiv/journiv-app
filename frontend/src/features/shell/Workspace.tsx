@@ -1,7 +1,6 @@
 import { useSearch } from "@tanstack/react-router";
 import { lazy, Suspense, type ReactNode } from "react";
-import { StatusView } from "../../components/journiv/StatusView";
-import { Loader2 } from "lucide-react";
+import { ListPaneFallback } from "../../components/journiv/RouteFallback";
 import { TimelinePage } from "../timeline/TimelinePage";
 
 const CalendarPane = lazy(async () => ({
@@ -10,19 +9,6 @@ const CalendarPane = lazy(async () => ({
 const MediaPane = lazy(async () => ({
   default: (await import("../media/MediaPane")).MediaPane,
 }));
-
-function ListPaneLoading({ label }: { label: string }) {
-  return (
-    <section className="jv-shell__list" aria-label={label}>
-      <div className="jv-pane-status" role="status">
-        <StatusView
-          icon={<Loader2 className="jv-spin" size={20} />}
-          title={label}
-        />
-      </div>
-    </section>
-  );
-}
 
 /**
  * The middle "list" pane plus the detail pane beside it.
@@ -40,11 +26,11 @@ export function Workspace({ children }: { children: ReactNode }) {
   return (
     <>
       {view === "calendar" ? (
-        <Suspense fallback={<ListPaneLoading label="Loading calendar…" />}>
+        <Suspense fallback={<ListPaneFallback label="Loading calendar…" />}>
           <CalendarPane />
         </Suspense>
       ) : view === "media" ? (
-        <Suspense fallback={<ListPaneLoading label="Loading media…" />}>
+        <Suspense fallback={<ListPaneFallback label="Loading media…" />}>
           <MediaPane />
         </Suspense>
       ) : (

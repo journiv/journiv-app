@@ -136,6 +136,11 @@
   --list-width-max: 400px;
   --bar-height: 52px;
   --reader-measure: 68ch;
+  /* The shared measure of a Library-style workspace: its header and its
+     scrolling body line up on one column, and a route fallback standing in
+     for that workspace has to land on the same one or the heading jumps
+     sideways when the chunk resolves (library.css, journiv.css). */
+  --library-measure: 52rem;
   --reader-gutter: clamp(24px, 5vw, 64px);
   --tap-target: 44px;
   /* Tallest an adaptive dialog may grow (DESIGN.md, "Adaptive overlays").
@@ -146,6 +151,10 @@
   /* ---- motion --------------------------------------------------------- */
   --ease: cubic-bezier(0.2, 0, 0.15, 1);
   --duration-fast: 110ms;
+  /* One settled fade-and-lift for a pane/workspace root arriving on
+     navigation (DESIGN.md "Icons, motion, and accessibility"). Never used
+     for hover or selected state — that stays `--duration-fast`. */
+  --duration-enter: 160ms;
 }
 
 .dark {

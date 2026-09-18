@@ -27,7 +27,7 @@
 .jv-library__header,
 .jv-library__body {
   width: 100%;
-  max-width: 52rem;
+  max-width: var(--library-measure);
   margin-inline: auto;
   padding-inline: var(--space-4);
 }

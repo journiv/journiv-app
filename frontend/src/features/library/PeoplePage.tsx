@@ -62,6 +62,7 @@ import { SearchInput } from "../../components/ui/search-input";
 import { Skeleton } from "../../components/ui/skeleton";
 import { colorFromArgb } from "../../lib/color";
 import { cx } from "../../lib/cx";
+import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
 import { GroupsManagerDialog } from "./GroupsManagerDialog";
 import { ImmichPeopleImportDialog } from "./immich/ImmichPeopleImportDialog";
@@ -258,6 +259,11 @@ export function PeoplePage() {
   const qc = useQueryClient();
   const peopleQueryResult = useQuery(peopleQuery());
   const groupsQueryResult = useQuery(personGroupsQuery());
+  const loading = peopleQueryResult.isLoading || groupsQueryResult.isLoading;
+  const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
+    "library:People",
+    loading,
+  );
   const people = peopleQueryResult.data ?? [];
   const groups = groupsQueryResult.data ?? [];
 
@@ -426,7 +432,6 @@ export function PeoplePage() {
     },
   });
 
-  const loading = peopleQueryResult.isLoading || groupsQueryResult.isLoading;
   const loadError = peopleQueryResult.isError || groupsQueryResult.isError;
   const normalizedSearch = search.trim().toLowerCase();
   const searching = normalizedSearch.length > 0;
@@ -517,7 +522,7 @@ export function PeoplePage() {
         </div>
       </header>
 
-      <div className="jv-library__scroll">
+      <div className="jv-library__scroll" ref={scrollRef}>
         <div className="jv-library__body">
           <SearchInput
             className="jv-search-wrap"
