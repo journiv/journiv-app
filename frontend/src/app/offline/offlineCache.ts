@@ -116,7 +116,10 @@ export async function hydrateOfflineCache(
         maxAge: MAX_AGE_MS,
         buster: CACHE_SCHEMA_VERSION,
       }).then(() =>
-        dehydrate(stagingClient, { shouldDehydrateMutation: () => false }),
+        dehydrate(stagingClient, {
+          shouldDehydrateQuery: shouldPersistQuery,
+          shouldDehydrateMutation: () => false,
+        }),
       ),
       new Promise<undefined>((resolve) =>
         setTimeout(resolve, HYDRATE_TIMEOUT_MS),

@@ -21,6 +21,7 @@
     var(--nav-width)
     minmax(var(--list-width-min), var(--list-width-max))
     minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto;
   --jv-seam: color-mix(in oklab, var(--border), transparent 60%);
 }
 
@@ -35,6 +36,7 @@
    direction in dark on purpose — see tokens.css. */
 
 .jv-shell__nav {
+  grid-row: 2;
   min-width: 0;
   overflow: hidden auto;
   background: var(--sidebar);
@@ -42,6 +44,7 @@
 }
 
 .jv-shell__list {
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -51,6 +54,7 @@
 }
 
 .jv-shell__page {
+  grid-row: 2;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -267,12 +271,12 @@
 
 /* ---- PWA update bar (docs/features/pwa.md) ------------------------------ */
 
-/* Persistent chrome, not a toast: fixed at the viewport level (not layered
-   over one pane's scroll owner) so it survives navigation between panes. */
+/* Persistent chrome, not a toast: the shell's bottom grid row reserves its
+   rendered height across every pane and survives navigation between panes. */
 .jv-update-bar {
-  position: fixed;
+  grid-column: 1 / -1;
+  grid-row: 3;
   z-index: 32;
-  inset: auto 0 0 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -327,15 +331,14 @@
 
 /* ---- offline-restricted bar (docs/features/pwa.md) ----------------------- */
 
-/* Fixed at the top of the viewport, mirroring .jv-update-bar's fixed-bottom
-   placement -- not layered over any pane's own scroll owner. Top, not
-   bottom: the update bar already owns the bottom, and the two are mutually
-   exclusive in practice (nothing to update while offline) but must not
-   collide if they ever coincide. */
+/* The shell's top grid row reserves this bar's rendered height across every
+   pane. Top, not bottom: the update bar already owns the bottom, and the two
+   are mutually exclusive in practice (nothing to update while offline) but
+   must not collide if they ever coincide. */
 .jv-offline-bar {
-  position: fixed;
+  grid-column: 1 / -1;
+  grid-row: 1;
   z-index: 32;
-  inset: 0 0 auto 0;
   display: flex;
   align-items: center;
   padding: var(--space-2) var(--space-4);

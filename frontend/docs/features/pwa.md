@@ -91,9 +91,9 @@ guarantees.
 
 `registerType: "prompt"` means a waiting worker never takes over on its own.
 `src/app/pwa/usePwaUpdate.ts` exposes `{ updateReady, applyUpdate }`, read by
-`UpdateBar` (`src/features/shell/UpdateBar.tsx`) -- persistent chrome fixed to
-the bottom of the shell, not a toast (DESIGN.md: a waiting update is standing
-state, not a one-shot outcome). `applyUpdate` is never called without an
+`UpdateBar` (`src/features/shell/UpdateBar.tsx`) -- persistent chrome in a
+reserved bottom row of the shell, not a toast (DESIGN.md: a waiting update is
+standing state, not a one-shot outcome). `applyUpdate` is never called without an
 explicit click. When the mounted editor has unsaved changes
 (`ShellContext.hasUnsavedDraft`, set by `EntryEditorPage.tsx`), clicking
 "Restart to update" shows an `AppConfirmDialog` first, warning that unsaved

@@ -73,7 +73,7 @@ async function boot() {
   initBootMode(restoreResult);
   const unsubscribeOfflineCache = subscribeOfflineCache(
     queryClient,
-    hint?.userId,
+    sessionStore.readHint()?.userId,
   );
   void unsubscribeOfflineCache; // kept alive for the app's lifetime
 

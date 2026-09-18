@@ -30,6 +30,7 @@ const LEGACY_SESSION_KEY = "journiv.session.v1";
 const RESTORE_TIMEOUT_MS = 5000;
 
 let accessToken: string | null = null;
+let adoptedUserId: string | undefined;
 let sessionGeneration = 0;
 const listeners = new Set<SessionListener>();
 
@@ -212,6 +213,7 @@ function adopt({
 }) {
   sessionGeneration += 1;
   accessToken = token;
+  adoptedUserId = userId;
   writeHint({ version: 1, userId, signedInAt: new Date().toISOString() });
   clearTombstone();
   offlineCacheSubscribe?.(userId);
@@ -219,11 +221,12 @@ function adopt({
 }
 
 function clear() {
-  const userId = readHint()?.userId;
+  const userId = adoptedUserId ?? readHint()?.userId;
   sessionGeneration += 1;
   accessToken = null;
   clearHint();
   offlineCachePurge?.(userId);
+  adoptedUserId = undefined;
   notify();
 }
 
@@ -232,6 +235,7 @@ function clear() {
 export function resetSessionForTests() {
   sessionGeneration += 1;
   accessToken = null;
+  adoptedUserId = undefined;
   refreshInFlight = undefined;
   offlineCachePurge = undefined;
   offlineCacheSubscribe = undefined;

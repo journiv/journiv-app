@@ -70,6 +70,20 @@ describe("sessionStore", () => {
     expect(purge).toHaveBeenCalledWith("user-1");
   });
 
+  it("clear() purges the adopted user when writing the hint failed", () => {
+    const purge = vi.fn();
+    registerOfflineCachePurge(purge);
+    vi.spyOn(localStorage, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage unavailable", "QuotaExceededError");
+    });
+
+    sessionStore.adopt({ accessToken: "access-1", userId: "user-1" });
+    expect(sessionStore.readHint()).toBeNull();
+    sessionStore.clear();
+
+    expect(purge).toHaveBeenCalledWith("user-1");
+  });
+
   it("restore() succeeds against a reachable server", async () => {
     vi.stubGlobal(
       "fetch",

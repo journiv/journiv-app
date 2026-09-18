@@ -137,7 +137,10 @@ describe("offlineCache", () => {
           timestamp: Date.now(),
           buster: "1",
           clientState: {
-            queries: [dehydratedQuery(queryKeys.journals, Date.now())],
+            queries: [
+              dehydratedQuery(queryKeys.journals, Date.now()),
+              dehydratedQuery(["export", "jobs"], Date.now()),
+            ],
             mutations: [],
           },
         } satisfies PersistedClient),
@@ -149,6 +152,7 @@ describe("offlineCache", () => {
       expect(queryClient.getQueryData(queryKeys.journals)).toEqual({
         ok: true,
       });
+      expect(queryClient.getQueryData(["export", "jobs"])).toBeUndefined();
     });
 
     it("does not mutate the live client when storage resolves after the timeout", async () => {
