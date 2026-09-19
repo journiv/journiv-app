@@ -178,6 +178,13 @@ session/preference lifecycle is committed to the live client. A late IndexedDB
 read therefore cannot repopulate data after sign-out, a user switch, or an
 offline-reading opt-out.
 
+Persisted Moment readers are stale-while-revalidate: cached detail paints on
+the first render, but `momentQuery` always revalidates when the reader mounts.
+This is required even inside the normal query freshness window because the
+IndexedDB persister throttles writes; a reload immediately after saving can
+otherwise restore the pre-save snapshot and mistake it for current data. When
+offline, TanStack pauses that request and the cached reader remains available.
+
 **Boot mode** (`offlineMode.ts`) is derived once from the restore result and
 the session hint, then kept current without a reload: `"restored"` → normal;
 `"unauthenticated"` → the login route; `"offline"` with a hint → offline-
