@@ -7,6 +7,7 @@ import {
   hydrateOfflineCache,
   isOfflineReadingEnabled,
   purgeOfflineCache,
+  revalidatePersistedQueries,
   resetOfflineCacheForTests,
   setOfflineReadingEnabled,
   subscribeOfflineCache,
@@ -182,6 +183,25 @@ describe("offlineCache", () => {
       await Promise.resolve();
 
       expect(queryClient.getQueryData(queryKeys.journals)).toBeUndefined();
+    });
+  });
+
+  describe("revalidatePersistedQueries", () => {
+    it("invalidates only the queries eligible for offline persistence", async () => {
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { staleTime: 60_000 } },
+      });
+      queryClient.setQueryData(queryKeys.journals, [{ id: "journal-1" }]);
+      queryClient.setQueryData(queryKeys.exportJobs, [{ id: "export-1" }]);
+
+      await revalidatePersistedQueries(queryClient);
+
+      expect(queryClient.getQueryState(queryKeys.journals)?.isInvalidated).toBe(
+        true,
+      );
+      expect(
+        queryClient.getQueryState(queryKeys.exportJobs)?.isInvalidated,
+      ).toBe(false);
     });
   });
 

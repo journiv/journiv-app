@@ -137,6 +137,21 @@ export async function hydrateOfflineCache(
   }
 }
 
+/**
+ * Treats the bounded offline snapshot as stale once a live session exists.
+ * Hydration preserves `dataUpdatedAt`, so without this a recent pre-mutation
+ * snapshot can sit inside the normal query freshness window and suppress the
+ * online GET after a reload. Offline-restricted boots deliberately do not call
+ * this: their cached data must remain readable without a reachable server.
+ */
+export function revalidatePersistedQueries(
+  queryClient: QueryClient,
+): Promise<void> {
+  return queryClient.invalidateQueries({
+    predicate: (query) => shouldPersistQuery(query),
+  });
+}
+
 /** Starts ongoing persistence after render. Keep calling this exactly once
  *  per boot -- the offline-reading toggle re-enters via
  *  setOfflineReadingEnabled(), not a second call to this. */
