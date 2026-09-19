@@ -260,6 +260,13 @@ The app has exactly two page-layout breakpoints:
 Components may reflow at their own documented container-query width. Do not add
 page-shaped breakpoints or JS layout state. Every pane has one scroll owner;
 PageBar is its flex sibling, not a sticky layer over scrolling content.
+
+The shell is a three-row grid: an offline bar, the content row, and an update
+bar. Every pane that is a direct child of the shell must name `grid-row: 2`
+(`.jv-shell__nav`, `.jv-shell__list`, `.jv-shell__page`, `.jv-library`); an
+unplaced pane is auto-placed into the first row, collapses to its content height
+and overlaps the navigation. `e2e/shell/pane-geometry.spec.ts` guards this at
+the three canonical widths.
 Safe-area insets apply to drawers and scrolling-pane bottoms.
 
 The one sanctioned reading of `window.visualViewport` is a control that must

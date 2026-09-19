@@ -12,6 +12,11 @@
    so a bare control on `--muted` loses its edge entirely (DESIGN.md, DESIGN.md). It occupies
    the shell's page column but is not the reader, which keeps `--card`. */
 .jv-library {
+  /* Row 2 is the shell's content row; rows 1 and 3 are the offline and update
+     bars (shell.css). Every direct shell child must name its row: left to
+     auto-placement, a span-two item lands in row 1 and collapses to content
+     height on top of the nav. */
+  grid-row: 2;
   grid-column: span 2;
   display: flex;
   min-width: 0;
