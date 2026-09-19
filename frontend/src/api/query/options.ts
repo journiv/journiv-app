@@ -362,6 +362,11 @@ export const momentQuery = (id: string) =>
   queryOptions({
     queryKey: queryKeys.moment(id),
     queryFn: () => api.moment(id),
+    // Moment details are persisted for offline reading. Always revalidate a
+    // mounted reader so a fast reload after saving cannot treat the
+    // persister's throttled, pre-save snapshot as current. Cached data still
+    // paints immediately, and TanStack pauses the request while offline.
+    refetchOnMount: "always",
   });
 
 /**
