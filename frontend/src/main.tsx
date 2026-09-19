@@ -16,10 +16,15 @@ import { retireRootFlutterWorker } from "./app/retireRootFlutterWorker";
 import {
   hydrateOfflineCache,
   purgeOfflineCache,
+  revalidatePersistedQueries,
   subscribeOfflineCache,
   teardownOfflineCache,
 } from "./app/offline/offlineCache";
-import { initBootMode } from "./app/offline/offlineMode";
+import {
+  getBootMode,
+  initBootMode,
+  subscribeBootMode,
+} from "./app/offline/offlineMode";
 import { registerServiceWorker } from "./app/pwa/registerServiceWorker";
 import {
   registerOfflineCachePurge,
@@ -71,10 +76,21 @@ async function boot() {
     hydrateOfflineCache(queryClient, hint?.userId),
   ]);
   initBootMode(restoreResult);
+  // An authenticated boot must use IndexedDB as stale-while-revalidate, not
+  // as a second source of truth. Mark only the allowlisted persisted queries
+  // stale before render; a later offline -> normal upgrade does the same and
+  // immediately refreshes any active cached screen.
+  if (getBootMode() === "normal") {
+    void revalidatePersistedQueries(queryClient);
+  }
+  const unsubscribeBootMode = subscribeBootMode((mode) => {
+    if (mode === "normal") void revalidatePersistedQueries(queryClient);
+  });
   const unsubscribeOfflineCache = subscribeOfflineCache(
     queryClient,
     sessionStore.readHint()?.userId,
   );
+  void unsubscribeBootMode; // kept alive for the app's lifetime
   void unsubscribeOfflineCache; // kept alive for the app's lifetime
 
   root.render(
