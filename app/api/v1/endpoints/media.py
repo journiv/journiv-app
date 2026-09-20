@@ -475,7 +475,7 @@ async def get_media_signed(
 
             # For internal media, fetch file info while we have the session
             if has_local_file or external_provider != "immich":
-                file_info = await media_service.get_media_file_for_serving(
+                file_info = await media_service.get_media_file_for_display(
                     media_id, uid, session, range_header
                 )
         # Session is now closed - DB connection released
@@ -592,6 +592,24 @@ async def get_media_signed(
             exc_info=True
         )
         raise HTTPException(status_code=500, detail="Failed to serve file") from None
+    except Exception as exc:
+        error_logger.exception(
+            "Failed to queue media processing task",
+            extra={
+                "user_id": str(current_user.id),
+                "media_id": str(media_record.id),
+            },
+        )
+
+    with database_module.get_session_context() as session:
+        failed_media = session.get(MomentMedia, media_record.id)
+        if failed_media:
+            failed_media.upload_status = UploadStatus.FAILED
+            failed_media.processing_error = (
+                "Media processing could not be queued"
+            )
+            session.add(failed_media)
+            session.commit()
 
 
 @router.get(
@@ -680,7 +698,10 @@ async def get_media_thumbnail_signed(
         if not thumbnail_path:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thumbnail not found")
 
-        return FileResponse(thumbnail_path)
+        return FileResponse(
+                thumbnail_path,
+                media_type="image/jpeg",
+                )
     except MediaNotFoundError:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

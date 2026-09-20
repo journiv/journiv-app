@@ -98,7 +98,19 @@ def process_media_upload(self, media_id: str, file_path: str, user_id: str):
                 return
         except Exception as exc:
             log_error(exc, media_id=media_id, user_id=user_id)
+            try:
+                service._mark_processing_failed(
+                    media_id,
+                    f"Background media processing failed: {exc}",
+                )
+            except Exception as status_exc:
+                log_error(
+                    status_exc,
+                    message="Failed to update media processing status",
+                    media_id=media_id,
+                )
             raise
+
 
 
 @celery_app.task(name="app.tasks.media.cleanup_moment_media_files", bind=True)
