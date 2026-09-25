@@ -12,6 +12,10 @@ Journiv is a self-hosted private journal. It features comprehensive journaling c
   <a href="https://www.pikapods.com/pods?run=journiv" target="_blank">
     <img src="https://www.pikapods.com/static/run-button.svg" alt="Run on PikaPods">
   </a>
+  &nbsp;&nbsp;
+  <a href="https://easypanel.io/templates/journiv" target="_blank">
+    <img src="https://easypanel.io/img/deploy-on-easypanel-40.svg" alt="Deploy on Easypanel">
+  </a>
 </p>
 
 <p align="center">
