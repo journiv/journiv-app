@@ -230,3 +230,22 @@ def test_real_app_backend_routes_remain_backend_owned():
             "text/html" not in response.headers.get("content-type", "")
             or path == "/docs"
         )
+
+
+def test_missing_react_build_returns_actionable_404_and_warns(tmp_path: Path, monkeypatch):
+    warnings: list[str] = []
+    monkeypatch.setattr("app.frontend.log_warning", lambda msg, *a, **k: warnings.append(msg))
+    legacy = tmp_path / "legacy"
+    legacy.mkdir()
+    (legacy / "index.html").write_text("<div></div>")
+
+    app = FastAPI()
+    app.include_router(
+        create_frontend_router(tmp_path / "missing-react", legacy, tmp_path / "r.js")
+    )
+    response = TestClient(app).get("/", headers={"accept": "text/html"})
+
+    assert response.status_code == 404
+    assert response.json()["message"] == "Frontend not found"
+    assert "npm run build" in response.json()["detail"]
+    assert any("REACT_WEB_BUILD_PATH" in w for w in warnings)
