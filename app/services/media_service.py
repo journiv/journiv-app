@@ -1711,10 +1711,12 @@ class MediaService:
                     has_video = True
 
         duration = None
+        raw_duration = (data.get("format") or {}).get("duration")
         try:
-            parsed = float((data.get("format") or {}).get("duration"))
-            if parsed >= 0:
-                duration = parsed
+            if raw_duration is not None:
+                parsed = float(raw_duration)
+                if parsed >= 0:
+                    duration = parsed
         except (TypeError, ValueError):
             pass  # "N/A" or absent
 
