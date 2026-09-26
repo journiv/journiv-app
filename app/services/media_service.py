@@ -1523,8 +1523,21 @@ class MediaService:
 
             with Image.open(image_path) as img:
                 # Bake in EXIF orientation; thumbnails are re-encoded without EXIF
-                # so the rotation would otherwise be lost. Returns a copy.
-                img = PILImageOps.exif_transpose(img)
+                # so the rotation would otherwise be lost. Skip when unrotated so
+                # JPEG decoding stays deferred (thumbnail() drafts it).
+                try:
+                    orientation = img.getexif().get(0x0112, 1)
+                except Exception:
+                    orientation = 1
+                if orientation not in (None, 0, 1):
+                    if img.format == "JPEG":
+                        # Cheap downscaled decode before exif_transpose loads pixels;
+                        # swap the requested box for 90/270 degree orientations.
+                        size = self.THUMBNAIL_SIZE
+                        if orientation in (5, 6, 7, 8):
+                            size = (size[1], size[0])
+                        img.draft("RGB", size)
+                    img = PILImageOps.exif_transpose(img)
 
                 # Convert to RGB if necessary
                 if img.mode in ('RGBA', 'LA', 'P'):
