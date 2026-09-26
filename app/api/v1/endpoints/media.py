@@ -898,13 +898,13 @@ async def import_from_immich_async(
                 asset_ids=request.asset_ids,
                 assets=request.assets
             )
-        except ValueError:
+        except ValueError as exc:
             # The Moment was deleted between the check above and the
             # job-creation lock.
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Moment not found"
-            )
+            ) from exc
         file_logger.info(
             f"[IMMICH_IMPORT] Job {'created' if job_created else 'reused'}: {job.id}",
             extra={
