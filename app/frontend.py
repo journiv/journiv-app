@@ -10,6 +10,8 @@ from pathlib import Path, PurePosixPath
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 
+from app.core.logging_config import log_warning
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REACT_BUILD_PATH = Path(
     os.getenv("REACT_WEB_BUILD_PATH", str(PROJECT_ROOT / "frontend" / "dist"))
@@ -59,6 +61,30 @@ NO_CACHE_FILENAMES = frozenset(
         "registerSW.js",
     }
 )
+
+
+def _frontend_missing_response() -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={
+            "error": "not_found",
+            "message": "Frontend not found",
+            "detail": (
+                "The React frontend build is missing. Docker images include it; "
+                "manual installs must build it (cd frontend && npm ci && "
+                "npm run build) or set REACT_WEB_BUILD_PATH."
+            ),
+        },
+    )
+
+
+def _warn_if_build_missing(name: str, build_path: Path, env_var: str) -> None:
+    if not (build_path / "index.html").is_file():
+        log_warning(
+            f"{name} frontend build not found at {build_path}; requests will "
+            f"return 404. Build it (cd frontend && npm ci && npm run build) "
+            f"or set {env_var} to a directory containing index.html."
+        )
 
 
 def _not_found() -> HTTPException:
@@ -122,10 +148,7 @@ def _serve_spa(
     wants_html_document: bool = False,
 ) -> FileResponse | JSONResponse:
     if not build_path.is_dir():
-        return JSONResponse(
-            status_code=404,
-            content={"error": "not_found", "message": "Frontend not found"},
-        )
+        return _frontend_missing_response()
 
     file_path = _safe_file(build_path, relative_path)
     if file_path.is_file():
@@ -152,10 +175,7 @@ def _serve_spa(
             service_worker_scope=service_worker_scope,
         )
 
-    return JSONResponse(
-        status_code=404,
-        content={"error": "not_found", "message": "Frontend not found"},
-    )
+    return _frontend_missing_response()
 
 
 def create_frontend_router(
@@ -165,6 +185,8 @@ def create_frontend_router(
 ) -> APIRouter:
     """Build the frontend router with explicit React and Flutter ownership."""
     router = APIRouter()
+
+    _warn_if_build_missing("React", react_build_path, "REACT_WEB_BUILD_PATH")
 
     @router.get("/flutter_service_worker.js", include_in_schema=False)
     async def retire_root_flutter_service_worker() -> FileResponse:
