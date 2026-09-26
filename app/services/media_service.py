@@ -55,6 +55,7 @@ from app.utils.quill_delta import extract_media_sources
 
 try:
     from PIL import Image as PILImage
+    from PIL import ImageOps as PILImageOps
     Image = PILImage
 except ImportError:
     Image = None
@@ -614,7 +615,7 @@ class MediaService:
         if media_type == MediaType.IMAGE and Image is not None:
             try:
                 with Image.open(path) as img:
-                    width, height = img.size
+                    width, height = self._oriented_size(img)
             except Exception:
                 pass
         elif media_type == MediaType.VIDEO:
@@ -814,6 +815,9 @@ class MediaService:
 
         try:
             with PILImage.open(heic_path) as img:
+                # pillow-heif applies the HEIF rotation on decode; this covers
+                # any residual EXIF orientation so the WebP is upright.
+                img = PILImageOps.exif_transpose(img)
                 if img.mode not in ('RGB', 'RGBA'):
                     img = img.convert('RGB')
 
@@ -1430,6 +1434,22 @@ class MediaService:
         extension = file_path.suffix.lower()
         return self.MIME_TYPE_MAP.get(extension, 'application/octet-stream')
 
+    @staticmethod
+    def _oriented_size(img) -> Tuple[int, int]:
+        """Return (width, height) as displayed, honouring the EXIF orientation tag.
+
+        Orientations 5-8 rotate the image by 90/270 degrees, so the stored
+        pixel dimensions are swapped relative to what browsers render.
+        """
+        width, height = img.size
+        try:
+            orientation = img.getexif().get(0x0112, 1)
+        except Exception:
+            orientation = 1
+        if orientation in (5, 6, 7, 8):
+            return height, width
+        return width, height
+
     def _get_image_dimensions(self, file_path: Path) -> Optional[Dict[str, int]]:
         """Get image dimensions."""
         if not Image:
@@ -1437,7 +1457,8 @@ class MediaService:
 
         try:
             with Image.open(file_path) as img:
-                return {"width": img.width, "height": img.height}
+                width, height = self._oriented_size(img)
+                return {"width": width, "height": height}
         except Exception as e:
             log_error(f"Failed to get image dimensions: {e}")
             return None
@@ -1501,6 +1522,10 @@ class MediaService:
             thumbnail_path.parent.mkdir(parents=True, exist_ok=True)
 
             with Image.open(image_path) as img:
+                # Bake in EXIF orientation; thumbnails are re-encoded without EXIF
+                # so the rotation would otherwise be lost. Returns a copy.
+                img = PILImageOps.exif_transpose(img)
+
                 # Convert to RGB if necessary
                 if img.mode in ('RGBA', 'LA', 'P'):
                     img = img.convert('RGB')
