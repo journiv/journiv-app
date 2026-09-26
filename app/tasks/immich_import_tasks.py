@@ -12,7 +12,12 @@ from sqlmodel import Session
 from app.core.celery_app import celery_app
 from app.core.database import engine
 from app.core.logging_config import log_error, log_info
-from app.services.import_job_service import ImportJobService
+from app.models.import_job import ImportJob
+from app.services.import_job_service import (
+    IMMICH_LINK_JOB_TIMEOUT_SECONDS,
+    ImportJobService,
+    immich_copy_job_timeout_seconds,
+)
 
 _shared_loop: asyncio.AbstractEventLoop | None = None
 _shared_loop_thread: threading.Thread | None = None
@@ -73,7 +78,7 @@ def process_link_only_import(self, job_id: str):
             _run_link_only_job(),
             _get_shared_loop()
         )
-        future.result(timeout=300)
+        future.result(timeout=IMMICH_LINK_JOB_TIMEOUT_SECONDS)
         log_info("Immich link-only import job completed", job_id=job_id)
     except FutureTimeoutError as exc:
         if future:
@@ -81,6 +86,11 @@ def process_link_only_import(self, job_id: str):
         log_error(exc, message="Immich link-only import job timed out", job_id=job_id)
         raise
     except Exception as exc:
+        # Anything else interrupting the wait (Celery's SoftTimeLimitExceeded
+        # included) must not leave the job running unattended on the shared
+        # loop: cancelling runs its own cleanup, which marks it failed.
+        if future and not future.done():
+            future.cancel()
         log_error(exc, job_id=job_id)
         raise
 
@@ -94,14 +104,19 @@ def process_copy_import(self, job_id: str):
             service = ImportJobService(session)
             await service.process_copy_job_async(job_uuid)
 
-    log_info("Processing Immich copy import job", job_id=job_id)
+    with Session(engine) as session:
+        job = session.get(ImportJob, job_uuid)
+        total_items = job.total_items if job else 0
+    timeout_seconds = immich_copy_job_timeout_seconds(total_items)
+
+    log_info("Processing Immich copy import job", job_id=job_id, timeout_seconds=timeout_seconds)
     future = None
     try:
         future = asyncio.run_coroutine_threadsafe(
             _run_copy_job(),
             _get_shared_loop()
         )
-        future.result(timeout=300)
+        future.result(timeout=timeout_seconds)
         log_info("Immich copy import job completed", job_id=job_id)
     except FutureTimeoutError as exc:
         if future:
@@ -109,6 +124,11 @@ def process_copy_import(self, job_id: str):
         log_error(exc, message="Immich copy import job timed out", job_id=job_id)
         raise
     except Exception as exc:
+        # Anything else interrupting the wait (Celery's SoftTimeLimitExceeded
+        # included) must not leave the job running unattended on the shared
+        # loop: cancelling runs its own cleanup, which marks it failed.
+        if future and not future.done():
+            future.cancel()
         log_error(exc, job_id=job_id)
         raise
 

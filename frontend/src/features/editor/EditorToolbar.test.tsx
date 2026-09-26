@@ -15,6 +15,7 @@ const editor = (): QuillSurfaceHandle => ({
   insertMedia: vi.fn(),
   replacePlaceholder: vi.fn(() => true),
   removePlaceholder: vi.fn(() => true),
+  removeEmbedForMediaId: vi.fn(() => null),
   hasPlaceholder: vi.fn(() => false),
   setPlaceholderState: vi.fn(),
   focus: vi.fn(),

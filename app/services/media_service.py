@@ -16,7 +16,7 @@ from typing import Any, BinaryIO, Dict, Optional, Tuple
 
 import magic
 from fastapi import UploadFile
-from sqlalchemy import case, update
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, col, func, or_, select
 
@@ -30,7 +30,11 @@ from app.core.exceptions import (
     MediaNotFoundError,
 )
 from app.core.logging_config import log_error, log_file_upload, log_info, log_warning
-from app.core.media_signing import attach_signed_urls, signed_url_for_journiv
+from app.core.media_signing import (
+    attach_signed_urls,
+    attach_signed_urls_with_original_fallback,
+    signed_url_for_journiv,
+)
 from app.models.entry import Entry
 from app.models.enums import MediaType, UploadStatus
 from app.models.integration import Integration, IntegrationProvider
@@ -243,8 +247,9 @@ class MediaService:
             try:
                 response = MomentMediaResponse.model_validate(media_item)
                 response = MomentMediaResponse.model_validate(
-                    attach_signed_urls(
+                    attach_signed_urls_with_original_fallback(
                         response,
+                        media_item,
                         str(user_id),
                         include_incomplete=include_incomplete,
                         external_base_url=immich_base_url,
@@ -1158,18 +1163,25 @@ class MediaService:
         *,
         commit: bool = False,
     ) -> None:
-        """Recalculate and persist denormalized media_count for a moment."""
+        """Recalculate and persist denormalized media_count for a moment.
+
+        Always written as one UPDATE from the database's own count. Comparing
+        against the in-session Moment first was unsafe: the media_count
+        triggers change the row behind the ORM's back, so a stale in-session
+        value could match the true count while the stored one did not, and
+        the write was skipped. The ORM statement also syncs any loaded Moment.
+        """
         total_media = int(
             session.exec(
                 select(func.count(MomentMedia.id)).where(MomentMedia.moment_id == moment_id)
             ).one()
             or 0
         )
-        moment = session.get(Moment, moment_id)
-        if moment is None or moment.media_count == total_media:
-            return
-        moment.media_count = total_media
-        session.add(moment)
+        session.execute(
+            update(Moment)
+            .where(col(Moment.id) == moment_id)
+            .values(media_count=total_media)
+        )
         if commit:
             session.commit()
 
@@ -1864,16 +1876,11 @@ class MediaService:
             log_info("Orphaned media deleted", media_id=str(media.id), user_id=str(user_id))
 
         if removed_count > 0:
-            effective_session.execute(
-                update(Moment)
-                .where(col(Moment.id) == moment_id)
-                .values(
-                    media_count=case(
-                        (col(Moment.media_count) >= removed_count, col(Moment.media_count) - removed_count),
-                        else_=0,
-                    )
-                )
-            )
+            # Recount from the (flushed) MomentMedia rows rather than decrementing
+            # by hand: production databases also have a DB trigger on
+            # moment_media DELETE that decrements media_count, so a manual
+            # decrement here double-counts (see alembic aa9a7125186b).
+            self._refresh_moment_media_count(effective_session, moment_id)
 
         return media_files_to_delete, immich_assets_to_remove
 
@@ -1896,16 +1903,11 @@ class MediaService:
         try:
             effective_session.delete(media)
             effective_session.flush()
-            effective_session.execute(
-                update(Moment)
-                .where(col(Moment.id) == moment_id)
-                .values(
-                    media_count=case(
-                        (col(Moment.media_count) > 0, col(Moment.media_count) - 1),
-                        else_=0,
-                    )
-                )
-            )
+            # Recount from the (flushed) MomentMedia rows rather than decrementing
+            # by hand: production databases also have a DB trigger on
+            # moment_media DELETE that decrements media_count, so a manual
+            # decrement here double-counts (see alembic aa9a7125186b).
+            self._refresh_moment_media_count(effective_session, moment_id)
             effective_session.commit()
         except SQLAlchemyError as exc:
             effective_session.rollback()

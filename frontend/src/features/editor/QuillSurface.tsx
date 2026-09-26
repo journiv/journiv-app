@@ -8,7 +8,7 @@ import {
   useRef,
 } from "react";
 import type { QuillDelta } from "../../api/generated/types.gen";
-import type { InlineMediaKind } from "./deltaProfile";
+import { mediaPath } from "../../lib/mediaUrl";
 import {
   cloneDelta,
   INLINE_MEDIA_KINDS,
@@ -19,7 +19,9 @@ import {
   MAX_LIST_INDENT,
   stripOrphanIndent,
   stripUploadPlaceholders,
+  type InlineMediaKind,
 } from "./deltaProfile";
+import { durableMediaId } from "./draftCanonical";
 import { installMarkdownShortcuts } from "./markdownShortcuts";
 import "./mediaBlots";
 import "./quill-adapter.css";
@@ -58,6 +60,15 @@ export interface QuillSurfaceHandle {
     source: string,
   ): boolean;
   removePlaceholder(uploadId: string): boolean;
+  /**
+   * Removes the embed whose signed-URL source resolves to this media id, and
+   * returns the index it stood at. Used for Remove — and for a device-upload
+   * retry, which reinserts a placeholder at that same index — on an
+   * attachment that already swapped its placeholder for a real embed, where
+   * there is no placeholder left to find by upload id. Null when no such
+   * embed is in the document (already removed, or never placed).
+   */
+  removeEmbedForMediaId(mediaId: string): number | null;
   /**
    * Forgets undo history. Called after a save, because the backend deletes
    * media that a save removed from the document — an undo afterwards would
@@ -458,6 +469,33 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           if (index < 0) return false;
           quill.deleteText(index, 1, "user");
           return true;
+        },
+        removeEmbedForMediaId: (mediaId) => {
+          const quill = quillRef.current;
+          if (!quill) return null;
+          const normalizedMediaId = mediaId.toLowerCase();
+          let index = 0;
+          for (const op of quill.getContents().ops ?? []) {
+            const insert = op.insert as Record<string, unknown> | string;
+            if (typeof insert === "string") {
+              index += insert.length;
+              continue;
+            }
+            const keys = Object.keys(insert);
+            const kind = keys[0];
+            const source = insert[kind];
+            if (
+              keys.length === 1 &&
+              (INLINE_MEDIA_KINDS as readonly string[]).includes(kind) &&
+              typeof source === "string" &&
+              durableMediaId(mediaPath(source)) === normalizedMediaId
+            ) {
+              quill.deleteText(index, 1, "user");
+              return index;
+            }
+            index += 1;
+          }
+          return null;
         },
         clearHistory: () => quillRef.current?.history.clear(),
         getIndexFromPoint: (clientX, clientY) => {

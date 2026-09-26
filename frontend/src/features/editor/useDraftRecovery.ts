@@ -247,7 +247,7 @@ export function useDraftRecovery({
       phase: "offer",
       draft: record,
       content,
-      resolvedMediaIds: mediaIds.filter((id) => signedUrlById.has(id)),
+      resolvedMediaIds: mediaIds.filter((id) => Boolean(signedUrlById.get(id))),
       verifiedIdentity:
         !recordedMomentId || momentGone
           ? null

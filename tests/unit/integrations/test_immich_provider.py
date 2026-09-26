@@ -315,12 +315,109 @@ class TestImmichProvider:
 
     @pytest.mark.asyncio
     async def test_get_asset_info_failure(self):
-        """Test get_asset_info returns empty dict on error."""
-        with patch("app.integrations.immich._get_client") as mock_get_client:
+        """A persistent transient failure (connection error) still returns
+        {} after retrying, rather than raising — the asset likely still
+        exists."""
+        with patch("app.integrations.immich._get_client") as mock_get_client, \
+             patch("app.integrations.immich.asyncio.sleep", new=AsyncMock()):
             mock_client = AsyncMock()
             mock_client.get.side_effect = httpx.RequestError("Error")
             mock_get_client.return_value = mock_client
 
             result = await immich.get_asset_info("url", "key", "id")
             assert result == {}
+            # Retried up to max_retries (default 2) -> 3 attempts total.
+            assert mock_client.get.call_count == 3
 
+    @pytest.mark.asyncio
+    async def test_get_asset_info_retries_transient_failure_then_succeeds(self):
+        """A timeout followed by a real response must not be treated as a
+        permanent failure."""
+        response_data = {"id": "asset-1", "type": "IMAGE"}
+        with patch("app.integrations.immich._get_client") as mock_get_client, \
+             patch("app.integrations.immich.asyncio.sleep", new=AsyncMock()):
+            mock_client = AsyncMock()
+            ok_response = MagicMock()
+            ok_response.status_code = 200
+            ok_response.json.return_value = response_data
+            mock_client.get.side_effect = [
+                httpx.TimeoutException("timed out"),
+                ok_response,
+            ]
+            mock_get_client.return_value = mock_client
+
+            result = await immich.get_asset_info("url", "key", "asset-1")
+            assert result == response_data
+            assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_get_asset_info_raises_not_found_only_on_confirmed_404(self):
+        """A 404 from both the direct lookup and the search fallback means
+        Immich has confirmed the asset is actually gone."""
+        with patch("app.integrations.immich._get_client") as mock_get_client:
+            mock_client = AsyncMock()
+            direct_404 = MagicMock()
+            direct_404.status_code = 404
+            mock_client.get.return_value = direct_404
+            search_404 = MagicMock()
+            search_404.status_code = 404
+            mock_client.post.return_value = search_404
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(immich.ImmichAssetNotFoundError):
+                await immich.get_asset_info("url", "key", "gone-asset")
+            # No retry for a confirmed 404 — it is not transient.
+            mock_client.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_asset_info_raises_not_found_when_search_returns_empty(self):
+        """A 404 direct lookup whose search fallback succeeds but finds
+        nothing is also a confirmed absence, not a transient failure."""
+        with patch("app.integrations.immich._get_client") as mock_get_client:
+            mock_client = AsyncMock()
+            direct_404 = MagicMock()
+            direct_404.status_code = 404
+            mock_client.get.return_value = direct_404
+            search_empty = MagicMock()
+            search_empty.status_code = 200
+            search_empty.json.return_value = {"assets": {"items": []}}
+            mock_client.post.return_value = search_empty
+            mock_get_client.return_value = mock_client
+
+            with pytest.raises(immich.ImmichAssetNotFoundError):
+                await immich.get_asset_info("url", "key", "gone-asset")
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("status_code", [400, 401, 403])
+    async def test_get_asset_info_does_not_retry_client_errors(self, status_code):
+        """A 4xx (bad key, missing permission, Immich's 400 for an asset it
+        will not show) is not transient: retrying only adds ~3s of backoff."""
+        request = httpx.Request("GET", "http://immich.test/api/assets/asset-1")
+        with patch("app.integrations.immich._get_client") as mock_get_client, \
+             patch("app.integrations.immich.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            mock_client = AsyncMock()
+            mock_client.get.return_value = httpx.Response(status_code, request=request)
+            mock_get_client.return_value = mock_client
+
+            result = await immich.get_asset_info("http://immich.test", "key", "asset-1")
+
+        assert result == {}
+        mock_client.get.assert_called_once()
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_get_asset_info_retries_server_errors(self):
+        request = httpx.Request("GET", "http://immich.test/api/assets/asset-1")
+        with patch("app.integrations.immich._get_client") as mock_get_client, \
+             patch("app.integrations.immich.asyncio.sleep", new=AsyncMock()):
+            mock_client = AsyncMock()
+            mock_client.get.side_effect = [
+                httpx.Response(503, request=request),
+                httpx.Response(200, request=request, json={"id": "asset-1"}),
+            ]
+            mock_get_client.return_value = mock_client
+
+            result = await immich.get_asset_info("http://immich.test", "key", "asset-1")
+
+        assert result == {"id": "asset-1"}
+        assert mock_client.get.call_count == 2

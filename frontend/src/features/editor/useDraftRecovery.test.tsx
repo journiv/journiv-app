@@ -2,7 +2,11 @@ import "fake-indexeddb/auto";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { act, render, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { QuillDelta } from "../../api/generated/types.gen";
+import { api } from "../../api/client/api";
+import type {
+  MomentMediaResponse,
+  QuillDelta,
+} from "../../api/generated/types.gen";
 import { createAppQueryClient } from "../../app/queryClient";
 import type { DurableDraftDelta } from "./draftCanonical";
 import { draftRepository, type EditorDraftV1 } from "./draftRepository";
@@ -138,5 +142,40 @@ describe("useDraftRecovery and the signed-in identity", () => {
 
     rerender({ key: "user-c:entry:entry-1" });
     await waitFor(() => expect(seen.current?.phase).toBe("clear"));
+  });
+});
+
+describe("useDraftRecovery and attachments with no usable URL", () => {
+  const MEDIA_ID = "11111111-1111-1111-1111-111111111111";
+  const mediaDurable = (id: string) =>
+    ({ ops: [{ insert: { image: id } }] }) as unknown as DurableDraftDelta;
+
+  it("does not count a null signed_url as resolved (matches rehydration's own unresolved count)", async () => {
+    await draftRepository.write(
+      record({
+        contentDelta: mediaDurable(MEDIA_ID),
+        momentId: "moment-1",
+      }),
+    );
+    // The Moment still has the row (e.g. a copy import still processing),
+    // but the server could not produce a URL for it.
+    vi.mocked(api.momentMedia).mockResolvedValueOnce([
+      {
+        id: MEDIA_ID,
+        media_type: "image",
+        mime_type: "image/jpeg",
+        upload_status: "processing",
+        signed_url: null,
+        moment_id: "moment-1",
+      } as MomentMediaResponse,
+    ]);
+
+    const { seen } = setup(base);
+
+    await waitFor(() => expect(seen.current?.phase).toBe("offer"));
+    const offered = seen.current;
+    if (offered?.phase !== "offer") throw new Error("expected an offer");
+    expect(offered.resolvedMediaIds).not.toContain(MEDIA_ID);
+    expect(offered.unresolvedMediaCount).toBe(1);
   });
 });

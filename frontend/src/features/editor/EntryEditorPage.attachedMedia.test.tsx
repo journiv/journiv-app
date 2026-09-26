@@ -205,6 +205,37 @@ describe("EntryEditorPage · attached moment media", () => {
     ).toHaveLength(2);
   });
 
+  it("offers no Add to entry for an attachment that is processing or failed", async () => {
+    vi.mocked(api.momentMedia).mockResolvedValue([
+      ...attachedMedia,
+      {
+        ...attachedMedia[0],
+        id: "m-p",
+        alt_text: "Still copying",
+        upload_status: "processing",
+        signed_url: "/api/v1/media/m-p/signed?sig=p",
+      },
+      {
+        ...attachedMedia[0],
+        id: "m-f",
+        alt_text: "Import failed",
+        upload_status: "failed",
+        signed_url: "/api/v1/media/m-f/signed?sig=f",
+      },
+    ]);
+    await openEditor();
+
+    const tray = screen
+      .getByText("On this moment")
+      .closest("section") as HTMLElement;
+    expect(tray.querySelectorAll(".jv-media__tile")).toHaveLength(5);
+    // Only the two ready images: the list now signs every row, so a URL alone
+    // must not make a processing or failed item addable.
+    expect(
+      screen.getAllByRole("button", { name: "Add to entry" }),
+    ).toHaveLength(2);
+  });
+
   it("moves one item into the prose, marks its tile Added, and neither uploads nor deletes media", async () => {
     await openEditor();
     const adds = screen.getAllByRole("button", { name: "Add to entry" });

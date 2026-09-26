@@ -31,29 +31,42 @@ vi.mock("./mediaUpload", async () => {
 
 function makeSurface() {
   const placeholders = new Set<string>();
+  /** mediaId -> the fake document index its embed was placed at. */
+  const embeds = new Map<string, number>();
+  let nextIndex = 100;
   const handle: QuillSurfaceHandle = {
     getSelectionIndex: vi.fn(() => 5),
     insertPlaceholder: vi.fn((_index: number, uploadId: string) => {
       placeholders.add(uploadId);
     }),
-    replacePlaceholder: vi.fn((uploadId: string) => {
-      if (!placeholders.has(uploadId)) return false;
-      placeholders.delete(uploadId);
-      return true;
-    }),
+    replacePlaceholder: vi.fn(
+      (uploadId: string, _kind: string, source: string) => {
+        if (!placeholders.has(uploadId)) return false;
+        placeholders.delete(uploadId);
+        const mediaId = /\/media\/([^/?]+)/.exec(source)?.[1];
+        if (mediaId) embeds.set(mediaId, nextIndex++);
+        return true;
+      },
+    ),
     removePlaceholder: vi.fn((uploadId: string) =>
       placeholders.delete(uploadId),
     ),
+    removeEmbedForMediaId: vi.fn((mediaId: string) => {
+      const index = embeds.get(mediaId);
+      if (index === undefined) return null;
+      embeds.delete(mediaId);
+      return index;
+    }),
     hasPlaceholder: vi.fn((uploadId: string) => placeholders.has(uploadId)),
     setPlaceholderState: vi.fn(),
   } as unknown as QuillSurfaceHandle;
-  return { handle, placeholders };
+  return { handle, placeholders, embeds };
 }
 
 function setup(
   overrides: { ensureDraft?: () => Promise<{ momentId: string } | null> } = {},
 ) {
-  const { handle, placeholders } = makeSurface();
+  const { handle, placeholders, embeds } = makeSurface();
   const ref = createRef<QuillSurfaceHandle>();
   (ref as { current: QuillSurfaceHandle }).current = handle;
   const onDirty = vi.fn();
@@ -67,7 +80,7 @@ function setup(
       onMediaAdded,
     }),
   );
-  return { hook, handle, placeholders, onDirty, onMediaAdded };
+  return { hook, handle, placeholders, embeds, onDirty, onMediaAdded };
 }
 
 const photo = (name = "photo.jpg") =>
@@ -245,6 +258,71 @@ describe("useMediaAttachments", () => {
     expect(handle.removePlaceholder).toHaveBeenCalledWith(uploadId);
     expect(hook.result.current.attachments).toHaveLength(0);
     expect(hook.result.current.failed).toHaveLength(0);
+  });
+
+  it("removes the embed (not just a placeholder) when cancelling an already-placed item", async () => {
+    // Regression: once the placeholder is swapped for the real embed,
+    // `removePlaceholder` finds nothing — the broken image used to stay in
+    // the document with only the notice disappearing.
+    uploadMock.mockReturnValue({
+      promise: Promise.resolve({
+        id: "media-1",
+        signed_url: "/api/v1/media/media-1/signed",
+        upload_status: "completed",
+      }),
+      abort: vi.fn(),
+    });
+    const { hook, handle, embeds, onDirty } = setup();
+
+    await act(async () => {
+      await hook.result.current.attach([photo()]);
+    });
+    expect(embeds.has("media-1")).toBe(true);
+    onDirty.mockClear();
+
+    const uploadId = hook.result.current.attachments[0].uploadId;
+    act(() => hook.result.current.cancel(uploadId));
+
+    expect(handle.removeEmbedForMediaId).toHaveBeenCalledWith("media-1");
+    expect(embeds.has("media-1")).toBe(false);
+    expect(handle.removePlaceholder).not.toHaveBeenCalled();
+    expect(onDirty).toHaveBeenCalled();
+    // Session media the saved document never referenced: the save's orphan
+    // cleanup would never collect it, so Remove deletes the row itself.
+    expect(api.deleteMedia).toHaveBeenCalledWith("media-1");
+    expect(hook.result.current.attachments).toHaveLength(0);
+  });
+
+  it("keepPlacedMedia leaves an already-placed item's embed untouched", async () => {
+    // Regression: leaving the editor without saving sweeps every attachment
+    // through cancel() to abort in-flight work. Before this option, that
+    // swept an already-placed item's embed too — removing content from the
+    // document AND marking it dirty, which re-armed and resurrected the
+    // local draft the same flow had just explicitly discarded.
+    uploadMock.mockReturnValue({
+      promise: Promise.resolve({
+        id: "media-1",
+        signed_url: "/api/v1/media/media-1/signed",
+        upload_status: "completed",
+      }),
+      abort: vi.fn(),
+    });
+    const { hook, handle, embeds, onDirty } = setup();
+
+    await act(async () => {
+      await hook.result.current.attach([photo()]);
+    });
+    expect(embeds.has("media-1")).toBe(true);
+    onDirty.mockClear();
+
+    const uploadId = hook.result.current.attachments[0].uploadId;
+    act(() => hook.result.current.cancel(uploadId, { keepPlacedMedia: true }));
+
+    expect(handle.removeEmbedForMediaId).not.toHaveBeenCalled();
+    expect(embeds.has("media-1")).toBe(true);
+    expect(onDirty).not.toHaveBeenCalled();
+    expect(api.deleteMedia).not.toHaveBeenCalled();
+    expect(hook.result.current.attachments).toHaveLength(0);
   });
 
   it("keeps successful siblings when one of several files fails", async () => {
@@ -432,7 +510,51 @@ describe("useMediaAttachments", () => {
     }
   });
 
-  it("re-processes on retry without deleting a file that is already in the entry", async () => {
+  it("retries a stalled placed item by resuming the poll, not by re-uploading", async () => {
+    vi.useFakeTimers();
+    try {
+      uploadMock.mockReturnValue({
+        promise: Promise.resolve({
+          id: "media-1",
+          signed_url: "/api/v1/media/media-1/signed",
+          upload_status: "pending",
+        }),
+        abort: vi.fn(),
+      });
+      vi.mocked(api.momentMedia).mockResolvedValue([
+        { id: "media-1", upload_status: "pending" },
+      ] as never);
+      const { hook, handle, embeds } = setup();
+
+      await act(async () => {
+        await hook.result.current.attach([photo()]);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(190_000);
+      });
+      expect(hook.result.current.failed).toHaveLength(1);
+      expect(hook.result.current.failed[0].message).toMatch(
+        /still being processed/i,
+      );
+      const uploadId = hook.result.current.attachments[0].uploadId;
+      const uploadsBeforeRetry = uploadMock.mock.calls.length;
+
+      await act(async () => {
+        await hook.result.current.retry(uploadId);
+      });
+
+      // A stalled item may still finish server-side: retry just resumes
+      // polling. It must not touch the embed or upload the file again.
+      expect(handle.removeEmbedForMediaId).not.toHaveBeenCalled();
+      expect(uploadMock.mock.calls.length).toBe(uploadsBeforeRetry);
+      expect(embeds.has("media-1")).toBe(true);
+      expect(api.deleteMedia).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not keep a re-upload whose embed the writer already removed", async () => {
     vi.useFakeTimers();
     try {
       uploadMock.mockReturnValue({
@@ -446,7 +568,58 @@ describe("useMediaAttachments", () => {
       vi.mocked(api.momentMedia).mockResolvedValue([
         { id: "media-1", upload_status: "failed" },
       ] as never);
-      const { hook } = setup();
+      const { hook, embeds } = setup();
+
+      await act(async () => {
+        await hook.result.current.attach([photo()]);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2000);
+      });
+      const uploadId = hook.result.current.attachments[0].uploadId;
+      // The writer deleted the broken image from the prose before retrying.
+      embeds.delete("media-1");
+      uploadMock.mockReturnValue({
+        promise: Promise.resolve({
+          id: "media-2",
+          signed_url: "/api/v1/media/media-2/signed",
+          upload_status: "completed",
+        }),
+        abort: vi.fn(),
+      });
+
+      await act(async () => {
+        await hook.result.current.retry(uploadId);
+      });
+
+      // Nothing in the document references either row, so neither may stay
+      // on the Moment: the failed one and the fresh upload are both deleted.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(api.deleteMedia).toHaveBeenCalledWith("media-1");
+      expect(api.deleteMedia).toHaveBeenCalledWith("media-2");
+      expect(embeds.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("retries a server-failed placed item by removing its embed and re-uploading", async () => {
+    vi.useFakeTimers();
+    try {
+      uploadMock.mockReturnValue({
+        promise: Promise.resolve({
+          id: "media-1",
+          signed_url: "/api/v1/media/media-1/signed",
+          upload_status: "pending",
+        }),
+        abort: vi.fn(),
+      });
+      vi.mocked(api.momentMedia).mockResolvedValue([
+        { id: "media-1", upload_status: "failed" },
+      ] as never);
+      const { hook, handle, embeds, onDirty } = setup();
 
       await act(async () => {
         await hook.result.current.attach([photo()]);
@@ -455,15 +628,36 @@ describe("useMediaAttachments", () => {
         await vi.advanceTimersByTimeAsync(2000);
       });
       expect(hook.result.current.failed).toHaveLength(1);
+      expect(hook.result.current.failed[0].message).toMatch(
+        /couldn.t be processed/i,
+      );
       const uploadId = hook.result.current.attachments[0].uploadId;
+      const uploadsBeforeRetry = uploadMock.mock.calls.length;
+      onDirty.mockClear();
+      uploadMock.mockReturnValue({
+        promise: Promise.resolve({
+          id: "media-2",
+          signed_url: "/api/v1/media/media-2/signed",
+          upload_status: "completed",
+        }),
+        abort: vi.fn(),
+      });
 
       await act(async () => {
         await hook.result.current.retry(uploadId);
       });
 
-      // The media is already in the document — retry kicks processing again and
-      // must NOT delete it or drop the attachment row.
-      expect(api.deleteMedia).not.toHaveBeenCalled();
+      // A definitive server failure has no "reprocess this row" request —
+      // uploading always makes a new row — so the old embed comes out, a
+      // fresh upload swaps a new one back in at the same spot, and the failed
+      // row it replaces is deleted rather than left on the Moment.
+      expect(handle.removeEmbedForMediaId).toHaveBeenCalledWith("media-1");
+      expect(uploadMock.mock.calls.length).toBe(uploadsBeforeRetry + 1);
+      expect(embeds.has("media-1")).toBe(false);
+      expect(embeds.has("media-2")).toBe(true);
+      expect(onDirty).toHaveBeenCalled();
+      expect(api.deleteMedia).toHaveBeenCalledTimes(1);
+      expect(api.deleteMedia).toHaveBeenCalledWith("media-1");
       expect(
         hook.result.current.attachments.some(
           (item) => item.uploadId === uploadId,

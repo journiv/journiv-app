@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.logging_config import log_debug, log_warning
 from app.core.scoped_cache import ScopedCache
 from app.core.signing import generate_media_signature
-from app.models.enums import UploadStatus
+from app.models.enums import MediaType, UploadStatus
 from app.models.integration import IntegrationProvider
 from app.models.moment import MomentMedia
 from app.schemas.entry import MediaOrigin, MomentMediaResponse
@@ -120,11 +120,15 @@ def attach_signed_urls(
         response.signed_thumbnail_url = None
         return response
 
-    # 2. Define logic to differentiate "Link-Only" from "In-Progress Copy"
+    # 2. Media still living in Immich (link-only, or a copy import whose download
+    # has not landed yet) is proxied from Immich by the signed endpoint, so it is
+    # displayable before any local file exists. In-progress copies are only
+    # signed when the caller asked for incomplete media (e.g. the import response
+    # the editor places inline).
     is_immich_link_only = (
         response.external_provider == IntegrationProvider.IMMICH.value
         and not response.file_path
-        and response.upload_status == UploadStatus.COMPLETED
+        and (response.upload_status == UploadStatus.COMPLETED or include_incomplete)
     )
 
     # 3. Determine if we should generate URLs based on the state
@@ -152,8 +156,7 @@ def attach_signed_urls(
     now = int(time.time())
 
     # Determine TTL based on media type (videos get longer TTL for streaming)
-    media_type_str = str(response.media_type).lower() if response.media_type else ""
-    is_video = media_type_str == "video"
+    is_video = response.media_type == MediaType.VIDEO
     ttl_seconds = (
         settings.media_signed_url_video_ttl_seconds if is_video
         else settings.media_signed_url_ttl_seconds
@@ -192,6 +195,56 @@ def attach_signed_urls(
     else:
         response.signed_thumbnail_url = None
 
+    return response
+
+
+def _fallback_original_signed_url(
+    media_id: object,
+    media_type: Optional[MediaType],
+    user_id: str,
+) -> tuple[str, int]:
+    """
+    Sign the media endpoint directly regardless of processing state.
+
+    Used whenever `attach_signed_urls` yields no original URL for an
+    existing media row (failed, processing, HEIC with no display file yet):
+    the endpoint proxies Immich or serves what it has, so a bare media id
+    never reaches a client that cannot resolve it itself.
+    """
+    ttl_seconds = (
+        settings.media_signed_url_video_ttl_seconds
+        if media_type == MediaType.VIDEO
+        else settings.media_signed_url_ttl_seconds
+    )
+    expires_at = int(time.time()) + ttl_seconds
+    url = signed_url_for_journiv(str(media_id), user_id, "original", expires_at)
+    return url, expires_at
+
+
+def attach_signed_urls_with_original_fallback(
+    response: MomentMediaResponse,
+    media: MomentMedia,
+    user_id: str,
+    *,
+    include_incomplete: bool = False,
+    external_base_url: Optional[str] = None,
+) -> MomentMediaResponse:
+    """
+    `attach_signed_urls` plus the same never-a-bare-id fallback
+    `_resolve_signed_url` applies during entry delta hydration, for callers
+    (for example the moment media list used by draft recovery) that return
+    a full `MomentMediaResponse` per row instead of a delta string.
+    """
+    response = attach_signed_urls(
+        response,
+        user_id,
+        include_incomplete=include_incomplete,
+        external_base_url=external_base_url,
+    )
+    if not response.signed_url:
+        response.signed_url, response.signed_url_expires_at = _fallback_original_signed_url(
+            media.id, media.media_type, user_id
+        )
     return response
 
 
@@ -383,8 +436,14 @@ def _resolve_signed_url(
             return cached.get("url")
 
     try:
-        response = attach_signed_urls(
+        # An embed must never reach clients as a bare media id: they cannot
+        # render it and treat the whole document as unsupported, so this
+        # falls back to signing the media endpoint directly (it proxies
+        # Immich or serves what it has) and lets a failed load surface as
+        # an unavailable item instead.
+        response = attach_signed_urls_with_original_fallback(
             MomentMediaResponse.model_validate(media),
+            media,
             user_id,
             external_base_url=external_base_url,
         )
@@ -392,11 +451,15 @@ def _resolve_signed_url(
         log_warning(exc, "Failed to sign media in delta hydration (attach_signed_urls/model_validate)")
         return None
     if response.signed_url and response.signed_url_expires_at:
+        # Match the cache entry's own TTL to the signature's actual expiry
+        # (longer for video) rather than hard-coding the image TTL — otherwise
+        # the backend evicts a still-valid video URL early and re-signs it
+        # four times as often as necessary.
         cache.set(
             cache_key,
             "signed_url",
             {"url": response.signed_url, "expires_at": response.signed_url_expires_at},
-            ttl_seconds=settings.media_signed_url_ttl_seconds,
+            ttl_seconds=max(response.signed_url_expires_at - int(time.time()), 1),
         )
     return response.signed_url
 

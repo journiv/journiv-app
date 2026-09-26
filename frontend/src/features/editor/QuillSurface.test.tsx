@@ -278,6 +278,62 @@ describe("QuillSurface", () => {
     expect(JSON.stringify(ref.current?.getContents())).not.toContain(signed);
   });
 
+  it("removeEmbedForMediaId removes the embed matching a media id and returns its index", () => {
+    // Used by Remove/retry on an attachment that already swapped its
+    // placeholder for a real embed, where there is no placeholder left to
+    // find by upload id — the embed has to be located by media id instead.
+    const mediaId = "aaaaaaaa-1111-1111-1111-111111111111";
+    const otherMediaId = "22222222-2222-2222-2222-222222222222";
+    const ref = createRef<QuillSurfaceHandle>();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="remove-by-media-id"
+        initialContent={{ ops: [{ insert: "Note\n" }] }}
+        formats={[...JOURNIV_DELTA_FORMATS, "image", "video"]}
+      />,
+    );
+    const signed = `/api/v1/media/${mediaId}/signed?uid=u&exp=1&sig=abc`;
+    const otherSigned = `/api/v1/media/${otherMediaId}/signed?uid=u&exp=1&sig=def`;
+    act(() => ref.current?.insertMedia("image", signed));
+    act(() => ref.current?.insertMedia("video", otherSigned));
+    expect(JSON.stringify(ref.current?.getContents())).toContain(mediaId);
+
+    let index: number | null = null;
+    act(() => {
+      index = ref.current?.removeEmbedForMediaId(mediaId.toUpperCase()) ?? null;
+    });
+
+    expect(index).not.toBeNull();
+    expect(ref.current?.getContents().ops).not.toContainEqual({
+      insert: { image: signed },
+    });
+    // The other embed, for a different media id, is untouched.
+    expect(ref.current?.getContents().ops).toContainEqual({
+      insert: { video: otherSigned },
+    });
+  });
+
+  it("removeEmbedForMediaId returns null and changes nothing when the id is not in the document", () => {
+    const ref = createRef<QuillSurfaceHandle>();
+    render(
+      <QuillSurface
+        ref={ref}
+        editorId="remove-by-media-id-missing"
+        initialContent={{ ops: [{ insert: "Note\n" }] }}
+        formats={[...JOURNIV_DELTA_FORMATS, "image"]}
+      />,
+    );
+    const before = ref.current?.getContents();
+
+    const result = ref.current?.removeEmbedForMediaId(
+      "33333333-3333-3333-3333-333333333333",
+    );
+
+    expect(result).toBeNull();
+    expect(ref.current?.getContents()).toEqual(before);
+  });
+
   it("formats ranged inline and line selections through the imperative adapter", () => {
     const ref = createRef<QuillSurfaceHandle>();
     const stateChanged = vi.fn();

@@ -46,6 +46,15 @@ export type ImmichAttachment = {
   state: "importing" | "processing" | "done" | "failed";
   message?: string;
   mediaId?: string;
+  /**
+   * Set only while `state` is `"failed"` and the item is already placed
+   * (`placed.current.has(uploadId)`): which of the two ways a placed item
+   * fails, so retry can tell them apart without parsing `message`.
+   * `"server"` — the backend recorded a definitive processing failure; retry
+   * re-imports. `"stalled"` — the poll window elapsed with no terminal
+   * state; retry just resumes polling, since the item may still finish.
+   */
+  failureReason?: "server" | "stalled";
 };
 
 /**
@@ -117,8 +126,12 @@ export function useImmichAttachments({
           patch(
             uploadId,
             outcome.state === "done"
-              ? { state: "done", message: undefined }
-              : { state: "failed", message: outcome.message },
+              ? { state: "done", message: undefined, failureReason: undefined }
+              : {
+                  state: "failed",
+                  message: outcome.message,
+                  failureReason: outcome.reason,
+                },
           ),
       });
     },
@@ -135,8 +148,23 @@ export function useImmichAttachments({
       const { uploadId, kind } = attachment;
       patch(uploadId, { mediaId: media.id });
 
-      // THE RACE CHECK — see the hook's docstring.
+      // A row with no displayable URL cannot be placed. It is not the race
+      // below: the placeholder is still there, so fail it visibly (retryable)
+      // instead of leaving it spinning. The unplaced row is discarded; a retry
+      // imports the asset again.
       const source = media.signed_url;
+      if (!source && !placed.current.has(uploadId)) {
+        surfaceRef.current?.setPlaceholderState(uploadId, "failed");
+        patch(uploadId, {
+          state: "failed",
+          mediaId: undefined,
+          message: IMPORT_FAILED_MESSAGE,
+        });
+        await api.deleteMedia(media.id).catch(() => undefined);
+        return;
+      }
+
+      // THE RACE CHECK — see the hook's docstring.
       const replaced =
         Boolean(source) &&
         (surfaceRef.current?.replacePlaceholder(uploadId, kind, source ?? "") ??
@@ -285,13 +313,20 @@ export function useImmichAttachments({
       patch(uploadId, {
         state: reprocessing ? "processing" : "importing",
         message: undefined,
+        failureReason: undefined,
       });
       if (!reprocessing) {
         surfaceRef.current?.setPlaceholderState(uploadId, "uploading");
         await importGroup([attachment], draft.momentId);
         return;
       }
-      if (attachment.mediaId) {
+      // A placed item's retry means one of two different things depending on
+      // why it failed: a stalled poll just needs to keep waiting, while a
+      // definitive server-side failure needs a fresh import — the backend
+      // upserts the existing row (matched by asset id) back to processing,
+      // since the stale job that used to block this no longer does (see the
+      // dedupe fix in import_job_service.py).
+      if (attachment.mediaId && attachment.failureReason === "stalled") {
         pollUntilProcessed(uploadId, draft.momentId, attachment.mediaId);
       } else {
         await importGroup([attachment], draft.momentId);
@@ -308,13 +343,45 @@ export function useImmichAttachments({
   );
 
   const cancel = useCallback(
-    (uploadId: string) => {
-      surfaceRef.current?.removePlaceholder(uploadId);
+    (
+      uploadId: string,
+      options: {
+        /**
+         * True for the "leave without saving" sweep, which aborts anything
+         * still importing but must leave an already-placed item exactly
+         * alone: the Moment keeps what was actually attached, and touching
+         * the document here would mark it dirty and re-arm the local draft
+         * this same flow just explicitly discarded (`useLocalDraft`'s
+         * `retired` latch), reviving a draft the user just discarded.
+         */
+        keepPlacedMedia?: boolean;
+      } = {},
+    ) => {
+      // A placed item has no placeholder left to remove — its real embed is
+      // in the document, and only removing that embed (rather than leaving
+      // it as a broken image with the notice merely gone) actually removes
+      // it. Its row is deleted too: it was created in this session, and the
+      // save's orphan cleanup only collects media the previously saved
+      // document referenced, so an unsaved one would otherwise stay on the
+      // Moment as an "unavailable" attachment.
+      const attachment = attachments.find((item) => item.uploadId === uploadId);
+      if (placed.current.has(uploadId)) {
+        if (!options.keepPlacedMedia && attachment?.mediaId) {
+          const removed = surfaceRef.current?.removeEmbedForMediaId(
+            attachment.mediaId,
+          );
+          if (removed !== null && removed !== undefined) onDirty();
+          placed.current.delete(uploadId);
+          void api.deleteMedia(attachment.mediaId).catch(() => undefined);
+        }
+      } else {
+        surfaceRef.current?.removePlaceholder(uploadId);
+      }
       setAttachments((current) =>
         current.filter((item) => item.uploadId !== uploadId),
       );
     },
-    [surfaceRef],
+    [attachments, onDirty, surfaceRef],
   );
 
   const pending = attachments.filter(

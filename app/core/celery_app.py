@@ -12,6 +12,12 @@ from app.core.config import (
 )
 
 # Create Celery app instance
+# Worker-wide task limits. Tasks that wait on their own timeout (the Immich
+# import jobs) must finish that wait before the soft limit, or Celery
+# interrupts them first and their cleanup never runs.
+TASK_TIME_LIMIT_SECONDS = 3600  # 1 hour hard limit for tasks
+TASK_SOFT_TIME_LIMIT_SECONDS = 3300  # 55 minutes soft limit
+
 celery_app = Celery(
     "journiv",
     include=[
@@ -59,8 +65,8 @@ celery_app.conf.update(
         },
     },
     task_track_started=True,
-    task_time_limit=3600,  # 1 hour hard limit for tasks
-    task_soft_time_limit=3300,  # 55 minutes soft limit
+    task_time_limit=TASK_TIME_LIMIT_SECONDS,
+    task_soft_time_limit=TASK_SOFT_TIME_LIMIT_SECONDS,
     worker_prefetch_multiplier=1,  # One task at a time
     worker_max_tasks_per_child=1000,  # Restart worker after 1000 tasks
     task_acks_late=True,  # Acknowledge tasks after completion

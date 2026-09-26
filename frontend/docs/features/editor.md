@@ -211,6 +211,26 @@ one Delta operation. If the live placeholder is gone when an upload completes,
 delete the uploaded media rather than reinserting it. Release object URLs on
 unmount, not placeholder removal, because undo can restore a blot.
 
+Once a placeholder is swapped for a real embed there is nothing left to find by
+upload id, so Retry and Remove act on the embed itself
+(`QuillSurface.removeEmbedForMediaId`, matched by the durable media id in its
+signed-URL source). Retry on a placed item is not one thing: a stalled poll
+(the window elapsed with no terminal state) just resumes polling, since the
+file may still finish; a definitive server-side failure has no "reprocess this
+row" request, so it re-imports (Immich, upserting the existing row) or
+re-uploads (device, a new row swapped in where the old embed was, with the
+failed row deleted) instead. The two are tracked as attachment state
+(`failureReason`), never inferred from a message string. Remove on a placed
+item deletes its embed, marks the document dirty, and deletes its row: these
+are this session's own attachments, and the save's orphan cleanup only
+collects media the previously saved document referenced, so an unsaved one
+would otherwise stay on the Moment as an "unavailable" attachment. Remove is
+only offered for failed items, so this never deletes media that existed before
+the edit. Leaving the editor without saving is the exception: that sweep
+aborts anything still uploading or importing but passes `keepPlacedMedia` for
+everything already placed, because marking the document dirty there would
+re-arm and resurrect the local draft the same flow just explicitly discarded.
+
 Only upload/import blocks Done; server processing does not. Use the isolated
 XHR upload helper for progress, never another API client or Axios. Use formats
 returned by the media-formats endpoint, with wildcards only while it loads.
