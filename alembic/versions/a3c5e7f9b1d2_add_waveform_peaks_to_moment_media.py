@@ -1,7 +1,7 @@
 """Add waveform peaks to moment media.
 
 Revision ID: a3c5e7f9b1d2
-Revises: d5e6f7a8b9c0
+Revises: e7a1c9d3b5f2
 Create Date: 2026-09-19
 """
 

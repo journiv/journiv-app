@@ -286,8 +286,18 @@ function WaveformControls({
         onClick={() => {
           const audio = audioRef.current;
           if (!audio) return;
-          if (audio.paused) void play().catch(() => onLoadError?.());
-          else audio.pause();
+          if (audio.paused) {
+            // Only an undecodable source is a load error. AbortError (paused
+            // mid-start) and NotAllowedError (autoplay policy) are not.
+            void play().catch((caught) => {
+              if (
+                caught instanceof DOMException &&
+                caught.name === "NotSupportedError"
+              ) {
+                onLoadError?.();
+              }
+            });
+          } else audio.pause();
         }}
       >
         {isPlaying ? (

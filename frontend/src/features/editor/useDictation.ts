@@ -80,6 +80,9 @@ export function useDictation({
   const [staged, setStaged] = useState<RecordingSession[]>([]);
   const [notice, setNotice] = useState("");
   const mounted = useRef(true);
+  const recovering = useRef(new Set<string>());
+  /** Sessions between the recorder ending and the upload being queued. */
+  const [finalizing, setFinalizing] = useState(0);
   const scope = useRef({ userId, draftKey });
   scope.current = { userId, draftKey };
 
@@ -205,7 +208,7 @@ export function useDictation({
   );
 
   /** A recording ended: assemble it and hand it to the upload. */
-  const finalize = useCallback(
+  const finalizeSession = useCallback(
     async (audio: RecordedAudio) => {
       const session = active.current;
       active.current = null;
@@ -237,7 +240,12 @@ export function useDictation({
             durationMs: Math.round(audio.durationMs),
             chunkCount: audio.chunkCount,
           });
-          file = await recordingRepository.assemble(stored, audio.unstaged);
+          // `stored` predates the recorder's final count, so hand assemble the
+          // real one or a missing last chunk would go unnoticed.
+          file = await recordingRepository.assemble(
+            { ...stored, chunkCount: audio.chunkCount },
+            audio.unstaged,
+          );
         }
       } catch {
         // Staging is unreadable; fall back to what is held in memory below.
@@ -265,6 +273,18 @@ export function useDictation({
       await refreshStaged();
     },
     [attach, refreshStaged],
+  );
+
+  const finalize = useCallback(
+    async (audio: RecordedAudio) => {
+      setFinalizing((n) => n + 1);
+      try {
+        await finalizeSession(audio);
+      } finally {
+        if (mounted.current) setFinalizing((n) => n - 1);
+      }
+    },
+    [finalizeSession],
   );
 
   const recorder = useDictationRecorder({
@@ -339,25 +359,34 @@ export function useDictation({
   /** Brings back a recording that was staged but never uploaded. */
   const recover = useCallback(
     async (sessionId: string) => {
-      const stored = await recordingRepository
-        .readSession(sessionId)
-        .catch(() => null);
-      if (!stored) {
+      // A double click must not upload the same recording twice.
+      if (recovering.current.has(sessionId)) return false;
+      recovering.current.add(sessionId);
+      try {
+        const stored = await recordingRepository
+          .readSession(sessionId)
+          .catch(() => null);
+        if (!stored) {
+          await refreshStaged();
+          return false;
+        }
+        const file = await recordingRepository
+          .assemble(stored)
+          .catch(() => null);
+        if (!file) {
+          setNotice("That recording couldn’t be read back.");
+          await refreshStaged();
+          return false;
+        }
+        await recordingRepository
+          .updateSession(sessionId, { status: "stopped" })
+          .catch(() => undefined);
+        await attach(file, { sessionId, anchor: stored.anchor });
         await refreshStaged();
-        return false;
+        return true;
+      } finally {
+        recovering.current.delete(sessionId);
       }
-      const file = await recordingRepository.assemble(stored).catch(() => null);
-      if (!file) {
-        setNotice("That recording couldn’t be read back.");
-        await refreshStaged();
-        return false;
-      }
-      await recordingRepository
-        .updateSession(sessionId, { status: "stopped" })
-        .catch(() => undefined);
-      await attach(file, { sessionId, anchor: stored.anchor });
-      await refreshStaged();
-      return true;
     },
     [attach, refreshStaged],
   );
@@ -408,7 +437,9 @@ export function useDictation({
    * there is nothing to save, stop or lose.
    */
   const recording =
-    recorder.status === "recording" || recorder.status === "stopping";
+    recorder.status === "recording" ||
+    recorder.status === "stopping" ||
+    (finalizing > 0 && attachment.pending === 0);
   /** A start is in flight (permission prompt open, staging opening). */
   const starting = recorder.status === "starting";
 
@@ -441,7 +472,9 @@ export function useDictation({
       ? recorder.status
       : attachment.pending > 0
         ? "uploading"
-        : "idle";
+        : finalizing > 0
+          ? "stopping"
+          : "idle";
 
   return {
     availability: recorder.availability,

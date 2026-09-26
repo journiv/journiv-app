@@ -120,10 +120,10 @@ def test_entry(test_db: Session, test_user: User) -> Entry:
 
 
 @pytest.fixture
-def service(tmp_path, test_db) -> MediaService:
+def service(tmp_path, test_db, monkeypatch) -> MediaService:
     media_root = tmp_path / "media"
     media_root.mkdir()
-    media_service_module.settings.media_root = str(media_root)
+    monkeypatch.setattr(media_service_module.settings, "media_root", str(media_root))
     svc = MediaService(session=test_db)
     svc.media_root = media_root
     svc.media_storage_service = MediaStorageService(media_root, test_db)
