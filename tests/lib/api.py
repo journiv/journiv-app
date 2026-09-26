@@ -79,7 +79,14 @@ class JournivApiClient:
     ) -> None:
         env_url = os.getenv("JOURNIV_API_BASE_URL")
         self.base_url = _normalize_base_url(base_url or env_url or DEFAULT_BASE_URL)
-        self._client = httpx.Client(base_url=self.base_url, timeout=timeout)
+        # The server recycles gunicorn workers (--max-requests) and closes idle
+        # keep-alive sockets, so a reused pooled connection can be dropped
+        # before any response is sent. Use a fresh connection per request.
+        self._client = httpx.Client(
+            base_url=self.base_url,
+            timeout=timeout,
+            limits=httpx.Limits(max_keepalive_connections=0),
+        )
         parsed = urlsplit(self.base_url)
         self._service_root = urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
 
@@ -132,7 +139,13 @@ class JournivApiClient:
             headers["Authorization"] = f"Bearer {token}"
 
         url = self._absolute_url(path) if absolute else path
-        response = self._client.request(method, url, headers=headers, **kwargs)
+        try:
+            response = self._client.request(method, url, headers=headers, **kwargs)
+        except httpx.RemoteProtocolError:
+            # Only replay-safe methods are retried; others may have been applied.
+            if method.upper() not in ("GET", "HEAD", "OPTIONS"):
+                raise
+            response = self._client.request(method, url, headers=headers, **kwargs)
         if expected and response.status_code not in expected:
             raise JournivApiError(method, path, response.status_code, response.text)
         return response
