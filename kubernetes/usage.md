@@ -1,6 +1,11 @@
 # Kubernetes Manifest
 
 This is a basic Kubernetes manifest one can use to deploy Journiv into Kubernetes.
+The basic `manifest.yaml` does not include a Celery worker. Uploaded images,
+videos, and audio will remain at **Processing** without one, even when the
+files are present in the media volume. Import and export jobs also need the
+worker. Use `fullwithcelery.yaml` for these features, with the app and worker
+configured for the same Redis broker, database, and `/data` volume.
 
 The Ingress has been separated out as not all clusters do ingress the same way.
 
@@ -240,6 +245,7 @@ $ kubectl get nodes -o yaml | grep 192.168 | head -n 1
 
 # Full with Celery and Redis/Valkey
 
-I found some features of Journiv required a full production deployment.
-
-An instance of that is in "fullwithcelery.yaml"
+For media uploads and import/export, deploy the Redis service and Celery worker
+shown in `fullwithcelery.yaml`. Use the same Journiv image version for the app
+and worker. If media stays at Processing, check the worker pod and its logs,
+then retry the upload after the worker is healthy.

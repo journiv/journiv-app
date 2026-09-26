@@ -900,10 +900,11 @@ class Settings(BaseSettings):
                 "limitations and configure regular backups."
             )
 
-        # Check Celery configuration for import/export
+        # Check Celery configuration for media processing and import/export
         if not self.celery_broker_url:
             warnings.append(
-                "CELERY_BROKER_URL not configured. Import/export features require Celery with Redis."
+                "CELERY_BROKER_URL not configured. Media uploads and import/export "
+                "require a Celery worker with Redis/Valkey."
             )
         if not self.celery_result_backend:
             warnings.append(

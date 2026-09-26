@@ -5,7 +5,6 @@
 > Journiv is currently in **beta** and under **active development**.
 > While the developers aims to keep data **backward-compatible**, breaking changes may still occur. Please **keep regular backups of your data** to avoid loss during updates.
 
-
 Journiv is a self-hosted private journal. It features comprehensive journaling capabilities including mood tracking, prompt-based journaling, media uploads, analytics, and advanced search with a clean and minimal UI.
 
 <p align="center">
@@ -47,7 +46,6 @@ Journiv is a self-hosted private journal. It features comprehensive journaling c
   </video>
 </div> -->
 
-
 <div align="center">
   <a href="https://www.youtube.com/watch?v=nKoUh7VP-eE" target="_blank">
     <img height="400" alt="Journiv_Web_Tab_Mobile" src="https://github.com/user-attachments/assets/de613e87-a103-4935-a7ff-78013cba0e00" />
@@ -64,10 +62,15 @@ Journiv is a self-hosted private journal. It features comprehensive journaling c
 </p>
 
 ## Quick Start
+
 Give Journiv a quick try with one docker command.
 
 > [!NOTE]
-> This `docker run` command starts a **minimal** version of Journiv. It lack components needed for various features of Journiv like import/export etc. For a complete docker compose file use [this](https://github.com/journiv/journiv-app/blob/refs/tags/latest/docker-compose.yml).
+> This `docker run` command starts a **minimal** version of Journiv. Media files
+> can be uploaded, but images, videos, and audio will stay at **Processing** and
+> will not appear in entries without a Redis/Valkey broker and a Celery worker.
+> Import and export jobs also require the worker. For these features, use the
+> [complete Docker Compose file](https://github.com/journiv/journiv-app/blob/refs/tags/latest/docker-compose.yml).
 
 ### Docker Run
 
@@ -119,15 +122,16 @@ for that exact root registration. Other service-worker registrations are left
 untouched, preserving a path for future React PWA support.
 
 ## Demo
+
 Want to just try a [demo](https://demo.almostadatacenter.com)?
 (Thanks to [JasonFieldz](https://github.com/JasonFieldz) for hosting a demo instance).
+
 - Username: demo@test.com
 - Password: Demo1234
 
 ## Documentation
 
 Read the [docs](https://journiv.com/docs) to learn more about Journiv and configuring it.
-
 
 ## Contributing
 
@@ -151,6 +155,7 @@ Need help or want to report an issue?
 ---
 
 ## Disclaimer
+
 **AI-Assisted Development**
 
 Journiv is a personal source avaliable project developed outside of my full-time work as a software engineer. It grew out of a need I had for many years for a capable, private, self-hosted journaling application. I could not find an existing option that matched what I wanted, so Journiv started as a project to build one.

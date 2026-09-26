@@ -164,7 +164,7 @@ spec:
     spec:
       containers:
         - name: celery-worker
-          image: idjohnson/journiv:0.2
+          image: swalabtech/journiv-app:latest
           command: ["celery", "-A", "app.core.celery_app", "worker", "--loglevel=info"]
           env:
             - name: SECRET_KEY
