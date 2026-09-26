@@ -43,6 +43,7 @@ import { mediaPath } from "../../lib/mediaUrl";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
 import { planReaderContent, QuillReader } from "../editor/QuillReader";
+import { useAnchorPruning } from "../editor/useAnchorPruning";
 import { PromptBanner } from "../prompts/PromptBanner";
 import { scopeSearchFrom } from "../timeline/momentScope";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
@@ -97,6 +98,13 @@ export function ReaderPage() {
   // One media query for the whole reader: the prose resolves inline embeds from
   // it, and the gallery renders whatever is left over.
   const media = useMomentMedia(momentId, (moment.data?.media_count ?? 0) > 0);
+  // Housekeeping for device-local dictation anchors whose media is gone — the
+  // reader is where a writer lands after a save that dropped a recording.
+  useAnchorPruning({
+    momentId,
+    mediaCount: moment.data?.media_count,
+    media,
+  });
 
   // Full-screen viewer. The array is the moment's ready image + video media
   // (inline and attached, in order) so prev/next walks everything; `mediaParam`

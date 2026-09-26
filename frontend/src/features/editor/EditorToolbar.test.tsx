@@ -6,6 +6,7 @@ import type { EditorState, QuillSurfaceHandle } from "./QuillSurface";
 
 const editor = (): QuillSurfaceHandle => ({
   getSelectionIndex: vi.fn(() => 0),
+  getTextAround: vi.fn(() => ({ before: "", after: "" })),
   getIndexFromPoint: vi.fn(() => 0),
   clearHistory: vi.fn(),
   getSelectedMedia: vi.fn(() => null),

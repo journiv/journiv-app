@@ -245,6 +245,13 @@ class MomentMedia(BaseModel, table=True):
     width: Optional[int] = Field(None, ge=0)
     height: Optional[int] = Field(None, ge=0)
     alt_text: Optional[str] = Field(None, max_length=500)  # Accessibility
+    # NULL means "not computed" (still processing, or media that predates this
+    # column); 400 zeros means "computed, silent".
+    waveform_peaks: Optional[List[int]] = Field(
+        default=None,
+        sa_column=SQLModelColumn(JSONType(), nullable=True),
+        description="Normalised 0-100 amplitude buckets for audio waveform display",
+    )
     upload_status: UploadStatus = Field(
         default=UploadStatus.PENDING,
         sa_column=Column(

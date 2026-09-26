@@ -2,6 +2,7 @@
 Media service for file upload and processing.
 """
 import asyncio
+import json
 import logging
 import mimetypes
 import os
@@ -9,9 +10,10 @@ import subprocess
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Dict, Optional, Tuple
 
 import magic
@@ -48,6 +50,7 @@ from app.schemas.media import (
 )
 from app.schemas.media_library import MediaLibraryItem
 from app.schemas.moment import MomentMediaThumbnail
+from app.services.audio_waveform import extract_waveform
 from app.services.media_storage_service import MediaStorageService
 from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
 from app.utils.import_export.media_handler import MediaHandler
@@ -81,6 +84,21 @@ class ImmichIntegrationInactiveError(Exception):
     """Raised when Immich integration is inactive."""
 
 
+@dataclass
+class _AudioRelocation:
+    """A file moved from the video directory to the audio directory.
+
+    `moved` is False when the audio path already held the same content (the same
+    bytes were reclassified earlier); the source is then only removed once the
+    database commit has succeeded.
+    """
+    old_relative: str
+    new_relative: str
+    old_path: Path
+    new_path: Path
+    moved: bool
+
+
 class MediaService:
     """Service class for media operations."""
 
@@ -90,6 +108,18 @@ class MediaService:
     FFMPEG_DEFAULT_TIMEOUT = 300
     FFPROBE_DEFAULT_TIMEOUT = 300
     VIDEO_THUMBNAIL_SEEK_TIME = "00:00:01"
+
+    # Containers whose sniffed MIME cannot say audio from video, mapped to the
+    # MIME an audio-only file in that container should carry.
+    # libmagic's name for an M4A-branded MP4; stored under the standard type.
+    NORMALISED_AUDIO_MIME = {"audio/x-m4a": "audio/mp4"}
+
+    AV_CONTAINER_AUDIO_MIME = {
+        "video/webm": "audio/webm",
+        "audio/webm": "audio/webm",
+        "video/mp4": "audio/mp4",
+        "audio/mp4": "audio/mp4",
+    }
 
     # Use MediaHandler constants to avoid duplication
     MIME_TYPE_MAP = MediaHandler.MIME_TYPE_MAP
@@ -1033,6 +1063,7 @@ class MediaService:
                         width=existing_media.width,
                         height=existing_media.height,
                         duration=existing_media.duration,
+                        waveform_peaks=existing_media.waveform_peaks,
                     )
                     log_info(
                         "Reused deduplicated media",
@@ -1259,6 +1290,13 @@ class MediaService:
                 self._mark_processing_failed(media_id, error_message)
                 return
 
+            if not actual_file_path.exists() and media.file_path:
+                # A duplicate upload can be queued against a path the file has
+                # since been moved away from (audio reclassification).
+                recorded_path = self.media_root / media.file_path
+                if recorded_path.exists():
+                    actual_file_path = recorded_path
+
             if not actual_file_path.exists():
                 error_message = f"Uploaded file not found at {actual_file_path}"
                 log_error(error_message, media_id=media_id, user_id=user_id)
@@ -1273,6 +1311,28 @@ class MediaService:
                 log_error(error_message, media_id=media_id, user_id=user_id)
                 self._mark_processing_failed(media_id, error_message)
                 return
+
+            # libmagic cannot tell an audio-only WebM/MP4 from a video, so the
+            # container's streams decide. This may reclassify the file as audio
+            # and move it to the audio directory (see _relocate_to_audio_dir).
+            stream_error = self._analyse_audio_video(actual_file_path, metadata)
+            if stream_error:
+                log_error(stream_error, media_id=media_id, user_id=user_id)
+                self._mark_processing_failed(media_id, stream_error)
+                return
+
+            relocation: Optional[_AudioRelocation] = None
+            if metadata.get('media_type') == MediaType.AUDIO.value:
+                try:
+                    relocation = self._relocate_to_audio_dir(media, actual_file_path)
+                except OSError as e:
+                    error_message = f"Failed to move audio file to its directory: {e}"
+                    log_error(error_message, media_id=media_id, user_id=user_id)
+                    self._mark_processing_failed(media_id, error_message)
+                    return
+                if relocation:
+                    actual_file_path = relocation.new_path
+                    metadata['relocation'] = relocation
 
             # Generate thumbnail with error handling
             thumbnail_path = None
@@ -1330,10 +1390,13 @@ class MediaService:
                 # Continue without display version - not critical
 
             # Update database with processed data in a transaction
+            committed = False
             try:
                 session.begin_nested()  # Create savepoint for atomic update
                 self._update_media_metadata(media_id, metadata, thumbnail_path, display_path)
                 session.commit()  # Commit the nested transaction
+                committed = True
+                self._finish_audio_relocation(relocation, committed=True)
                 log_file_upload(
                     media.original_filename or media.file_path or "unknown",
                     media.file_size or 0,
@@ -1343,6 +1406,9 @@ class MediaService:
                 )
             except Exception as e:
                 session.rollback()
+                if not committed:
+                    # The record still points at the old path: put the file back.
+                    self._finish_audio_relocation(relocation, committed=False)
                 error_message = f"Failed to update media metadata: {e}"
                 log_error(error_message, media_id=media_id, user_id=user_id)
                 self._mark_processing_failed(media_id, error_message)
@@ -1368,6 +1434,125 @@ class MediaService:
             except Exception as mark_error:
                 log_error(f"Failed to mark processing as failed for {media_id}: {mark_error}",
                          media_id=media_id, user_id=user_id)
+
+    def _analyse_audio_video(self, path: Path, metadata: Dict[str, Any]) -> Optional[str]:
+        """Settle audio-vs-video, duration and waveform for time-based media.
+
+        Mutates `metadata` in place. Returns an error message when the file must
+        not be completed, None otherwise.
+        """
+        if metadata.get("media_type") not in (MediaType.AUDIO.value, MediaType.VIDEO.value):
+            return None
+
+        sniffed_mime = (metadata.get("mime_type") or "").lower()
+        if sniffed_mime in self.NORMALISED_AUDIO_MIME:
+            sniffed_mime = metadata["mime_type"] = self.NORMALISED_AUDIO_MIME[sniffed_mime]
+        ambiguous = sniffed_mime in self.AV_CONTAINER_AUDIO_MIME
+        probe = self.probe_streams(path)
+
+        if not probe["ok"]:
+            if ambiguous:
+                # Completing it with the sniffed "video" is the bug this guards
+                # against, and a failed probe is when it is most likely.
+                return (
+                    "We couldn't tell whether this file is audio or video. "
+                    "Try attaching it again."
+                )
+        else:
+            if ambiguous:
+                if not probe["has_audio"] and not probe["has_video"]:
+                    return "This file has no playable audio or video stream. Try attaching it again."
+                if probe["has_video"] and metadata["media_type"] == MediaType.AUDIO.value:
+                    # The upload was stored in the audio directory. Completing it
+                    # as audio would serve a video with the wrong type and player.
+                    return "This file contains video. Attach it as a video instead."
+                if probe["has_audio"] and not probe["has_video"]:
+                    metadata["media_type"] = MediaType.AUDIO.value
+                    metadata["mime_type"] = self.AV_CONTAINER_AUDIO_MIME[sniffed_mime]
+                    metadata["dimensions"] = None
+            if probe["duration"] is not None:
+                metadata["duration"] = probe["duration"]
+
+        if metadata["media_type"] == MediaType.AUDIO.value:
+            waveform = extract_waveform(
+                path, getattr(self.settings, "ffmpeg_timeout", self.FFMPEG_DEFAULT_TIMEOUT)
+            )
+            if waveform is not None:
+                metadata["waveform_peaks"] = waveform.peaks
+                # Browser recordings carry no container duration; the decoded
+                # length is the fallback.
+                if metadata.get("duration") is None:
+                    metadata["duration"] = waveform.duration
+        return None
+
+    def _relocate_to_audio_dir(
+        self, media: MomentMedia, current_path: Path
+    ) -> Optional[_AudioRelocation]:
+        """Move a reclassified file from the video directory to the audio one.
+
+        The file was stored before it could be inspected, so an audio-only WebM
+        lands under `videos/`. A record whose `file_path` disagrees with its type
+        breaks signing, thumbnails and export, so the path must follow the type.
+
+        The caller commits the record and then calls `_finish_audio_relocation`,
+        which puts the file back if the commit failed. The move is not atomic
+        with the database, which is why the compensation exists.
+        """
+        if not media.file_path:
+            return None
+        old_relative = PurePosixPath(media.file_path)
+        if old_relative.parent.name == "audio":
+            return None
+        new_relative = old_relative.parent.parent / "audio" / old_relative.name
+        old_path = current_path
+        new_path = self.media_root / str(new_relative)
+
+        if new_path.exists():
+            # Identical bytes were already reclassified (storage is keyed by
+            # checksum). Adopt that copy; the source goes after the commit.
+            moved = False
+        else:
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(old_path, new_path)
+            moved = True
+        log_info(
+            "Reclassified media as audio; "
+            f"{'moved' if moved else 'adopted existing file for'} {old_relative} -> {new_relative}",
+            media_id=str(media.id),
+        )
+        return _AudioRelocation(
+            old_relative=str(old_relative),
+            new_relative=str(new_relative),
+            old_path=old_path,
+            new_path=new_path,
+            moved=moved,
+        )
+
+    def _finish_audio_relocation(
+        self, relocation: Optional[_AudioRelocation], *, committed: bool
+    ) -> None:
+        """Settle a relocation once the database outcome is known."""
+        if relocation is None:
+            return
+        try:
+            if committed:
+                if not relocation.moved:
+                    relocation.old_path.unlink(missing_ok=True)
+            elif relocation.moved:
+                relocation.old_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(relocation.new_path, relocation.old_path)
+                log_warning(
+                    "Reclassification commit failed; moved file back "
+                    f"{relocation.new_relative} -> {relocation.old_relative}"
+                )
+            self.media_storage_service._cleanup_empty_dirs(
+                relocation.new_path.parent if not committed else relocation.old_path.parent
+            )
+        except OSError as exc:
+            log_error(
+                f"Failed to settle audio relocation {relocation.old_relative} -> "
+                f"{relocation.new_relative}: {exc}"
+            )
 
     def _resolve_file_path(self, passed_path: Optional[str], db_relative_path: Optional[str]) -> Path:
         """
@@ -1463,34 +1648,78 @@ class MediaService:
             log_error(f"Failed to get image dimensions: {e}")
             return None
 
-    def _get_video_dimensions(self, file_path: Path) -> Optional[Dict[str, int]]:
-        """Get video dimensions using FFprobe."""
+    def _run_ffprobe_json(self, file_path: Path, args: list[str]) -> Optional[Dict[str, Any]]:
+        """Run ffprobe with JSON output; None on timeout, failure or bad output."""
+        cmd = ["ffprobe", "-v", "error", "-print_format", "json", *args, str(file_path)]
+        # Use configurable timeout from settings or class constant
+        timeout = getattr(self.settings, 'ffprobe_timeout', self.FFPROBE_DEFAULT_TIMEOUT)
         try:
-            cmd = [
-                "ffprobe", "-v", "quiet", "-print_format", "json",
-                "-show_streams", "-select_streams", "v:0",
-                str(file_path)
-            ]
-
-            # Use configurable timeout from settings or class constant
-            timeout = getattr(self.settings, 'ffprobe_timeout', self.FFPROBE_DEFAULT_TIMEOUT)
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-
             if result.returncode == 0:
-                import json
-                data = json.loads(result.stdout)
-                if data.get('streams'):
-                    stream = data['streams'][0]
-                    return {
-                        "width": stream.get('width', 0),
-                        "height": stream.get('height', 0)
-                    }
+                return json.loads(result.stdout)
+            log_warning(f"FFprobe exited {result.returncode} for {file_path}")
         except subprocess.TimeoutExpired:
             log_error(f"FFprobe timeout for {file_path}")
         except Exception as e:
-            log_error(f"Failed to get video dimensions: {e}")
-
+            log_error(f"FFprobe failed for {file_path}: {e}")
         return None
+
+    def _get_video_dimensions(self, file_path: Path) -> Optional[Dict[str, int]]:
+        """Get video dimensions using FFprobe."""
+        data = self._run_ffprobe_json(
+            file_path, ["-show_streams", "-select_streams", "v:0"]
+        )
+        if data and data.get('streams'):
+            stream = data['streams'][0]
+            return {
+                "width": stream.get('width', 0),
+                "height": stream.get('height', 0)
+            }
+        return None
+
+    def probe_streams(self, file_path: Path) -> Dict[str, Any]:
+        """Inspect a container's streams with ffprobe.
+
+        WebM and MP4 are containers: libmagic reports `video/*` for an
+        audio-only file, so the streams are the authority on audio vs video.
+        The result is three-state on purpose — `ok=False` means the probe itself
+        failed and says nothing about what the file contains, which is not the
+        same as "probed, no video stream". Never raises.
+
+        `duration` is None when the container carries none, which is normal for
+        browser (`MediaRecorder`) recordings.
+        """
+        result: Dict[str, Any] = {
+            "ok": False, "has_video": False, "has_audio": False, "duration": None,
+        }
+        data = self._run_ffprobe_json(
+            file_path,
+            ["-show_entries",
+             "stream=codec_type:stream_disposition=attached_pic:format=duration"],
+        )
+        if data is None:
+            return result
+
+        has_video = has_audio = False
+        for stream in data.get("streams") or []:
+            codec_type = stream.get("codec_type")
+            if codec_type == "audio":
+                has_audio = True
+            elif codec_type == "video":
+                # Cover art embedded in an audio file is not a video stream.
+                if not (stream.get("disposition") or {}).get("attached_pic"):
+                    has_video = True
+
+        duration = None
+        try:
+            parsed = float((data.get("format") or {}).get("duration"))
+            if parsed >= 0:
+                duration = parsed
+        except (TypeError, ValueError):
+            pass  # "N/A" or absent
+
+        result.update(ok=True, has_video=has_video, has_audio=has_audio, duration=duration)
+        return result
 
     def _generate_thumbnail(self, file_path: str, media_type: MediaType | str) -> Optional[str]:
         """Generate thumbnail synchronously."""
@@ -1618,6 +1847,25 @@ class MediaService:
             if metadata.get("dimensions"):
                 media.width = metadata["dimensions"].get("width")
                 media.height = metadata["dimensions"].get("height")
+
+            if metadata.get("duration") is not None:
+                media.duration = metadata["duration"]
+            if "waveform_peaks" in metadata:
+                media.waveform_peaks = metadata["waveform_peaks"]
+
+            relocation = metadata.get("relocation")
+            if relocation is not None:
+                media.file_path = relocation.new_relative
+                # Duplicate uploads of the same bytes share one stored file.
+                siblings = session.exec(
+                    select(MomentMedia).where(
+                        MomentMedia.file_path == relocation.old_relative,
+                        MomentMedia.id != media.id,
+                    )
+                ).all()
+                for sibling in siblings:
+                    sibling.file_path = relocation.new_relative
+                    session.add(sibling)
 
             # Update thumbnail path if generated
             if thumbnail_path:

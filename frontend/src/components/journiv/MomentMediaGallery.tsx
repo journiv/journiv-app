@@ -1,7 +1,6 @@
 import {
   Check,
   Expand,
-  FileAudio,
   ImageOff,
   Loader2,
   Paperclip,
@@ -16,6 +15,7 @@ import { cx } from "../../lib/cx";
 import { mediaPath } from "../../lib/mediaUrl";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
+import { WaveformPlayer } from "./media/WaveformPlayer";
 import "./momentMedia.css";
 import type { MomentMediaState } from "./useMomentMedia";
 
@@ -62,6 +62,10 @@ type MomentMediaGalleryProps = {
    */
   onOpenItem?: (id: string) => void;
 };
+
+/** What assistive tech calls one audio item: its alt text, else just "audio". */
+const audioLabel = (item: MomentMediaResponse) =>
+  item.alt_text?.trim() || "audio";
 
 export function MomentMediaGallery(props: MomentMediaGalleryProps) {
   if ((props.moment.media_count ?? 0) === 0) return null;
@@ -213,14 +217,12 @@ function MediaItem({
   if (item.media_type === "audio") {
     return withAction(
       <div className="jv-media__audio">
-        {/* PROVISIONAL: verified against images only. See docs/features/reader.md. */}
-        {/* biome-ignore lint/a11y/useMediaCaption: no caption field exists. */}
-        <audio
-          className="jv-media__element"
+        <WaveformPlayer
           src={item.signed_url}
-          controls
-          preload="metadata"
-          onError={() => onLoadError(item.id)}
+          peaks={item.waveform_peaks}
+          durationHint={item.duration}
+          label={audioLabel(item)}
+          onLoadError={() => onLoadError(item.id)}
         />
       </div>,
     );
@@ -293,8 +295,8 @@ function MediaTray({
         <span className="jv-media__tray-label">On this moment</span>
         {extraHint ?? (
           <p className="jv-media__tray-hint">
-            These attachments aren’t in your entry yet. Add the ones you want to
-            include.
+            These attachments appear with this moment. Add any you also want in
+            the entry.
           </p>
         )}
       </div>
@@ -397,6 +399,49 @@ function TrayTile({
   const busy = status === "pending" || status === "processing";
   const label = item.alt_text?.trim() || undefined;
 
+  // A recording is playable, not a thumbnail: it takes a full-width row so its
+  // waveform has room, in every state, so a recording that finishes processing
+  // does not jump from a square tile into a row.
+  if (item.media_type === "audio") {
+    return (
+      <li
+        className={cx(
+          "jv-media__tile",
+          "jv-media__tile--audio",
+          added && "jv-media__tile--added",
+        )}
+        title={label}
+      >
+        {busy ? (
+          <span className="jv-media__tile-note" role="status">
+            <Loader2 className="jv-spin" aria-hidden="true" size={16} />
+            Processing recording
+          </span>
+        ) : unavailable ? (
+          <span className="jv-media__tile-note">
+            <ImageOff aria-hidden="true" size={16} />
+            Recording unavailable
+          </span>
+        ) : (
+          <WaveformPlayer
+            src={item.signed_url ?? ""}
+            peaks={item.waveform_peaks}
+            durationHint={item.duration}
+            label={audioLabel(item)}
+            onLoadError={() => onLoadError(item.id)}
+          />
+        )}
+        {added ? (
+          <span className="jv-media__tile-badge" title="Added to entry">
+            <Check aria-hidden="true" size={14} />
+          </span>
+        ) : (
+          action && <div className="jv-media__tile-action">{action}</div>
+        )}
+      </li>
+    );
+  }
+
   let body: ReactNode;
   if (busy) {
     body = (
@@ -429,12 +474,6 @@ function TrayTile({
         preload="metadata"
         onError={() => onLoadError(item.id)}
       />
-    );
-  } else if (item.media_type === "audio") {
-    body = (
-      <span className="jv-media__tile-glyph" title={label ?? "Audio"}>
-        <FileAudio aria-hidden="true" size={18} />
-      </span>
     );
   } else {
     body = (

@@ -4,6 +4,7 @@ import {
   mediaCountLabel,
   momentKind,
   momentKindLabel,
+  momentLeadMedia,
   momentLeadText,
   momentTitle,
   truncate,
@@ -90,5 +91,55 @@ describe("Moment rendering semantics", () => {
     expect(truncate("Some writing.", 0)).toBe("");
     expect(truncate("Some writing.", -1)).toBe("");
     expect(truncate("Some writing.", 5)).toBe("Some…");
+  });
+
+  it("picks the tile a list row shows for the attachments", () => {
+    const thumb = (
+      media_type: string,
+      signed_thumbnail_url: string | null,
+    ) => ({
+      media_type,
+      signed_thumbnail_url,
+    });
+    const build = (...items: ReturnType<typeof thumb>[]) =>
+      ({
+        ...base,
+        media_count: items.length,
+        media: items.map((item, index) => ({ id: `x${index}`, ...item })),
+      }) as unknown as MomentResponse;
+
+    expect(momentLeadMedia(base)).toBeNull();
+    // A voice note has no thumbnail; it still gets a tile of its own.
+    expect(momentLeadMedia(build(thumb("audio", null)))).toEqual({
+      kind: "placeholder",
+      media: "audio",
+    });
+    // A picture wins, wherever it sits in the newest-first list.
+    expect(
+      momentLeadMedia(build(thumb("audio", null), thumb("image", "a.jpg"))),
+    ).toEqual({ kind: "image", src: "a.jpg", media: "image", hasAudio: true });
+    expect(momentLeadMedia(build(thumb("image", "a.jpg")))).toEqual({
+      kind: "image",
+      src: "a.jpg",
+      media: "image",
+      hasAudio: false,
+    });
+    // No thumbnail is not "no attachment": the tile falls back to the type.
+    expect(momentLeadMedia(build(thumb("video", null)))).toEqual({
+      kind: "placeholder",
+      media: "video",
+    });
+    expect(momentLeadMedia(build(thumb("image", null)))).toEqual({
+      kind: "placeholder",
+      media: "image",
+    });
+    expect(momentLeadMedia(build(thumb("unknown", null)))).toEqual({
+      kind: "placeholder",
+      media: "unknown",
+    });
+    // Audio outranks an older thumbnail-less video for the placeholder.
+    expect(
+      momentLeadMedia(build(thumb("video", null), thumb("audio", null))),
+    ).toEqual({ kind: "placeholder", media: "audio" });
   });
 });

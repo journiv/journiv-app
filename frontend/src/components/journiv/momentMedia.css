@@ -105,10 +105,6 @@
   background: var(--muted);
 }
 
-.jv-media__audio .jv-media__element {
-  height: auto;
-}
-
 /* ---- per-item action (content variant) -----------------------------------
    An optional control over a full-size item. The Reader passes no action, so
    `.jv-media__item` is never emitted there and the gallery is byte-for-byte
@@ -232,4 +228,42 @@
   position: absolute;
   inset-block-end: var(--space-1);
   inset-inline-end: var(--space-1);
+}
+
+/* A recording's row: full width, content height, the player leading and the
+   "Add to entry" control (or the added badge) trailing on the same line. */
+.jv-media__tile--audio {
+  grid-column: 1 / -1;
+  aspect-ratio: auto;
+  justify-content: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  overflow: visible;
+  color: var(--foreground);
+}
+
+.jv-media__tile--audio > .jv-waveform {
+  flex: 1 1 auto;
+}
+
+.jv-media__tile--audio .jv-media__tile-action,
+.jv-media__tile--audio .jv-media__tile-badge {
+  position: static;
+  flex: none;
+}
+
+.jv-media__tile--audio .jv-media__tile-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.jv-media__tile-note {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  color: var(--muted-foreground);
+  font-size: 0.78125rem;
 }

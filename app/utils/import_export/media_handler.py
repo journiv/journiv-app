@@ -28,14 +28,18 @@ class MediaHandler:
         '.webm': 'video/webm', '.mkv': 'video/x-matroska', '.flv': 'video/x-flv',
         '.m4v': 'video/x-m4v', '.wmv': 'video/x-ms-wmv',
         '.mp3': 'audio/mpeg', '.wav': 'audio/wav', '.ogg': 'audio/ogg',
-        '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.flac': 'audio/flac',
+        '.m4a': 'audio/mp4', '.aac': 'audio/aac', '.opus': 'audio/opus', '.flac': 'audio/flac',
         '.wma': 'audio/x-ms-wma'
     }
 
     # Media type categorization by extension
     IMAGE_EXTENSIONS: ClassVar[set[str]] = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tiff", ".svg", ".heic", ".heif"}
     VIDEO_EXTENSIONS: ClassVar[set[str]] = {".mp4", ".avi", ".mov", ".wmv", ".webm", ".mkv", ".flv", ".m4v"}
-    AUDIO_EXTENSIONS: ClassVar[set[str]] = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".flac", ".wma"}
+    # `.webm` and `.mp4` stay in VIDEO_EXTENSIONS: this set is only the fallback when
+    # the MIME sniff is inconclusive, and those are containers that may hold real
+    # video. Audio-only WebM/MP4 (browser dictation) is told apart by stream
+    # inspection in MediaService, not by extension.
+    AUDIO_EXTENSIONS: ClassVar[set[str]] = {".mp3", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".flac", ".wma"}
 
     # HEIC/HEIF formats that need server-side transcoding to WebP for browser display
     HEIC_EXTENSIONS: ClassVar[set[str]] = {".heic", ".heif"}

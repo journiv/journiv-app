@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
-import { Pin } from "lucide-react";
+import { useState } from "react";
+import { FileQuestion, ImageOff, Music, Pin, Video } from "lucide-react";
 import type {
   JournalResponse,
   MomentResponse,
@@ -9,6 +10,7 @@ import { formatTimeOfDay } from "../../lib/datetime";
 import {
   momentKind,
   momentKindLabel,
+  momentLeadMedia,
   momentLeadText,
   momentTitle,
   truncate,
@@ -52,7 +54,10 @@ export function MomentListItem({
   const title = momentTitle(moment);
   const lead = momentLeadText(moment);
   const kindLabel = momentKindLabel(moment, kind);
-  const thumbnail = moment.media?.[0]?.signed_thumbnail_url;
+  const leadMedia = momentLeadMedia(moment);
+  // A thumbnail URL can be issued for a file that is gone or unreachable. Keyed
+  // by URL so a refreshed signed URL gets a fresh try.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const extraMedia = (moment.media_count ?? 0) - 1;
 
   const body = (
@@ -80,9 +85,30 @@ export function MomentListItem({
         )}
         <MomentMeta moment={moment} journal={journal} surface="row" />
       </span>
-      {thumbnail && (
-        <span className="jv-moment__media">
-          <img src={thumbnail} alt="" loading="lazy" decoding="async" />
+      {leadMedia && (
+        <span
+          className={cx(
+            "jv-moment__media",
+            (leadMedia.kind === "placeholder" || leadMedia.src === failedSrc) &&
+              "jv-moment__media--placeholder",
+          )}
+        >
+          {leadMedia.kind === "image" && leadMedia.src !== failedSrc ? (
+            <img
+              src={leadMedia.src}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={() => setFailedSrc(leadMedia.src)}
+            />
+          ) : (
+            <PlaceholderGlyph media={leadMedia.media} />
+          )}
+          {leadMedia.kind === "image" && leadMedia.hasAudio && (
+            <span className="jv-moment__media-audio" aria-hidden="true">
+              <Music size={12} />
+            </span>
+          )}
           {extraMedia > 0 && (
             <span className="jv-moment__media-count">+{extraMedia}</span>
           )}
@@ -120,4 +146,21 @@ export function MomentListItem({
       {body}
     </Link>
   );
+}
+
+/** Stands in for an attachment with no thumbnail, like the Media pane tiles. */
+function PlaceholderGlyph({
+  media,
+}: {
+  media: "audio" | "video" | "image" | "unknown";
+}) {
+  const Glyph =
+    media === "audio"
+      ? Music
+      : media === "video"
+        ? Video
+        : media === "image"
+          ? ImageOff
+          : FileQuestion;
+  return <Glyph aria-hidden="true" size={24} />;
 }

@@ -54,6 +54,52 @@ describe("toolbarPlan", () => {
     expect(wide.onBar.has("reference")).toBe(true);
   });
 
+  it("reserves width for the Voice note button, which never moves to More", () => {
+    // The whole bar is 585px; the microphone control adds 32px, making 617px.
+    expect(toolbarPlan(600, { onListLine: false }).needsMore).toBe(false);
+    expect(
+      toolbarPlan(617, { onListLine: false, hasDictation: true }).needsMore,
+    ).toBe(false);
+    // A width that held everything before now needs More — and it is a
+    // formatting group that gives way, never the microphone (which is not a
+    // ToolbarGroup at all and so cannot be given up).
+    const pane = toolbarPlan(600, { onListLine: false, hasDictation: true });
+    expect(pane.needsMore).toBe(true);
+    expect(pane.onBar.has("reference")).toBe(false);
+    expect(pane.onBar.has("emphasis")).toBe(false);
+    for (const kept of [
+      "headings",
+      "history",
+      "ordered",
+      "blockquote",
+    ] as const) {
+      expect(pane.onBar.has(kept), kept).toBe(true);
+    }
+    // The compact bar scrolls and shows every control regardless.
+    expect(
+      toolbarPlan(200, {
+        onListLine: false,
+        hasDictation: true,
+        scrollable: true,
+      }).needsMore,
+    ).toBe(false);
+    // Offered together with the prompt button, the two budgets add up.
+    expect(
+      toolbarPlan(640, {
+        onListLine: false,
+        hasDictation: true,
+        hasPromptCta: true,
+      }).needsMore,
+    ).toBe(true);
+    expect(
+      toolbarPlan(661, {
+        onListLine: false,
+        hasDictation: true,
+        hasPromptCta: true,
+      }).needsMore,
+    ).toBe(false);
+  });
+
   it("gives up the Markdown-help control before the groups ranked above it", () => {
     // `reference` is kept last, so a bar too narrow to hold everything sheds it
     // first. It goes together with `emphasis` at the boundary: adding the More

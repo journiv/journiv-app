@@ -9,7 +9,14 @@ scope so it is not repeated.
 Rows show time, optional kind chip and pin, title or body-weight moment text, a
 two-line excerpt, then the domain metadata budget. Do not use a single-line
 ellipsis for a two-line row. Media thumbnails are 68px, 80px on mobile, with a
-count badge; they are navigational and can crop.
+count badge; they are navigational and can crop. The tile is the newest
+attachment that has a thumbnail. An attachment is never invisible: when none has
+a thumbnail — audio never does, and a video or photo may not yet — the row shows a
+placeholder tile with an icon for the type (music note if any audio is attached,
+otherwise the newest attachment's own type). A picture tile
+carries a small music-note mark when audio is attached as well. A thumbnail
+URL that fails to load (the file is gone or unreachable) falls back to the same
+placeholder instead of a broken-image box.
 
 This is a content list: no dividers or surrounding panel. Selection is the
 global accent surface plus brand rail. Calendar and media-list rules belong to

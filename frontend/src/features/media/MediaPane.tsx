@@ -9,7 +9,7 @@ import {
   Play,
   TriangleAlert,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MediaLibraryItem } from "../../api/generated/types.gen";
 import { mediaLibraryQuery } from "../../api/query/options";
 import { ListViewSwitch } from "../../components/journiv/ListViewSwitch";
@@ -46,22 +46,51 @@ export function MediaPane() {
   const items = data.data?.pages.flatMap((page) => page.items) ?? [];
   const groups = groupMediaByMonth(items);
 
-  // A signed thumbnail can expire between the response and the <img> load. The
-  // first failure per item forces one refetch; a second marks it broken. Same
-  // shape as useMomentMedia — never a retry loop, never a dead image on screen.
-  const retried = useRef(new Set<string>());
-  const [broken, setBroken] = useState<Record<string, true>>({});
+  // A signed thumbnail can expire between the response and the <img> load, or
+  // its file can be gone. The first failure per item forces one refetch to
+  // re-sign it; if the item still fails it is marked broken. Never a retry loop,
+  // never a dead image on screen.
+  //
+  // The refetch can hand back the *same* URL (signatures are stamped in whole
+  // seconds), and an <img> whose src did not change never fires a second error.
+  // So an item is also marked broken once the refetch has settled with its URL
+  // unchanged. Broken is remembered per URL: a different URL gets a fresh try.
+  const firstFailure = useRef(
+    new Map<string, { src: string; loadedAt: number; failures: number }>(),
+  );
+  const [broken, setBroken] = useState<Record<string, string>>({});
+  const markBroken = useCallback((id: string, src: string) => {
+    setBroken((current) =>
+      current[id] === src ? current : { ...current, [id]: src },
+    );
+  }, []);
+  const { refetch } = data;
+  const {
+    isFetching,
+    dataUpdatedAt: loadedAt,
+    errorUpdateCount: failures,
+  } = data;
   const onThumbError = useCallback(
-    (id: string) => {
-      if (retried.current.has(id)) {
-        setBroken((current) => ({ ...current, [id]: true }));
+    (id: string, src: string) => {
+      if (firstFailure.current.get(id)?.src === src) {
+        markBroken(id, src);
         return;
       }
-      retried.current.add(id);
-      void data.refetch();
+      firstFailure.current.set(id, { src, loadedAt, failures });
+      void refetch();
     },
-    [data],
+    [refetch, loadedAt, failures, markBroken],
   );
+  useEffect(() => {
+    if (isFetching) return;
+    for (const [id, first] of firstFailure.current) {
+      // Only once a refetch begun after the failure has settled.
+      if (loadedAt === first.loadedAt && failures === first.failures) continue;
+      const current = items.find((item) => item.id === id);
+      if (current?.signed_thumbnail_url === first.src)
+        markBroken(id, first.src);
+    }
+  }, [isFetching, loadedAt, failures, items, markBroken]);
 
   return (
     <section className="jv-shell__list" aria-label="Media">
@@ -129,7 +158,7 @@ export function MediaPane() {
                   journalId={params.journalId}
                   selected={item.moment_id === params.momentId}
                   q={search.q ?? ""}
-                  broken={Boolean(broken[item.id])}
+                  broken={broken[item.id] === item.signed_thumbnail_url}
                   onThumbError={onThumbError}
                 />
               ))}
@@ -166,7 +195,7 @@ function MediaTile({
   selected: boolean;
   q: string;
   broken: boolean;
-  onThumbError: (id: string) => void;
+  onThumbError: (id: string, src: string) => void;
 }) {
   const className = cx("jv-media-tile", selected && "is-selected");
   const linkProps = journalId
@@ -213,7 +242,7 @@ function MediaTile({
           alt=""
           loading="lazy"
           decoding="async"
-          onError={() => onThumbError(item.id)}
+          onError={() => onThumbError(item.id, item.signed_thumbnail_url ?? "")}
         />
         {item.media_type === "video" && (
           <span className="jv-media-tile__badge" aria-hidden="true">

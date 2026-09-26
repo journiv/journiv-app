@@ -181,13 +181,61 @@ describe("MediaPane", () => {
       expect(vi.mocked(api.mediaLibrary).mock.calls.length).toBeGreaterThan(1),
     );
 
-    const callsAfterFirstError = vi.mocked(api.mediaLibrary).mock.calls.length;
-    const again = container.querySelector("img") as HTMLImageElement;
-    again.dispatchEvent(new Event("error"));
-    // The second failure does not trigger another refetch.
-    await new Promise((r) => setTimeout(r, 20));
-    expect(vi.mocked(api.mediaLibrary).mock.calls.length).toBe(
-      callsAfterFirstError,
+    // The unchanged URL becomes a broken tile after the refetch settles.
+    // Selecting the next <img> here would test a different item.
+    await waitFor(() =>
+      expect(container.querySelector("img")?.getAttribute("src")).not.toBe(
+        "https://sig/a.jpg",
+      ),
+    );
+    expect(vi.mocked(api.mediaLibrary)).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries a changed thumbnail URL on its own first failure", async () => {
+    const { container } = await renderRoute("/timeline?view=media");
+    await screen.findByText(/August 2026/);
+    const renewedPage = {
+      ...firstPage,
+      items: [
+        photo({ id: "a", signed_thumbnail_url: "https://sig/a-renewed.jpg" }),
+        ...firstPage.items.slice(1),
+      ],
+    };
+    vi.mocked(api.mediaLibrary).mockResolvedValue(renewedPage);
+    (container.querySelector("img") as HTMLImageElement).dispatchEvent(
+      new Event("error"),
+    );
+    await waitFor(() =>
+      expect(container.querySelector("img")?.getAttribute("src")).toBe(
+        "https://sig/a-renewed.jpg",
+      ),
+    );
+
+    const callsAfterRenewal = vi.mocked(api.mediaLibrary).mock.calls.length;
+    (container.querySelector("img") as HTMLImageElement).dispatchEvent(
+      new Event("error"),
+    );
+    await waitFor(() =>
+      expect(vi.mocked(api.mediaLibrary).mock.calls.length).toBeGreaterThan(
+        callsAfterRenewal,
+      ),
+    );
+  });
+
+  it("shows the fallback tile when a re-signed thumbnail comes back unchanged", async () => {
+    const { container } = await renderRoute("/timeline?view=media");
+    await screen.findByText(/August 2026/);
+    const before = container.querySelectorAll("img").length;
+    expect(before).toBeGreaterThan(0);
+
+    // The refetch returns the same URLs, so the <img> never reloads and never
+    // fires a second error. The tile must still stop being a broken image.
+    vi.mocked(api.mediaLibrary).mockResolvedValue(firstPage);
+    (container.querySelector("img") as HTMLImageElement).dispatchEvent(
+      new Event("error"),
+    );
+    await waitFor(() =>
+      expect(container.querySelectorAll("img").length).toBe(before - 1),
     );
   });
 
