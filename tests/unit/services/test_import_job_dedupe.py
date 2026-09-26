@@ -413,6 +413,38 @@ async def test_create_and_process_job_async_creates_new_job_when_none_active(imp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["copy", "link_only"])
+@pytest.mark.parametrize("status", [JobStatus.RUNNING, JobStatus.COMPLETED, JobStatus.FAILED])
+async def test_redelivered_immich_job_does_not_restart(mode, status):
+    session = _setup_session()
+    user = _create_user(session)
+    moment = _create_moment(session, user.id)
+    job = _create_import_job(session, user.id, moment.id, ["a1"], status=status)
+    job.started_at = utc_now()
+    job.progress = 37
+    session.add(job)
+    session.commit()
+
+    with (
+        patch("app.core.database.engine", session.get_bind()),
+        patch.object(ImportJobService, "_process_thumbnail_phase", new_callable=AsyncMock) as thumbnails,
+        patch("app.integrations.immich.get_asset_info", new_callable=AsyncMock) as asset_info,
+    ):
+        service = ImportJobService(session)
+        if mode == "copy":
+            await service.process_copy_job_async(job.id)
+        else:
+            await service.process_link_only_job_async(job.id)
+
+    session.refresh(job)
+    assert job.status == status
+    assert job.progress == 37
+    assert job.started_at is not None
+    thumbnails.assert_not_awaited()
+    asset_info.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_copy_job_cancellation_marks_job_and_placeholders_failed():
     """
     future.cancel() after the Celery hard timeout injects CancelledError.

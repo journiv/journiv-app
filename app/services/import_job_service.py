@@ -726,9 +726,9 @@ class ImportJobService:
         # A no-op UPDATE takes a row lock on PostgreSQL and a writer lock on
         # SQLite. Both the active-job query and the insert must follow it in
         # the same transaction.
-        locked = session.execute(
+        locked = session.connection().execute(
             update(Moment)
-            .where(Moment.id == moment_id, Moment.user_id == user_id)
+            .where(col(Moment.id) == moment_id, col(Moment.user_id) == user_id)
             .values(media_count=Moment.media_count)
         )
         if locked.rowcount != 1:
@@ -828,7 +828,7 @@ class ImportJobService:
                         only_missing=retry_job is not None,
                     )
                     retry_created = retry_job is None
-                    if retry_created:
+                    if retry_job is None:
                         retry_job = thread_service.create_job(
                             user_id, moment_id, retry_ids,
                             import_mode=integration.import_mode,
@@ -874,6 +874,21 @@ class ImportJobService:
         finally:
             thread_session.close()
 
+    @staticmethod
+    def _claim_pending_job(session: Session, job: ImportJob) -> bool:
+        """Claim a queued job once, even if Celery delivers it more than once."""
+        claimed = session.connection().execute(
+            update(ImportJob)
+            .where(col(ImportJob.id) == job.id, col(ImportJob.status) == JobStatus.PENDING)
+            .values(status=JobStatus.RUNNING, started_at=utc_now(), progress=0)
+        )
+        if claimed.rowcount != 1:
+            session.rollback()
+            return False
+        session.commit()
+        session.refresh(job)
+        return True
+
     async def process_copy_job_async(
         self,
         job_id: uuid.UUID
@@ -890,25 +905,25 @@ class ImportJobService:
         # Create new session for background task
         thread_session = Session(engine)
         job: ImportJob | None = None
+        thread_service: ImportJobService | None = None
         try:
             thread_service = ImportJobService(thread_session)
             # Fetch job
-            job = thread_session.exec(
+            pending_job = thread_session.exec(
                 select(ImportJob)
                 .where(ImportJob.id == job_id)
             ).first()
 
-            if not job:
+            if not pending_job:
                 log_error(f"Import job {job_id} not found")
                 return
 
+            if not thread_service._claim_pending_job(thread_session, pending_job):
+                return
+            job = pending_job
+
             if job.moment_id is None:
                 raise ValueError(f"Import job {job_id} missing moment_id")
-
-            # Mark as processing
-            job.mark_running()
-            thread_session.add(job)
-            thread_session.commit()
 
             log_info(
                 f"Processing copy-mode import job {job_id}: "
@@ -972,10 +987,10 @@ class ImportJobService:
 
         except asyncio.CancelledError:
             log_error(
-                asyncio.CancelledError("Copy-mode import job cancelled or timed out"),
+                "Copy-mode import job cancelled or timed out",
                 job_id=str(job_id),
             )
-            if job is not None:
+            if job is not None and thread_service is not None:
                 result_data = job.result_data or {}
                 asset_ids = result_data.get("asset_ids", [])
                 job.mark_failed("Import job timed out or was cancelled")
@@ -988,7 +1003,7 @@ class ImportJobService:
             raise
         except Exception as e:
             log_error(e)
-            if job is not None:
+            if job is not None and thread_service is not None:
                 result_data = job.result_data or {}
                 asset_ids = result_data.get("asset_ids", [])
                 job.mark_failed(str(e)[:2000])
@@ -1013,23 +1028,24 @@ class ImportJobService:
 
         thread_session = Session(engine)
         job: ImportJob | None = None
+        thread_service: ImportJobService | None = None
         try:
             thread_service = ImportJobService(thread_session)
-            job = thread_session.exec(
+            pending_job = thread_session.exec(
                 select(ImportJob)
                 .where(ImportJob.id == job_id)
             ).first()
 
-            if not job:
+            if not pending_job:
                 log_error(f"Import job {job_id} not found")
                 return
 
+            if not thread_service._claim_pending_job(thread_session, pending_job):
+                return
+            job = pending_job
+
             if job.moment_id is None:
                 raise ValueError(f"Import job {job_id} missing moment_id")
-
-            job.mark_running()
-            thread_session.add(job)
-            thread_session.commit()
 
             user = thread_session.get(User, job.user_id)
             if not user:
@@ -1143,10 +1159,10 @@ class ImportJobService:
 
         except asyncio.CancelledError:
             log_error(
-                asyncio.CancelledError("Link-only import job cancelled or timed out"),
+                "Link-only import job cancelled or timed out",
                 job_id=str(job_id),
             )
-            if job is not None:
+            if job is not None and thread_service is not None:
                 result_data = job.result_data or {}
                 asset_ids = result_data.get("asset_ids", [])
                 job.mark_failed("Import job timed out or was cancelled")
@@ -1159,7 +1175,7 @@ class ImportJobService:
             raise
         except Exception as e:
             log_error(e)
-            if job is not None:
+            if job is not None and thread_service is not None:
                 result_data = job.result_data or {}
                 asset_ids = result_data.get("asset_ids", [])
                 job.mark_failed(str(e))

@@ -282,7 +282,7 @@ describe("QuillSurface", () => {
     // Used by Remove/retry on an attachment that already swapped its
     // placeholder for a real embed, where there is no placeholder left to
     // find by upload id — the embed has to be located by media id instead.
-    const mediaId = "11111111-1111-1111-1111-111111111111";
+    const mediaId = "aaaaaaaa-1111-1111-1111-111111111111";
     const otherMediaId = "22222222-2222-2222-2222-222222222222";
     const ref = createRef<QuillSurfaceHandle>();
     render(
@@ -301,7 +301,7 @@ describe("QuillSurface", () => {
 
     let index: number | null = null;
     act(() => {
-      index = ref.current?.removeEmbedForMediaId(mediaId) ?? null;
+      index = ref.current?.removeEmbedForMediaId(mediaId.toUpperCase()) ?? null;
     });
 
     expect(index).not.toBeNull();

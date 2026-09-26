@@ -473,6 +473,7 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
         removeEmbedForMediaId: (mediaId) => {
           const quill = quillRef.current;
           if (!quill) return null;
+          const normalizedMediaId = mediaId.toLowerCase();
           let index = 0;
           for (const op of quill.getContents().ops ?? []) {
             const insert = op.insert as Record<string, unknown> | string;
@@ -487,7 +488,7 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
               keys.length === 1 &&
               (INLINE_MEDIA_KINDS as readonly string[]).includes(kind) &&
               typeof source === "string" &&
-              durableMediaId(mediaPath(source)) === mediaId
+              durableMediaId(mediaPath(source)) === normalizedMediaId
             ) {
               quill.deleteText(index, 1, "user");
               return index;

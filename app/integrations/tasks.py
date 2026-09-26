@@ -64,8 +64,11 @@ async def _run_with_session(task_func: Callable[..., Awaitable[Any]], *args, **k
     finally:
         # asyncio.run() closes this loop next; close the HTTP clients bound to
         # it now so their sockets are released instead of lingering until GC.
-        await immich.close_client()
-        await close_http_client()
+        for close_client in (immich.close_client, close_http_client):
+            try:
+                await close_client()
+            except Exception as exc:
+                log_error(exc, message="Failed to close background task HTTP client")
 
 
 def _run_async(task_func: Callable[..., Awaitable[Any]], *args, **kwargs) -> Any:
