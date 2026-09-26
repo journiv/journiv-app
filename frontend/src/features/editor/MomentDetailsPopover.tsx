@@ -41,7 +41,16 @@ export function MomentDetailsPopover(props: MomentDetailsPanelProps) {
       >
         <SlidersHorizontal aria-hidden="true" size={16} />
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="jv-details-popover">
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="jv-details-popover"
+        /* Only restore focus to the trigger for keyboard closes. A pointer
+           close means the writer clicked elsewhere (usually the editor), and
+           handing focus back to the trigger would steal it, so Space would
+           reopen the popover instead of typing. */
+        finalFocus={(closeType) => closeType === "keyboard"}
+      >
         <PopoverTitle className="jv-section-title">Moment details</PopoverTitle>
         <MomentDetailsPanel
           {...panelProps}
