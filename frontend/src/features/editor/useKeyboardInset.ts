@@ -9,13 +9,19 @@ import { type RefObject, useLayoutEffect } from "react";
  * Android Chrome it only shrinks with a viewport opt-in this app does not set, so
  * in both cases the visual viewport is the single source of truth.
  *
- * DESIGN.md's "no JS layout state" rule stands for layout: this hook drives no
- * reflow. It writes two things straight onto the editor root and nothing else —
+ * iOS also *pans* the page to reveal the caret, which scrolls the header off
+ * the top and leaves an in-flow bottom bar behind the keyboard. So while the
+ * keyboard is open the editor is pinned to the visual viewport instead of
+ * translating a bar by a guessed inset.
  *
- *   --jv-keyboard-inset   the keyboard's height in CSS pixels (0 when closed)
+ * DESIGN.md's "no JS layout state" rule stands for layout: this hook drives no
+ * reflow through React. It writes these straight onto the editor root —
+ *
+ *   --jv-vv-top/-height   the visual viewport's offset and height in CSS pixels
  *   data-kbd="open"       present only while a keyboard-sized inset is showing
  *
- * — so `editor.css` can translate a fixed-height bar and pad the scroll owner.
+ * — so `editor.css` can pin the editor to the visual viewport and pad the
+ * scroll owner.
  * The writes are imperative on purpose: `visualViewport` fires `resize`/`scroll`
  * continuously during a keyboard animation or a pinch, and routing that through
  * React state would re-render the editor page on every frame, which the editor's
@@ -38,7 +44,8 @@ export function useKeyboardInset(
       typeof window !== "undefined" ? window.visualViewport : null;
 
     const clear = () => {
-      node?.style.removeProperty("--jv-keyboard-inset");
+      node?.style.removeProperty("--jv-vv-top");
+      node?.style.removeProperty("--jv-vv-height");
       if (node) delete node.dataset.kbd;
     };
 
@@ -54,7 +61,8 @@ export function useKeyboardInset(
         0,
         window.innerHeight - viewport.height - viewport.offsetTop,
       );
-      node.style.setProperty("--jv-keyboard-inset", `${inset}px`);
+      node.style.setProperty("--jv-vv-top", `${viewport.offsetTop}px`);
+      node.style.setProperty("--jv-vv-height", `${viewport.height}px`);
       if (inset >= KEYBOARD_OPEN_MIN) node.dataset.kbd = "open";
       else delete node.dataset.kbd;
     };
