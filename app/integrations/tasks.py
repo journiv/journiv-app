@@ -23,7 +23,9 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.celery_app import celery_app
 from app.core.config import settings
+from app.core.http_client import close_http_client
 from app.core.logging_config import log_error, log_info
+from app.integrations import immich
 from app.integrations.service import (
     add_assets_to_integration_album,
     remove_assets_from_integration_album,
@@ -56,8 +58,14 @@ async_session_factory = async_sessionmaker(async_engine, class_=AsyncSession, ex
 
 
 async def _run_with_session(task_func: Callable[..., Awaitable[Any]], *args, **kwargs) -> Any:
-    async with async_session_factory() as session:
-        return await task_func(session, *args, **kwargs)
+    try:
+        async with async_session_factory() as session:
+            return await task_func(session, *args, **kwargs)
+    finally:
+        # asyncio.run() closes this loop next; close the HTTP clients bound to
+        # it now so their sockets are released instead of lingering until GC.
+        await immich.close_client()
+        await close_http_client()
 
 
 def _run_async(task_func: Callable[..., Awaitable[Any]], *args, **kwargs) -> Any:

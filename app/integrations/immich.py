@@ -6,6 +6,8 @@ and syncing photo/video metadata.
 
 API Documentation: https://api.immich.app/introduction
 """
+import asyncio
+import threading
 import time
 from datetime import datetime, timezone
 from inspect import isawaitable
@@ -18,6 +20,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 
 from app.core.config import settings
 from app.core.encryption import decrypt_token
+from app.core.http_client import LoopClients, aclose_loop_client, loop_scoped_client
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.media_signing import build_signed_query
 from app.core.scoped_cache import ScopedCache
@@ -37,20 +40,34 @@ IMMICH_API_FACES = "/api/faces"
 IMMICH_API_ALBUMS = "/api/albums"
 IMMICH_API_ALBUM_ASSETS = "/api/albums/{album_id}/assets"
 
-_client: Optional[httpx.AsyncClient] = None
+_clients: LoopClients = {}
+_clients_guard = threading.Lock()
 IMMICH_SEARCH_PEOPLE_WARNING_THRESHOLD = 1000
 
+
+def _create_client() -> httpx.AsyncClient:
+    return httpx.AsyncClient(
+        verify=True,
+        timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        transport=httpx.AsyncHTTPTransport(retries=2),
+    )
+
+
 def _get_client() -> httpx.AsyncClient:
-    """Reuse a single client to avoid connection churn."""
-    global _client
-    if _client is None:
-        _client = httpx.AsyncClient(
-            verify=True,
-            timeout=httpx.Timeout(connect=5.0, read=60.0, write=10.0, pool=5.0),
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-            transport=httpx.AsyncHTTPTransport(retries=2),
-        )
-    return _client
+    """Reuse one client per running event loop to avoid connection churn.
+
+    Never shared across loops: the Celery worker runs integration tasks through
+    a fresh `asyncio.run()` loop and import jobs on a long-lived loop thread,
+    and keep-alive connections opened on one loop raise "Event loop is closed"
+    when reused on another. See `loop_scoped_client`.
+    """
+    return loop_scoped_client(_clients, _clients_guard, _create_client)
+
+
+async def close_client() -> None:
+    """Close this event loop's client. Call before a short-lived loop ends."""
+    await aclose_loop_client(_clients, _clients_guard)
 
 
 async def connect(
@@ -189,10 +206,11 @@ async def list_assets(
             normalized = _normalize_immich_asset(asset_data, integration.provider, str(user.id))
             normalized_assets.append(normalized)
 
-        # Cache the asset metadata if present
-        if assets_data:
-            _save_to_cache(str(user.id), assets_data)
-
+        # Do NOT write to the cache here: this is a single page, and
+        # _save_to_cache replaces the whole cached list. Only sync() (which
+        # fetches a full page-1 batch up to the cache limit) may write the
+        # cache; otherwise "page 1 (cached) -> page 2 (live) -> page 1"
+        # would return page 2's items for page 1.
         log_info(f"Fetched {len(normalized_assets)} live Immich assets for user {user.id}")
         return normalized_assets
 
@@ -545,47 +563,105 @@ def _normalize_immich_asset(
     )
 
 
+class ImmichAssetNotFoundError(Exception):
+    """
+    Immich confirmed this asset no longer exists: a 404 from both the direct
+    asset lookup and the search fallback. The one failure a caller should
+    treat as permanent, as opposed to a timeout or 5xx, which does not mean
+    the asset is gone.
+    """
+
+
 async def get_asset_info(
     base_url: str,
     api_key: str,
-    asset_id: str
+    asset_id: str,
+    max_retries: int = 2,
 ) -> Dict[str, Any]:
     """
     Fetch details for a single asset from Immich.
-    Falls back to search endpoint if direct lookup fails (e.g. 404).
+
+    Falls back to the search endpoint if the direct lookup 404s (some Immich
+    versions or asset states need it). Retries a transient failure (timeout,
+    5xx, connection error) with backoff; a 4xx is returned as `{}` at once.
+    Either way this returns `{}` rather than raising, since the asset most
+    likely still exists and is worth trying again later.
+
+    Raises `ImmichAssetNotFoundError` only when Immich has confirmed, via
+    both lookups, that the asset is actually gone.
     """
     client = _get_client()
     headers = {"x-api-key": api_key, "Accept": "application/json"}
 
-    try:
-        # 1. Try direct endpoint
-        response = await client.get(
-            f"{base_url}/api/assets/{asset_id}",
-            headers=headers,
-        )
-
-        if response.status_code == 200:
-            return response.json()
-
-        if response.status_code == 404:
-            # 2. Fallback to search endpoint
-            # Some versions of Immich or some asset states might require search lookup
-            search_response = await client.post(
-                f"{base_url}{IMMICH_API_SEARCH_METADATA}",
+    for attempt in range(max_retries + 1):
+        try:
+            # 1. Try direct endpoint
+            response = await client.get(
+                f"{base_url}/api/assets/{asset_id}",
                 headers=headers,
-                json={"ids": [asset_id]},
             )
-            if search_response.status_code == 200:
-                data = search_response.json()
-                items = data.get("assets", {}).get("items", [])
-                if items:
-                    return items[0]
 
-        # Raise for other error codes
-        response.raise_for_status()
+            if response.status_code == 200:
+                return response.json()
 
-    except Exception as e:
-        log_warning(e, f"Failed to fetch Immich asset info for {asset_id}")
+            if response.status_code == 404:
+                # 2. Fallback to search endpoint
+                # Some versions of Immich or some asset states might require search lookup
+                search_response = await client.post(
+                    f"{base_url}{IMMICH_API_SEARCH_METADATA}",
+                    headers=headers,
+                    json={"ids": [asset_id]},
+                )
+                if search_response.status_code == 200:
+                    data = search_response.json()
+                    items = data.get("assets", {}).get("items", [])
+                    if items:
+                        return items[0]
+                    raise ImmichAssetNotFoundError(asset_id)
+                if search_response.status_code == 404:
+                    raise ImmichAssetNotFoundError(asset_id)
+                search_response.raise_for_status()
+
+            # Raise for other error codes
+            response.raise_for_status()
+
+        except ImmichAssetNotFoundError:
+            raise
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code < 500:
+                # A 4xx will not change on retry: a bad or under-permissioned
+                # key (401/403), or Immich's 400 "Not found or no asset.read
+                # access", which cannot tell a missing asset from a missing
+                # permission, so it is not treated as confirmed-gone either.
+                log_warning(
+                    e,
+                    f"Immich refused asset info for {asset_id} "
+                    f"({e.response.status_code}); not retrying",
+                )
+                break
+            if attempt < max_retries:
+                wait_time = 2 ** attempt
+                log_warning(
+                    f"Retry {attempt + 1}/{max_retries} fetching Immich asset "
+                    f"{asset_id} after {wait_time}s (HTTP {e.response.status_code})"
+                )
+                await asyncio.sleep(wait_time)
+                continue
+            log_warning(
+                e, f"Failed to fetch Immich asset info for {asset_id} after {max_retries + 1} attempts"
+            )
+        except Exception as e:
+            if attempt < max_retries:
+                wait_time = 2 ** attempt
+                log_warning(
+                    f"Retry {attempt + 1}/{max_retries} fetching Immich asset "
+                    f"{asset_id} after {wait_time}s ({type(e).__name__})"
+                )
+                await asyncio.sleep(wait_time)
+                continue
+            log_warning(
+                e, f"Failed to fetch Immich asset info for {asset_id} after {max_retries + 1} attempts"
+            )
 
     return {}
 

@@ -813,8 +813,14 @@ async def fetch_proxy_asset(
             if cached_type:
                 asset_type = cached_type
             else:
-                # Fetch detailed info if not in cache (avoids treating video as image)
-                info = await immich.get_asset_info(integration_base_url, api_key, asset_id)
+                # Fetch detailed info if not in cache (avoids treating video as image).
+                # No retries: this runs on every uncached proxy request (each
+                # video range request), so a backoff would stall the viewer.
+                # A confirmed-missing asset raises ImmichAssetNotFoundError,
+                # which callers map to 404.
+                info = await immich.get_asset_info(
+                    integration_base_url, api_key, asset_id, max_retries=0
+                )
                 if info.get("type") == "VIDEO":
                     asset_type = AssetType.VIDEO
 

@@ -12,14 +12,17 @@ from typing import Any, Dict, Iterable, Optional, Tuple
 import aiofiles
 import aiofiles.os
 import httpx
+from sqlalchemy import update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, select
 
+from app.core.celery_app import TASK_SOFT_TIME_LIMIT_SECONDS
 from app.core.encryption import decrypt_token
 from app.core.http_client import get_http_client
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.media_signing import normalize_delta_media_ids
 from app.core.scoped_cache import ScopedCache
+from app.core.time_utils import ensure_utc, utc_now
 from app.integrations import immich
 from app.models.entry import Entry
 from app.models.enums import ImportSourceType, JobStatus, MediaType, UploadStatus
@@ -42,6 +45,36 @@ IMMICH_TYPE_TO_MEDIA_TYPE = {
 
 # Shared cache instance
 _normalize_cache: Optional[ScopedCache] = None
+
+# Hard Celery timeouts for Immich import jobs, mirrored in
+# app/tasks/immich_import_tasks.py (future.result(timeout=...)). Link-mode
+# only fetches metadata, so it stays fixed; copy mode downloads originals
+# (large videos included) and scales with asset count so a big batch doesn't
+# hit the timeout while still genuinely in progress.
+IMMICH_LINK_JOB_TIMEOUT_SECONDS = 300
+IMMICH_COPY_JOB_MIN_TIMEOUT_SECONDS = 300
+IMMICH_COPY_JOB_PER_ASSET_SECONDS = 60
+# Copy jobs must time out (and run their own cancellation cleanup) before
+# Celery's soft time limit interrupts the task, so the scaled timeout is capped
+# a little under it.
+IMMICH_COPY_JOB_MAX_TIMEOUT_SECONDS = TASK_SOFT_TIME_LIMIT_SECONDS - 120
+
+# Extra margin added after a RUNNING job's timeout. Queue time does not count
+# against that timeout; a PENDING job gets a separate queue window so a dropped task
+# cannot block re-import for long.
+IMMICH_JOB_STALE_MARGIN_SECONDS = 120
+IMMICH_PENDING_JOB_STALE_SECONDS = 30 * 60
+
+
+def immich_copy_job_timeout_seconds(total_items: int) -> float:
+    """Hard Celery timeout for a copy-mode import job with this many assets."""
+    return min(
+        IMMICH_COPY_JOB_MAX_TIMEOUT_SECONDS,
+        max(
+            IMMICH_COPY_JOB_MIN_TIMEOUT_SECONDS,
+            IMMICH_COPY_JOB_PER_ASSET_SECONDS * max(total_items, 1),
+        ),
+    )
 
 
 def _map_immich_type_to_media_type(immich_type: str) -> MediaType:
@@ -145,31 +178,78 @@ class ImportJobService:
         user_id: uuid.UUID,
         moment_id: uuid.UUID,
         asset_ids: list[str],
+        *,
+        commit_stale: bool = True,
+        exclude_job_id: Optional[uuid.UUID] = None,
     ) -> Optional[ImportJob]:
         """
         Return an active Immich job with the same asset set for this moment, if it exists.
 
-        Active statuses are PENDING and RUNNING.
+        A running job's timeout starts at started_at, not at creation: it may
+        have waited in the Celery queue. Pending jobs use a separate queue
+        window so a dropped task does not block re-import forever.
+
+        Callers holding the Moment's job-creation lock defer the commit until
+        they have created/reused a job, or the lock would be released early.
         """
         requested_assets = self._normalize_asset_ids(asset_ids)
         if not requested_assets:
             return None
 
-        active_jobs = self.session.exec(
+        active_query = (
             select(ImportJob)
             .where(ImportJob.user_id == user_id)
             .where(ImportJob.moment_id == moment_id)
             .where(ImportJob.source_type == ImportSourceType.IMMICH)
             .where(col(ImportJob.status).in_([JobStatus.PENDING, JobStatus.RUNNING]))
             .order_by(col(ImportJob.created_at).desc())
-        ).all()
+        )
+        if exclude_job_id is not None:
+            active_query = active_query.where(ImportJob.id != exclude_job_id)
+        active_jobs = self.session.exec(active_query).all()
+
+        now = utc_now()
+        changed = False
 
         for job in active_jobs:
             raw_assets = (job.result_data or {}).get("asset_ids")
             if not isinstance(raw_assets, list):
                 continue
-            if self._normalize_asset_ids(raw_assets) == requested_assets:
-                return job
+            if self._normalize_asset_ids(raw_assets) != requested_assets:
+                continue
+
+            if job.status == JobStatus.PENDING:
+                stale_after_seconds = IMMICH_PENDING_JOB_STALE_SECONDS
+                age_start = job.created_at
+            else:
+                import_mode = (job.result_data or {}).get("import_mode")
+                timeout_seconds = (
+                    IMMICH_LINK_JOB_TIMEOUT_SECONDS
+                    if import_mode == ImportMode.LINK_ONLY.value
+                    else immich_copy_job_timeout_seconds(job.total_items)
+                )
+                stale_after_seconds = (
+                    timeout_seconds + IMMICH_JOB_STALE_MARGIN_SECONDS
+                )
+                age_start = job.started_at or job.created_at
+            age_seconds = (now - ensure_utc(age_start)).total_seconds()
+            if age_seconds > stale_after_seconds:
+                log_warning(
+                    f"Ignoring stale Immich import job {job.id} "
+                    f"(age {age_seconds:.0f}s > {stale_after_seconds:.0f}s); marking failed"
+                )
+                job.mark_failed(
+                    "Import job timed out or the worker was interrupted before it finished"
+                )
+                self.session.add(job)
+                changed = True
+                continue
+
+            if changed and commit_stale:
+                self.session.commit()
+            return job
+        if changed and commit_stale:
+            self.session.commit()
         return None
 
     def _resolve_media_type_from_asset(self, asset_type: Optional[str]) -> MediaType:
@@ -205,6 +285,9 @@ class ImportJobService:
         filename = (
             asset_data.get("originalFileName") or
             asset_data.get("originalPath") or
+            # The client's own picker title (ImmichImportAsset.title), used
+            # for the placeholder before Immich's own metadata arrives.
+            asset_data.get("title") or
             f"Asset {str(asset_data.get('id', ''))[:8]}"
         )
         mime_type = asset_data.get("mimeType") or "application/octet-stream"
@@ -271,6 +354,16 @@ class ImportJobService:
 
             if metadata.get("mime_type"):
                 existing.mime_type = metadata["mime_type"]
+
+            # Every import updates an existing placeholder (created before the
+            # real Immich data arrives), so these were left null in both
+            # modes unless copied here too.
+            if metadata.get("width") is not None:
+                existing.width = metadata["width"]
+            if metadata.get("height") is not None:
+                existing.height = metadata["height"]
+            if metadata.get("duration") is not None:
+                existing.duration = metadata["duration"]
 
             if metadata.get("external_metadata"):
                 if not existing.external_metadata:
@@ -412,36 +505,64 @@ class ImportJobService:
         if commit:
             session.commit()
 
+    def _fail_stalled_placeholders(
+        self,
+        moment_id: Optional[uuid.UUID],
+        asset_ids: Iterable[str],
+        session: Session,
+        error_message: str,
+        commit: bool = True,
+    ) -> None:
+        """
+        Mark still-PROCESSING placeholders for these assets FAILED.
+
+        Used when a job ends abnormally (cancelled, timed out, or failed
+        before reaching per-asset processing): an asset whose placeholder
+        already reached a terminal state (COMPLETED, or FAILED from an
+        earlier phase) keeps its real outcome instead of being overwritten.
+        """
+        if moment_id is None:
+            return
+        for asset_id in asset_ids:
+            media = self._get_existing_external_media(moment_id, asset_id, session=session)
+            if media and media.upload_status == UploadStatus.PROCESSING:
+                self._mark_media_failed(moment_id, asset_id, session, error_message, commit=False)
+        if commit:
+            session.commit()
+
     def create_job(
         self,
         user_id: uuid.UUID,
         moment_id: uuid.UUID,
         asset_ids: list[str],
         *,
+        import_mode: ImportMode | str,
         commit: bool = True,
+        check_existing: bool = True,
     ) -> ImportJob:
         """
         Create a new import job record for Immich.
         """
-        existing_job = self.get_active_immich_job_for_assets(
-            user_id=user_id,
-            moment_id=moment_id,
-            asset_ids=asset_ids,
-        )
-        if existing_job is not None:
-            log_info(
-                "Reusing existing active Immich import job",
-                user_id=str(user_id),
-                moment_id=str(moment_id),
-                job_id=str(existing_job.id),
+        if check_existing:
+            existing_job = self.get_active_immich_job_for_assets(
+                user_id=user_id,
+                moment_id=moment_id,
+                asset_ids=asset_ids,
             )
-            return existing_job
+            if existing_job is not None:
+                log_info(
+                    "Reusing existing active Immich import job",
+                    user_id=str(user_id),
+                    moment_id=str(moment_id),
+                    job_id=str(existing_job.id),
+                )
+                return existing_job
 
         job = ImportJob(
             user_id=user_id,
             moment_id=moment_id,
             source_type=ImportSourceType.IMMICH,
-            result_data={"asset_ids": asset_ids},
+            result_data={"asset_ids": asset_ids, "import_mode": ImportMode(import_mode).value},
             total_items=len(asset_ids),
             status=JobStatus.PENDING
         )
@@ -557,24 +678,101 @@ class ImportJobService:
         log_info(f"Updated link-only MomentMedia for Immich asset {asset_id}")
         return media
 
+    def _ensure_placeholders(
+        self,
+        session: Session,
+        moment_id: uuid.UUID,
+        user_id: uuid.UUID,
+        asset_ids: list[str],
+        assets_by_id: Dict[str, Any],
+        integration: Integration,
+        *,
+        only_missing: bool = False,
+    ) -> None:
+        """Upsert a placeholder for every requested asset (commit=False).
+
+        For a new job every row is upserted back to the placeholder status the
+        job is about to process. When reusing an active job (`only_missing`),
+        rows that exist are left exactly as they are: that job owns them, and
+        resetting one it already finished (a downloaded copy back to
+        PROCESSING) would leave it stuck, since the job never revisits it. Only
+        a deleted placeholder (the user removed it while the job ran) is
+        recreated.
+        """
+        for asset_id in asset_ids:
+            if only_missing and self._get_existing_external_media(
+                moment_id, asset_id, session=session
+            ):
+                continue
+            try:
+                self.create_placeholder_media(
+                    moment_id=moment_id,
+                    user_id=user_id,
+                    asset_id=asset_id,
+                    integration=integration,
+                    asset_payload=assets_by_id.get(asset_id),
+                    session=session,
+                    commit=False,
+                )
+            except Exception as e:
+                log_warning(f"Failed to upsert placeholder for {asset_id}: {e}")
+                # Continue - job will try to process anyway
+
+    @staticmethod
+    def _lock_moment_for_job_creation(
+        session: Session, moment_id: uuid.UUID, user_id: uuid.UUID
+    ) -> None:
+        """Serialize job deduplication for one Moment until the transaction commits."""
+        # A no-op UPDATE takes a row lock on PostgreSQL and a writer lock on
+        # SQLite. Both the active-job query and the insert must follow it in
+        # the same transaction.
+        locked = session.execute(
+            update(Moment)
+            .where(Moment.id == moment_id, Moment.user_id == user_id)
+            .values(media_count=Moment.media_count)
+        )
+        if locked.rowcount != 1:
+            raise ValueError("Moment not found")
+
     async def create_and_process_job_async(
         self,
         user_id: uuid.UUID,
         moment_id: uuid.UUID,
         asset_ids: list[str],
         assets: Optional[list[Any]] = None
-    ) -> ImportJob:
+    ) -> Tuple[ImportJob, bool]:
         """
         Create an import job for async processing (copy mode).
 
-        Creates placeholder media records first, then the job.
+        Creates placeholder media records first, then the job. Returns
+        `(job, created)`: `created` is False when an active job for the same
+        asset set was reused instead of a new one being created, so the
+        caller dispatches the Celery task at most once per job.
         """
+        # The transaction below uses a synchronous SQLModel session and may
+        # briefly wait for another request's Moment lock. Keep that wait off
+        # the FastAPI event loop.
+        return await asyncio.to_thread(
+            self._create_and_process_job_sync, user_id, moment_id, asset_ids, assets
+        )
+
+    def _create_and_process_job_sync(
+        self,
+        user_id: uuid.UUID,
+        moment_id: uuid.UUID,
+        asset_ids: list[str],
+        assets: Optional[list[Any]] = None,
+    ) -> Tuple[ImportJob, bool]:
         from app.core.database import engine
 
         # Use a short-lived session for placeholder + job creation to avoid blocking on long-lived transactions from entry updates.
         thread_session = Session(engine)
         try:
             thread_service = ImportJobService(thread_session)
+
+            thread_service._lock_moment_for_job_creation(
+                thread_session, moment_id, user_id
+            )
 
             # Fetch integration needed for placeholders
             integration = thread_session.exec(
@@ -586,50 +784,89 @@ class ImportJobService:
             if not integration:
                 raise ValueError("Immich integration not found")
 
-            existing_job = thread_service.get_active_immich_job_for_assets(
-                user_id=user_id,
-                moment_id=moment_id,
-                asset_ids=asset_ids,
-            )
-            if existing_job is not None:
-                log_info(
-                    "Skipping duplicate Immich import request; active job exists",
-                    user_id=str(user_id),
-                    moment_id=str(moment_id),
-                    job_id=str(existing_job.id),
-                )
-                return existing_job
-
             assets_by_id = {}
             if assets:
                 assets_by_id = {
                     (asset.id if hasattr(asset, "id") else asset.get("id")): asset
                     for asset in assets
                 }
-            for asset_id in asset_ids:
-                try:
-                    thread_service.create_placeholder_media(
-                        moment_id=moment_id,
-                        user_id=user_id,
-                        asset_id=asset_id,
-                        integration=integration,
-                        asset_payload=assets_by_id.get(asset_id),
-                        session=thread_session,
-                        commit=False,
+
+            existing_job = thread_service.get_active_immich_job_for_assets(
+                user_id=user_id,
+                moment_id=moment_id,
+                asset_ids=asset_ids,
+                commit_stale=False,
+            )
+            if existing_job is not None:
+                finished_ids = set((existing_job.result_data or {}).get("finished_asset_ids", []))
+                # A deleted or non-completed row cannot be repaired by a
+                # worker that has already finished that asset. This includes
+                # failed rows and placeholders owned by an earlier retry job.
+                # Schedule/reuse a separate job for those assets.
+                retry_ids = []
+                for asset_id in asset_ids:
+                    if asset_id not in finished_ids:
+                        continue
+                    media = thread_service._get_existing_external_media(
+                        moment_id, asset_id, session=thread_session
                     )
-                except Exception as e:
-                    log_warning(f"Failed to create placeholder for {asset_id}: {e}")
-                    # Continue - job will try to process anyway
+                    if media is None or media.upload_status != UploadStatus.COMPLETED:
+                        retry_ids.append(asset_id)
+                if retry_ids:
+                    thread_service._ensure_placeholders(
+                        thread_session, moment_id, user_id,
+                        [asset_id for asset_id in asset_ids if asset_id not in retry_ids],
+                        assets_by_id, integration, only_missing=True,
+                    )
+                    retry_job = thread_service.get_active_immich_job_for_assets(
+                        user_id, moment_id, retry_ids,
+                        commit_stale=False, exclude_job_id=existing_job.id,
+                    )
+                    thread_service._ensure_placeholders(
+                        thread_session, moment_id, user_id, retry_ids,
+                        assets_by_id, integration,
+                        only_missing=retry_job is not None,
+                    )
+                    retry_created = retry_job is None
+                    if retry_created:
+                        retry_job = thread_service.create_job(
+                            user_id, moment_id, retry_ids,
+                            import_mode=integration.import_mode,
+                            commit=False, check_existing=False,
+                        )
+                    thread_session.commit()
+                    thread_session.refresh(retry_job)
+                    return retry_job, retry_created
+
+                log_info(
+                    "Reusing existing active Immich import job; ensuring placeholders exist",
+                    user_id=str(user_id),
+                    moment_id=str(moment_id),
+                    job_id=str(existing_job.id),
+                )
+                thread_service._ensure_placeholders(
+                    thread_session, moment_id, user_id, asset_ids, assets_by_id, integration,
+                    only_missing=True,
+                )
+                thread_session.commit()
+                thread_session.refresh(existing_job)
+                return existing_job, False
+
+            thread_service._ensure_placeholders(
+                thread_session, moment_id, user_id, asset_ids, assets_by_id, integration
+            )
 
             job = thread_service.create_job(
                 user_id=user_id,
                 moment_id=moment_id,
                 asset_ids=asset_ids,
+                import_mode=integration.import_mode,
                 commit=False,
+                check_existing=False,
             )
             thread_session.commit()
             thread_session.refresh(job)
-            return job
+            return job, True
         except SQLAlchemyError as exc:
             thread_session.rollback()
             log_error(exc)
@@ -733,11 +970,32 @@ class ImportJobService:
                 f"{job.processed_items} succeeded, {job.failed_items} failed"
             )
 
+        except asyncio.CancelledError:
+            log_error(
+                asyncio.CancelledError("Copy-mode import job cancelled or timed out"),
+                job_id=str(job_id),
+            )
+            if job is not None:
+                result_data = job.result_data or {}
+                asset_ids = result_data.get("asset_ids", [])
+                job.mark_failed("Import job timed out or was cancelled")
+                thread_session.add(job)
+                thread_service._fail_stalled_placeholders(
+                    job.moment_id, asset_ids, thread_session,
+                    "Import job timed out or was cancelled", commit=False
+                )
+                thread_session.commit()
+            raise
         except Exception as e:
             log_error(e)
             if job is not None:
+                result_data = job.result_data or {}
+                asset_ids = result_data.get("asset_ids", [])
                 job.mark_failed(str(e)[:2000])
                 thread_session.add(job)
+                thread_service._fail_stalled_placeholders(
+                    job.moment_id, asset_ids, thread_session, str(e)[:2000], commit=False
+                )
                 thread_session.commit()
         finally:
             thread_session.close()
@@ -794,31 +1052,52 @@ class ImportJobService:
             processed = 0
             failed = 0
             failed_asset_ids = []
+            processed_asset_ids = []
 
             for asset_id in asset_ids:
                 try:
-                    asset_metadata = await immich.get_asset_info(
-                        base_url=base_url,
-                        api_key=api_key,
-                        asset_id=asset_id
-                    )
-
-                    if asset_metadata:
-                        thread_service._create_link_only_media(
-                            moment_id=job.moment_id,
-                            user_id=job.user_id,
-                            asset_id=asset_id,
-                            asset_metadata=asset_metadata,
-                            integration=integration,
-                            session=thread_session,
-                            commit=False
+                    try:
+                        asset_metadata = await immich.get_asset_info(
+                            base_url=base_url,
+                            api_key=api_key,
+                            asset_id=asset_id
                         )
-                        thread_service._maybe_normalize_entry_delta(job.moment_id, thread_session, commit=False)
-                        processed += 1
-                    else:
-                        thread_service._mark_media_failed(job.moment_id, asset_id, thread_session, commit=False)
+                    except immich.ImmichAssetNotFoundError:
+                        # Immich confirmed the asset is gone (404 from both
+                        # lookups, after retries) — the only failure that is
+                        # actually permanent.
+                        thread_service._mark_media_failed(
+                            job.moment_id, asset_id, thread_session,
+                            "Immich no longer has this asset", commit=False,
+                        )
                         failed += 1
                         failed_asset_ids.append(asset_id)
+                    else:
+                        if asset_metadata:
+                            thread_service._create_link_only_media(
+                                moment_id=job.moment_id,
+                                user_id=job.user_id,
+                                asset_id=asset_id,
+                                asset_metadata=asset_metadata,
+                                integration=integration,
+                                session=thread_session,
+                                commit=False
+                            )
+                            thread_service._maybe_normalize_entry_delta(job.moment_id, thread_session, commit=False)
+                            processed += 1
+                            processed_asset_ids.append(asset_id)
+                        else:
+                            # get_asset_info already retried transient failures
+                            # (timeout, 5xx) and gave up. The asset is still
+                            # viewable through the proxy, so the row — already
+                            # COMPLETED from placeholder creation — is left as
+                            # is rather than failed for a metadata hiccup.
+                            log_warning(
+                                f"Could not refresh Immich metadata for asset {asset_id} "
+                                "after retries; keeping it displayable"
+                            )
+                            processed += 1
+                            processed_asset_ids.append(asset_id)
                 except Exception as e:
                     log_error(e)
                     thread_service._mark_media_failed(job.moment_id, asset_id, thread_session, str(e), commit=False)
@@ -826,24 +1105,68 @@ class ImportJobService:
                     failed_asset_ids.append(asset_id)
 
                 job.update_progress(processed, len(asset_ids), failed)
+                # Same bookkeeping as the copy phase: a deleted-and-re-added
+                # asset this job already finished needs its own retry job.
+                result_data = dict(job.result_data or {})
+                result_data["finished_asset_ids"] = sorted(
+                    {*result_data.get("finished_asset_ids", []), asset_id}
+                )
+                job.result_data = result_data
                 thread_session.add(job)
                 thread_session.commit()
 
             if failed_asset_ids:
-                if job.result_data is None:
-                    job.result_data = {}
-                job.result_data["failed_asset_ids"] = failed_asset_ids
+                result_data = dict(job.result_data or {})
+                result_data["failed_asset_ids"] = failed_asset_ids
+                job.result_data = result_data
 
             if job.failed_items == 0 and job.status not in {JobStatus.FAILED, JobStatus.PARTIAL, JobStatus.CANCELLED}:
                 job.mark_completed()
             thread_session.add(job)
             thread_session.commit()
 
+            # The link-only placeholder is upserted onto an EXISTING row above
+            # (created with commit=False before this job started), so
+            # _upsert_entry_media's own "newly created row" album-add trigger
+            # never fires for it. Send it once per job instead, for exactly
+            # the assets that actually finished processing.
+            if processed_asset_ids:
+                try:
+                    from app.core.celery_app import celery_app
+
+                    celery_app.send_task(
+                        "app.integrations.tasks.add_assets_to_album_task",
+                        args=[str(job.user_id), "immich", processed_asset_ids],
+                    )
+                except Exception as exc:
+                    log_warning(f"Failed to trigger Immich album add task: {exc}")
+
+        except asyncio.CancelledError:
+            log_error(
+                asyncio.CancelledError("Link-only import job cancelled or timed out"),
+                job_id=str(job_id),
+            )
+            if job is not None:
+                result_data = job.result_data or {}
+                asset_ids = result_data.get("asset_ids", [])
+                job.mark_failed("Import job timed out or was cancelled")
+                thread_session.add(job)
+                thread_service._fail_stalled_placeholders(
+                    job.moment_id, asset_ids, thread_session,
+                    "Import job timed out or was cancelled", commit=False
+                )
+                thread_session.commit()
+            raise
         except Exception as e:
             log_error(e)
             if job is not None:
+                result_data = job.result_data or {}
+                asset_ids = result_data.get("asset_ids", [])
                 job.mark_failed(str(e))
                 thread_session.add(job)
+                thread_service._fail_stalled_placeholders(
+                    job.moment_id, asset_ids, thread_session, str(e)[:1000], commit=False
+                )
                 thread_session.commit()
         finally:
             thread_session.close()
@@ -933,45 +1256,61 @@ class ImportJobService:
         async def _process_single_asset(current_asset_id: str):
             with Session(engine) as task_session:
                 task_service = ImportJobService(task_session)
-                return await task_service._download_and_save_original(
-                    asset_id=current_asset_id,
-                    base_url=base_url,
-                    api_key=api_key,
-                    user_id=str(job.user_id),
-                    moment_id=moment_id,
-                    integration=integration,
-                    session=task_session,
-                    thumbnail_info=thumbnail_cache.get(current_asset_id),
-                    commit=True
-                )
+                try:
+                    result = await task_service._download_and_save_original(
+                        asset_id=current_asset_id,
+                        base_url=base_url,
+                        api_key=api_key,
+                        user_id=str(job.user_id),
+                        moment_id=moment_id,
+                        integration=integration,
+                        session=task_session,
+                        thumbnail_info=thumbnail_cache.get(current_asset_id),
+                        commit=True
+                    )
+                except Exception as exc:
+                    result = exc
+                return current_asset_id, result
 
         for i in range(0, len(asset_ids), batch_size):
             batch = asset_ids[i:i + batch_size]
-            tasks = [
-                _process_single_asset(asset_id)
-                for asset_id in batch
-            ]
+            tasks = [asyncio.create_task(_process_single_asset(asset_id)) for asset_id in batch]
+            try:
+                for completed_task in asyncio.as_completed(tasks):
+                    asset_id, result = await completed_task
+                    processed = 0
+                    failed = 0
+                    if isinstance(result, Exception):
+                        log_error(result)
+                        self._mark_media_failed(job.moment_id, asset_id, session, str(result), commit=False)
+                        failed = 1
+                    elif result is None:
+                        self._mark_media_failed(job.moment_id, asset_id, session, commit=False)
+                        failed = 1
+                    else:
+                        processed = 1
+                        self._maybe_normalize_entry_delta(job.moment_id, session, commit=False)
 
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            processed = 0
-            failed = 0
-            for asset_id, result in zip(batch, results, strict=False):
-                if isinstance(result, Exception):
-                    log_error(result)
-                    self._mark_media_failed(job.moment_id, asset_id, session, str(result), commit=False)
-                    failed += 1
-                elif result is None:
-                    self._mark_media_failed(job.moment_id, asset_id, session, commit=False)
-                    failed += 1
-                else:
-                    processed += 1
-                    self._maybe_normalize_entry_delta(job.moment_id, session, commit=False)
-
-            # Update job progress after each batch and commit to ensure persistence
-            job.update_progress(job.processed_items + processed, job.total_items, job.failed_items + failed)
-            session.add(job)
-            session.commit()
+                    # Record this asset immediately. A completed image must
+                    # not appear unfinished throughout a slower video in the
+                    # same batch when the user removes and re-adds it.
+                    job.update_progress(
+                        job.processed_items + processed,
+                        job.total_items,
+                        job.failed_items + failed,
+                    )
+                    result_data = dict(job.result_data or {})
+                    finished_ids = set(result_data.get("finished_asset_ids", []))
+                    finished_ids.add(asset_id)
+                    result_data["finished_asset_ids"] = sorted(finished_ids)
+                    job.result_data = result_data
+                    session.add(job)
+                    session.commit()
+            finally:
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _download_and_save_thumbnail(
         self,
@@ -1148,27 +1487,51 @@ class ImportJobService:
             except Exception as e:
                 log_warning(f"Failed to save display version for HEIC asset {asset_id}: {e}")
 
-            # Upsert record
+            # Upsert as PROCESSING, not COMPLETED: process_uploaded_file below
+            # returns immediately for an already-COMPLETED row (its own
+            # duplicate-upload guard), which used to skip metadata
+            # extraction, the fallback thumbnail, and the HEIC display
+            # fallback entirely for every copy import. process_uploaded_file
+            # itself sets the row COMPLETED (or FAILED) when it finishes.
             media = self._upsert_entry_media(
                 moment_id=moment_id,
                 user_id=uuid.UUID(user_id),
                 asset_id=asset_id,
                 asset_data=asset_metadata,
                 file_info=saved_info,
-                upload_status=UploadStatus.COMPLETED,
+                upload_status=UploadStatus.PROCESSING,
                 session=session,
                 commit=commit
             )
 
-            # Post-process
+            # Post-process: extracts metadata, and fills in a thumbnail/HEIC
+            # display version only if one isn't already there (the Immich
+            # downloads above), so it is a genuine fallback, not duplicate work.
+            # It is synchronous and CPU/IO heavy (EXIF, thumbnails, HEIC
+            # conversion, video frames), so it runs in a worker thread: on the
+            # shared import loop it would stall every other job, and this
+            # batch's parallel downloads, until it finished. This session is
+            # only this asset's, so nothing else touches it meanwhile.
             try:
-                self.media_service.process_uploaded_file(
+                await asyncio.to_thread(
+                    self.media_service.process_uploaded_file,
                     media_id=str(media.id),
                     file_path=saved_info["full_file_path"],
-                    user_id=str(user_id)
+                    user_id=str(user_id),
                 )
             except Exception as e:
                 log_warning(f"Processing failed for asset {asset_id}: {e}")
+                return None
+
+            # process_uploaded_file records most failures on the media row and
+            # returns normally. Do not count that as a successful copy job.
+            session.refresh(media)
+            if media.upload_status != UploadStatus.COMPLETED:
+                log_warning(
+                    f"Post-processing did not complete for asset {asset_id}: "
+                    f"{media.upload_status}"
+                )
+                return None
 
             log_info(f"Successfully imported original for asset {asset_id}")
             return asset_metadata

@@ -35,12 +35,13 @@ from app.core.exceptions import (
     InvalidFileTypeError,
     MediaNotFoundError,
 )
-from app.core.logging_config import LogCategory
+from app.core.logging_config import LogCategory, log_warning
 from app.core.media_signing import (
     attach_signed_urls,
     is_signature_expired,
 )
 from app.core.signing import verify_media_signature
+from app.integrations.immich import ImmichAssetNotFoundError
 from app.integrations.service import fetch_proxy_asset
 from app.models.enums import MediaType
 from app.models.user import User
@@ -497,6 +498,8 @@ async def get_media_signed(
                     variant="original",
                     range_header=range_header,
                 )
+            except ImmichAssetNotFoundError:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media not found") from None
             except ValueError as e:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
             except Exception as e:
@@ -504,6 +507,13 @@ async def get_media_signed(
                 raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch original file") from e
 
             if response.status_code in (401, 403, 404, 416):
+                if response.status_code in (401, 403):
+                    from app.integrations.router import _update_integration_error_state
+
+                    log_warning(f"Invalid Immich token for user {uid}")
+                    await _update_integration_error_state(
+                        uid, IntegrationProvider.IMMICH, "Authentication failed"
+                    )
                 await _close_httpx_stream(response)
                 # Map proxied status codes
                 if response.status_code == 404:
@@ -518,7 +528,7 @@ async def get_media_signed(
 
             # Forward headers
             response_headers = {
-                "Cache-Control": "public, max-age=3600",
+                "Cache-Control": "private, max-age=3600",
                 "X-Provider": "immich",
             }
             for header in ["Content-Range", "Accept-Ranges", "Content-Length"]:
@@ -545,7 +555,7 @@ async def get_media_signed(
                 "Content-Range": f"bytes {range_info['start']}-{range_info['end']}/{file_info['file_size']}",
                 "Accept-Ranges": "bytes",
                 "Content-Length": str(range_info['length']),
-                "Cache-Control": "public, max-age=3600",
+                "Cache-Control": "private, max-age=3600",
             }
 
             return StreamingResponse(
@@ -565,7 +575,7 @@ async def get_media_signed(
             filename=file_info["filename"],
             headers={
                 "Accept-Ranges": "bytes",
-                "Cache-Control": "public, max-age=3600",
+                "Cache-Control": "private, max-age=3600",
             },
         )
     except MediaNotFoundError:
@@ -662,6 +672,13 @@ async def get_media_thumbnail_signed(
                  raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to fetch thumbnail") from e
 
             if response.status_code != 200:
+                if response.status_code in (401, 403):
+                    from app.integrations.router import _update_integration_error_state
+
+                    log_warning(f"Invalid Immich token for user {uid}")
+                    await _update_integration_error_state(
+                        uid, IntegrationProvider.IMMICH, "Authentication failed"
+                    )
                 await _close_httpx_stream(response)
                 # If 404/401, we might want to try refreshing or just fail
                 raise HTTPException(status_code=response.status_code, detail="Thumbnail not found in provider")
@@ -670,7 +687,7 @@ async def get_media_thumbnail_signed(
                 response.aiter_bytes(),
                 media_type=response.headers.get("content-type", "image/jpeg"),
                 headers={
-                    "Cache-Control": "public, max-age=3600",
+                    "Cache-Control": "private, max-age=3600",
                     "X-Provider": "immich"
                 },
                 background=BackgroundTask(_close_httpx_stream, response)
@@ -874,14 +891,22 @@ async def import_from_immich_async(
             extra={"user_id": str(current_user.id), "moment_id": str(request.moment_id), "asset_ids": request.asset_ids, "import_mode": str(immich_integration.import_mode)}
         )
 
-        job = await import_service.create_and_process_job_async(
-            user_id=current_user.id,
-            moment_id=request.moment_id,
-            asset_ids=request.asset_ids,
-            assets=request.assets
-        )
+        try:
+            job, job_created = await import_service.create_and_process_job_async(
+                user_id=current_user.id,
+                moment_id=request.moment_id,
+                asset_ids=request.asset_ids,
+                assets=request.assets
+            )
+        except ValueError:
+            # The Moment was deleted between the check above and the
+            # job-creation lock.
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Moment not found"
+            )
         file_logger.info(
-            f"[IMMICH_IMPORT] Job created: {job.id}",
+            f"[IMMICH_IMPORT] Job {'created' if job_created else 'reused'}: {job.id}",
             extra={
                 "user_id": str(current_user.id),
                 "moment_id": str(request.moment_id),
@@ -918,7 +943,12 @@ async def import_from_immich_async(
             },
         )
 
-        if immich_integration.import_mode == ImportMode.LINK_ONLY:
+        if not job_created:
+            file_logger.info(
+                f"[IMMICH_IMPORT] Reused active job {job.id}: skipping duplicate Celery dispatch",
+                extra={"user_id": str(current_user.id), "job_id": str(job.id)},
+            )
+        elif immich_integration.import_mode == ImportMode.LINK_ONLY:
             try:
                 celery_app.send_task(
                     "app.tasks.immich.process_link_only_import",

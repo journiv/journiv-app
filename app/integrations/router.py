@@ -31,6 +31,7 @@ from app.core.database import get_session_context
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.media_signing import is_signature_expired
 from app.core.signing import verify_media_signature
+from app.integrations.immich import ImmichAssetNotFoundError
 from app.integrations.schemas import (
     ImmichAssetFacesResponse,
     ImmichBatchFacesRequest,
@@ -595,7 +596,7 @@ async def proxy_immich_person_thumbnail(
         response.aiter_bytes(),
         media_type=response.headers.get("content-type", "image/jpeg"),
         headers={
-            "Cache-Control": "public, max-age=86400",
+            "Cache-Control": "private, max-age=86400",
             "X-Provider": IntegrationProvider.IMMICH.value,
         },
         background=BackgroundTask(_close_httpx_stream, response),
@@ -691,7 +692,7 @@ async def proxy_thumbnail(
         response.aiter_bytes(),
         media_type=response.headers.get("content-type", "image/jpeg"),
         headers={
-            "Cache-Control": "public, max-age=3600",
+            "Cache-Control": "private, max-age=3600",
             "X-Provider": provider.value
         },
         background=BackgroundTask(_close_httpx_stream, response)
@@ -752,6 +753,11 @@ async def proxy_original(
             variant="original",
             range_header=range_header,
         )
+    except ImmichAssetNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Asset {asset_id} not found in {provider}",
+        ) from None
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from None
     except Exception as e:
@@ -795,7 +801,7 @@ async def proxy_original(
         ) from None
 
     response_headers = {
-        "Cache-Control": "public, max-age=3600",
+        "Cache-Control": "private, max-age=3600",
         "X-Provider": provider.value,
     }
 

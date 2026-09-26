@@ -540,12 +540,12 @@ class TestIntegrationOptimizations:
 
     @pytest.mark.asyncio
     async def test_immich_client_is_shared(self):
-        """Test that Immich provider uses a shared httpx client."""
+        """Test that Immich provider reuses one httpx client per event loop."""
         from app.integrations import immich
 
-        # Reset client to ensure clean state
-        original_client = immich._client
-        immich._client = None
+        # Reset cache to ensure clean state
+        original_clients = dict(immich._clients)
+        immich._clients.clear()
         client1 = None
         client2 = None
 
@@ -558,14 +558,15 @@ class TestIntegrationOptimizations:
             assert client1 is client2
             assert isinstance(client1, httpx.AsyncClient)
         finally:
-            clients_to_close = []
-            for client in (immich._client, client1, client2):
-                if isinstance(client, httpx.AsyncClient) and client is not original_client:
-                    if client not in clients_to_close:
-                        clients_to_close.append(client)
-            for client in clients_to_close:
+            clients_to_close = [
+                client for client in (client1, client2)
+                if isinstance(client, httpx.AsyncClient)
+                and client not in original_clients.values()
+            ]
+            for client in dict.fromkeys(clients_to_close):
                 await client.aclose()
-            immich._client = original_client
+            immich._clients.clear()
+            immich._clients.update(original_clients)
 
     @pytest.mark.asyncio
     async def test_proxy_credential_caching(self):

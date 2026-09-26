@@ -21,6 +21,16 @@ export type Attachment = {
   state: "uploading" | "processing" | "done" | "failed";
   message?: string;
   mediaId?: string;
+  /**
+   * Set only while `state` is `"failed"` and the item is already placed
+   * (`placed.current.has(uploadId)`): which of the two ways a placed item
+   * fails, so retry can tell them apart without parsing `message`.
+   * `"server"` — the backend recorded a definitive processing failure;
+   * there is no "reprocess this row" request, so retry re-uploads.
+   * `"stalled"` — the poll window elapsed with no terminal state; retry
+   * just resumes polling, since the item may still finish.
+   */
+  failureReason?: "server" | "stalled";
 };
 
 function kindForFile(file: File): InlineMediaKind {
@@ -102,8 +112,12 @@ export function useMediaAttachments({
           patch(
             uploadId,
             outcome.state === "done"
-              ? { state: "done", message: undefined }
-              : { state: "failed", message: outcome.message },
+              ? { state: "done", message: undefined, failureReason: undefined }
+              : {
+                  state: "failed",
+                  message: outcome.message,
+                  failureReason: outcome.reason,
+                },
           ),
       });
     },
@@ -255,26 +269,59 @@ export function useMediaAttachments({
       // A file that already reached the document (processing failed/stalled) is
       // being re-processed, not re-inserted — it must not block saving.
       const reprocessing = placed.current.has(uploadId);
-      patch(uploadId, {
-        state: reprocessing ? "processing" : "uploading",
-        message: undefined,
-      });
       if (!reprocessing) {
+        patch(uploadId, { state: "uploading", message: undefined });
         surfaceRef.current?.setPlaceholderState(uploadId, "uploading");
         await runUpload(attachment, draft.momentId);
         return;
       }
-      if (attachment.mediaId) {
+
+      // A placed item's retry means one of two different things depending on
+      // why it failed: a stalled poll just needs to keep waiting, while a
+      // definitive server-side failure has no "reprocess this row" request to
+      // make — uploading always creates a new row — so its embed is removed
+      // and a placeholder reinserted at the same spot for a fresh upload to
+      // swap back in, the same way the first upload did.
+      if (attachment.mediaId && attachment.failureReason === "stalled") {
+        patch(uploadId, { state: "processing", message: undefined });
         pollUntilProcessed(uploadId, draft.momentId, attachment.mediaId);
-      } else {
-        // A durable embed should always have a media id. Fall back to upload
-        // only if state from an older session lacks it.
-        await runUpload(attachment, draft.momentId);
+        return;
       }
+      if (attachment.mediaId) {
+        const index = surfaceRef.current?.removeEmbedForMediaId(
+          attachment.mediaId,
+        );
+        // The fresh upload creates a new row, so the failed one it replaces
+        // is deleted here; nothing else would ever collect it.
+        void api.deleteMedia(attachment.mediaId).catch(() => undefined);
+        patch(uploadId, { mediaId: undefined });
+        // No longer placed either way. If the embed was already gone there is
+        // no placeholder for the new upload to land in, and the race check
+        // deletes that upload instead of keeping a row nothing references.
+        placed.current.delete(uploadId);
+        if (index !== null && index !== undefined) {
+          const preview =
+            attachment.kind === "image"
+              ? { objectUrl: URL.createObjectURL(attachment.file) }
+              : {};
+          registerPlaceholder(uploadId, {
+            kind: attachment.kind,
+            fileName: attachment.file.name,
+            ...preview,
+          });
+          surfaceRef.current?.insertPlaceholder(index, uploadId);
+          onDirty();
+        }
+      }
+      // A durable embed should always have a media id; a missing one (state
+      // from an older session) also falls through to a fresh upload.
+      patch(uploadId, { state: "uploading", message: undefined });
+      await runUpload(attachment, draft.momentId);
     },
     [
       attachments,
       ensureDraft,
+      onDirty,
       patch,
       pollUntilProcessed,
       runUpload,
@@ -283,14 +330,46 @@ export function useMediaAttachments({
   );
 
   const cancel = useCallback(
-    (uploadId: string) => {
+    (
+      uploadId: string,
+      options: {
+        /**
+         * True for the "leave without saving" sweep, which aborts anything
+         * still uploading but must leave an already-placed item exactly
+         * alone: the Moment keeps what was actually attached, and touching
+         * the document here would mark it dirty and re-arm the local draft
+         * this same flow just explicitly discarded (`useLocalDraft`'s
+         * `retired` latch), reviving a draft the user just discarded.
+         */
+        keepPlacedMedia?: boolean;
+      } = {},
+    ) => {
       handles.current.get(uploadId)?.abort();
-      surfaceRef.current?.removePlaceholder(uploadId);
+      // A placed item has no placeholder left to remove — its real embed is
+      // in the document, and only removing that embed (rather than leaving
+      // it as a broken image with the notice merely gone) actually removes
+      // it. Its row is deleted too: it was created in this session, and the
+      // save's orphan cleanup only collects media the previously saved
+      // document referenced, so an unsaved one would otherwise stay on the
+      // Moment as an "unavailable" attachment.
+      const attachment = attachments.find((item) => item.uploadId === uploadId);
+      if (placed.current.has(uploadId)) {
+        if (!options.keepPlacedMedia && attachment?.mediaId) {
+          const removed = surfaceRef.current?.removeEmbedForMediaId(
+            attachment.mediaId,
+          );
+          if (removed !== null && removed !== undefined) onDirty();
+          placed.current.delete(uploadId);
+          void api.deleteMedia(attachment.mediaId).catch(() => undefined);
+        }
+      } else {
+        surfaceRef.current?.removePlaceholder(uploadId);
+      }
       setAttachments((current) =>
         current.filter((item) => item.uploadId !== uploadId),
       );
     },
-    [surfaceRef],
+    [attachments, onDirty, surfaceRef],
   );
 
   // Only the upload phase blocks saving. Once a placeholder has been swapped

@@ -18,7 +18,18 @@ export const PROCESSING_STALLED_MESSAGE =
 
 export type ProcessingOutcome =
   | { state: "done" }
-  | { state: "failed"; message: string };
+  | {
+      state: "failed";
+      message: string;
+      /**
+       * `"server"`: the backend recorded a definitive `upload_status: "failed"`
+       * — the item needs re-importing/re-uploading, not more polling.
+       * `"stalled"`: the poll window elapsed with no terminal state; the file
+       * may still finish server-side, so a retry should keep polling instead
+       * of resubmitting it.
+       */
+      reason: "server" | "stalled";
+    };
 
 /**
  * Polls `GET /moments/{id}/media` until `mediaId` reaches a terminal
@@ -74,14 +85,22 @@ export function pollMediaProcessing({
         return;
       }
       if (status === "failed") {
-        onOutcome({ state: "failed", message: PROCESSING_FAILED_MESSAGE });
+        onOutcome({
+          state: "failed",
+          message: PROCESSING_FAILED_MESSAGE,
+          reason: "server",
+        });
         return;
       }
     } catch {
       // A failed poll is not a failed file; try again until the timeout.
     }
     if (now() - startedAt > PROCESS_POLL_TIMEOUT_MS) {
-      onOutcome({ state: "failed", message: PROCESSING_STALLED_MESSAGE });
+      onOutcome({
+        state: "failed",
+        message: PROCESSING_STALLED_MESSAGE,
+        reason: "stalled",
+      });
       return;
     }
     scheduleTick();

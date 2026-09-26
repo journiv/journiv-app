@@ -110,7 +110,9 @@ class TestEntryServiceImmichAssetRemoval:
         mock_session.exec.side_effect = [
             MagicMock(first=MagicMock(return_value=mock_media)),  # Get media
             MagicMock(one=MagicMock(return_value=1)),  # Count query: 1 other occurrence
+            MagicMock(one=MagicMock(return_value=0)),  # media_count recount after delete
         ]
+        mock_session.get.return_value = MagicMock(media_count=None)
 
         service = EntryService(mock_session)
 
@@ -146,7 +148,9 @@ class TestEntryServiceImmichAssetRemoval:
         mock_session.exec.side_effect = [
             MagicMock(first=MagicMock(return_value=mock_media)),  # Get media
             MagicMock(one=MagicMock(return_value=0)),  # Count query: 0 other occurrences
+            MagicMock(one=MagicMock(return_value=0)),  # media_count recount after delete
         ]
+        mock_session.get.return_value = MagicMock(media_count=None)
 
         service = EntryService(mock_session)
 

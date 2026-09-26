@@ -124,6 +124,16 @@ const canInlineMediaKind = (
   value: MomentMediaResponse["media_type"],
 ): boolean => (INLINE_MEDIA_KINDS as readonly string[]).includes(value);
 
+/**
+ * An attachment the tray may place in the prose: an embeddable kind that has
+ * finished processing. The moment-media list signs every row, including ones
+ * still processing or failed, so a URL alone does not mean it will display.
+ */
+const canAddToEntry = (item: MomentMediaResponse): boolean =>
+  canInlineMediaKind(item.media_type) &&
+  Boolean(item.signed_url) &&
+  (item.upload_status ?? "completed") === "completed";
+
 export function EntryEditorPage() {
   const { momentId, journalId } = useParams({ strict: false }) as {
     momentId?: string;
@@ -770,7 +780,7 @@ function EntryEditorForm({
    */
   const addAttachedMediaToEntry = useCallback(
     (item: MomentMediaResponse) => {
-      if (!item.signed_url || !canInlineMediaKind(item.media_type)) return;
+      if (!item.signed_url || !canAddToEntry(item)) return;
       surfaceRef.current?.insertMedia(
         item.media_type as InlineMediaKind,
         item.signed_url,
@@ -1049,10 +1059,15 @@ function EntryEditorForm({
     // An explicit discard is one of only two things that may remove the local
     // copy. The other is a confirmed server save.
     void localDraft.remove();
-    // Abort anything still uploading or importing before leaving.
-    for (const item of media.attachments) media.cancel(item.uploadId);
+    // Abort anything still uploading or importing before leaving. An
+    // already-placed item is left exactly alone (`keepPlacedMedia`): the
+    // Moment keeps what was actually attached, and touching its embed here
+    // would mark the document dirty and revive the local draft `remove()`
+    // above just discarded.
+    for (const item of media.attachments)
+      media.cancel(item.uploadId, { keepPlacedMedia: true });
     for (const item of immichMedia.attachments)
-      immichMedia.cancel(item.uploadId);
+      immichMedia.cancel(item.uploadId, { keepPlacedMedia: true });
     // A draft created for this session is cleaned up. Media the user actually
     // attached is KEPT: the Moment survives as a media-only Moment rather than
     // silently deleting photographs someone just took.
@@ -1325,7 +1340,7 @@ function EntryEditorForm({
               media={momentMedia}
               excludePaths={inlineMediaPathSet}
               renderItemAction={(item) =>
-                canInlineMediaKind(item.media_type) && item.signed_url ? (
+                canAddToEntry(item) ? (
                   <IconButton
                     label="Add to entry"
                     variant="secondary"
