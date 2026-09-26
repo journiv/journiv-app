@@ -132,7 +132,18 @@ class JournivApiClient:
             headers["Authorization"] = f"Bearer {token}"
 
         url = self._absolute_url(path) if absolute else path
-        response = self._client.request(method, url, headers=headers, **kwargs)
+        try:
+            response = self._client.request(method, url, headers=headers, **kwargs)
+        except httpx.RemoteProtocolError:
+            # The server recycles gunicorn workers (--max-requests) and closes
+            # idle keep-alive sockets; a pooled connection can be dropped
+            # before any response is sent. Retry once on a fresh connection.
+            # Rewind file uploads so the retry sends the full body.
+            for file_tuple in (kwargs.get("files") or {}).values():
+                stream = file_tuple[1] if isinstance(file_tuple, tuple) else file_tuple
+                if hasattr(stream, "seek"):
+                    stream.seek(0)
+            response = self._client.request(method, url, headers=headers, **kwargs)
         if expected and response.status_code not in expected:
             raise JournivApiError(method, path, response.status_code, response.text)
         return response
