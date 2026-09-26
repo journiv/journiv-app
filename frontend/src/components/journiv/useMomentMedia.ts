@@ -78,6 +78,8 @@ export function useMomentMedia(momentId: string, enabled: boolean) {
     isLoading: query.isLoading,
     isError: query.isError,
     isSuccess: query.isSuccess,
+    /** Epoch ms the current list was fetched; 0 before the first success. */
+    fetchedAt: query.dataUpdatedAt,
     isFetching,
     broken,
     reportLoadFailure,

@@ -37,6 +37,18 @@ export interface QuillSurfaceHandle {
   getContents(): QuillDelta;
   /** Caret position, captured before anything that can steal focus. */
   getSelectionIndex(): number;
+  /**
+   * The text on either side of `index`, up to `radius` characters each.
+   *
+   * Every embed counts as one placeholder character, exactly as it occupies one
+   * position in the document, so the result lines up with document indexes and
+   * two reads of an unchanged region are identical. Used to fingerprint where a
+   * dictation started (docs/features/editor.md, Voice notes).
+   */
+  getTextAround(
+    index: number,
+    radius: number,
+  ): { before: string; after: string };
   /** Inserts a pending-upload placeholder on its own line. */
   insertPlaceholder(index: number, uploadId: string): void;
   /**
@@ -376,6 +388,26 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           const quill = quillRef.current;
           const range = quill?.getSelection() ?? lastRangeRef.current;
           return range?.index ?? quill?.getLength() ?? 0;
+        },
+        getTextAround: (index, radius) => {
+          const quill = quillRef.current;
+          if (!quill) return { before: "", after: "" };
+          const length = quill.getLength();
+          const at = Math.min(Math.max(index, 0), length);
+          const read = (from: number, span: number) =>
+            span <= 0
+              ? ""
+              : quill
+                  .getContents(from, span)
+                  .ops.map((op) =>
+                    typeof op.insert === "string" ? op.insert : "\uFFFC",
+                  )
+                  .join("");
+          const start = Math.max(0, at - radius);
+          return {
+            before: read(start, at - start),
+            after: read(at, Math.min(radius, length - at)),
+          };
         },
         insertPlaceholder: (index, uploadId) => {
           const quill = quillRef.current;

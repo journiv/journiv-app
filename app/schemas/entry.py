@@ -252,6 +252,8 @@ class MediaResponseBase(MediaBase, MomentMediaExternalResponseFields, TimestampM
     created_at: datetime
     checksum: Optional[str] = None
     processing_error: Optional[str] = None
+    # Audio only: 400 amplitude buckets, 0-100. None until processing has run.
+    waveform_peaks: Optional[List[int]] = None
     signed_url: Optional[str] = None
     signed_thumbnail_url: Optional[str] = None
     signed_url_expires_at: Optional[int] = None

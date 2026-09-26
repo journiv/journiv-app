@@ -3215,6 +3215,10 @@ export type MomentMediaResponse = {
      */
     processing_error?: string | null;
     /**
+     * Waveform Peaks
+     */
+    waveform_peaks?: Array<number> | null;
+    /**
      * Signed Url
      */
     signed_url?: string | null;

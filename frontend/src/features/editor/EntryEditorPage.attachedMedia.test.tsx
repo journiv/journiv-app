@@ -180,7 +180,7 @@ describe("EntryEditorPage · attached moment media", () => {
 
     // The tray reads as attachments, not entry content.
     expect(screen.getByText("On this moment")).toBeTruthy();
-    expect(screen.getByText(/aren’t in your entry yet/i)).toBeTruthy();
+    expect(screen.getByText(/appear with this moment/i)).toBeTruthy();
     expect(screen.getByAltText("Beach")).toBeTruthy();
     expect(screen.getByAltText("Sunset")).toBeTruthy();
     // "Add to entry" only for the two images — the editor can embed image,

@@ -167,16 +167,23 @@ class JournivApiClient:
         *,
         name: str = "Test User",
     ) -> Dict[str, Any]:
-        response = self.request(
-            "POST",
-            "/auth/register",
-            json={
-                "email": email,
-                "password": password,
-                "name": name,
-            },
-            expected=(200, 201),
-        )
+        payload = {"email": email, "password": password, "name": name}
+        try:
+            response = self.request(
+                "POST", "/auth/register", json=payload, expected=(200, 201)
+            )
+        except httpx.RemoteProtocolError:
+            # A recycled gunicorn worker can drop the request. Registration is
+            # not replay-safe in general, but the email is unique to this call:
+            # if the first attempt was applied, the retry reports it as taken.
+            try:
+                response = self.request(
+                    "POST", "/auth/register", json=payload, expected=(200, 201)
+                )
+            except JournivApiError as exc:
+                if exc.status == 400 and "already registered" in exc.body:
+                    return {}
+                raise
         return response.json()
 
     def login(self, email: str, password: str) -> Dict[str, Any]:

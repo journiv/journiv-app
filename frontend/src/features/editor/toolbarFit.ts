@@ -79,7 +79,8 @@ const GROUP_WIDTH: Record<ToolbarGroup, number> = {
 
 /**
  * The controls that never move — Bold, Italic, Bullet, Checklist, Link, and the
- * insert group that leads the bar (Add media + Moment details) — plus the
+ * insert group that leads the bar (Add media + Moment details; Dictate is added
+ * on demand as `DICTATE_WIDTH`) — plus the
  * dividers between the bar's sections and the toolbar's own padding. (Padding
  * only: the measured width is `clientWidth`, which excludes borders.)
  *
@@ -102,6 +103,21 @@ const MORE_WIDTH = 43;
  * `ToolbarGroup`.
  */
 const PROMPT_CTA_WIDTH = 44;
+
+/**
+ * The Dictate (microphone) button in the insert group: one 30px control plus the
+ * 2px flex gap in front of it.
+ *
+ * It sits in the insert group on purpose, which is the part of the bar that
+ * never moves, so it is a width the planner reserves rather than a
+ * `ToolbarGroup` that can be given up. Dictation is not a formatting nicety to
+ * shed when the pane is narrow: it is the only way to start a recording, and a
+ * control that could fall into the More popover would sit behind a tap that
+ * looks like nothing to do with speech. Unlike the prompt button it is present
+ * on every entry, so it is counted whenever the host offers dictation
+ * (`hasDictation`) and not just while the entry is blank.
+ */
+const DICTATE_WIDTH = 32;
 
 export type ToolbarPlan = {
   /** Groups the bar has room for. Everything else is in the popover. */
@@ -136,7 +152,13 @@ export function toolbarPlan(
     onListLine,
     scrollable = false,
     hasPromptCta = false,
-  }: { onListLine: boolean; scrollable?: boolean; hasPromptCta?: boolean },
+    hasDictation = false,
+  }: {
+    onListLine: boolean;
+    scrollable?: boolean;
+    hasPromptCta?: boolean;
+    hasDictation?: boolean;
+  },
 ): ToolbarPlan {
   const groups = KEEP_ORDER.filter(
     (group) => group !== "nesting" || onListLine,
@@ -146,7 +168,10 @@ export function toolbarPlan(
     return everything;
   }
 
-  const fixed = BASE_WIDTH + (hasPromptCta ? PROMPT_CTA_WIDTH : 0);
+  const fixed =
+    BASE_WIDTH +
+    (hasPromptCta ? PROMPT_CTA_WIDTH : 0) +
+    (hasDictation ? DICTATE_WIDTH : 0);
   const whole = groups.reduce(
     (total, group) => total + GROUP_WIDTH[group],
     fixed,

@@ -2,6 +2,7 @@ import "fake-indexeddb/auto";
 import { cleanup, configure } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { closeDraftDb } from "../features/editor/draftRepository";
+import { closeRecordingDb } from "../features/editor/recordingRepository";
 import { installMatchMediaStub, resetTestViewportWidth } from "./viewport";
 
 /**
@@ -32,6 +33,14 @@ afterEach(async () => {
   await closeDraftDb();
   await new Promise<void>((resolve) => {
     const request = indexedDB.deleteDatabase("journiv");
+    request.onsuccess = () => resolve();
+    request.onerror = () => resolve();
+    request.onblocked = () => resolve();
+  });
+  // Staged dictation lives in its own database (recordingRepository.ts).
+  await closeRecordingDb();
+  await new Promise<void>((resolve) => {
+    const request = indexedDB.deleteDatabase("journiv-recordings");
     request.onsuccess = () => resolve();
     request.onerror = () => resolve();
     request.onblocked = () => resolve();

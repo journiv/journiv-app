@@ -5,7 +5,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { Plus, TriangleAlert } from "lucide-react";
+import { Plus, Trash2, TriangleAlert } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -37,8 +37,10 @@ import {
 import { browserTimeZone } from "../../lib/datetime";
 import { defaultJournalId } from "../../lib/journalOrder";
 import { useCompactViewport } from "../../lib/useCompactViewport";
+import { mediaPath } from "../../lib/mediaUrl";
 import { uuid } from "../../lib/uuid";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
+import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { MomentChips } from "../../components/journiv/MomentChips";
 import { MomentMediaGallery } from "../../components/journiv/MomentMediaGallery";
 import { PageBar } from "../../components/journiv/PageBar";
@@ -74,6 +76,9 @@ import { useDraftRecovery } from "./useDraftRecovery";
 import { useKeyboardInset } from "./useKeyboardInset";
 import { type DraftIdentity, useEntryDraft } from "./useEntryDraft";
 import { useLocalDraft } from "./useLocalDraft";
+import { DictationBar } from "./DictationBar";
+import { useAnchorPruning } from "./useAnchorPruning";
+import { useDictation } from "./useDictation";
 import { useMediaAttachments } from "./useMediaAttachments";
 import { ImmichPickerDialog } from "./immich/ImmichPickerDialog";
 import { useImmichAttachments } from "./immich/useImmichAttachments";
@@ -519,6 +524,11 @@ function EntryEditorForm({
   const [bodyDirty, setBodyDirty] = useState(startsDirty);
   const [metaDirty, setMetaDirty] = useState(false);
   const [error, setError] = useState("");
+  const [deleteVoiceNoteId, setDeleteVoiceNoteId] = useState<string | null>(
+    null,
+  );
+  const [deletingVoiceNote, setDeletingVoiceNote] = useState(false);
+  const [voiceNoteDeleteError, setVoiceNoteDeleteError] = useState("");
 
   // The prompt this entry is written from (docs/features/prompts.md). A NEW
   // entry may arrive with one via `?prompt=`; either kind of entry can pick
@@ -564,6 +574,11 @@ function EntryEditorForm({
     momentForDisplay?.id ?? "",
     Boolean(momentForDisplay?.id),
   );
+  useAnchorPruning({
+    momentId: momentForDisplay?.id,
+    mediaCount: momentForDisplay?.media_count,
+    media: momentMedia,
+  });
   // Inline media paths from the LIVE document, so an item is dropped from the
   // attached-media gallery the instant it is placed inline. Seeded from the
   // starting document; `QuillSurface` reports every change after that.
@@ -577,6 +592,17 @@ function EntryEditorForm({
     wordCount: 0,
     selectedMedia: null,
   });
+  // The tray belongs to the Moment, so it follows the Moment: an existing one,
+  // or a NEW entry's draft once something attached to it is not in the writing —
+  // a dictation recording, which is never placed inline. A new entry whose only
+  // media is inline photos keeps no tray, exactly as before.
+  const trayMoment =
+    moment ??
+    ((momentMedia.items ?? []).some(
+      (item) => !inlineMediaPathSet.has(mediaPath(item.signed_url ?? "")),
+    )
+      ? momentForDisplay
+      : undefined);
   const titleDirty = title !== initialTitle;
   const journalDirty = journalId !== initialJournalId;
   const dirty =
@@ -717,6 +743,34 @@ function EntryEditorForm({
     [immichMedia, momentForDisplay?.id, draftMomentId, queryClient],
   );
 
+  // Dictation records at the caret and attaches the audio to the Moment; it
+  // never writes to the document (docs/features/editor.md, Voice notes). A NEW
+  // entry's first recording creates the draft Moment, so Cancel has to protect it
+  // the way it protects any other draft-creating write.
+  const onDictationAttached = useCallback(() => {
+    if (!moment) {
+      setMetaDirty(true);
+      keepLocally();
+    }
+  }, [keepLocally, moment]);
+  const dictation = useDictation({
+    surfaceRef,
+    ensureDraft: ensureMediaDraft,
+    queryClient,
+    userId: draftUserId ?? null,
+    draftKey,
+    maxFileSizeMb: instanceConfig.data?.max_file_size_mb,
+    onMediaAdded: trackSessionMedia,
+    onAttached: onDictationAttached,
+  });
+  const toggleDictation = useCallback(() => {
+    setError("");
+    // Pressed again while it is still waiting on the microphone, this cancels the
+    // start (`stop` does that); once recording, it stops.
+    if (dictation.recording || dictation.starting) void dictation.stop();
+    else void dictation.start();
+  }, [dictation]);
+
   const openMediaPicker = useCallback(() => {
     setError("");
     if (immichEnabled) setImmichPickerOpen(true);
@@ -791,6 +845,29 @@ function EntryEditorForm({
     [keepLocally],
   );
 
+  const deleteVoiceNote = useCallback(async () => {
+    const mediaId = deleteVoiceNoteId;
+    const ownerId = momentForDisplay?.id;
+    if (!mediaId || !ownerId) return;
+    setDeletingVoiceNote(true);
+    setVoiceNoteDeleteError("");
+    try {
+      await api.deleteMedia(mediaId);
+      sessionMediaRef.current = sessionMediaRef.current.filter(
+        (id) => id !== mediaId,
+      );
+      setDeleteVoiceNoteId(null);
+      await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: queryKeys.moment(ownerId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.allMoments }),
+      ]);
+    } catch {
+      setVoiceNoteDeleteError("Couldn’t delete the voice note. Try again.");
+    } finally {
+      setDeletingVoiceNote(false);
+    }
+  }, [deleteVoiceNoteId, momentForDisplay?.id, queryClient]);
+
   const shouldBlock = useCallback(
     ({
       current,
@@ -841,6 +918,18 @@ function EntryEditorForm({
         throw new Error("Choose an active Journal before saving");
       if (media.pending > 0 || immichMedia.pending > 0)
         throw new Error("Wait for uploads to finish before saving");
+      if (dictation.recording)
+        throw new Error("Stop the recording before saving");
+      if (dictation.uploads.pending > 0)
+        throw new Error(
+          "Wait for the voice note to finish uploading before saving",
+        );
+      if (
+        !moment &&
+        (dictation.uploads.failed.length > 0 ||
+          dictation.recoverable.length > 0)
+      )
+        throw new Error("Retry or discard the voice note before saving");
       const entryPayload = {
         title: title.trim() || null,
         content_delta: contentDelta,
@@ -1051,11 +1140,25 @@ function EntryEditorForm({
 
   const cancel = () => {
     const keptMedia = moment ? 0 : sessionMediaRef.current.length;
-    const question = keptMedia
+    // A recording is speech that exists nowhere else until it is attached, so
+    // leaving is never silent about one. On a NEW entry its draft key is never
+    // seen again, so nothing unfinished could ever be recovered: say it goes.
+    const unfinishedRecordings =
+      (dictation.recording ? 1 : 0) +
+      dictation.uploads.failed.length +
+      dictation.recoverable.length;
+    let question = keptMedia
       ? `${CANCEL_CONFIRMATION} The ${keptMedia === 1 ? "file" : `${keptMedia} files`} you added will stay on this moment.`
       : CANCEL_CONFIRMATION;
-    if (dirty && !window.confirm(question)) return;
+    if (unfinishedRecordings > 0) {
+      question += moment
+        ? " A voice note that hasn’t been added yet stays on this device and is offered again the next time you edit this entry."
+        : " A voice note that hasn’t been added yet will be discarded.";
+    }
+    if ((dirty || unfinishedRecordings > 0) && !window.confirm(question))
+      return;
     allowNavigationRef.current = true;
+    if (!moment) void dictation.discardAllUnfinished();
     // An explicit discard is one of only two things that may remove the local
     // copy. The other is a confirmed server save.
     void localDraft.remove();
@@ -1155,6 +1258,11 @@ function EntryEditorForm({
         }
       />
 
+      {/* Dictation: the live recording, its upload, recovery and errors. A
+          non-scrolling flex sibling like PageBar, so Stop stays on screen; it
+          renders nothing while there is nothing to say. */}
+      <DictationBar dictation={dictation} />
+
       {/* A non-scrolling flex sibling of the scroll owner, like PageBar: a
           full-width band under PageBar at regular width, and (via `order` in
           editor.css) docked above the on-screen keyboard at compact, shown only
@@ -1164,6 +1272,10 @@ function EntryEditorForm({
         state={editorState}
         disabled={mutation.isPending}
         onAddMedia={openMediaPicker}
+        dictation={{
+          recording: dictation.recording || dictation.starting,
+          onToggle: toggleDictation,
+        }}
         onRemoveMedia={removeSelectedMedia}
         onPickPrompt={
           showPromptCta ? () => setPromptPickerOpen(true) : undefined
@@ -1333,27 +1445,71 @@ function EntryEditorForm({
               tray stays attached to the Moment and keeps showing in the reader
               gallery (docs/features/editor.md). A kind the editor cannot embed
               inline shows in the tray without the action. */}
-          {moment && (
+          {trayMoment && (
             <MomentMediaGallery
               variant="tray"
-              moment={moment}
+              moment={trayMoment}
               media={momentMedia}
               excludePaths={inlineMediaPathSet}
-              renderItemAction={(item) =>
-                canAddToEntry(item) ? (
-                  <IconButton
-                    label="Add to entry"
-                    variant="secondary"
-                    size="sm"
-                    disabled={mutation.isPending}
-                    onClick={() => addAttachedMediaToEntry(item)}
-                  >
-                    <Plus aria-hidden="true" size={15} />
-                  </IconButton>
-                ) : null
-              }
+              renderItemAction={(item) => {
+                const canAdd = canAddToEntry(item);
+                const canDelete =
+                  item.media_type === "audio" &&
+                  item.upload_status !== "pending" &&
+                  item.upload_status !== "processing";
+                if (!canAdd && !canDelete) return null;
+                return (
+                  <>
+                    {canAdd && (
+                      <IconButton
+                        label="Add to entry"
+                        variant="secondary"
+                        size="sm"
+                        disabled={mutation.isPending}
+                        onClick={() => addAttachedMediaToEntry(item)}
+                      >
+                        <Plus aria-hidden="true" size={15} />
+                      </IconButton>
+                    )}
+                    {canDelete && (
+                      <IconButton
+                        label="Delete voice note"
+                        variant="secondary"
+                        size="sm"
+                        disabled={mutation.isPending || deletingVoiceNote}
+                        onClick={() => {
+                          setVoiceNoteDeleteError("");
+                          setDeleteVoiceNoteId(item.id);
+                        }}
+                      >
+                        <Trash2 aria-hidden="true" size={15} />
+                      </IconButton>
+                    )}
+                  </>
+                );
+              }}
             />
           )}
+          {voiceNoteDeleteError && (
+            <p className="jv-editor__error" role="alert">
+              {voiceNoteDeleteError}
+            </p>
+          )}
+          <AppConfirmDialog
+            open={deleteVoiceNoteId !== null}
+            onOpenChange={(open) => {
+              if (!open) setDeleteVoiceNoteId(null);
+            }}
+            title="Delete this voice note?"
+            description="This removes the recording from this moment permanently."
+            confirmLabel="Delete voice note"
+            cancelLabel="Keep voice note"
+            destructive
+            pending={deletingVoiceNote}
+            onConfirm={deleteVoiceNote}
+          >
+            {voiceNoteDeleteError && <p role="alert">{voiceNoteDeleteError}</p>}
+          </AppConfirmDialog>
           <QuillSurface
             ref={surfaceRef}
             editorId={moment?.entry?.id ?? moment?.id ?? "new-entry"}

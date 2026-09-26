@@ -101,6 +101,14 @@ not set. `carousel.finite` is deliberately `true` (no wrap past the last item).
   unavailable frame.
 - image, video and audio render inline; a `media_type` of `unknown` renders as a
   plain "Attachment" frame rather than vanishing.
+- Audio is a waveform player (`components/journiv/media/WaveformPlayer`) drawn
+  from the item's `waveform_peaks`, with a named play control and a keyboard
+  seek slider (arrows ±5s, PageUp/PageDown ±15s, Home/End). With no peaks yet
+  (still processing, or audio that predates them) it falls back to the plain
+  `<audio>` element, so a missing waveform never means missing playback. It
+  paints from the server `duration` because a browser recording reports none in
+  its container. Inline audio placed in the prose by hand keeps the native
+  `<audio>` of its blot.
 - A failed gallery request is an inline retry notice, not a pane-filling error.
 - A successful empty list with nonzero media_count is quiet stale data.
 - One failed item never hides successful items.

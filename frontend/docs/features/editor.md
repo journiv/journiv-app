@@ -59,9 +59,11 @@ shrinking them is not an option. This resolves two ways by width:
   longest, then headings, undo/redo, ordered list, blockquote, underline/strike,
   and last the Markdown-help control. Bold, Italic, Bullet, Checklist, Link and
   the insert group never move. The insert group leads the bar — Add media, then
-  Moment details, then (only while the entry is still empty) Write from a prompt
+  Voice note, then Moment details, then (only while the entry is still empty) Write from a prompt
   (docs/features/prompts.md); `toolbarPlan` reserves that button's width via
-  `hasPromptCta` only while it is shown. With the word count gone from this
+  `hasPromptCta` only while it is shown, and the microphone's via `hasDictation`
+  whenever the host offers voice notes (`DICTATE_WIDTH`, 32px) — it is part of the
+  fixed insert group, not a `ToolbarGroup`, so it can never fall into More. With the word count gone from this
   group, the whole formatting set fits inline in the three-pane editor pane at
   1440 with no More control at all.
 - **Compact width:** no collapse and no More popover — every control stays on the
@@ -284,6 +286,189 @@ The optional Immich path is feature-gated by instance configuration. It uses
 the same draft, placeholder, cancellation, processing-poll, and durable-media
 rules as device upload. The asset endpoint is paged, newest-first, and has no
 server filtering; do not invent one in the client.
+
+## Voice notes
+
+The Voice note control (a microphone toggle at the end of the Insert group, after
+Add media) records speech and attaches it to the Moment. **A voice note is an
+audio attachment and nothing else. No text is inserted into the entry — there
+is no transcription, and no words appear when the recording stops.** Because
+there is no transcript, a voice note is not searchable: Moment search matches the
+note, the entry title and the entry text (`_apply_search_filter`), never audio.
+
+The code keeps this feature's original name, "dictation" (`useDictation`,
+`DictationBar`, `dictationFormat.ts`, the `jv-dictation` classes); the product
+name is Voice note, and that is the only name a writer sees.
+
+**A voice note does not insert an inline embed.** The recording becomes ordinary
+Moment media — a waveform in the editor tray while writing and the reader
+gallery while reading — and the prose is never touched. An entry is often built
+from several short sessions; a run of audio players between paragraphs would bury
+the writing the reader comes back to months later (DESIGN.md: reading content
+stays quiet). A writer who does want one recording in the prose can still put it
+there by hand with the tray's "Add to entry", which is unchanged and makes the
+choice reversible per recording.
+
+    capture anchor -> record (chunks staged as they arrive) -> stop ->
+    assemble -> upload as a Moment attachment -> delete the staged copy
+
+Files: `useDictation` composes `useDictationRecorder` (microphone,
+`MediaRecorder`), `recordingRepository` (IndexedDB staging), and
+`useDictationAttachment` (upload). `DictationBar` is the one surface that speaks
+for all of it. `dictationFormat.ts` holds the pure rules.
+
+**Availability is explained, never hidden.** `getUserMedia` needs a secure
+context, and plain HTTP is a real self-hosting configuration
+([pwa.md](pwa.md)). The control is always present; pressing it on an insecure
+page, in a browser with no supported recorder, with the microphone blocked, or
+with no microphone, shows that reason as an alert in `DictationBar`
+(`insecure-context`, `unsupported`, `permission-denied`, `no-microphone`,
+`failed`) and never opens the microphone. It is never a disabled button with no
+reason.
+
+**Starting.** The microphone is not open the instant the control is pressed. The
+browser's permission prompt can stay open indefinitely, and staging then opens
+IndexedDB before the recorder runs. Until it does there is nothing captured, so
+`DictationBar` shows "Waiting for the microphone…" with a single **Cancel
+recording** control — not Stop or Discard, and nothing to confirm. Pressing the
+toolbar control again does the same. A cancelled start goes back to idle
+immediately and never goes on to record: whatever it was holding (the stream,
+and any staged session it had opened) is released when the pending step settles,
+and the next press waits for a cancelled prompt that is still open rather than
+asking for a second microphone. While starting, Done is not blocked and Cancel
+does not warn about a recording, because there is none.
+
+**Recording.**
+
+- The container is negotiated in order `audio/webm;codecs=opus`, `audio/webm`,
+  `audio/mp4`, `audio/aac`. None supported means unavailable — the recorder never
+  records into a container it did not pick. The `File` carries the recorder's own
+  `mimeType`, not the requested string, and an extension from it.
+- It asks for 32 kbps and hands data over every 4 seconds (`TIMESLICE_MS`), so
+  little is lost if the page dies.
+- The duration cap is derived, never invented: `max_file_size_mb` from
+  `GET /instance/config`, times a safety margin, over the recorder's reported
+  bitrate; a running byte total is a second guard. An unknown limit means
+  uncapped, because a recording that turns out too large fails at upload and
+  stays staged, while a wrong cap silently truncates speech. The last minute is
+  announced, and at the limit the recording stops cleanly **and is kept and
+  attached** with a notice. The same is true when a microphone track ends on its
+  own (unplugged, taken by a call): what exists is kept, never dropped.
+- Elapsed time and the live waveform go through an external store, so the
+  ~4 Hz tick re-renders only `DictationBar`'s recording row — never the editor
+  page, whose typing-cost invariants forbid it. The live waveform is a rolling
+  window resampled for display, because the final length is unknown while
+  recording; the server's waveform replaces it once processed. A Web Audio
+  failure only removes the meter, never the recording.
+- Every microphone track is stopped on stop, on error, on discard and on
+  unmount. A live microphone indicator left on is a trust bug.
+- Done is refused while a recording is running or uploading. A new entry also
+  cannot be saved while a failed upload or recoverable voice note remains: the
+  writer must retry or discard it before that entry's local draft key disappears.
+  Cancel says what happens to an unfinished voice note: on a new entry it is
+  discarded (its draft key is never seen again, so nothing staged under it could
+  be recovered); on an existing entry it stays on this device and is offered
+  again the next time that entry is edited.
+
+**The anchor.** When recording *starts* — before anything can steal focus — the
+caret index and 32 characters of text on each side (`getSelectionIndex`,
+`getTextAround` on the surface handle) are captured. The index alone means
+nothing once the document has changed, so the context is what makes it
+trustworthy (`anchorMatches` compares it). It records where in the entry a
+transcript would go. No transcription exists, so nothing reads it; it is kept so
+that one could place text without guessing.
+
+It is **device-local**: it lives only in the `anchors` store of
+`journiv-recordings`, keyed by media id, and is never sent to the server or
+placed in the Delta. Its lifecycle is:
+
+- *Created* when the recording's upload succeeds, per media id (before that it is
+  held with the staged session).
+- *Kept* when the staged audio is cleaned up after that upload. That is
+  deliberate: the staged copy is upload plumbing, the anchor belongs to the
+  media.
+- *Removed* once its media is no longer on its Moment. The anchor is
+  pruned against the media list the editor and the reader already hold
+  (`useAnchorPruning`, `recordingRepository.pruneAnchors`). This is how it goes
+  when a save drops a recording that was placed inline, since the backend
+  orphan-collects the media. An item still `pending` or `processing` is in that
+  list and is kept. A list is trusted only once settled — never while loading,
+  refetching or after an error — and a Moment with `media_count` 0, whose media
+  list is never fetched, counts as an empty list. An anchor less than a minute
+  older than the list is kept, because an upload can finish while a list request
+  is in flight. With IndexedDB unavailable it does nothing and says nothing.
+
+Pruning runs when this device opens the Moment, so an anchor whose media was
+deleted on another device is removed the next time this device loads that Moment,
+and one for a Moment this device never opens again is not reached.
+
+**Crash-safe staging.** Losing the only copy of someone's speech is the worst
+failure this feature can have (a PWA killed by the OS, a suspended tab, a
+reload, an upload that fails after Stop). `recordingRepository.ts` therefore
+writes every chunk to IndexedDB as it arrives, in a database of its own,
+`journiv-recordings` (version 1: `sessions`, `chunks`, `anchors`) — not a store
+in `journiv` (drafts) or `journiv-offline`, whose version ladders belong to
+other modules. Never Cache Storage: no `/api`, `/media` or `/pub` response may
+enter it. Chunks are stored as `ArrayBuffer`, the value every IndexedDB stores
+reliably.
+
+- The staged copy is deleted **only after the upload succeeds**. A failed upload
+  leaves it, with Retry and a confirmed Discard.
+- An unfinished session for the entry being edited (matched on the editor's
+  local-draft key) is offered as "Recover unfinished recording?" with Recover and
+  a confirmed Discard, the same offer-never-apply stance as draft recovery. It
+  attaches to the entry you are editing now; it is never applied silently.
+- If IndexedDB is unavailable, or no signed-in user exists to key on, recording
+  still works from memory and `DictationBar` says the browser cannot keep a
+  safety copy. It never promises crash-safety it lacks.
+
+**Attachment.** `useDictationAttachment` is the *document-free* attachment
+shape: the shared `mediaUpload.ts` transport (`uploadMedia` +
+`runWithConcurrency`), with no caret capture, placeholder or blot. It is a third
+caller of that one transport beside `useMediaAttachments` and
+`useQuickLogMedia`, and dictation must never call `useMediaAttachments.attach()`.
+The upload item exists before the draft Moment is resolved, so a failure to
+prepare the entry (no journal chosen yet, offline) leaves a retryable item rather
+than stranding the audio. A NEW entry's first recording creates the draft Moment
+and marks the draft dirty, so Cancel protects it like any draft-creating write;
+the media id is tracked as session media so Cancel keeps the recording.
+
+**The tray.** `momentMediaQuery` polls while an item is `pending` or
+`processing`, but it cannot *start* polling from a tray that is empty, and the
+tray is gated on the Moment's denormalised `media_count`. So a successful upload
+invalidates `queryKeys.moment(id)` once (its prefix covers the media list); the
+existing poll takes over from there. Do not add a second poll. Audio takes a
+full-width row in the tray, in every state, so a recording that finishes
+processing does not jump from a square tile into a row. A NEW entry gets a tray
+only once something attached to it is not in the writing (a recording), so a new
+entry whose only media is inline photos keeps no tray, as before.
+
+**The recording survives every save.** It was never in the Delta, so
+`delete_orphaned_media_for_delta` (old sources minus new) never sees it. Deleting
+prose must never delete a recording; removal is an explicit action. An audio
+attachment still in the tray has a confirmed "Delete voice note" action. It
+deletes the server media directly, then refreshes the Moment and media list;
+an audio item already placed inline is removed through the existing prose-save
+orphan path so the document cannot retain a broken embed.
+
+**Server processing.** libmagic reports `video/webm` / `video/mp4` for an
+audio-only container, so the worker decides audio-vs-video from the streams
+(ffprobe), moves the file to the audio directory, and fills `duration` and
+`waveform_peaks` (400 buckets, 0-100). A `MediaRecorder` WebM carries no
+container duration, so the decoded length is the fallback. Until peaks exist
+(`waveform_peaks` is `null`) the player is a plain `<audio>`: a missing waveform
+never means missing playback.
+
+### Voice note known gaps
+
+- There is no transcript, so a recording cannot be searched or read as text; it
+  is only played.
+- Anchor pruning runs against the media list this device loads, so an anchor can
+  outlive media deleted elsewhere until this device next opens that Moment.
+- iOS Safari and Android Chrome behaviour — a recorder that ends when the tab is
+  backgrounded, the `audio/mp4` container, and the keyboard-inset interplay — is
+  implemented against the platform contracts but has not been verified on a real
+  device. What was captured is staged and offered for recovery.
 
 ## Local and server drafts
 

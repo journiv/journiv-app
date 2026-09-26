@@ -1,0 +1,104 @@
+/* Dictation region (docs/features/editor.md, Voice notes). A non-scrolling flex
+   sibling of the scroll owner, like PageBar and the toolbar: quiet chrome on the
+   editor's own surface, tokens only. Nothing here uses the brand accent. */
+
+.jv-dictation {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.jv-dictation__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  width: 100%;
+  max-width: 47rem;
+  margin: 0 auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--background);
+  color: var(--foreground);
+  font-size: 0.8125rem;
+}
+
+.jv-dictation__row
+  > span:not(.jv-dictation__actions):not(.jv-dictation__dot):not(
+    .jv-dictation__time
+  ):not(.jv-dictation__hint) {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.jv-dictation__row--alert {
+  border-color: var(--danger-border);
+  background: var(--danger-surface);
+}
+
+.jv-dictation__actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+
+.jv-dictation__hint {
+  flex: 1 1 100%;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+}
+
+/* ---- the live recording ---- */
+
+.jv-dictation__dot {
+  flex: none;
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 999px;
+  background: var(--destructive);
+  animation: jv-dictation-pulse 1.4s ease-in-out infinite;
+}
+
+.jv-dictation__time {
+  flex: none;
+  min-width: 4ch;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+/* Fills the space between the timer and the buttons; wraps under them when the
+   row is too narrow for all three. */
+.jv-dictation__meter {
+  flex: 1 1 8rem;
+  min-width: 6rem;
+  height: 1.75rem;
+  color: var(--foreground);
+}
+
+@keyframes jv-dictation-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Compact width: the region is a full-bleed strip and its actions run
+   full-width, like every other primary action at this width (DESIGN.md). */
+@media (max-width: 860px) {
+  .jv-dictation {
+    padding-inline: var(--space-4);
+  }
+
+  .jv-dictation__actions {
+    flex: 1 1 100%;
+  }
+
+  .jv-dictation__actions > button {
+    flex: 1 1 0;
+  }
+}

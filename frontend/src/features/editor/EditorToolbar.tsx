@@ -13,6 +13,7 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  Mic,
   Quote,
   Redo2,
   Sparkles,
@@ -73,6 +74,12 @@ type EditorToolbarProps = {
   /** Omit to hide the insert group entirely (for example in a read-only host). */
   onAddMedia?: () => void;
   onRemoveMedia?: () => void;
+  /**
+   * Voice notes (internally "dictation"). Omit to hide the microphone control. `recording` is the toggle's
+   * pressed state; the recording itself, its Stop and Discard, and every
+   * message live in `DictationBar`, not here.
+   */
+  dictation?: { recording: boolean; onToggle: () => void };
   /** Metadata editing (mood, location, weather, people, tags). Omit to hide. */
   details?: MomentDetailsPanelProps;
   /**
@@ -101,6 +108,7 @@ export function EditorToolbar({
   disabled = false,
   onAddMedia,
   onRemoveMedia,
+  dictation,
   details,
   onPickPrompt,
 }: EditorToolbarProps) {
@@ -122,6 +130,7 @@ export function EditorToolbar({
     onListLine,
     scrollable: compact,
     hasPromptCta: Boolean(onPickPrompt),
+    hasDictation: Boolean(dictation),
   });
   const indentLevel =
     typeof state.formats.indent === "number" ? state.formats.indent : 0;
@@ -276,6 +285,7 @@ export function EditorToolbar({
           aria-label="Editor actions"
         >
           {(onAddMedia ||
+            dictation ||
             details ||
             onPickPrompt ||
             (state.selectedMedia && onRemoveMedia)) && (
@@ -297,6 +307,16 @@ export function EditorToolbar({
                     onClick={onAddMedia}
                   >
                     <ImagePlus aria-hidden="true" size={16} />
+                  </ToolbarButton>
+                )}
+                {dictation && (
+                  <ToolbarButton
+                    label="Voice note"
+                    pressed={dictation.recording}
+                    disabled={disabled}
+                    onClick={dictation.onToggle}
+                  >
+                    <Mic aria-hidden="true" size={16} />
                   </ToolbarButton>
                 )}
                 {details && (

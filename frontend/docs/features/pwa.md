@@ -136,7 +136,10 @@ finds out before they rely on it offline.
 cache to a dedicated IndexedDB database, `journiv-offline` (version 1, one
 `queryCache` object store) -- deliberately separate from the `journiv`
 database `draftRepository.ts` owns, since that database's version ladder
-belongs to drafts.
+belongs to drafts. Staged voice notes live in a third database,
+`journiv-recordings` (`recordingRepository.ts`), for the same reason: large
+binary data with its own lifecycle, and no other module's version ladder to
+share. See the Voice notes section of [editor.md](editor.md).
 
 **Allowlist, never denylist** (`persistedQueries.ts`). A query persists only
 when its key is one of: `current-user`, `user-settings`, `instance-config`,

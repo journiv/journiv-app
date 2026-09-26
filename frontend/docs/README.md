@@ -11,7 +11,7 @@ and nearby tests.
 | routing, placement, API/client, query/cache, generated OpenAPI, or unit testing | [`architecture/frontend.md`](architecture/frontend.md) |
 | visual references or browser tests | [`../e2e/README.md`](../e2e/README.md) |
 | Reader or signed media URLs | [`features/reader.md`](features/reader.md) |
-| Editor, drafts, attachments, metadata editing, or Quill | [`features/editor.md`](features/editor.md) |
+| Editor, drafts, attachments, voice notes (audio recording), metadata editing, or Quill | [`features/editor.md`](features/editor.md) |
 | Quick Log: the lightweight capture sheet, `useShell().openQuickLog`, `seedNote` | [`features/quicklog.md`](features/quicklog.md) |
 | Timeline | [`features/timeline.md`](features/timeline.md) and `domain/moments.md` |
 | Journals | [`features/journals.md`](features/journals.md) |

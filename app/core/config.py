@@ -502,7 +502,10 @@ class Settings(BaseSettings):
                 "image/jpeg", "image/png", "image/gif", "image/webp",
                 "image/heic", "image/heif", "image/heic-sequence", "image/heif-sequence",
                 "video/mp4", "video/avi", "video/mov", "video/quicktime", "video/webm", "video/x-m4v",
-                "audio/mpeg", "audio/wav", "audio/ogg", "audio/m4a", "audio/aac"
+                "audio/mpeg", "audio/wav", "audio/ogg", "audio/m4a", "audio/aac",
+                # Browser dictation (MediaRecorder) produces WebM/Opus or MP4/AAC.
+                # libmagic reports an M4A-branded MP4 as audio/x-m4a.
+                "audio/webm", "audio/mp4", "audio/opus", "audio/x-m4a"
             ]
         return v
 
@@ -557,7 +560,7 @@ class Settings(BaseSettings):
             return [
                 ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif",
                 ".mp4", ".avi", ".mov", ".webm", ".m4v",
-                ".mp3", ".wav", ".ogg", ".m4a", ".aac"
+                ".mp3", ".wav", ".ogg", ".m4a", ".aac", ".opus"
             ]
         return v
 

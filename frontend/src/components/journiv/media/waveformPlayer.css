@@ -1,0 +1,65 @@
+/* Waveform player: an attached recording's playback (docs/features/editor.md,
+   Dictation). Tokens only — the waveform is quiet content, so it uses the
+   foreground and line roles, never the brand accent. */
+
+.jv-waveform {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.jv-waveform > audio {
+  display: none;
+}
+
+/* The fallback when there is no waveform yet: the browser's own control bar.
+   A native <audio> sizes from the browser's default, and setting `height` to
+   `auto` or a percentage collapses it to 0px — which the media gallery's
+   generic element rule (`height: 100%`) would do — so it is sized explicitly
+   here. 54px is the height Chromium gives it. */
+.jv-waveform__native {
+  display: block;
+  width: 100%;
+  height: 3.375rem;
+}
+
+/* The slider is the whole seek surface. Vertical pans still scroll the page;
+   only a horizontal drag scrubs. */
+.jv-waveform__track {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--tap-target);
+  border-radius: var(--radius-sm);
+  color: var(--line-strong);
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+.jv-waveform__track[aria-disabled="true"] {
+  cursor: default;
+}
+
+.jv-waveform__bars {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.jv-waveform__played {
+  position: absolute;
+  inset: 0;
+  color: var(--foreground);
+  pointer-events: none;
+}
+
+.jv-waveform__time {
+  flex: none;
+  min-width: 5.5ch;
+  color: var(--muted-foreground);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+}

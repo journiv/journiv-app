@@ -65,6 +65,45 @@ export function mediaCountLabel(moment: MomentResponse): string | null {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
+export type MomentLeadMedia =
+  | {
+      kind: "image";
+      src: string;
+      /** The picture's own type, for the placeholder if `src` fails to load. */
+      media: "image" | "video" | "audio" | "unknown";
+      hasAudio: boolean;
+    }
+  | { kind: "placeholder"; media: "audio" | "video" | "image" | "unknown" };
+
+/**
+ * The tile a list row shows for a Moment's attachments. A picture wins because
+ * it says the most. When no attachment has a thumbnail — audio never does, and a
+ * video or photo may not have one yet or at all — the row still gets a
+ * placeholder tile, so an attachment is never invisible: audio if any is
+ * attached, otherwise the newest attachment's own type. `hasAudio` lets a
+ * picture tile still say that a voice note or clip is attached too. The list's
+ * `media` is newest first.
+ */
+export function momentLeadMedia(
+  moment: MomentResponse,
+): MomentLeadMedia | null {
+  const items = moment.media ?? [];
+  const hasAudio = items.some((item) => item.media_type === "audio");
+  const picture = items.find((item) => item.signed_thumbnail_url);
+  if (picture?.signed_thumbnail_url) {
+    return {
+      kind: "image",
+      src: picture.signed_thumbnail_url,
+      media: picture.media_type,
+      hasAudio,
+    };
+  }
+  if (hasAudio) return { kind: "placeholder", media: "audio" };
+  const newest = items[0];
+  if (!newest) return null;
+  return { kind: "placeholder", media: newest.media_type };
+}
+
 /** Short human label for Moments that are not a written entry. */
 export function momentKindLabel(
   moment: MomentResponse,
