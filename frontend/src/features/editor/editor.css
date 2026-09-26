@@ -11,10 +11,11 @@
   min-height: 0;
   height: 100%;
   background: var(--card);
-  /* On-screen keyboard height, written at runtime by `useKeyboardInset` at the
+  /* Visual viewport, written at runtime by `useKeyboardInset` at the
      compact width (0 otherwise). The compact toolbar translates up by this so it
      docks above the keyboard on iOS. */
-  --jv-keyboard-inset: 0px;
+  --jv-vv-top: 0px;
+  --jv-vv-height: 100%;
 }
 
 .jv-editor__scroll {
@@ -518,7 +519,7 @@
 
   /* Compact: the formatting band re-orders below the scroll owner and docks at
      the bottom, above the on-screen keyboard. `useKeyboardInset.ts` writes the
-     live keyboard height to `--jv-keyboard-inset` on `.jv-editor` (and
+     visual viewport to `--jv-vv-*` on `.jv-editor` (and
      `data-kbd="open"` while a keyboard is up). The band is off-screen until the
      prose surface holds focus or a keyboard is up, so it never covers the
      writing while the writer is only reading back, and title editing does not
@@ -533,7 +534,21 @@
   }
   .jv-editor:has(.jv-editor__surface:focus-within) .jv-toolbar,
   .jv-editor[data-kbd="open"] .jv-toolbar {
-    transform: translateY(calc(-1 * var(--jv-keyboard-inset, 0px)));
+    transform: none;
+  }
+  /* While the keyboard is up the editor is pinned to the visual viewport, so
+     iOS panning the page to reveal the caret cannot scroll the header away or
+     leave the toolbar behind the keyboard: the toolbar is simply the bottom of
+     the visible area. */
+  .jv-editor[data-kbd="open"] {
+    position: fixed;
+    inset-inline: 0;
+    top: var(--jv-vv-top);
+    height: var(--jv-vv-height);
+    z-index: 40;
+  }
+  .jv-editor[data-kbd="open"] .jv-toolbar {
+    padding-bottom: 0;
   }
   /* One scrolling row, not a collapsing bar: every control stays inline and the
      writer swipes left/right to reach it (EditorToolbar passes `scrollable`).
@@ -554,11 +569,7 @@
      viewport does not shrink there), so the caret must clear both it and the
      keyboard when writing near the end. */
   .jv-editor__scroll {
-    scroll-padding-bottom: calc(
-      var(--jv-keyboard-inset, 0px) +
-      var(--jv-bottom-bar-height) +
-      var(--space-6)
-    );
+    scroll-padding-bottom: calc(var(--jv-bottom-bar-height) + var(--space-6));
   }
 }
 
