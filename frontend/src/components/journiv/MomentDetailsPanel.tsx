@@ -421,8 +421,16 @@ function ActivitiesSection({ moment, disabled, runWithMoment }: SectionProps) {
   );
 
   const toggle = (activityId: string, checked: boolean) => {
+    const primaryMoodId = moment?.primary_mood_id;
+    // A mood-only row (no activity_id — a Daylio-import artifact, or a past
+    // fold-in of the primary mood below) only ever represents "this moment's
+    // mood"; once the moment's mood has moved on, keeping the old one around
+    // is stale, not history worth preserving, so it's dropped rather than
+    // carried forward. Rows that carry an activity always stay, whatever
+    // mood_id they happen to pair with.
     const preserved = currentLinks
       .filter((link) => link.activity?.id !== activityId)
+      .filter((link) => link.activity || link.mood?.id === primaryMoodId)
       .map((link) => ({
         mood_id: link.mood?.id ?? null,
         activity_id: link.activity?.id ?? null,
@@ -436,7 +444,6 @@ function ActivitiesSection({ moment, disabled, runWithMoment }: SectionProps) {
     // rejects the write. Fold it in as its own activity-less row rather than
     // attaching it to whichever activity happens to be toggled, so an
     // unrelated activity edit can never look like it changed the mood pairing.
-    const primaryMoodId = moment?.primary_mood_id;
     const hasPrimaryMood = next.some((item) => item.mood_id === primaryMoodId);
     mutation.mutate(
       primaryMoodId && !hasPrimaryMood

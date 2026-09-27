@@ -122,7 +122,7 @@ export function QuickLogSheet({
   const hasContent =
     note.trim().length > 0 ||
     Boolean(current?.primary_mood_id) ||
-    (current?.mood_activity?.length ?? 0) > 0 ||
+    (current?.mood_activity?.some((link) => link.activity) ?? false) ||
     (current?.people?.length ?? 0) > 0 ||
     (current?.tags?.length ?? 0) > 0 ||
     Boolean(current?.location_json) ||
