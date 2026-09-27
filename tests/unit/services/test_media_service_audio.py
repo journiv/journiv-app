@@ -58,6 +58,8 @@ def fixtures_dir(tmp_path_factory) -> Path:
         _ffmpeg(*sine, "-c:a", "libopus", "-f", "webm", "-", stdout=out)
     # M4A brand (libmagic: audio/x-m4a) and plain isom brand (libmagic: video/mp4).
     _ffmpeg(*sine, "-c:a", "aac", "-f", "ipod", str(root / "audio_only.m4a"))
+    # Opus is legal in MP4 too; stored as `.m4a` it is its own conversion target.
+    _ffmpeg(*sine, "-c:a", "libopus", "-f", "mp4", str(root / "opus_in_mp4.m4a"))
     _ffmpeg(*sine, "-c:a", "aac", "-f", "mp4", str(root / "audio_isom.mp4"))
     _ffmpeg(
         "-f", "lavfi", "-i", "testsrc=duration=1:size=64x64:rate=10",
@@ -228,6 +230,12 @@ class TestProbeStreams:
         result = service.probe_streams(fixtures_dir / "audio_only.m4a")
         assert (result["ok"], result["has_audio"], result["has_video"]) == (True, True, False)
 
+    def test_reports_the_audio_codec_and_channels(self, service, fixtures_dir):
+        webm = service.probe_streams(fixtures_dir / "audio_only.webm")
+        m4a = service.probe_streams(fixtures_dir / "audio_only.m4a")
+        assert (webm["audio_codec"], webm["audio_channels"]) == ("opus", 1)
+        assert (m4a["audio_codec"], m4a["audio_channels"]) == ("aac", 1)
+
     def test_video_webm(self, service, fixtures_dir):
         result = service.probe_streams(fixtures_dir / "video_real.webm")
         assert (result["ok"], result["has_video"]) == (True, True)
@@ -242,6 +250,7 @@ class TestProbeStreams:
             result = service.probe_streams(path)
             assert result == {
                 "ok": False, "has_video": False, "has_audio": False, "duration": None,
+                "audio_codec": None, "audio_channels": None,
             }
 
     def test_timeout_is_a_failed_probe(self, service, fixtures_dir):
@@ -283,7 +292,7 @@ class TestExtractWaveform:
 # ─── Task 0.2: process_uploaded_file ─────────────────────────────────
 
 class TestProcessAudioOnlyContainer:
-    def test_audio_only_webm_becomes_audio(
+    def test_audio_only_webm_becomes_audio_as_m4a(
         self, service, test_db, test_user, test_entry, fixtures_dir
     ):
         media = _stage_upload(
@@ -296,15 +305,19 @@ class TestProcessAudioOnlyContainer:
 
         assert done.upload_status == UploadStatus.COMPLETED
         assert done.media_type == MediaType.AUDIO
-        assert done.mime_type == "audio/webm"
+        assert done.mime_type == "audio/mp4"
         assert done.duration == pytest.approx(1.0, abs=0.1)
         assert done.width is None and done.height is None
         assert done.thumbnail_path is None
         assert len(done.waveform_peaks) == 400
-        assert done.file_path == f"{test_user.id}/audio/dictation.webm"
-        assert (service.media_root / done.file_path).exists()
+        assert done.file_path == f"{test_user.id}/audio/dictation.m4a"
+        assert done.original_filename == "dictation.m4a"
+        stored = service.media_root / done.file_path
+        assert stored.exists()
+        assert done.file_size == stored.stat().st_size
         assert not old_path.exists()
         assert not old_path.parent.exists()  # empty videos/ directory is tidied
+        assert not (service.media_root / str(test_user.id) / "audio" / "dictation.webm").exists()
 
     def test_audio_only_mp4_becomes_audio_mp4(
         self, service, test_db, test_user, test_entry, fixtures_dir
@@ -318,6 +331,7 @@ class TestProcessAudioOnlyContainer:
         assert done.upload_status == UploadStatus.COMPLETED
         assert done.media_type == MediaType.AUDIO
         assert done.mime_type == "audio/mp4"
+        # Already AAC: moved, never re-encoded.
         assert done.file_path == f"{test_user.id}/audio/dictation.mp4"
 
     def test_m4a_brand_is_normalised_to_audio_mp4(
@@ -444,6 +458,7 @@ class TestProcessAudioOnlyContainer:
         assert done.file_path == original_path
         assert (service.media_root / original_path).exists()
         assert not audio_path.exists()
+        assert not audio_path.with_suffix(".m4a").exists()
         assert not audio_path.parent.exists()
 
     def test_reprocessing_identical_bytes_adopts_the_existing_audio_file(
@@ -466,9 +481,11 @@ class TestProcessAudioOnlyContainer:
 
         assert done.upload_status == UploadStatus.COMPLETED
         assert done.media_type == MediaType.AUDIO
-        assert done.file_path == f"{test_user.id}/audio/same.webm"
+        assert done.mime_type == "audio/mp4"
+        assert done.file_path == f"{test_user.id}/audio/same.m4a"
         assert (service.media_root / done.file_path).exists()
         assert not stale_video_path.exists()
+        assert not (service.media_root / str(test_user.id) / "audio" / "same.webm").exists()
 
     def test_records_sharing_the_stored_file_follow_the_move(
         self, service, test_db, test_user, test_entry, fixtures_dir
@@ -483,7 +500,7 @@ class TestProcessAudioOnlyContainer:
             mime_type="video/webm",
             upload_status=UploadStatus.PENDING,
             file_path=media.file_path,
-            original_filename="shared.webm",
+            original_filename="Morning walk.webm",
             file_size=media.file_size,
         )
         test_db.add(sibling)
@@ -492,8 +509,144 @@ class TestProcessAudioOnlyContainer:
         done = _process(service, test_db, test_user, media)
         test_db.expire_all()
 
-        assert test_db.get(MomentMedia, sibling.id).file_path == done.file_path
+        moved_sibling = test_db.get(MomentMedia, sibling.id)
+        assert moved_sibling.file_path == done.file_path
+        assert moved_sibling.mime_type == "audio/mp4"
+        assert moved_sibling.file_size == done.file_size
+        assert moved_sibling.original_filename == "Morning walk.m4a"
         # The sibling's own queued task then finds the file at its recorded path.
         finished = _process(service, test_db, test_user, sibling)
         assert finished.upload_status == UploadStatus.COMPLETED
         assert finished.media_type == MediaType.AUDIO
+
+
+# ─── Conversion to M4A (iOS Safari cannot reliably play WebM) ────────
+
+class TestConvertToM4a:
+    def test_converted_file_is_aac_with_moov_first(
+        self, service, test_db, test_user, test_entry, fixtures_dir
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "live.webm", filename="voice-note.webm",
+        )
+        done = _process(service, test_db, test_user, media)
+
+        stored = service.media_root / done.file_path
+        probe = service.probe_streams(stored)
+        assert (probe["audio_codec"], probe["audio_channels"]) == ("aac", 1)
+        assert probe["duration"] == pytest.approx(1.0, abs=0.1)
+        data = stored.read_bytes()
+        assert data.index(b"moov") < data.index(b"mdat")  # +faststart
+
+    def test_failed_conversion_keeps_the_original_recording(
+        self, service, test_db, test_user, test_entry, fixtures_dir
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "audio_only.webm", filename="dictation.webm",
+        )
+        real_run = subprocess.run
+
+        def ffmpeg_fails(cmd, *args, **kwargs):
+            if cmd[0] == "ffmpeg":
+                return subprocess.CompletedProcess(cmd, 1, "", "encoder unavailable")
+            return real_run(cmd, *args, **kwargs)
+
+        with patch("app.services.media_service.subprocess.run", side_effect=ffmpeg_fails):
+            done = _process(service, test_db, test_user, media)
+
+        audio_dir = service.media_root / str(test_user.id) / "audio"
+        assert done.upload_status == UploadStatus.COMPLETED
+        assert done.media_type == MediaType.AUDIO
+        assert done.mime_type == "audio/webm"
+        assert done.file_path == f"{test_user.id}/audio/dictation.webm"
+        assert (service.media_root / done.file_path).exists()
+        assert sorted(p.name for p in audio_dir.iterdir()) == ["dictation.webm"]
+
+    def test_aac_is_not_reencoded(
+        self, service, test_db, test_user, test_entry, fixtures_dir
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "audio_only.m4a", filename="dictation.m4a",
+            directory="audio", mime_type="audio/x-m4a", media_type=MediaType.AUDIO,
+        )
+        before = (service.media_root / media.file_path).read_bytes()
+        done = _process(service, test_db, test_user, media)
+        assert done.file_path == media.file_path
+        assert (service.media_root / done.file_path).read_bytes() == before
+
+
+class TestOpusAlreadyNamedM4a:
+    def test_recording_is_kept_when_it_is_its_own_target(
+        self, service, test_db, test_user, test_entry, fixtures_dir
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "opus_in_mp4.m4a", filename="dictation.m4a",
+            directory="audio", mime_type="audio/mp4", media_type=MediaType.AUDIO,
+        )
+        before = (service.media_root / media.file_path).read_bytes()
+
+        done = _process(service, test_db, test_user, media)
+
+        assert done.upload_status == UploadStatus.COMPLETED
+        assert done.file_path == media.file_path
+        assert (service.media_root / done.file_path).read_bytes() == before
+
+
+class TestExistingConversionTarget:
+    @pytest.mark.parametrize("occupant", ["opus_in_mp4.m4a", "garbage.webm"])
+    def test_recording_is_kept_when_the_target_is_not_aac(
+        self, service, test_db, test_user, test_entry, fixtures_dir, occupant
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "audio_only.webm", filename="dictation.webm",
+        )
+        audio_dir = service.media_root / str(test_user.id) / "audio"
+        audio_dir.mkdir(parents=True)
+        shutil.copy(fixtures_dir / occupant, audio_dir / "dictation.m4a")
+
+        done = _process(service, test_db, test_user, media)
+
+        assert done.upload_status == UploadStatus.COMPLETED
+        assert done.mime_type == "audio/webm"
+        assert done.file_path == f"{test_user.id}/audio/dictation.webm"
+        assert (service.media_root / done.file_path).exists()
+
+    def test_existing_aac_is_adopted_with_its_duration(
+        self, service, test_db, test_user, test_entry, fixtures_dir
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "live.webm", filename="dictation.webm",
+        )
+        audio_dir = service.media_root / str(test_user.id) / "audio"
+        audio_dir.mkdir(parents=True)
+        shutil.copy(fixtures_dir / "audio_only.m4a", audio_dir / "dictation.m4a")
+
+        done = _process(service, test_db, test_user, media)
+
+        assert done.file_path == f"{test_user.id}/audio/dictation.m4a"
+        assert done.mime_type == "audio/mp4"
+        assert done.duration == pytest.approx(1.0, abs=0.1)
+        assert not (audio_dir / "dictation.webm").exists()
+
+
+class TestNameForStoredFile:
+    @pytest.mark.parametrize(
+        ("filename", "stored", "expected"),
+        [
+            ("note.webm", "u/audio/abc.m4a", "note.m4a"),
+            ("Note.WEBM", "u/audio/abc.m4a", "Note.m4a"),
+            ("note.m4a", "u/audio/abc.m4a", "note.m4a"),
+            # Not a media extension: the whole name is kept.
+            ("Walk 1.5", "u/audio/abc.m4a", "Walk 1.5.m4a"),
+            (None, "u/audio/abc.m4a", None),
+            ("note.webm", None, "note.webm"),
+        ],
+    )
+    def test_takes_the_stored_extension(self, filename, stored, expected):
+        assert MediaService._name_for_stored_file(filename, stored) == expected

@@ -11,7 +11,6 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, Request, status
 from fastapi.exceptions import RequestValidationError
-from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.sessions import SessionMiddleware
@@ -43,6 +42,7 @@ from app.core.http_client import close_http_client
 from app.core.logging_config import log_error, log_info, log_warning, setup_logging
 from app.core.rate_limiting import limiter, rate_limit_exceeded_handler
 from app.frontend import frontend_router
+from app.middleware.compression import MediaSafeGZipMiddleware
 from app.middleware.csp_middleware import create_csp_middleware
 from app.middleware.request_logging import RequestLoggingMiddleware, request_id_ctx
 from app.plus import plus_public_router
@@ -224,8 +224,9 @@ else:
         log_warning("TrustedHostMiddleware allowing all hosts.")
 
 # GZip Middleware.
-# This compresses responses (HTML, JSON, JS, CSS, etc.) larger than 1KB.
-app.add_middleware(cast(Any, GZipMiddleware), minimum_size=1024)
+# This compresses responses (HTML, JSON, JS, CSS, etc.) larger than 1KB. Media
+# and byte ranges pass through untouched (app/middleware/compression.py).
+app.add_middleware(cast(Any, MediaSafeGZipMiddleware), minimum_size=1024)
 
 app.add_middleware(cast(Any, TrustedHostMiddleware), allowed_hosts=trusted_hosts)
 

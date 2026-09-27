@@ -465,6 +465,19 @@ container duration, so the decoded length is the fallback. Until peaks exist
 (`waveform_peaks` is `null`) the player is a plain `<audio>`: a missing waveform
 never means missing playback.
 
+**Stored as AAC.** iOS Safari does not reliably play WebM voice notes: on
+iOS 18 a WebM from any recorder (desktop Chrome or Safari itself) raises
+`MEDIA_ERR_NETWORK` and never starts, while AAC in MP4 plays everywhere. So the
+worker re-encodes Opus/Vorbis audio to AAC-LC in an M4A (64 kbps per channel,
+`+faststart`) and stores that instead: the record becomes `audio/mp4`,
+`.m4a`, with the upload's `checksum` kept for deduplication. AAC, MP3 and PCM
+uploads are left as they are. A failed conversion keeps the original file
+rather than losing the recording. The recorder still records WebM/Opus where it
+can — Chrome's AAC `MediaRecorder` fails on ordinary mono microphone input — so
+this conversion is what makes a recording playable on every device. Media
+responses and byte ranges are never gzip-encoded
+(`app/middleware/compression.py`).
+
 ### Voice note known gaps
 
 - There is no transcript, so a recording cannot be searched or read as text; it
@@ -475,6 +488,9 @@ never means missing playback.
   backgrounded, the `audio/mp4` container, and the keyboard-inset interplay — is
   implemented against the platform contracts but has not been verified on a real
   device. What was captured is staged and offered for recovery.
+- Voice notes stored as WebM before AAC conversion existed are not converted and
+  still fail to play on iOS 18 Safari. Re-uploading identical bytes reuses that
+  stored WebM through deduplication.
 
 ## Local and server drafts
 
