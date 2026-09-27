@@ -1670,7 +1670,9 @@ class MediaService:
                 return None
         else:
             channels = min(int(metadata.get("audio_channels") or 1), 2)
-            tmp_path = new_path.with_name(f"{new_path.name}.tmp")
+            # Unique, so a concurrent conversion of the same bytes cannot write
+            # into this one's output between its probe and its rename.
+            tmp_path = new_path.with_name(f"{new_path.name}.{uuid.uuid4().hex}.tmp")
             cmd = [
                 "ffmpeg", "-v", "error", "-nostdin", "-y",
                 "-i", str(source),
