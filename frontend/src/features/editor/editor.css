@@ -11,9 +11,9 @@
   min-height: 0;
   height: 100%;
   background: var(--card);
-  /* Visual viewport, written at runtime by `useKeyboardInset` at the
-     compact width (0 otherwise). The compact toolbar translates up by this so it
-     docks above the keyboard on iOS. */
+  /* Visual viewport, written at runtime by `useKeyboardInset` at the compact
+     width (unset otherwise). While a keyboard is up the editor is pinned to it,
+     so the compact toolbar docks above the keyboard on iOS. */
   --jv-vv-top: 0px;
   --jv-vv-height: 100%;
 }
@@ -565,9 +565,9 @@
   .jv-toolbar__inner::-webkit-scrollbar {
     display: none;
   }
-  /* The docked band floats over the bottom of the scrollport on iOS (the layout
-     viewport does not shrink there), so the caret must clear both it and the
-     keyboard when writing near the end. */
+  /* Before the keyboard pin applies (focus lands a beat before the viewport
+     reports the keyboard) the docked band floats over the bottom of the
+     scrollport, so the caret must clear it when writing near the end. */
   .jv-editor__scroll {
     scroll-padding-bottom: calc(var(--jv-bottom-bar-height) + var(--space-6));
   }

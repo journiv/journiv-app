@@ -35,17 +35,23 @@ never a sticky layer over the prose. At the regular width it is a full-width ban
 directly under PageBar; at the compact width it re-orders (CSS `order`) below the
 scroll owner and docks at the bottom, above the on-screen keyboard, and is shown
 only while the prose surface holds focus or a keyboard is up. `useKeyboardInset`
-tracks `window.visualViewport` and writes the live keyboard height to
-`--jv-keyboard-inset` (and `data-kbd="open"`) on the editor root — imperatively,
-never as React state, so viewport churn cannot re-render the page. This is a
-bounded exception to DESIGN.md's "no JS layout state": it offsets one
-fixed-height bar and drives no reflow.
+tracks `window.visualViewport` and writes its offset and height to `--jv-vv-top`
+/ `--jv-vv-height` (and `data-kbd="open"`) on the editor root — imperatively,
+never as React state, so viewport churn cannot re-render the page. While the
+keyboard is up, `editor.css` pins the whole editor (PageBar, scroll owner,
+toolbar) to the visual viewport, so iOS panning the page to reveal the caret can
+neither scroll the PageBar off the top nor leave the toolbar behind the
+keyboard. "Keyboard up" is judged by how much shorter the visual viewport is than
+the layout viewport, never by where its bottom edge sits: iOS pans the visual
+viewport to the bottom of the page when writing low in the body, which would
+otherwise read as "no keyboard". On the transition to pinned, the caret is
+scrolled back inside the (now shorter) scroll owner once. This is a bounded
+exception to DESIGN.md's "no JS layout state": it drives no React reflow.
 
 Because the band sits outside the scrollport at the regular width, its
-`scroll-padding-top` is now only a small breathing gutter. At the compact width
-the docked bar floats over the bottom of the scrollport on iOS (the layout
-viewport does not shrink there), so `scroll-padding-bottom` includes the live
-keyboard inset plus the bar height. Both the browser's own caret tracking and
+`scroll-padding-top` is now only a small breathing gutter. At the compact width,
+until the keyboard pin applies, the docked bar floats over the bottom of the
+scrollport, so `scroll-padding-bottom` includes the bar height. Both the browser's own caret tracking and
 Quill's `scrollRectIntoView` honour scroll-padding, so a line scrolled into view
 lands clear of the bar rather than behind it.
 
