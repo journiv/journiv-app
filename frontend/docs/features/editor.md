@@ -527,7 +527,8 @@ shared `components/journiv/MomentDetailsPanel` (Quick Log is its second
 consumer — [quicklog.md](quicklog.md)); the editor keeps only the popover shell
 and injects its Immich people-suggestion strip through the panel's
 `renderPeopleSuggestions` slot. It lazily ensures a Moment then writes mood,
-location, weather, people, and tags through their actual operations. Header metadata and foot chips refresh after success. Existing
+activities, location, weather, people, and tags through their actual
+operations. Header metadata and foot chips refresh after success. Existing
 Moment metadata writes are immediate and not prose-dirty; new-entry writes are
 dirty so Cancel protects the created draft. Every failed user action reaches the
 screen with a human message.
@@ -538,6 +539,17 @@ weather requires coordinates and shows an enabled-service failure without
 saving. People writes replace the complete set; tags add by name and remove by
 id. Immich people suggestions are add-only, never automatic, and a suggestion
 fetch failure is a quiet retry state rather than a failed save.
+
+Activities write as a full-replace set on the moment's `mood_activity` link
+rows, reconstructed from the moment's current rows so a toggle only touches
+the one activity, never any other-origin row (a Daylio-import mood pairing,
+say) that happened to share the set. Attaching an activity is the actual
+mechanism that can complete a Library goal built on it — the backend resolves
+goal logs for the moment's date as a side effect of the same write and returns
+the result in `completed_goals`. The panel diffs that against the moment as it
+stood immediately before the write and reports any newly-completed goal as a
+success toast; goal creation, editing, and history stay entirely in Library
+(docs/features/library.md).
 
 ## Quill boundary
 

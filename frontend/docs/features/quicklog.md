@@ -29,17 +29,17 @@ from anywhere else.
 
 Top to bottom: mood, then a short note, then a prominent "Add media" action with
 inline previews, then an "Add details" disclosure. Mood and the disclosed
-fields (location, weather, people, tags) are the shared
+fields (activities, location, weather, people, tags) are the shared
 [`MomentDetailsPanel`](../../src/components/journiv/MomentDetailsPanel.tsx) —
 Quick Log is its second consumer, which is why it moved out of the editor
 feature. `sections={["mood"]}` renders it standalone at the top;
-`sections={["location","weather","people","tags"]}` renders the rest in the
-disclosure. Nothing autofocuses — mood is the intended first interaction and a
-compact sheet must not summon the keyboard on open.
+`sections={["activities","location","weather","people","tags"]}` renders the
+rest in the disclosure. Nothing autofocuses — mood is the intended first
+interaction and a compact sheet must not summon the keyboard on open.
 
-Activities are deliberately out of v1. When an activity-selection component
-exists it belongs in both Quick Log and the full editor; the panel's `sections`
-list is the seam for adding it.
+Attaching an activity here can complete a Library goal built on it, the same
+side effect the editor's popover triggers; the panel surfaces it as a success
+toast (docs/features/editor.md "Moment details").
 
 ## Server identity and lifecycle
 
@@ -61,8 +61,8 @@ no draft flag**, so the row is an ordinary note / mood / media-only Moment
   **except** that media already uploaded is kept as a media-only Moment, the
   same rule the editor's Cancel uses (`editor.md`). The unsaved note is dropped.
 
-"Meaningful content" is a note, mood, person, tag, location, or media —
-auto-fetched weather on its own does not count. The primary actions are disabled
+"Meaningful content" is a note, mood, activity, person, tag, location, or
+media — auto-fetched weather on its own does not count. The primary actions are disabled
 until then.
 
 The note lives in `moment.note` and is capped at 500 characters server-side. It

@@ -122,6 +122,7 @@ export function QuickLogSheet({
   const hasContent =
     note.trim().length > 0 ||
     Boolean(current?.primary_mood_id) ||
+    (current?.mood_activity?.length ?? 0) > 0 ||
     (current?.people?.length ?? 0) > 0 ||
     (current?.tags?.length ?? 0) > 0 ||
     Boolean(current?.location_json) ||
@@ -440,13 +441,19 @@ export function QuickLogSheet({
               <span className="jv-quicklog__disclosure-text">
                 <span className="jv-label">Add details</span>
                 <span className="jv-caption">
-                  location, weather, people, tags
+                  activities, location, weather, people, tags
                 </span>
               </span>
             </summary>
             <div className="jv-quicklog__details-body">
               <MomentDetailsPanel
-                sections={["location", "weather", "people", "tags"]}
+                sections={[
+                  "activities",
+                  "location",
+                  "weather",
+                  "people",
+                  "tags",
+                ]}
                 moment={current}
                 ensureMomentId={ensureMomentId}
                 onSaved={onDetailsSaved}
