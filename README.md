@@ -8,15 +8,22 @@
 Journiv is a self-hosted private journal. It features comprehensive journaling capabilities including mood tracking, prompt-based journaling, media uploads, analytics, and advanced search with a clean and minimal UI.
 
 <p align="center">
-  <a href="https://www.pikapods.com/pods?run=journiv" target="_blank">
-    <img src="https://www.pikapods.com/static/run-button.svg" alt="Run on PikaPods">
+  <a href="https://www.pikapods.com/pods?run=journiv">
+    <img
+      src="https://www.pikapods.com/static/run-button.svg"
+      alt="Run on PikaPods"
+      height="40"
+    />
   </a>
   &nbsp;&nbsp;
-  <a href="https://easypanel.io/templates/journiv" target="_blank">
-    <img src="https://easypanel.io/img/deploy-on-easypanel-40.svg" alt="Deploy on Easypanel">
+  <a href="https://easypanel.io/templates/journiv">
+    <img
+      src="https://easypanel.io/img/deploy-on-easypanel-40.svg"
+      alt="Deploy on Easypanel"
+      height="33"
+    />
   </a>
 </p>
-
 <p align="center">
   <a href="https://journiv.com" target="_blank">
     <img src="https://img.shields.io/badge/Visit%20Website-405DE6?style=for-the-badge&logo=google-chrome&logoColor=white" alt="Visit Journiv Website">
