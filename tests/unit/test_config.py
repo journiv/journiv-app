@@ -76,6 +76,59 @@ class TestCookieAuthHttpSafety:
         assert settings.allow_insecure_cookie_auth_over_http is False
 
 
+class TestProductionRedisWarning:
+    base_settings = {
+        "secret_key": "test-secret-key-for-testing-only-32-chars",
+        "db_driver": "sqlite",
+        "database_url": DEFAULT_SQLITE_URL,
+        "domain_scheme": "https",
+    }
+
+    @pytest.mark.parametrize("redis_url", [None, "   "])
+    def test_missing_redis_warns_with_explicit_celery_urls(self, caplog, redis_url):
+        with caplog.at_level("WARNING", logger="app.core.config"):
+            settings = make_settings(
+                **self.base_settings,
+                environment="production",
+                redis_url=redis_url,
+                celery_broker_url="redis://broker:6379/0",
+                celery_result_backend="redis://broker:6379/0",
+            )
+
+        assert settings.celery_broker_url == "redis://broker:6379/0"
+        assert "REDIS_URL not configured" in caplog.text
+        assert "CELERY_BROKER_URL not configured" not in caplog.text
+
+    def test_redis_url_populates_celery_urls_without_warning(self, caplog):
+        with caplog.at_level("WARNING", logger="app.core.config"):
+            settings = make_settings(
+                **self.base_settings,
+                environment="production",
+                redis_url="redis://broker:6379/0",
+                celery_broker_url=None,
+                celery_result_backend=None,
+            )
+
+        assert settings.celery_broker_url == "redis://broker:6379/0"
+        assert settings.celery_result_backend == "redis://broker:6379/0"
+        assert "REDIS_URL not configured" not in caplog.text
+        assert "CELERY_BROKER_URL not configured" not in caplog.text
+
+    def test_missing_broker_still_warns(self, caplog):
+        with caplog.at_level("WARNING", logger="app.core.config"):
+            settings = make_settings(
+                **self.base_settings,
+                environment="production",
+                redis_url=None,
+                celery_broker_url=None,
+                celery_result_backend="redis://broker:6379/0",
+            )
+
+        assert settings.celery_broker_url is None
+        assert "CELERY_BROKER_URL not configured" in caplog.text
+        assert "REDIS_URL not configured" in caplog.text
+
+
 class TestDBDriverValidation:
     """Test DB_DRIVER field validation and requirements."""
 

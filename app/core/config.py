@@ -900,14 +900,20 @@ class Settings(BaseSettings):
                 "limitations and configure regular backups."
             )
 
-        # Check Celery configuration for import/export
+        # Check Celery configuration for media processing and import/export
         if not self.celery_broker_url:
             warnings.append(
-                "CELERY_BROKER_URL not configured. Import/export features require Celery with Redis."
+                "CELERY_BROKER_URL not configured. Media uploads and import/export "
+                "require a Celery worker with Redis/Valkey."
             )
         if not self.celery_result_backend:
             warnings.append(
                 "CELERY_RESULT_BACKEND not configured. Job status tracking will not work."
+            )
+        if not self.redis_url or not self.redis_url.strip():
+            warnings.append(
+                "REDIS_URL not configured. Media processing requires Redis/Valkey "
+                "for distributed locking, even when CELERY_BROKER_URL is set."
             )
 
         # Security warnings
