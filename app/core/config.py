@@ -910,6 +910,11 @@ class Settings(BaseSettings):
             warnings.append(
                 "CELERY_RESULT_BACKEND not configured. Job status tracking will not work."
             )
+        if not self.redis_url or not self.redis_url.strip():
+            warnings.append(
+                "REDIS_URL not configured. Media processing requires Redis/Valkey "
+                "for distributed locking, even when CELERY_BROKER_URL is set."
+            )
 
         # Security warnings
         if self.access_token_expire_minutes > 60:
