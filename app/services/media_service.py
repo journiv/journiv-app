@@ -1654,8 +1654,21 @@ class MediaService:
             )
             return None
 
+        def is_aac(probe: Dict[str, Any]) -> bool:
+            return probe["ok"] and probe["has_audio"] and probe["audio_codec"] == "aac"
+
         created = False
-        if not new_path.exists():
+        if new_path.exists():
+            # Normally an earlier run's output, but adopting it deletes the
+            # original on commit, so it must be what this would have written.
+            probe = self.probe_streams(new_path)
+            if not is_aac(probe):
+                log_warning(
+                    f"Not adopting {new_relative}: it is not readable AAC; keeping {source_relative}",
+                    media_id=media_id,
+                )
+                return None
+        else:
             channels = min(int(metadata.get("audio_channels") or 1), 2)
             tmp_path = new_path.with_name(f"{new_path.name}.tmp")
             cmd = [
@@ -1676,8 +1689,8 @@ class MediaService:
                 if result.returncode != 0:
                     raise RuntimeError(result.stderr.strip() or f"ffmpeg exited {result.returncode}")
                 probe = self.probe_streams(tmp_path)
-                if not probe["ok"] or not probe["has_audio"]:
-                    raise RuntimeError("converted file has no readable audio stream")
+                if not is_aac(probe):
+                    raise RuntimeError("converted file has no readable AAC stream")
                 os.replace(tmp_path, new_path)
             except Exception as exc:
                 tmp_path.unlink(missing_ok=True)
@@ -1687,8 +1700,8 @@ class MediaService:
                 )
                 return None
             created = True
-            if probe["duration"] is not None:
-                metadata["duration"] = probe["duration"]
+        if probe["duration"] is not None:
+            metadata["duration"] = probe["duration"]
 
         metadata["mime_type"] = "audio/mp4"
         log_info(

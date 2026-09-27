@@ -596,6 +596,45 @@ class TestOpusAlreadyNamedM4a:
         assert (service.media_root / done.file_path).read_bytes() == before
 
 
+class TestExistingConversionTarget:
+    @pytest.mark.parametrize("occupant", ["opus_in_mp4.m4a", "garbage.webm"])
+    def test_recording_is_kept_when_the_target_is_not_aac(
+        self, service, test_db, test_user, test_entry, fixtures_dir, occupant
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "audio_only.webm", filename="dictation.webm",
+        )
+        audio_dir = service.media_root / str(test_user.id) / "audio"
+        audio_dir.mkdir(parents=True)
+        shutil.copy(fixtures_dir / occupant, audio_dir / "dictation.m4a")
+
+        done = _process(service, test_db, test_user, media)
+
+        assert done.upload_status == UploadStatus.COMPLETED
+        assert done.mime_type == "audio/webm"
+        assert done.file_path == f"{test_user.id}/audio/dictation.webm"
+        assert (service.media_root / done.file_path).exists()
+
+    def test_existing_aac_is_adopted_with_its_duration(
+        self, service, test_db, test_user, test_entry, fixtures_dir
+    ):
+        media = _stage_upload(
+            service, test_db, test_user, test_entry,
+            fixtures_dir / "live.webm", filename="dictation.webm",
+        )
+        audio_dir = service.media_root / str(test_user.id) / "audio"
+        audio_dir.mkdir(parents=True)
+        shutil.copy(fixtures_dir / "audio_only.m4a", audio_dir / "dictation.m4a")
+
+        done = _process(service, test_db, test_user, media)
+
+        assert done.file_path == f"{test_user.id}/audio/dictation.m4a"
+        assert done.mime_type == "audio/mp4"
+        assert done.duration == pytest.approx(1.0, abs=0.1)
+        assert not (audio_dir / "dictation.webm").exists()
+
+
 class TestNameForStoredFile:
     @pytest.mark.parametrize(
         ("filename", "stored", "expected"),
