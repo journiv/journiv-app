@@ -7,8 +7,9 @@ or any work that renders moment metadata and time.
 
 A Moment is a container. Its optional Entry is writing; a Moment is meaningful
 when it has any entry, note, mood, prompt, pin, media, location, weather, tags,
-or people. Classification belongs in [src/lib/moment.ts](../../src/lib/moment.ts);
-do not recreate it in a component.
+people, or activities. Classification belongs in
+[src/lib/moment.ts](../../src/lib/moment.ts); do not recreate it in a
+component.
 
 | Kind | Condition | Rendering rule |
 | --- | --- | --- |

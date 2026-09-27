@@ -4,12 +4,15 @@ import type { ReactNode } from "react";
 import { useCallback, useMemo, useState } from "react";
 import { api } from "../../api/client/api";
 import type {
+  ActivityResponse,
   LocationResult,
+  MomentMoodActivityInput,
   MomentResponse,
   WeatherData,
 } from "../../api/generated/types.gen";
 import { queryKeys } from "../../api/query/keys";
 import {
+  activitiesQuery,
   moodsQuery,
   peopleQuery,
   tagSearchQuery,
@@ -23,13 +26,15 @@ import { Button } from "../ui/button";
 import { IconButton } from "../ui/icon-button";
 import { Input } from "../ui/input";
 import { Skeleton } from "../ui/skeleton";
+import { toast } from "../ui/toast";
+import { EntityGlyph } from "./EntityGlyph";
 import { locationLabel, moodColor } from "./MomentMeta";
 import { StatusView } from "./StatusView";
 import "./momentDetails.css";
 
 /**
  * Editing for the metadata the reader shows via `MomentMeta` and `MomentChips`:
- * mood, location, weather, people and tags.
+ * mood, activities, location, weather, people and tags.
  *
  * Two consumers (docs/architecture/frontend.md — a Journiv product component is
  * one shared by at least two features):
@@ -46,6 +51,7 @@ import "./momentDetails.css";
  */
 export type MomentDetailsSection =
   | "mood"
+  | "activities"
   | "location"
   | "weather"
   | "people"
@@ -53,6 +59,7 @@ export type MomentDetailsSection =
 
 const ALL_SECTIONS: readonly MomentDetailsSection[] = [
   "mood",
+  "activities",
   "location",
   "weather",
   "people",
@@ -80,8 +87,8 @@ export type MomentDetailsPanelProps = {
   loggedTimezone: string;
   disabled?: boolean;
   /**
-   * Which field groups to render, in this order. Defaults to all five. Quick
-   * Log renders `["mood"]` at the top of the sheet and the remaining four in
+   * Which field groups to render, in this order. Defaults to all six. Quick
+   * Log renders `["mood"]` at the top of the sheet and the remaining five in
    * its disclosure.
    */
   sections?: readonly MomentDetailsSection[];
@@ -114,9 +121,7 @@ function locationJson(result: LocationResult): Record<string, unknown> {
   };
 }
 
-type RunWithMoment = (
-  fn: (momentId: string) => Promise<unknown>,
-) => Promise<void>;
+type RunWithMoment = <T>(fn: (momentId: string) => Promise<T>) => Promise<T>;
 
 /**
  * Fetches weather for a coordinate at the moment's own time and stores a
@@ -170,12 +175,13 @@ export function MomentDetailsPanel({
   sections = ALL_SECTIONS,
   renderPeopleSuggestions,
 }: MomentDetailsPanelProps) {
-  const runWithMoment = useCallback(
-    async (fn: (momentId: string) => Promise<unknown>) => {
+  const runWithMoment: RunWithMoment = useCallback(
+    async (fn) => {
       const id = moment?.id ?? (await ensureMomentId());
       if (!id) throw new Error(NO_MOMENT);
-      await fn(id);
+      const result = await fn(id);
       onSaved(id);
+      return result;
     },
     [moment?.id, ensureMomentId, onSaved],
   );
@@ -188,6 +194,15 @@ export function MomentDetailsPanel({
             return (
               <MoodSection
                 key="mood"
+                moment={moment}
+                disabled={disabled}
+                runWithMoment={runWithMoment}
+              />
+            );
+          case "activities":
+            return (
+              <ActivitiesSection
+                key="activities"
                 moment={moment}
                 disabled={disabled}
                 runWithMoment={runWithMoment}
@@ -245,7 +260,7 @@ export function MomentDetailsPanel({
 type SectionProps = {
   moment: MomentResponse | undefined;
   disabled: boolean;
-  runWithMoment: (fn: (momentId: string) => Promise<unknown>) => Promise<void>;
+  runWithMoment: RunWithMoment;
 };
 
 /* ---- mood ------------------------------------------------------------- */
@@ -323,6 +338,189 @@ function MoodSection({ moment, disabled, runWithMoment }: SectionProps) {
             </button>
           ))}
         </div>
+      )}
+      {error && (
+        <p className="jv-details__error" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+/* ---- activities --------------------------------------------------------- */
+
+/**
+ * Attaching an activity is what completes a Goal built on it: the backend
+ * resolves goal logs for the moment's date as a side effect of this write
+ * (`_resolve_goal_logs`, `GoalService.recalculate_for_activities`) and returns
+ * the result in `completed_goals`. Goals stay fully owned by Library — this
+ * section never writes a goal directly — but a save that newly completes one
+ * is worth celebrating here, since that is where the writer's attention is.
+ * The comparison is taken against the moment as it stood before this specific
+ * write (captured synchronously in `mutationFn`, not read back later), so an
+ * already-earned completion from a previous save is never re-announced.
+ */
+function ActivitiesSection({ moment, disabled, runWithMoment }: SectionProps) {
+  const [filter, setFilter] = useState("");
+  const queryClient = useQueryClient();
+  const activities = useQuery(activitiesQuery());
+
+  // `mood_activity` is a full-replace set that can also hold Daylio-import
+  // mood pairings this UI never creates; toggling one activity must leave
+  // every other row (including any mood_id it carries) exactly as it was.
+  const currentLinks = moment?.mood_activity ?? [];
+  const selected = useMemo(
+    () =>
+      new Set(
+        currentLinks
+          .map((link) => link.activity?.id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    [currentLinks],
+  );
+
+  const mutation = useMutation({
+    mutationFn: async (nextLinks: MomentMoodActivityInput[]) => {
+      const previousGoalIds = new Set(
+        (moment?.completed_goals ?? []).map((goal) => goal.goal_id),
+      );
+      const updated = await runWithMoment((id) =>
+        api.updateMoment(id, { mood_activity: nextLinks }),
+      );
+      // `onSaved`'s refetch is fire-and-forget and may not resolve before this
+      // mutation settles and re-enables the toggle buttons. Write the response
+      // into the cache the `moment` prop reads from right away, so a fast
+      // second toggle sees this write's `mood_activity`/`primary_mood_id`
+      // instead of a stale closure.
+      queryClient.setQueryData(queryKeys.moment(updated.id), updated);
+      const newlyCompleted = (updated.completed_goals ?? []).filter(
+        (goal) => !previousGoalIds.has(goal.goal_id),
+      );
+      return { newlyCompleted };
+    },
+    onSuccess: ({ newlyCompleted }) => {
+      if (!newlyCompleted.length) return;
+      toast.add({
+        type: "success",
+        description:
+          newlyCompleted.length === 1
+            ? `Goal completed — ${newlyCompleted[0].title}`
+            : `${newlyCompleted.length} goals completed: ${newlyCompleted
+                .map((goal) => goal.title)
+                .join(", ")}`,
+      });
+    },
+  });
+
+  const busy = disabled || mutation.isPending;
+  const error = sectionError(
+    mutation.isError,
+    mutation.error,
+    "Activities couldn't be saved. Try again.",
+  );
+
+  const toggle = (activityId: string, checked: boolean) => {
+    const primaryMoodId = moment?.primary_mood_id;
+    // A mood-only row (no activity_id — a Daylio-import artifact, or a past
+    // fold-in of the primary mood below) only ever represents "this moment's
+    // mood"; once the moment's mood has moved on, keeping the old one around
+    // is stale, not history worth preserving, so it's dropped rather than
+    // carried forward. Rows that carry an activity always stay, whatever
+    // mood_id they happen to pair with.
+    const preserved = currentLinks
+      .filter((link) => link.activity?.id !== activityId)
+      .filter((link) => link.activity || link.mood?.id === primaryMoodId)
+      .map((link) => ({
+        mood_id: link.mood?.id ?? null,
+        activity_id: link.activity?.id ?? null,
+      }));
+    const next: MomentMoodActivityInput[] = checked
+      ? [...preserved, { activity_id: activityId }]
+      : preserved;
+    // The backend requires the moment's primary mood (set independently by
+    // the Mood section above, never through this array) to appear among
+    // these items whenever mood_activity is written at all — otherwise it
+    // rejects the write. Fold it in as its own activity-less row rather than
+    // attaching it to whichever activity happens to be toggled, so an
+    // unrelated activity edit can never look like it changed the mood pairing.
+    const hasPrimaryMood = next.some((item) => item.mood_id === primaryMoodId);
+    mutation.mutate(
+      primaryMoodId && !hasPrimaryMood
+        ? [...next, { mood_id: primaryMoodId }]
+        : next,
+    );
+  };
+
+  const term = filter.trim().toLowerCase();
+  const shown = term
+    ? (activities.data ?? []).filter((activity) =>
+        activity.name.toLowerCase().includes(term),
+      )
+    : (activities.data ?? []);
+
+  return (
+    <section className="jv-details__section">
+      <p className="jv-label">Activities</p>
+      {activities.isLoading && <Skeleton height="1.75rem" />}
+      {activities.isError && (
+        <StatusView
+          role="alert"
+          tone="danger"
+          title="Activities didn't load"
+          action={
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => activities.refetch()}
+            >
+              Try again
+            </Button>
+          }
+        />
+      )}
+      {activities.data?.length === 0 && (
+        <StatusView
+          title="No activities yet"
+          description="Add activities in Library to track them here."
+        />
+      )}
+      {(activities.data?.length ?? 0) > 0 && (
+        <>
+          {activities.data && activities.data.length > 6 && (
+            <Input
+              aria-label="Filter activities"
+              placeholder="Filter activities"
+              value={filter}
+              disabled={busy}
+              onChange={(event) => setFilter(event.target.value)}
+            />
+          )}
+          <div className="jv-details__options">
+            {shown.map((activity: ActivityResponse) => (
+              <button
+                key={activity.id}
+                type="button"
+                className="jv-details__option"
+                aria-pressed={selected.has(activity.id)}
+                disabled={busy}
+                onClick={() => toggle(activity.id, !selected.has(activity.id))}
+              >
+                <EntityGlyph
+                  icon={activity.icon}
+                  color={activity.color}
+                  size={12}
+                />
+                {activity.name}
+              </button>
+            ))}
+            {shown.length === 0 && (
+              <p className="jv-caption">
+                No activities matched "{filter.trim()}".
+              </p>
+            )}
+          </div>
+        </>
       )}
       {error && (
         <p className="jv-details__error" role="alert">
