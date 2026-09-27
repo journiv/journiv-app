@@ -7,9 +7,12 @@
  */
 
 /**
- * Containers to try, best first. WebM/Opus is Chrome, Firefox and Android;
- * MP4/AAC is Safari and iOS. If none is supported the feature is unavailable —
- * the recorder never records into a container it did not choose.
+ * Containers to try, best first. WebM/Opus is Chrome, Firefox, Android and
+ * Safari 18.4+; MP4/AAC is older Safari and iOS. If none is supported the
+ * feature is unavailable — the recorder never records into a container it did
+ * not choose. AAC is not preferred where WebM exists: Chrome's AAC encoder
+ * fails on ordinary mono microphone input. The server re-encodes Opus to AAC
+ * so every browser can play the result (docs/features/editor.md, Voice notes).
  */
 export const RECORDER_MIME_PREFERENCE = [
   "audio/webm;codecs=opus",

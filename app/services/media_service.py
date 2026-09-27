@@ -99,6 +99,22 @@ class _AudioRelocation:
     moved: bool
 
 
+@dataclass
+class _AudioConversion:
+    """An audio file re-encoded as AAC in an M4A container.
+
+    `created` is False when the M4A already existed (identical bytes were
+    converted earlier) and was adopted. The source is removed only once the
+    database commit has succeeded; a created M4A is removed if it failed.
+    """
+    old_relative: str
+    new_relative: str
+    old_path: Path
+    new_path: Path
+    file_size: int
+    created: bool
+
+
 class MediaService:
     """Service class for media operations."""
 
@@ -120,6 +136,12 @@ class MediaService:
         "video/mp4": "audio/mp4",
         "audio/mp4": "audio/mp4",
     }
+
+    # Audio codecs that not every browser can play back: iOS Safari fails on
+    # browser-recorded WebM/Opus. Audio in these is re-encoded to AAC-LC in an
+    # M4A container, which plays everywhere.
+    CONVERT_TO_M4A_CODECS = frozenset({"opus", "vorbis"})
+    M4A_BITRATE_PER_CHANNEL = 64_000
 
     # Use MediaHandler constants to avoid duplication
     MIME_TYPE_MAP = MediaHandler.MIME_TYPE_MAP
@@ -793,6 +815,28 @@ class MediaService:
             log_error(e, request_id="", user_email="")
             raise FileValidationError("Failed to determine media type") from None
 
+    @classmethod
+    def _name_for_stored_file(
+        cls, filename: Optional[str], stored_path: Optional[str]
+    ) -> Optional[str]:
+        """`filename` with its extension changed to the stored file's.
+
+        A voice note uploaded as `note.webm` and stored as AAC downloads as
+        `note.m4a`. A name without a recognised media extension keeps all of it
+        and gains the stored one.
+        """
+        if not filename or not stored_path:
+            return filename
+        stored_suffix = PurePosixPath(stored_path).suffix.lower()
+        current_suffix = PurePosixPath(filename).suffix
+        if not stored_suffix or current_suffix.lower() == stored_suffix:
+            return filename
+        if current_suffix.lower() in (
+            cls.IMAGE_EXTENSIONS | cls.VIDEO_EXTENSIONS | cls.AUDIO_EXTENSIONS
+        ):
+            filename = filename[: -len(current_suffix)]
+        return f"{filename}{stored_suffix}"
+
     @staticmethod
     def _needs_display_version(file_path: Path, mime_type: str) -> bool:
         """
@@ -1047,11 +1091,18 @@ class MediaService:
                         except (RuntimeError, OSError) as delete_exc:
                             log_warning(f"Failed to cleanup duplicate uploaded file: {delete_exc}")
                     # Reuse existing media metadata, create new record for this moment
+                    original_filename = media_info["original_filename"]
+                    if existing_media.mime_type != media_info.get("mime_type"):
+                        # Stored in another format (a voice note converted to
+                        # M4A): name the download after the file it serves.
+                        original_filename = self._name_for_stored_file(
+                            original_filename, existing_media.file_path
+                        )
                     media_record = MomentMedia(
                         moment_id=moment_id,
                         media_type=existing_media.media_type,
                         file_path=existing_media.file_path,
-                        original_filename=media_info["original_filename"],
+                        original_filename=original_filename,
                         file_size=existing_media.file_size,
                         mime_type=existing_media.mime_type,
                         thumbnail_path=existing_media.thumbnail_path,
@@ -1334,6 +1385,19 @@ class MediaService:
                     actual_file_path = relocation.new_path
                     metadata['relocation'] = relocation
 
+            conversion: Optional[_AudioConversion] = None
+            if (
+                metadata.get('media_type') == MediaType.AUDIO.value
+                and metadata.get('audio_codec') in self.CONVERT_TO_M4A_CODECS
+            ):
+                current_relative = relocation.new_relative if relocation else media.file_path
+                conversion = self._convert_audio_to_m4a(
+                    actual_file_path, current_relative, metadata, media_id=media_id
+                )
+                if conversion:
+                    actual_file_path = conversion.new_path
+                    metadata['conversion'] = conversion
+
             # Generate thumbnail with error handling
             thumbnail_path = None
             media_type_value = metadata.get('media_type')
@@ -1397,6 +1461,7 @@ class MediaService:
                 session.commit()  # Commit the nested transaction
                 committed = True
                 self._finish_audio_relocation(relocation, committed=True)
+                self._finish_audio_conversion(conversion, committed=True)
                 log_file_upload(
                     media.original_filename or media.file_path or "unknown",
                     media.file_size or 0,
@@ -1407,7 +1472,9 @@ class MediaService:
             except Exception as e:
                 session.rollback()
                 if not committed:
-                    # The record still points at the old path: put the file back.
+                    # The record still points at the old path: drop the M4A and
+                    # put the file back.
+                    self._finish_audio_conversion(conversion, committed=False)
                     self._finish_audio_relocation(relocation, committed=False)
                 error_message = f"Failed to update media metadata: {e}"
                 log_error(error_message, media_id=media_id, user_id=user_id)
@@ -1472,6 +1539,8 @@ class MediaService:
                     metadata["dimensions"] = None
             if probe["duration"] is not None:
                 metadata["duration"] = probe["duration"]
+            metadata["audio_codec"] = probe.get("audio_codec")
+            metadata["audio_channels"] = probe.get("audio_channels")
 
         if metadata["media_type"] == MediaType.AUDIO.value:
             waveform = extract_waveform(
@@ -1552,6 +1621,106 @@ class MediaService:
             log_error(
                 f"Failed to settle audio relocation {relocation.old_relative} -> "
                 f"{relocation.new_relative}: {exc}"
+            )
+
+    def _convert_audio_to_m4a(
+        self,
+        source: Path,
+        source_relative: Optional[str],
+        metadata: Dict[str, Any],
+        *,
+        media_id: str,
+    ) -> Optional[_AudioConversion]:
+        """Re-encode audio as AAC-LC in an M4A container beside the source.
+
+        The M4A keeps the source's checksum-derived name with a new extension,
+        and the record keeps the upload's checksum, so per-user deduplication
+        and reference counting still key on the uploaded bytes. Updates
+        `metadata` (MIME, duration) on success.
+
+        Returns None when conversion fails: the recording is then kept in its
+        original container rather than lost, which most browsers still play.
+        """
+        if not source_relative:
+            return None
+        new_relative = str(PurePosixPath(source_relative).with_suffix(".m4a"))
+        new_path = self.media_root / new_relative
+        # Opus in an `.m4a` is its own target (samefile also catches `.M4A` on a
+        # case-insensitive disk). Adopting it would delete the recording.
+        if new_path.exists() and new_path.samefile(source):
+            log_warning(
+                f"Not converting {source_relative}: it is already named .m4a",
+                media_id=media_id,
+            )
+            return None
+
+        created = False
+        if not new_path.exists():
+            channels = min(int(metadata.get("audio_channels") or 1), 2)
+            tmp_path = new_path.with_name(f"{new_path.name}.tmp")
+            cmd = [
+                "ffmpeg", "-v", "error", "-nostdin", "-y",
+                "-i", str(source),
+                "-map", "0:a:0",
+                "-c:a", "aac",
+                "-ac", str(channels),
+                "-b:a", str(self.M4A_BITRATE_PER_CHANNEL * channels),
+                # moov first: players can start before the whole file arrives.
+                "-movflags", "+faststart",
+                "-f", "ipod",
+                str(tmp_path),
+            ]
+            timeout = getattr(self.settings, "ffmpeg_timeout", self.FFMPEG_DEFAULT_TIMEOUT)
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr.strip() or f"ffmpeg exited {result.returncode}")
+                probe = self.probe_streams(tmp_path)
+                if not probe["ok"] or not probe["has_audio"]:
+                    raise RuntimeError("converted file has no readable audio stream")
+                os.replace(tmp_path, new_path)
+            except Exception as exc:
+                tmp_path.unlink(missing_ok=True)
+                log_warning(
+                    f"Audio conversion to M4A failed; keeping {source_relative}: {exc}",
+                    media_id=media_id,
+                )
+                return None
+            created = True
+            if probe["duration"] is not None:
+                metadata["duration"] = probe["duration"]
+
+        metadata["mime_type"] = "audio/mp4"
+        log_info(
+            f"{'Converted' if created else 'Adopted existing conversion of'} "
+            f"{source_relative} -> {new_relative}",
+            media_id=media_id,
+        )
+        return _AudioConversion(
+            old_relative=source_relative,
+            new_relative=new_relative,
+            old_path=source,
+            new_path=new_path,
+            file_size=new_path.stat().st_size,
+            created=created,
+        )
+
+    def _finish_audio_conversion(
+        self, conversion: Optional[_AudioConversion], *, committed: bool
+    ) -> None:
+        """Settle a conversion once the database outcome is known."""
+        if conversion is None:
+            return
+        try:
+            if committed:
+                conversion.old_path.unlink(missing_ok=True)
+                self.media_storage_service._cleanup_empty_dirs(conversion.old_path.parent)
+            elif conversion.created:
+                conversion.new_path.unlink(missing_ok=True)
+        except OSError as exc:
+            log_error(
+                f"Failed to settle audio conversion {conversion.old_relative} -> "
+                f"{conversion.new_relative}: {exc}"
             )
 
     def _resolve_file_path(self, passed_path: Optional[str], db_relative_path: Optional[str]) -> Path:
@@ -1687,15 +1856,18 @@ class MediaService:
         same as "probed, no video stream". Never raises.
 
         `duration` is None when the container carries none, which is normal for
-        browser (`MediaRecorder`) recordings.
+        browser (`MediaRecorder`) recordings. `audio_codec` and `audio_channels`
+        describe the first audio stream (None without one).
         """
         result: Dict[str, Any] = {
             "ok": False, "has_video": False, "has_audio": False, "duration": None,
+            "audio_codec": None, "audio_channels": None,
         }
         data = self._run_ffprobe_json(
             file_path,
             ["-show_entries",
-             "stream=codec_type:stream_disposition=attached_pic:format=duration"],
+             "stream=codec_type,codec_name,channels"
+             ":stream_disposition=attached_pic:format=duration"],
         )
         if data is None:
             return result
@@ -1704,6 +1876,9 @@ class MediaService:
         for stream in data.get("streams") or []:
             codec_type = stream.get("codec_type")
             if codec_type == "audio":
+                if not has_audio:
+                    result["audio_codec"] = stream.get("codec_name")
+                    result["audio_channels"] = stream.get("channels")
                 has_audio = True
             elif codec_type == "video":
                 # Cover art embedded in an audio file is not a video stream.
@@ -1855,18 +2030,37 @@ class MediaService:
             if "waveform_peaks" in metadata:
                 media.waveform_peaks = metadata["waveform_peaks"]
 
-            relocation = metadata.get("relocation")
-            if relocation is not None:
-                media.file_path = relocation.new_relative
+            relocation: Optional[_AudioRelocation] = metadata.get("relocation")
+            conversion: Optional[_AudioConversion] = metadata.get("conversion")
+            latest = conversion or relocation
+            if latest is not None:
+                old_relatives = [
+                    change.old_relative for change in (relocation, conversion) if change is not None
+                ]
+                final_relative = latest.new_relative
+                media.file_path = final_relative
+                if conversion is not None:
+                    media.file_size = conversion.file_size
+                    media.original_filename = self._name_for_stored_file(
+                        media.original_filename, final_relative
+                    )
                 # Duplicate uploads of the same bytes share one stored file.
                 siblings = session.exec(
                     select(MomentMedia).where(
-                        MomentMedia.file_path == relocation.old_relative,
+                        col(MomentMedia.file_path).in_(old_relatives),
                         MomentMedia.id != media.id,
                     )
                 ).all()
                 for sibling in siblings:
-                    sibling.file_path = relocation.new_relative
+                    sibling.file_path = final_relative
+                    if conversion is not None:
+                        # A completed sibling is never reprocessed, so it must
+                        # describe the new file here.
+                        sibling.file_size = conversion.file_size
+                        sibling.mime_type = metadata["mime_type"]
+                        sibling.original_filename = self._name_for_stored_file(
+                            sibling.original_filename, final_relative
+                        )
                     session.add(sibling)
 
             # Update thumbnail path if generated
