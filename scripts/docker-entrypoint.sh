@@ -7,9 +7,23 @@ echo "Ensuring data directories exist..."
 mkdir -p /data/media /data/logs
 
 if [ "${SERVICE_ROLE}" = "celery-worker" ]; then
+  # A command passed via docker-compose 'command:' or `docker run` args REPLACES the
+  # default below, exactly as it already does for every other role (see the
+  # custom-command block at the end of this script). Without this guard the flags in
+  # the shipped compose file (--concurrency, --max-memory-per-child,
+  # --max-tasks-per-child, ...) are silently discarded and the worker always runs
+  # with the app defaults.
+  if [ $# -gt 0 ]; then
+    echo "Executing custom command: $*"
+    exec "$@"
+  fi
   echo "Starting Celery worker..."
   exec "$PYTHON" -m celery -A app.core.celery_app worker --loglevel=info
 elif [ "${SERVICE_ROLE}" = "celery-beat" ]; then
+  if [ $# -gt 0 ]; then
+    echo "Executing custom command: $*"
+    exec "$@"
+  fi
   echo "Starting Celery beat..."
   exec "$PYTHON" -m celery -A app.core.celery_app beat --loglevel=info --scheduler redbeat.RedBeatScheduler --pidfile=/tmp/celerybeat.pid
 elif [ "${SERVICE_ROLE}" = "plus-service" ]; then
