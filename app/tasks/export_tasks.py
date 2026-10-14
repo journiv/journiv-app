@@ -53,6 +53,13 @@ def process_export_job(job_id: str):
             def check_cancelled() -> None:
                 """Abort the job at the next safe point if it was cancelled."""
                 raise_if_cancelled(db, ExportJob, job_uuid)
+                # Release the read transaction immediately. This check runs every
+                # N media files while the archive is written, which for large
+                # exports (hundreds of MB) can span minutes. Holding a SQLite read
+                # transaction open that long makes the final "mark completed"
+                # write fail with SQLITE_BUSY_SNAPSHOT ("database is locked") the
+                # moment any other connection commits a write in between.
+                db.commit()
 
             # Mark as running
             job.mark_running()
@@ -164,9 +171,14 @@ def process_export_job(job_id: str):
             log_info(f"Export job {job_id} cancelled", job_id=job_id)
             return {"status": "cancelled"}
         except Exception as e:
-            # Mark as failed
+            # Mark as failed. Roll back first: a failure during the final
+            # `db.commit()` (e.g. a transient database error) leaves the
+            # session in a pending-rollback state, and the `db.get()` below
+            # would then raise again — leaving the job stuck at "running"
+            # with progress=90 instead of recording the failure.
             user_id = None
             try:
+                db.rollback()
                 job = db.get(ExportJob, job_uuid)
                 if job:
                     user_id = str(job.user_id)

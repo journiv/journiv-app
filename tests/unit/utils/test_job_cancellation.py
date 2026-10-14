@@ -161,6 +161,7 @@ def test_create_export_zip_propagates_cancellation_and_drops_partial(
 def test_export_worker_exits_when_job_was_cancelled_while_queued(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The export worker exits early when the job was cancelled while queued."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     with Session(engine) as db:
@@ -177,9 +178,61 @@ def test_export_worker_exits_when_job_was_cancelled_while_queued(
     assert process_export_job.run(job_id) == {"status": "cancelled"}
 
 
+def test_export_worker_marks_failed_when_final_commit_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failure at the final commit must not leave the job stuck at "running".
+
+    The export worker writes progress 90 (finalizing) and then commits the
+    completed state. If that final `db.commit()` fails (e.g. a transient
+    database error), the session is left in a pending-rollback state. Without an
+    explicit `db.rollback()` the error handler's own `db.get()` raises again, so
+    `mark_failed` never persists and the job is stuck at "running"/90% forever.
+    """
+    engine = create_engine("sqlite:///:memory:")
+    BaseModel.metadata.create_all(engine)
+
+    with Session(engine) as db:
+        user = User(
+            email="export-finalize@example.com",
+            password="hashed-password",
+            name="Export Finalize",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        job = ExportJob(user_id=user.id, export_type=ExportType.FULL)
+        db.add(job)
+        db.commit()
+        job_id = str(job.id)
+
+    monkeypatch.setattr("app.tasks.export_tasks.engine", engine)
+
+    # Stub the service so the task reaches the final commit, then force that
+    # commit to fail by returning a non-JSON-serializable value in the stats.
+    stub = MagicMock()
+    stub.count_entries.return_value = 0
+    stub.build_export_data.return_value = MagicMock()
+    stub.create_export_zip.return_value = (
+        Path("export.zip"),
+        123,
+        {"entry_count": 0, "unserializable": {1, 2, 3}},
+    )
+    stub.cleanup_old_exports.return_value = 0
+    monkeypatch.setattr("app.tasks.export_tasks.ExportService", lambda db: stub)
+
+    process_export_job.run(job_id)
+
+    with Session(engine) as db:
+        finished = db.get(ExportJob, uuid.UUID(job_id))
+        assert finished is not None
+        assert finished.status == JobStatus.FAILED
+
+
 def test_import_worker_exits_when_job_was_cancelled_while_queued(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The import worker exits early when the job was cancelled while queued."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     with Session(engine) as db:
