@@ -161,6 +161,7 @@ def test_create_export_zip_propagates_cancellation_and_drops_partial(
 def test_export_worker_exits_when_job_was_cancelled_while_queued(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The export worker exits early when the job was cancelled while queued."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     with Session(engine) as db:
@@ -231,6 +232,7 @@ def test_export_worker_marks_failed_when_final_commit_fails(
 def test_import_worker_exits_when_job_was_cancelled_while_queued(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The import worker exits early when the job was cancelled while queued."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     with Session(engine) as db:
