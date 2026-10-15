@@ -51,6 +51,9 @@ Before you begin, ensure you have:
    **Option A: Docker (Recommended)**
 
    ```bash
+   # Copy default environment to .env
+   cp env.template .env
+   
    # Start with SQLite (recommended for quick development)
    docker compose -f docker-compose.dev.sqlite.yml up -d
 
