@@ -455,7 +455,10 @@ prose must never delete a recording; removal is an explicit action. An audio
 attachment still in the tray has a confirmed "Delete voice note" action. It
 deletes the server media directly, then refreshes the Moment and media list;
 an audio item already placed inline is removed through the existing prose-save
-orphan path so the document cannot retain a broken embed.
+orphan path so the document cannot retain a broken embed. The reader offers the
+same deletion from its PageBar menu, under the same rule
+([reader.md](reader.md), "Audio clips"), so a writer does not have to open the
+editor to be rid of a recording.
 
 **Server processing.** libmagic reports `video/webm` / `video/mp4` for an
 audio-only container, so the worker decides audio-vs-video from the streams

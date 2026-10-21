@@ -1,7 +1,7 @@
 # Reader feature contract
 
 Read this with [the Moments domain contract](../domain/moments.md) for Reader
-work, including signed media and deleting an Entry.
+work, including signed media, deleting an Entry, and deleting an audio clip.
 
 ## Reading surface
 
@@ -17,12 +17,14 @@ or deleted prompt is quiet supplementary context; it never blocks the Moment.
 Malformed stored content falls back visibly to plain text. An untitled Moment
 uses its date as h1. Reader does not edit metadata.
 
-## Entry actions
+## Moment actions
 
-Reader PageBar actions are `Edit` (or `Write`) and, whenever the Moment has an
-Entry, an `Entry actions` overflow menu built from the shared `AppAdaptiveMenu`
-(anchored menu on regular widths, bottom action sheet when compact). The menu
-holds:
+Reader PageBar actions are `Edit` (or `Write`) and a `Moment actions` overflow
+menu built from the shared `AppAdaptiveMenu` (anchored menu on regular widths,
+bottom action sheet when compact). The menu is the one place a reader acts on
+what is in front of them, so it is **not** entry-scoped: it appears whenever it
+has anything to hold, including on a Moment with no Entry at all. An empty menu
+renders nothing. It holds:
 
 - **Download PDF** — downloads the Entry as a PDF (`GET /entries/{entry_id}/pdf`)
   and starts a browser download. Present only when the Moment has an actual
@@ -34,6 +36,10 @@ holds:
 - **Delete entry…** — separated below Download and styled destructive. Opens the
   existing `AppConfirmDialog` confirmation (open state owned by the reader); the
   dialog stays open with a human error on failure.
+- **Delete audio clip…** — one destructive item per deletable audio attachment,
+  in gallery order, separated below the entry items. Several clips are numbered
+  (`Delete audio clip 2…`) because a recording has no name to tell it apart by;
+  a single clip is not. See "Audio clips" below.
 
 DELETE /entries/{entry_id} deletes writing, not Moment context. Refetch the
 Moment after success; it becomes the matching quick-log kind. If the backend
@@ -61,6 +67,34 @@ fall back visibly to plain text.
 Where media is content, show it uncropped: one column, intrinsic ratio (3:2
 fallback), object-fit contain, bounded height, and reserved layout space.
 Thumbnails may use object-fit cover because they navigate to the full Moment.
+
+### Audio clips
+
+A recording logged on its own is a media-only Moment, and before this the reader
+could play it but never remove it. Deleting one is a `Delete audio clip…` item
+in the PageBar `Moment actions` menu, not a control on the player. It is the
+corner a reader already looks in, it is the same menu an Entry uses, and the
+gallery row is one control-height line with no room for another control.
+
+The command confirms through `AppConfirmDialog` and calls
+`DELETE /media/{media_id}`. A failure keeps the confirmation open with a reason.
+Success invalidates the Moment, the moment lists, Calendar, and the media
+library; the Moment key covers its media list by prefix. There is no Undo,
+because the API has no restore contract.
+
+Deleting media never prunes its Moment. The reader stays where it is and loses
+the clip. A Moment whose only media was that recording becomes marker-only and
+shows the write invitation.
+
+**Only clips the prose does not embed are offered.** `DELETE /media/{media_id}`
+does not read the Delta, so deleting an embedded clip would break the writing.
+Knowing which they are needs the entry in hand and readable: a pending entry has
+reported nothing yet, and an unreadable document falls back to plain text
+without saying what it embeds. Until both hold, no clip is offered. A clip still
+`pending` or `processing` is never offered; one that failed to upload is, since
+it is the item a reader most wants to be rid of. Removing media the prose does
+use stays the Editor's prose-save orphan path (docs/features/editor.md), which
+is also the only other surface that deletes an attached recording.
 
 ### Full-screen viewer
 
