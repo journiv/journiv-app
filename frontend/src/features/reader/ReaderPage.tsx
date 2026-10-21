@@ -46,6 +46,7 @@ import { planReaderContent, QuillReader } from "../editor/QuillReader";
 import { useAnchorPruning } from "../editor/useAnchorPruning";
 import { PromptBanner } from "../prompts/PromptBanner";
 import { scopeSearchFrom } from "../timeline/momentScope";
+import { DeleteAudioDialog } from "./DeleteAudioDialog";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import "./reader.css";
 
@@ -75,6 +76,7 @@ export function ReaderPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteAudioId, setDeleteAudioId] = useState<string | null>(null);
   const isPdfRetryInFlight = useRef(false);
   // Carry the list-pane mode back so Back returns to the calendar or grid the
   // reader was opened from, not the plain list.
@@ -266,6 +268,25 @@ export function ReaderPage() {
       if (!momentSurvived) goBack();
     },
   });
+  // Deleting one attachment never prunes its Moment, so the reader stays where
+  // it is and simply loses the item: `moment(momentId)` covers the media list by
+  // prefix, and the lists carry per-moment media counts and thumbnails.
+  const removeAudio = useMutation({
+    mutationFn: async (mediaId: string) => {
+      await api.deleteMedia(mediaId);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: queryKeys.moment(momentId) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.allMoments }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.allMomentCalendars,
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.allMediaLibraries,
+        }),
+      ]);
+    },
+    onSuccess: () => setDeleteAudioId(null),
+  });
   const download = useMutation({
     mutationFn: async (entryId: string) => {
       const { blob, filename } = await api.downloadEntryPdf(entryId);
@@ -371,9 +392,41 @@ export function ReaderPage() {
       ]
     : [];
   // Media shown inside the prose must not be repeated in the gallery.
-  const inlinePaths = hasWriting
-    ? planReaderContent(content).inlinePaths
-    : undefined;
+  const readerContent = hasWriting ? planReaderContent(content) : null;
+  const inlinePaths = readerContent?.inlinePaths;
+  // A clip the prose embeds belongs to the document, and the delete endpoint
+  // does not read the Delta — deleting one from here would leave a broken
+  // embed. Knowing which they are needs the entry in hand and readable: a
+  // pending entry has reported nothing yet, and an unreadable one falls back
+  // to plain text without saying what it embeds.
+  const inlineMediaKnown =
+    !hasWriting || (entry.isSuccess && readerContent?.renderable === true);
+  const deletableAudio = !inlineMediaKnown
+    ? []
+    : (media.items ?? []).filter((item) => {
+        const status = item.upload_status ?? "completed";
+        if (item.media_type !== "audio") return false;
+        if (status === "pending" || status === "processing") return false;
+        return !inlinePaths?.has(mediaPath(item.signed_url ?? ""));
+      });
+  // Numbered only when there is more than one to tell apart; the order matches
+  // the gallery below.
+  const audioActions: AppMenuAction[] = deletableAudio.map((item, index) => ({
+    kind: "command",
+    id: `delete-audio-${item.id}`,
+    label:
+      deletableAudio.length === 1
+        ? "Delete audio clip…"
+        : `Delete audio clip ${index + 1}…`,
+    icon: Trash2,
+    destructive: true,
+    separatorBefore: index === 0 && entryActions.length > 0,
+    onSelect: () => {
+      removeAudio.reset();
+      setDeleteAudioId(item.id);
+    },
+  }));
+  const momentActions = [...entryActions, ...audioActions];
 
   return (
     <article className="jv-reader">
@@ -402,8 +455,8 @@ export function ReaderPage() {
                 </>
               )}
             </Button>
-            {entryId && (
-              <AppAdaptiveMenu label="Entry actions" actions={entryActions} />
+            {momentActions.length > 0 && (
+              <AppAdaptiveMenu label="Moment actions" actions={momentActions} />
             )}
           </>
         }
@@ -419,6 +472,18 @@ export function ReaderPage() {
           onConfirm={() => remove.mutate(entryId)}
         />
       )}
+
+      <DeleteAudioDialog
+        open={deleteAudioId !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteAudioId(null);
+        }}
+        deleting={removeAudio.isPending}
+        failed={removeAudio.isError}
+        onConfirm={() => {
+          if (deleteAudioId) removeAudio.mutate(deleteAudioId);
+        }}
+      />
 
       <div className="jv-reader__scroll">
         <div className="jv-reader__column">

@@ -236,7 +236,7 @@ async function renderRoute(path: string) {
 
 async function openEntryDeleteMenu() {
   await userEvent.click(
-    await screen.findByRole("button", { name: "Entry actions" }),
+    await screen.findByRole("button", { name: "Moment actions" }),
   );
   await userEvent.click(await screen.findByText("Delete entry…"));
 }
@@ -414,7 +414,7 @@ describe("Phase B routes", () => {
 
     expect(await screen.findByRole("button", { name: "Write" })).toBeTruthy();
     expect(view.router.state.location.pathname).toBe("/timeline/moment-1");
-    expect(screen.queryByRole("button", { name: "Entry actions" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Moment actions" })).toBeNull();
     expect(api.moment).toHaveBeenCalledTimes(2);
   });
 
@@ -442,7 +442,7 @@ describe("Phase B routes", () => {
 
     await renderRoute("/timeline/moment-1");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Entry actions" }),
+      await screen.findByRole("button", { name: "Moment actions" }),
     );
     expect(
       await screen.findByRole("menuitem", { name: "Download PDF" }),
@@ -466,7 +466,7 @@ describe("Phase B routes", () => {
     await renderRoute("/timeline/moment-1");
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Entry actions" }),
+      await screen.findByRole("button", { name: "Moment actions" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Download PDF" }),
@@ -500,7 +500,7 @@ describe("Phase B routes", () => {
 
     await renderRoute("/timeline/moment-1");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Entry actions" }),
+      await screen.findByRole("button", { name: "Moment actions" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Download PDF" }),
