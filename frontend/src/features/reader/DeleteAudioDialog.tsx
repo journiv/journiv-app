@@ -2,6 +2,16 @@ import { TriangleAlert } from "lucide-react";
 import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 
+/**
+ * Confirms deleting one audio clip from a Moment (docs/features/reader.md,
+ * "Audio clips"). Sibling of `DeleteEntryDialog`, and the same shape: this
+ * component owns the wording only.
+ *
+ * The caller owns the mutation and closes on success, so a failed delete keeps
+ * the surface up and shows `failed` rather than losing the user's place. The
+ * wording says what survives — the writing and the rest of the Moment — because
+ * the delete endpoint takes the media row alone, and there is no Undo.
+ */
 export function DeleteAudioDialog({
   open,
   onOpenChange,

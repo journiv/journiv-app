@@ -54,6 +54,22 @@ import "./reader.css";
 // than lingering next to the outcome.
 const PDF_TOAST_ID = "reader-entry-pdf";
 
+/**
+ * One Moment, read-only (docs/features/reader.md).
+ *
+ * It resolves the Moment, its Entry, its prompt attribution and its media as
+ * four independent queries, so supplementary context can fail without taking
+ * the Moment down with it. The media query is shared: the prose resolves its
+ * inline embeds from it, and the gallery renders whatever is left over.
+ *
+ * The PageBar carries Edit (or Write) and one `Moment actions` menu. That menu
+ * is not entry-scoped — it also deletes audio clips, so it appears on a Moment
+ * with no writing at all.
+ *
+ * The full-screen viewer's open item lives in the URL as `?media=<id>`, so it
+ * survives a reload and is linkable; this component owns the history rules
+ * around it.
+ */
 export function ReaderPage() {
   const { momentId, journalId } = useParams({ strict: false }) as {
     momentId: string;

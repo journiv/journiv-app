@@ -74,6 +74,10 @@ const moment = {
 } as MomentResponse;
 /** The reported case: a clip logged on its own, with nothing written. */
 const mediaOnly = { ...moment, entry: null } as MomentResponse;
+/**
+ * A processed clip: peaks present, so the gallery draws the waveform player and
+ * the tests can locate it by its seek slider rather than a raw `<audio>`.
+ */
 const recording = (over: Partial<MomentMediaResponse> = {}) =>
   ({
     id: "audio-1",
@@ -88,6 +92,10 @@ const recording = (over: Partial<MomentMediaResponse> = {}) =>
     ...over,
   }) as MomentMediaResponse;
 
+/**
+ * The entry-content response. `delta` is what decides whether a clip is on
+ * offer, so each test states the document it is reading against.
+ */
 const prose = (delta: unknown) =>
   ({
     ...entry,
@@ -122,6 +130,10 @@ beforeEach(() => {
   });
 });
 
+/**
+ * The reader on the real router, not the component in isolation: the PageBar
+ * menu is the thing under test, and it only exists as part of the route.
+ */
 async function openReader() {
   const history = createMemoryHistory({
     initialEntries: ["/timeline/moment-1"],
@@ -139,6 +151,7 @@ async function openReader() {
   return { router };
 }
 
+/** Walks the whole affordance: PageBar ⋯ → menu item → confirmation. */
 const chooseDelete = async (name = "Delete audio clip…") => {
   await userEvent.click(
     await screen.findByRole("button", { name: "Moment actions" }),

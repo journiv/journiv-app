@@ -234,6 +234,11 @@ async function renderRoute(path: string) {
   return { ...view, router };
 }
 
+/**
+ * Opens the reader's PageBar menu and picks Delete entry. The menu is named for
+ * the Moment, not the Entry, because it also carries the Moment's media actions
+ * (docs/features/reader.md).
+ */
 async function openEntryDeleteMenu() {
   await userEvent.click(
     await screen.findByRole("button", { name: "Moment actions" }),
