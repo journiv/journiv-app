@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
 from pydantic import field_validator
-from sqlalchemy import Column, ForeignKey, Integer
+from sqlalchemy import Column, ForeignKey, Integer, Text
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import JSON, CheckConstraint, Field, Index, Relationship
@@ -39,6 +39,11 @@ class Journal(BaseModel, table=True):
         )
     )
     icon: Optional[str] = Field(None, max_length=50)
+    entry_template: Optional[str] = Field(
+        default=None,
+        sa_column=Column(Text, nullable=True),
+        description="Plain text pre-filled into the body of every new entry in this journal",
+    )
     user_id: uuid.UUID = Field(
         sa_column=Column(
             ForeignKey("user.id", ondelete="CASCADE"),

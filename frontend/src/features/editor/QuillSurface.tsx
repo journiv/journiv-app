@@ -58,6 +58,13 @@ export interface QuillSurfaceHandle {
    */
   seedPromptHeading(text: string): void;
   /**
+   * Replaces the whole document without marking it as the writer's edit, and
+   * clears undo history so the swap cannot be undone into the old seed. Used
+   * only to swap a NEW entry's untouched journal template when the writer
+   * moves it to another journal (docs/features/editor.md).
+   */
+  replaceSeed(content: QuillDelta): void;
+  /**
    * Inserts a durable media embed at the caret, on its own line. Used to place
    * media that is already attached to the Moment (the editor's attached-media
    * gallery, docs/features/editor.md) into the prose — the source is a signed
@@ -437,6 +444,26 @@ export const QuillSurface = forwardRef<QuillSurfaceHandle, QuillSurfaceProps>(
           );
           quill.setSelection(trimmed.length + 1, 0, "silent");
           quill.focus();
+        },
+        replaceSeed: (content) => {
+          const quill = quillRef.current;
+          if (!quill) return;
+          // "api", not "user": nothing the writer typed is lost, because this
+          // is only called while the body is untouched, and the body must not
+          // be reported dirty by a seed swap.
+          // Same normalisation the initial document gets: Quill ops carry
+          // only insert/attributes, and the caller's delta is never mutated.
+          const seed = new Delta(
+            (cloneDelta(content).ops ?? []).map((operation) => ({
+              insert: operation.insert,
+              ...(operation.attributes
+                ? { attributes: operation.attributes }
+                : {}),
+            })),
+          );
+          quill.setContents(seed, "api");
+          quill.history.clear();
+          quill.setSelection(quill.getLength() - 1, 0, "silent");
         },
         insertMedia: (kind, source) => {
           const quill = quillRef.current;

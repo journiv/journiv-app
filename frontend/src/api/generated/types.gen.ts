@@ -2396,6 +2396,12 @@ export type JournalCreate = {
      * Icon
      */
     icon?: string | null;
+    /**
+     * Entry Template
+     *
+     * Plain text pre-filled into the body of every new entry written in this journal, e.g. a few fixed questions. Null or blank means no template.
+     */
+    entry_template?: string | null;
 };
 
 /**
@@ -2458,6 +2464,12 @@ export type JournalResponse = {
      */
     icon?: string | null;
     /**
+     * Entry Template
+     *
+     * Plain text pre-filled into the body of every new entry written in this journal, e.g. a few fixed questions. Null or blank means no template.
+     */
+    entry_template?: string | null;
+    /**
      * Id
      */
     id: string;
@@ -2510,6 +2522,12 @@ export type JournalUpdate = {
      * Icon
      */
     icon?: string | null;
+    /**
+     * Entry Template
+     *
+     * Plain text pre-filled into the body of every new entry written in this journal, e.g. a few fixed questions. Null or blank means no template. Omit to leave unchanged; send null or an empty string to remove it.
+     */
+    entry_template?: string | null;
     /**
      * Is Favorite
      */

@@ -419,3 +419,51 @@ def test_new_journals_appear_at_top(
     assert journals[0]["id"] == j3_id
     assert journals[1]["id"] == j2_id
     assert journals[2]["id"] == j1_id
+
+
+def test_journal_entry_template_lifecycle(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    """A template is optional, survives unrelated updates, and can be removed."""
+    token = api_user.access_token
+    journal_id = _create_sample_journal(api_client, token, "Template Journal")
+    assert api_client.get_journal(token, journal_id)["entry_template"] is None
+
+    template = "Mood today:\nOne win:\nGrateful for:"
+    updated = api_client.update_journal(token, journal_id, {"entry_template": template})
+    assert updated["entry_template"] == template
+
+    # Updating another field leaves the template alone.
+    renamed = api_client.update_journal(token, journal_id, {"title": "Daily check-in"})
+    assert renamed["entry_template"] == template
+
+    listed = api_client.request("GET", "/journals/", token=token).json()
+    assert next(j for j in listed if j["id"] == journal_id)["entry_template"] == template
+
+    # Blank text and explicit null both remove it.
+    assert api_client.update_journal(token, journal_id, {"entry_template": "  "})["entry_template"] is None
+    api_client.update_journal(token, journal_id, {"entry_template": template})
+    assert api_client.update_journal(token, journal_id, {"entry_template": None})["entry_template"] is None
+
+
+def test_journal_entry_template_on_create(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+):
+    response = api_client.request(
+        "POST",
+        "/journals/",
+        token=api_user.access_token,
+        json={"title": "Gratitude", "entry_template": "Three good things:\r\n1.\r\n2.\r\n3.\r\n"},
+        expected=(201,),
+    )
+    assert response.json()["entry_template"] == "Three good things:\n1.\n2.\n3."
+
+    too_long = api_client.request(
+        "POST",
+        "/journals/",
+        token=api_user.access_token,
+        json={"title": "Too long", "entry_template": "x" * 5001},
+    )
+    assert too_long.status_code == 422

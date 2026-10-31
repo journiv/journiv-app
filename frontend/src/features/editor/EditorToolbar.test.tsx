@@ -13,6 +13,7 @@ const editor = (): QuillSurfaceHandle => ({
   removeSelectedMedia: vi.fn(() => true),
   insertPlaceholder: vi.fn(),
   seedPromptHeading: vi.fn(),
+  replaceSeed: vi.fn(),
   insertMedia: vi.fn(),
   replacePlaceholder: vi.fn(() => true),
   removePlaceholder: vi.fn(() => true),

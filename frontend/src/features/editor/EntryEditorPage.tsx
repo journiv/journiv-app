@@ -54,6 +54,7 @@ import { PromptPickerDialog } from "../prompts/PromptPickerDialog";
 import { prependPromptHeading } from "../prompts/promptSeed";
 import { useShell } from "../shell/shellContext";
 import { prependPlainParagraph } from "./bodySeed";
+import { templateDeltaFor } from "./templateSeed";
 import {
   EMPTY_DELTA,
   INLINE_MEDIA_KINDS,
@@ -354,12 +355,36 @@ export function EntryEditorPage() {
       ? moment.data.note.trim()
       : null;
 
+  const initialJournalId =
+    recovered?.draft.journalId ??
+    entry.data?.journal_id ??
+    journalId ??
+    defaultJournalId(journals.data) ??
+    "";
+
+  // A NEW entry opens on its journal's template, if it has one
+  // (docs/features/journals.md). A prompt heading still goes on top. A
+  // recovered draft brings its own content, and an existing entry or a Quick
+  // Log handoff owns its body, so neither is ever templated.
+  const seedFor = (forJournalId: string): QuillDelta | null => {
+    if (momentId || recovered) return null;
+    const template = templateDeltaFor(journals.data, forJournalId);
+    if (!template && !promptForEntry) return null;
+    const base = template ?? EMPTY_DELTA;
+    return promptForEntry
+      ? prependPromptHeading(base, promptForEntry.text)
+      : base;
+  };
+  const initialTemplated =
+    !momentId &&
+    !recovered &&
+    templateDeltaFor(journals.data, initialJournalId) !== null;
+
   const seededInitialContent =
-    promptForEntry && !recovered
-      ? prependPromptHeading(serverInitialContent, promptForEntry.text)
-      : noteToSeed && !recovered
-        ? prependPlainParagraph(serverInitialContent, noteToSeed)
-        : serverInitialContent;
+    seedFor(initialJournalId) ??
+    (noteToSeed && !recovered
+      ? prependPlainParagraph(serverInitialContent, noteToSeed)
+      : serverInitialContent);
 
   return (
     <EntryEditorForm
@@ -380,13 +405,11 @@ export function EntryEditorPage() {
             : undefined
           : promptForEntry?.text
       }
-      initialJournalId={
-        recovered?.draft.journalId ??
-        entry.data?.journal_id ??
-        journalId ??
-        defaultJournalId(journals.data) ??
-        ""
-      }
+      initialJournalId={initialJournalId}
+      startsTemplated={initialTemplated}
+      // Only a new, unrecovered entry can swap its seed when the journal
+      // changes; everything else keeps the document it opened with.
+      seedForJournal={!momentId && !recovered ? seedFor : undefined}
       initialTitle={recovered?.draft.title ?? entry.data?.title ?? ""}
       journals={journals.data}
       acceptedMedia={formats.data}
@@ -449,6 +472,8 @@ function EntryEditorForm({
   initialPromptId,
   initialPromptText,
   seededNote = false,
+  startsTemplated = false,
+  seedForJournal,
 }: {
   initialContent: QuillDelta;
   initialJournalId: string;
@@ -478,6 +503,12 @@ function EntryEditorForm({
   /** Quick Log handoff: `moment.note` has been seeded into `initialContent`, so
    *  the first save must also clear it (docs/features/quicklog.md). */
   seededNote?: boolean;
+  /** The body opened on the initial journal's entry template. */
+  startsTemplated?: boolean;
+  /** A NEW entry's opening document for another journal (its template, under
+   *  any prompt heading), or null for a blank page. Absent when the document
+   *  must never be swapped. */
+  seedForJournal?: (journalId: string) => QuillDelta | null;
 }) {
   const { q = "" } = useSearch({ strict: false }) as { q?: string };
   const navigate = useNavigate();
@@ -522,6 +553,10 @@ function EntryEditorForm({
   const [title, setTitle] = useState(initialTitle);
   const [journalId, setJournalId] = useState(initialJournalId);
   const [bodyDirty, setBodyDirty] = useState(startsDirty);
+  // Whether the body currently holds an untouched journal template, and
+  // whether a journal switch has replaced the document it opened with.
+  const [templated, setTemplated] = useState(startsTemplated);
+  const [seedSwapped, setSeedSwapped] = useState(false);
   const [metaDirty, setMetaDirty] = useState(false);
   const [error, setError] = useState("");
   const [deleteVoiceNoteId, setDeleteVoiceNoteId] = useState<string | null>(
@@ -1049,12 +1084,15 @@ function EntryEditorForm({
       ? op.insert.trim().length > 0
       : Boolean(op.insert),
   );
+  // An untouched template still counts as an empty entry: its words are the
+  // journal's questions, not the writer's, so the prompt offer stays.
+  const untouchedTemplate = templated && !bodyDirty;
+  const blankSeed = seedSwapped ? !templated : startedEmpty;
   const showPromptCta =
     !bannerPromptText &&
     !mutation.isPending &&
-    startedEmpty &&
-    wordCount === 0 &&
-    inlineMediaPathSet.size === 0;
+    inlineMediaPathSet.size === 0 &&
+    (untouchedTemplate || (blankSeed && wordCount === 0));
 
   const [dateError, setDateError] = useState("");
   /**
@@ -1204,7 +1242,18 @@ function EntryEditorForm({
                 aria-label="Journal"
                 value={journalId}
                 onChange={(event) => {
-                  setJournalId(event.target.value);
+                  const nextJournalId = event.target.value;
+                  setJournalId(nextJournalId);
+                  // A new entry nobody has written in yet follows its journal:
+                  // swap to the new journal's template (or a blank page).
+                  if (seedForJournal && !bodyDirty) {
+                    const nextSeed = seedForJournal(nextJournalId);
+                    surfaceRef.current?.replaceSeed(nextSeed ?? EMPTY_DELTA);
+                    setTemplated(
+                      templateDeltaFor(journals, nextJournalId) !== null,
+                    );
+                    setSeedSwapped(true);
+                  }
                   keepLocally();
                 }}
                 disabled={mutation.isPending}

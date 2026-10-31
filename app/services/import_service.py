@@ -61,6 +61,7 @@ from app.schemas.dto import (
     PersonDTO,
     PersonGroupDTO,
 )
+from app.schemas.journal import normalize_entry_template
 from app.services.journal_service import JournalService
 from app.services.media_storage_service import MediaStorageService
 from app.services.person_service import PersonService
@@ -578,6 +579,7 @@ class ImportService:
                             else None
                         ),
                         icon=journal_dto.icon,
+                        entry_template=normalize_entry_template(journal_dto.entry_template),
                         is_favorite=journal_dto.is_favorite,
                         is_archived=journal_dto.is_archived,
                         import_metadata=journal_dto.import_metadata,

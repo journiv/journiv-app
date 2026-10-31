@@ -157,6 +157,12 @@
   resize: vertical;
 }
 
+/* A field's description sits under it; pull it up against the grid gap so
+   it reads as part of the field, not a separate row. */
+.jv-jform [data-slot="field-description"] {
+  margin-top: calc(var(--space-2) * -1);
+}
+
 .jv-jform__group {
   display: grid;
   gap: var(--space-2);
