@@ -120,6 +120,16 @@ render. The handle is published during commit, so a render-time read is `null`
 on first render and only corrected by some later re-render — which the rules
 above deliberately removed.
 
+A NEW entry opens on its journal's entry template (docs/features/journals.md)
+when that journal has one: the template's lines are seeded as plain paragraphs
+(`templateSeed.ts`), under a prompt heading when the entry was opened from a
+prompt. An untouched template is not the writer's edit: the body is not dirty,
+Cancel leaves without asking, and "Write from a prompt" is still offered. While
+the body is untouched, changing the journal swaps the document for the new
+journal's template, or a blank page (`QuillSurface.replaceSeed`, an "api"
+change with history cleared). A recovered draft, an existing entry and a Quick
+Log handoff are never templated — they bring their own body.
+
 `/timeline/$momentId/edit` and its journal-scoped twin also take a `seedNote`
 search flag from Quick Log's "Continue as full entry" — see
 [quicklog.md](quicklog.md) for what it does.

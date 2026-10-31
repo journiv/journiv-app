@@ -59,6 +59,7 @@ class JournalService:
                 description=journal_data.description,
                 color=journal_data.color,
                 icon=journal_data.icon,
+                entry_template=journal_data.entry_template,
                 user_id=user_id,
                 position=0,  # New journals appear at the top of regular section
             )
@@ -114,6 +115,11 @@ class JournalService:
             journal.color = journal_data.color
         if journal_data.icon is not None:
             journal.icon = journal_data.icon
+        # Unlike the fields above, a template can be removed: an explicit null
+        # (or blank text, normalised to null by the schema) clears it, while an
+        # omitted field leaves it as it was.
+        if "entry_template" in journal_data.model_fields_set:
+            journal.entry_template = journal_data.entry_template
         if journal_data.is_favorite is not None:
             journal.is_favorite = journal_data.is_favorite
         if journal_data.is_archived is not None:

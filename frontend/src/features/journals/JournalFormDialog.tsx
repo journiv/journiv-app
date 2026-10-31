@@ -6,6 +6,7 @@ import type {
 } from "../../api/generated/types.gen";
 import { AppAdaptiveDialog } from "../../components/journiv/AppAdaptiveDialog";
 import { Button } from "../../components/ui/button";
+import { FieldDescription } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
@@ -17,6 +18,7 @@ export type JournalFormValues = {
   description: string | null;
   color: JournalColor | null;
   icon: string | null;
+  entry_template: string | null;
 };
 
 /**
@@ -42,12 +44,14 @@ export function JournalFormDialog({
   const formId = useId();
   const titleId = useId();
   const descId = useId();
+  const templateId = useId();
   const colorName = useId();
   const iconName = useId();
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [color, setColor] = useState<JournalColor | "">("");
   const [icon, setIcon] = useState("");
+  const [entryTemplate, setEntryTemplate] = useState("");
   const [touched, setTouched] = useState(false);
 
   // Seed from the journal each time the dialog opens.
@@ -57,6 +61,7 @@ export function JournalFormDialog({
     setDescription(journal?.description ?? "");
     setColor((journal?.color as JournalColor | undefined) ?? "");
     setIcon(journal?.icon ?? "");
+    setEntryTemplate(journal?.entry_template ?? "");
     setTouched(false);
   }, [open, journal]);
 
@@ -74,6 +79,9 @@ export function JournalFormDialog({
       description: description.trim() || null,
       color: color || null,
       icon: icon || null,
+      // Leading spaces and blank lines are the writer's layout; only trailing
+      // whitespace goes. Blank means no template (the backend agrees).
+      entry_template: entryTemplate.trimEnd() || null,
     });
   }
 
@@ -84,7 +92,7 @@ export function JournalFormDialog({
       title={editing ? "Edit journal" : "New journal"}
       description={
         editing
-          ? "Change the name, description or appearance."
+          ? "Change the name, description, template or appearance."
           : "Journals group the moments you write."
       }
       size="md"
@@ -138,6 +146,23 @@ export function JournalFormDialog({
           maxLength={1000}
           rows={2}
         />
+
+        <Label htmlFor={templateId}>Entry template</Label>
+        <Textarea
+          id={templateId}
+          className="jv-jform__textarea"
+          value={entryTemplate}
+          onChange={(e) => setEntryTemplate(e.target.value)}
+          maxLength={5000}
+          rows={4}
+          placeholder={
+            "How am I feeling?\nOne win today:\nWhat\u2019s on my mind?"
+          }
+          aria-describedby={`${templateId}-hint`}
+        />
+        <FieldDescription id={`${templateId}-hint`}>
+          Every new entry in this journal starts with this text.
+        </FieldDescription>
 
         <fieldset className="jv-jform__group">
           <legend>Colour</legend>

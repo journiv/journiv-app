@@ -287,6 +287,11 @@ class JournalDTO(BaseModel):
     description: Optional[str] = Field(None, max_length=1000, description="Journal description")
     color: Optional[str] = Field(None, description="Journal color (hex code from JournalColor enum)")
     icon: Optional[str] = Field(None, max_length=50, description="Journal icon name")
+    entry_template: Optional[str] = Field(
+        None,
+        max_length=5000,
+        description="Plain text pre-filled into new entries in this journal (absent in older exports)",
+    )
     is_favorite: bool = Field(default=False, description="Whether journal is marked as favorite")
     is_archived: bool = Field(default=False, description="Whether journal is archived")
 

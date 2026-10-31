@@ -438,6 +438,7 @@ class ExportService:
             description=journal.description,
             color=journal.color.value if journal.color else None,  # Convert enum to string
             icon=journal.icon,
+            entry_template=journal.entry_template,
             is_favorite=journal.is_favorite,
             is_archived=journal.is_archived,  # Include archived status
             last_entry_at=journal.last_entry_at,  # Last entry timestamp

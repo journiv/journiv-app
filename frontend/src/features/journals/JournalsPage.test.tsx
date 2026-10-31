@@ -146,7 +146,33 @@ describe("Journals management pane", () => {
         description: null,
         color: "#3B82F6",
         icon: "lightbulb",
+        entry_template: null,
       }),
+    );
+  });
+
+  it("saves an entry template with the journal", async () => {
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "New journal" }),
+    );
+
+    await userEvent.type(screen.getByLabelText("Title"), "Daily");
+    await userEvent.type(
+      screen.getByLabelText("Entry template"),
+      "Mood:{enter}One win:{enter}{enter}",
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "Create journal" }),
+    );
+
+    await waitFor(() =>
+      expect(api.createJournal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Daily",
+          entry_template: "Mood:\nOne win:",
+        }),
+      ),
     );
   });
 

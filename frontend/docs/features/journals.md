@@ -21,8 +21,19 @@ The shared journal-order helper is canonical. Move actions swap only within the
 same favourite group and persist that group through the reorder endpoint.
 
 Create and edit use AppAdaptiveDialog with caller-owned form state, validated
-title, description, curated colour and icon choices, one Create or Save primary,
-and a human alert on failure.
+title, description, entry template, curated colour and icon choices, one Create
+or Save primary, and a human alert on failure.
+
+## Entry template
+
+A journal may carry `entry_template`: optional plain text (at most 5,000
+characters), typically a few fixed questions, one per line. Every NEW entry
+written in that journal opens with it in the body (see the editor contract).
+It is a starting point, not a link: once seeded it is ordinary prose, so
+editing or removing a template never changes entries already written. Blank
+text means no template; the backend normalises it to `null`, and `PUT` with
+`null` or blank text removes it while omitting the field leaves it unchanged.
+Templates travel with journal export and import.
 
 Deletion is a typed-title AppAdaptiveDialog because it includes the reversible
 Archive alternative. DELETE /journals/{id} deletes Entries' narrative while
