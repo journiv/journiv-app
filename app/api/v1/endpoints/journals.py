@@ -9,18 +9,36 @@ from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
-from app.core.exceptions import JournalNotFoundError
+from app.core.exceptions import JournalNotFoundError, UserNotFoundError
 from app.core.logging_config import log_error, log_user_action
+from app.models.journal import Journal
 from app.models.user import User
 from app.schemas.journal import (
     JournalCreate,
+    JournalMemberCreate,
+    JournalMemberResponse,
+    JournalMemberUpdate,
     JournalReorderRequest,
     JournalResponse,
     JournalUpdate,
 )
+from app.services.journal_access import JournalAccessDeniedError, JournalAccessService
 from app.services.journal_service import JournalService
 
 router = APIRouter(prefix="/journals", tags=["journals"])
+
+
+def _journal_response(
+    journal: Journal, access_level: str, owner: User
+) -> JournalResponse:
+    """Build a journal response with viewer-specific access and owner details.
+    """
+    response = JournalResponse.model_validate(journal)
+    # These describe the viewer's relationship, not the journal record itself.
+    response.access_level = access_level
+    response.owner_id = owner.id
+    response.owner_name = owner.name
+    return response
 
 
 @router.post(
@@ -39,7 +57,7 @@ async def create_journal(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
-    """Create a new journal."""
+    """Create a journal for the current user."""
     journal_service = JournalService(session)
     try:
         journal = journal_service.create_journal(current_user.id, journal_data)
@@ -66,15 +84,14 @@ async def get_user_journals(
     session: Annotated[Session, Depends(get_session)],
     include_archived: bool = False,
 ):
-    """
-    Get all journals for the current user.
+    """List journals the current user owns or can access.
 
     By default excludes archived journals. Set include_archived=true to include them.
     """
     journal_service = JournalService(session)
     try:
-        journals = journal_service.get_user_journals(current_user.id, include_archived)
-        return journals
+        journals = journal_service.get_accessible_journals(current_user.id, include_archived)
+        return [_journal_response(journal, level, owner) for journal, level, owner in journals]
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while fetching journals") from None
@@ -93,7 +110,7 @@ async def get_favorite_journals(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
-    """Get all journals marked as favorites."""
+    """List the current user's favorited journals."""
     journal_service = JournalService(session)
     try:
         journals = journal_service.get_favorite_journals(current_user.id)
@@ -118,8 +135,7 @@ async def reorder_journals(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
 ):
-    """
-    Reorder journals for the current user.
+    """Reorder journals owned by the current user.
 
     Updates the position field for multiple journals in a single transaction.
     Journals are ordered by: is_favorite DESC, position ASC NULLS LAST, created_at DESC.
@@ -158,18 +174,156 @@ async def get_journal(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
-    """Get a specific journal by ID."""
-    journal_service = JournalService(session)
+    """Get a journal visible to the current user.
+
+    The response includes the viewer's access level and the journal owner's details.
+    """
     try:
-        journal = journal_service.get_journal_by_id(journal_id, current_user.id)
-        if not journal:
-            raise HTTPException(status_code=404, detail="Journal not found")
-        return journal
+        access = JournalAccessService(session).require(journal_id, current_user.id)
+        owner = session.get(User, access.journal.user_id)
+        return _journal_response(access.journal, access.level, owner)
+    except JournalAccessDeniedError:
+        raise HTTPException(status_code=404, detail="Journal not found") from None
     except HTTPException:
         raise
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while fetching journal") from None
+
+
+@router.get(
+    "/{journal_id}/members",
+    response_model=List[JournalMemberResponse],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal not found"},
+    },
+)
+async def list_journal_members(
+    journal_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> List[JournalMemberResponse]:
+    """List a journal's collaborator roster for any user with read access.
+
+    Roster membership remains owner-managed; this endpoint only exposes it.
+    """
+    try:
+        JournalAccessService(session).require(journal_id, current_user.id)
+        return [
+            JournalMemberResponse(
+                user_id=member.user_id,
+                name=user.name,
+                permission=member.permission,
+                created_at=member.created_at,
+                updated_at=member.updated_at,
+            )
+            for member, user in JournalService(session).list_members(journal_id)
+        ]
+    except JournalAccessDeniedError:
+        raise HTTPException(status_code=404, detail="Journal not found") from None
+
+
+@router.post(
+    "/{journal_id}/members",
+    response_model=JournalMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal or user not found"},
+        409: {"description": "User is already a journal member"},
+    },
+)
+async def add_journal_member(
+    journal_id: uuid.UUID,
+    body: JournalMemberCreate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> JournalMemberResponse:
+    """Add a collaborator to a journal.
+
+    Only the journal owner can change roster membership.
+    """
+    try:
+        JournalAccessService(session).require(journal_id, current_user.id, manage=True)
+        member = JournalService(session).add_member(journal_id, body.user_id, body.permission)
+        user = session.get(User, member.user_id)
+        return JournalMemberResponse(
+            user_id=user.id,
+            name=user.name,
+            permission=member.permission,
+            created_at=member.created_at,
+            updated_at=member.updated_at,
+        )
+    except JournalAccessDeniedError:
+        raise HTTPException(status_code=404, detail="Journal not found") from None
+    except UserNotFoundError:
+        raise HTTPException(status_code=404, detail="User not found") from None
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from None
+
+
+@router.put(
+    "/{journal_id}/members/{user_id}",
+    response_model=JournalMemberResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal or journal member not found"},
+    },
+)
+async def update_journal_member(
+    journal_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: JournalMemberUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> JournalMemberResponse:
+    """Change a collaborator's journal permission.
+
+    Only the journal owner can change roster membership.
+    """
+    try:
+        JournalAccessService(session).require(journal_id, current_user.id, manage=True)
+        member = JournalService(session).update_member(journal_id, user_id, body.permission)
+        user = session.get(User, user_id)
+        return JournalMemberResponse(
+            user_id=user.id,
+            name=user.name,
+            permission=member.permission,
+            created_at=member.created_at,
+            updated_at=member.updated_at,
+        )
+    except (JournalAccessDeniedError, JournalNotFoundError):
+        raise HTTPException(status_code=404, detail="Journal not found") from None
+
+
+@router.delete(
+    "/{journal_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal or journal member not found"},
+    },
+)
+async def remove_journal_member(
+    journal_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> None:
+    """Remove a collaborator from a journal.
+
+    Only the journal owner can change roster membership.
+    """
+    try:
+        JournalAccessService(session).require(journal_id, current_user.id, manage=True)
+        JournalService(session).remove_member(journal_id, user_id)
+    except (JournalAccessDeniedError, JournalNotFoundError):
+        raise HTTPException(status_code=404, detail="Journal member not found") from None
 
 
 @router.put(
@@ -189,7 +343,10 @@ async def update_journal(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
-    """Update a journal's name, description, or other properties."""
+    """Update a journal's editable properties.
+
+    Only the journal owner may modify journal metadata.
+    """
     journal_service = JournalService(session)
     try:
         journal = journal_service.update_journal(journal_id, current_user.id, journal_data)
@@ -219,8 +376,9 @@ async def delete_journal(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
-    """
-    Delete a journal.
+    """Delete a journal owned by the current user.
+
+    Collaborators cannot delete journals they can access.
     """
     journal_service = JournalService(session)
     try:
@@ -276,8 +434,7 @@ async def archive_journal(
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)]
 ):
-    """
-    Archive a journal.
+    """Archive a journal owned by the current user.
 
     Archived journals are hidden from default listings but remain accessible.
     """
@@ -319,5 +476,3 @@ async def unarchive_journal(
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while unarchiving journal") from None
-
-

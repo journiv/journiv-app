@@ -224,15 +224,12 @@ class TagService:
 
     def _get_moment_for_user(self, moment_id: uuid.UUID, user_id: uuid.UUID) -> Moment:
         """Load a moment and ensure it belongs to the user."""
-        moment = self.session.exec(
-            select(Moment).where(
-                Moment.id == moment_id,
-                Moment.user_id == user_id,
-            )
-        ).first()
-        if not moment:
-            raise ValueError("Moment not found")
-        return moment
+        from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
+
+        try:
+            return get_owned_moment(self.session, user_id, moment_id)
+        except MomentNotFoundError:
+            raise ValueError("Moment not found") from None
 
     def add_tag_to_moment(
         self, moment_id: uuid.UUID, tag_id: uuid.UUID, user_id: uuid.UUID
@@ -315,6 +312,8 @@ class TagService:
         if not tag:
             raise TagNotFoundError("Tag not found")
 
+        from app.services.moment_service import MomentService
+
         statement = (
             select(Moment)
             .options(
@@ -324,6 +323,8 @@ class TagService:
             .where(
                 MomentTagLink.tag_id == tag_id,
                 Moment.user_id == user_id,
+                # also show moments where user is only collaborator
+                MomentService._visible_to_user_condition(user_id),
             )
             .order_by(col(Moment.logged_at_utc).desc())
             .offset(offset)

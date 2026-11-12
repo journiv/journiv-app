@@ -8,6 +8,7 @@ import {
   Pencil,
   Star,
   Trash2,
+  Users,
 } from "lucide-react";
 import type { JournalResponse } from "../../api/generated/types.gen";
 import { JournalDot } from "../../components/journiv/JournalBadge";
@@ -17,6 +18,7 @@ import {
 } from "../../components/journiv/AppAdaptiveMenu";
 import { IconButton } from "../../components/ui/icon-button";
 import { formatDateMedium } from "../../lib/datetime";
+import { canManageJournal, isSharedJournal } from "../../lib/journalAccess";
 
 const nf = new Intl.NumberFormat();
 
@@ -39,6 +41,7 @@ export function JournalRow({
   onToggleFavorite,
   onSetArchived,
   onMove,
+  onShare,
 }: {
   journal: JournalResponse;
   search: string;
@@ -50,60 +53,74 @@ export function JournalRow({
   onToggleFavorite: (journal: JournalResponse) => void;
   onSetArchived: (id: string, archived: boolean) => void;
   onMove: (id: string, direction: "up" | "down") => void;
+  onShare: (journal: JournalResponse) => void;
 }) {
   const archived = journal.is_archived;
+  // Editors can write entries, but only owners see journal-management controls.
+  const manageable = canManageJournal(journal);
   const menuActions: AppMenuAction[] = [
-    {
-      kind: "command",
-      id: "rename",
-      label: "Rename",
-      icon: Pencil,
-      onSelect: () => onRename(journal),
-    },
-    {
-      kind: "command",
-      id: "appearance",
-      label: "Edit appearance",
-      icon: Palette,
-      onSelect: () => onEditAppearance(journal),
-    },
-    // Ordering and archiving are meaningless for an already-archived journal.
-    ...(archived
-      ? []
-      : ([
+    ...(manageable
+      ? ([
           {
             kind: "command",
-            id: "move-up",
-            label: "Move up",
-            icon: ArrowUp,
-            disabled: !canMoveUp,
-            onSelect: () => onMove(journal.id, "up"),
+            id: "share",
+            label: "Share…",
+            icon: Users,
+            onSelect: () => onShare(journal),
           },
           {
             kind: "command",
-            id: "move-down",
-            label: "Move down",
-            icon: ArrowDown,
-            disabled: !canMoveDown,
-            onSelect: () => onMove(journal.id, "down"),
+            id: "rename",
+            label: "Rename",
+            icon: Pencil,
+            onSelect: () => onRename(journal),
           },
           {
             kind: "command",
-            id: "archive",
-            label: "Archive",
-            icon: ArchiveIcon,
-            onSelect: () => onSetArchived(journal.id, true),
+            id: "appearance",
+            label: "Edit appearance",
+            icon: Palette,
+            onSelect: () => onEditAppearance(journal),
           },
-        ] satisfies AppMenuAction[])),
-    {
-      kind: "command",
-      id: "delete",
-      label: "Delete…",
-      icon: Trash2,
-      destructive: true,
-      separatorBefore: true,
-      onSelect: () => onDelete(journal),
-    },
+          // Ordering and archiving are meaningless for an already-archived journal.
+          ...(archived
+            ? []
+            : ([
+                {
+                  kind: "command",
+                  id: "move-up",
+                  label: "Move up",
+                  icon: ArrowUp,
+                  disabled: !canMoveUp,
+                  onSelect: () => onMove(journal.id, "up"),
+                },
+                {
+                  kind: "command",
+                  id: "move-down",
+                  label: "Move down",
+                  icon: ArrowDown,
+                  disabled: !canMoveDown,
+                  onSelect: () => onMove(journal.id, "down"),
+                },
+                {
+                  kind: "command",
+                  id: "archive",
+                  label: "Archive",
+                  icon: ArchiveIcon,
+                  onSelect: () => onSetArchived(journal.id, true),
+                },
+              ] satisfies AppMenuAction[])),
+          {
+            kind: "command",
+            id: "delete",
+            label: "Delete…",
+            icon: Trash2,
+            destructive: true,
+            separatorBefore: true,
+            onSelect: () => onDelete(journal),
+          },
+        ] satisfies AppMenuAction[])
+      : []),
   ];
 
   return (
@@ -117,6 +134,9 @@ export function JournalRow({
         <JournalDot journal={journal} size={16} className="jv-jrow__glyph" />
         <span className="jv-jrow__text">
           <span className="jv-jrow__title jv-truncate">{journal.title}</span>
+          {isSharedJournal(journal) && (
+            <span className="jv-jrow__stats jv-meta">Shared journal</span>
+          )}
           {journal.description && (
             <span className="jv-jrow__desc jv-truncate">
               {journal.description}
@@ -134,14 +154,14 @@ export function JournalRow({
       </Link>
 
       <div className="jv-jrow__actions">
-        {archived ? (
+        {manageable && archived ? (
           <IconButton
             label={`Unarchive ${journal.title}`}
             onClick={() => onSetArchived(journal.id, false)}
           >
             <ArchiveRestore aria-hidden="true" size={16} />
           </IconButton>
-        ) : (
+        ) : manageable ? (
           <IconButton
             label={
               journal.is_favorite
@@ -158,13 +178,15 @@ export function JournalRow({
               fill={journal.is_favorite ? "currentColor" : "none"}
             />
           </IconButton>
-        )}
+        ) : null}
 
-        <AppAdaptiveMenu
-          label={`${journal.title} actions`}
-          align="end"
-          actions={menuActions}
-        />
+        {manageable && (
+          <AppAdaptiveMenu
+            label={`${journal.title} actions`}
+            align="end"
+            actions={menuActions}
+          />
+        )}
       </div>
     </li>
   );

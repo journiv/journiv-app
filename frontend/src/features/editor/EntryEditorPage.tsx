@@ -36,6 +36,7 @@ import {
 } from "../../api/query/options";
 import { browserTimeZone } from "../../lib/datetime";
 import { defaultJournalId } from "../../lib/journalOrder";
+import { isSharedJournal } from "../../lib/journalAccess";
 import { useCompactViewport } from "../../lib/useCompactViewport";
 import { mediaPath } from "../../lib/mediaUrl";
 import { uuid } from "../../lib/uuid";
@@ -957,6 +958,25 @@ function EntryEditorForm({
       // the Timeline.
       const targetId = moment?.id ?? draft.draft?.momentId ?? "";
       const hasEntry = Boolean(moment?.entry ?? draft.draft?.entryId);
+      const selectedJournal = activeJournals.find(
+        (journal) => journal.id === journalId,
+      );
+      if (
+        hasEntry &&
+        moment?.entry?.id &&
+        selectedJournal &&
+        isSharedJournal(selectedJournal)
+      ) {
+        // Collaborators can change the Entry's prose, but the parent Moment's
+        // metadata remains owner-only, so this deliberately skips updateMoment.
+        await api.updateEntry(moment.entry.id, {
+          title: entryPayload.title,
+          content_delta: entryPayload.content_delta,
+          is_draft: false,
+          expected_updated_at: entryPayload.expected_updated_at,
+        });
+        return api.moment(targetId);
+      }
       const body: MomentUpdate = hasEntry
         ? { entry_update: { ...entryPayload, is_draft: false } }
         : { entry_create: entryPayload };

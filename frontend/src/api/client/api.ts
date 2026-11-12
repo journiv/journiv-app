@@ -1,5 +1,6 @@
 import {
   archiveJournalApiV1JournalsJournalIdArchivePost,
+  addJournalMemberApiV1JournalsJournalIdMembersPost,
   archivePersonApiV1PeoplePersonIdDelete,
   bulkAddTagsToMomentApiV1MomentsMomentIdTagsPost,
   cancelExportJobApiV1ExportJobIdCancelPost,
@@ -90,6 +91,7 @@ import {
   listImmichPeopleApiV1IntegrationsImmichPeopleGet,
   listImportsApiV1ImportGet,
   listUsersApiV1AdminUsersGet,
+  listJournalMembersApiV1JournalsJournalIdMembersGet,
   loginApiV1AuthLoginPost,
   mergePeopleApiV1PeopleSourceIdMergeTargetIdPost,
   mergeTagsApiV1TagsSourceIdMergeTargetIdPost,
@@ -99,9 +101,11 @@ import {
   removePersonProfileImageApiV1PeoplePersonIdProfileImageDelete,
   removeTagFromMomentApiV1MomentsMomentIdTagsTagIdDelete,
   reorderJournalsApiV1JournalsReorderPut,
+  removeJournalMemberApiV1JournalsJournalIdMembersUserIdDelete,
   replaceMomentPeopleApiV1MomentsMomentIdPeoplePut,
   reverseGeocodeApiV1LocationReversePost,
   searchLocationApiV1LocationSearchPost,
+  searchUsersApiV1UsersSearchGet,
   searchTagsApiV1TagsSearchGet,
   signExportUrlApiV1ExportJobIdSignGet,
   toggleFavoriteApiV1JournalsJournalIdFavoritePost,
@@ -114,6 +118,7 @@ import {
   updateGoalApiV1GoalsGoalIdPut,
   updateGoalCategoryApiV1GoalCategoriesCategoryIdPut,
   updateJournalApiV1JournalsJournalIdPut,
+  updateJournalMemberApiV1JournalsJournalIdMembersUserIdPut,
   updateMomentApiV1MomentsMomentIdPut,
   updateMoodApiV1MoodsMoodIdPut,
   updateMoodGroupApiV1MoodsGroupsGroupIdPut,
@@ -121,6 +126,7 @@ import {
   updatePersonGroupApiV1PeopleGroupsGroupIdPut,
   updateSettingsApiV1IntegrationsProviderSettingsPut,
   updateTagApiV1TagsTagIdPut,
+  updateEntryApiV1EntriesEntryIdPut,
   updateUserApiV1AdminUsersUserIdPatch,
   updateVersionCheckEnabledApiV1InstanceVersionCheckEnabledPut,
   uploadImportApiV1ImportUploadPost,
@@ -135,6 +141,7 @@ import type {
   AdminUserListResponse,
   AdminUserUpdate,
   EntryDraftCreate,
+  EntryUpdate,
   ExportJobCreateRequest,
   GetSystemPromptsApiV1PromptsGetData,
   GetMediaLibraryApiV1MediaGetData,
@@ -149,6 +156,8 @@ import type {
   ImportMode,
   IntegrationSettingsUpdateRequest,
   JournalCreate,
+  JournalMemberCreate,
+  JournalMemberUpdate,
   JournalReorderRequest,
   JournalUpdate,
   LicenseRegisterRequest,
@@ -292,6 +301,43 @@ export const api = {
       getUserJournalsApiV1JournalsGet({
         ...options(),
         query: { include_archived: true },
+      }),
+    ),
+  // Sharing loads members on demand, rather than bloating the journals list.
+  searchUsers: (q: string, limit = 10) =>
+    data(searchUsersApiV1UsersSearchGet({ ...options(), query: { q, limit } })),
+  journalMembers: (journal_id: string) =>
+    data(
+      listJournalMembersApiV1JournalsJournalIdMembersGet({
+        ...options(),
+        path: { journal_id },
+      }),
+    ),
+  addJournalMember: (journal_id: string, body: JournalMemberCreate) =>
+    data(
+      addJournalMemberApiV1JournalsJournalIdMembersPost({
+        ...options(),
+        path: { journal_id },
+        body,
+      }),
+    ),
+  updateJournalMember: (
+    journal_id: string,
+    user_id: string,
+    body: JournalMemberUpdate,
+  ) =>
+    data(
+      updateJournalMemberApiV1JournalsJournalIdMembersUserIdPut({
+        ...options(),
+        path: { journal_id, user_id },
+        body,
+      }),
+    ),
+  removeJournalMember: (journal_id: string, user_id: string) =>
+    data(
+      removeJournalMemberApiV1JournalsJournalIdMembersUserIdDelete({
+        ...options(),
+        path: { journal_id, user_id },
       }),
     ),
   createJournal: (body: JournalCreate) =>
@@ -1048,6 +1094,14 @@ export const api = {
         ...options(),
         body,
         path: { moment_id },
+      }),
+    ),
+  updateEntry: (entry_id: string, body: EntryUpdate) =>
+    data(
+      updateEntryApiV1EntriesEntryIdPut({
+        ...options(),
+        body,
+        path: { entry_id },
       }),
     ),
 };

@@ -208,12 +208,21 @@ class ExportService:
         # Get user settings
         user_settings = self._get_user_settings(user)
 
-        moments_query = select(Moment).where(col(Moment.user_id) == user_id)
+        from app.services.moment_lookup import draft_author_condition
+
+        moments_query = (
+            select(Moment)
+            .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
+            .where(
+                col(Moment.user_id) == user_id,
+                col(Entry.id).is_(None)
+                | col(Entry.is_draft).is_(False)
+                | draft_author_condition(user_id),
+            )
+        )
         if export_type == ExportType.JOURNAL and journal_ids:
             journal_uuids = [UUID(jid) for jid in journal_ids]
-            moments_query = moments_query.join(
-                Entry, col(Entry.moment_id) == col(Moment.id)
-            ).where(col(Entry.journal_id).in_(journal_uuids))
+            moments_query = moments_query.where(col(Entry.journal_id).in_(journal_uuids))
 
         moments = list(
             self.db.execute(moments_query.order_by(col(Moment.logged_at_utc))).scalars().all()

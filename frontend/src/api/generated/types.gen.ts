@@ -701,6 +701,14 @@ export type EntryPreviewResponse = {
      */
     is_draft?: boolean;
     /**
+     * Created By User Id
+     */
+    created_by_user_id?: string | null;
+    /**
+     * Author Name
+     */
+    author_name?: string;
+    /**
      * Public Id
      *
      * Public URL-safe identifier (12 chars, generated on first publish)
@@ -769,6 +777,14 @@ export type EntryResponse = {
      * User Id
      */
     user_id: string;
+    /**
+     * Created By User Id
+     */
+    created_by_user_id?: string | null;
+    /**
+     * Author Name
+     */
+    author_name?: string;
     /**
      * Public Id
      *
@@ -2399,6 +2415,54 @@ export type JournalCreate = {
 };
 
 /**
+ * JournalMemberCreate
+ */
+export type JournalMemberCreate = {
+    /**
+     * User Id
+     */
+    user_id: string;
+    permission: JournalPermission;
+};
+
+/**
+ * JournalMemberResponse
+ */
+export type JournalMemberResponse = {
+    /**
+     * Created At
+     */
+    created_at?: string | null;
+    /**
+     * Updated At
+     */
+    updated_at?: string | null;
+    /**
+     * User Id
+     */
+    user_id: string;
+    /**
+     * Name
+     */
+    name: string;
+    permission: JournalPermission;
+};
+
+/**
+ * JournalMemberUpdate
+ */
+export type JournalMemberUpdate = {
+    permission: JournalPermission;
+};
+
+/**
+ * JournalPermission
+ *
+ * Permissions granted to a recipient of a shared journal.
+ */
+export type JournalPermission = 'readonly' | 'edit';
+
+/**
  * JournalReorderItem
  *
  * Single journal reorder item.
@@ -2489,6 +2553,18 @@ export type JournalResponse = {
      * Last Entry At
      */
     last_entry_at?: string | null;
+    /**
+     * Access Level
+     */
+    access_level?: string;
+    /**
+     * Owner Name
+     */
+    owner_name?: string | null;
+    /**
+     * Owner Id
+     */
+    owner_id?: string | null;
 };
 
 /**
@@ -3915,22 +3991,6 @@ export type PeakMonth = {
 };
 
 /**
- * PeakMonthResult
- *
- * Peak month information.
- */
-export type PeakMonthResult = {
-    /**
-     * Month
-     */
-    month: string;
-    /**
-     * Count
-     */
-    count: number;
-};
-
-/**
  * PeopleMatch
  */
 export type PeopleMatch = 'any' | 'all';
@@ -4251,126 +4311,6 @@ export type PlusCapability = {
 };
 
 /**
- * PlusTagAnalyticsResult
- *
- * Tag analytics computation result from Plus.
- *
- * This mirrors backend's TagAnalyticsResponse but is computed
- * entirely in Plus from raw data provided by backend.
- *
- * Backend converts this to TagAnalyticsResponse for API response.
- */
-export type PlusTagAnalyticsResult = {
-    /**
-     * Total Tags
-     */
-    total_tags: number;
-    /**
-     * Used Tags
-     */
-    used_tags: number;
-    /**
-     * Unused Tags
-     */
-    unused_tags: number;
-    most_used_tag: PlusTagSummary | null;
-    /**
-     * Average Usage
-     */
-    average_usage: number;
-    /**
-     * Tag Usage Ranking
-     */
-    tag_usage_ranking: Array<PlusTagSummary>;
-    /**
-     * Recently Created Tags
-     */
-    recently_created_tags: Array<PlusTagSummary>;
-    /**
-     * Usage Over Time
-     */
-    usage_over_time: {
-        [key: string]: number;
-    };
-    /**
-     * Tag Distribution
-     */
-    tag_distribution: {
-        [key: string]: number;
-    };
-};
-
-/**
- * PlusTagDetailAnalyticsResult
- *
- * Per-tag analytics computation result from Plus.
- *
- * Contains computed analytics for a single tag including trends,
- * growth analysis, and usage patterns.
- */
-export type PlusTagDetailAnalyticsResult = {
-    /**
-     * Tag Id
-     */
-    tag_id: string;
-    /**
-     * Tag Name
-     */
-    tag_name: string;
-    /**
-     * Usage Count
-     */
-    usage_count: number;
-    /**
-     * Usage Over Time
-     */
-    usage_over_time: {
-        [key: string]: number;
-    };
-    /**
-     * First Used
-     */
-    first_used?: string | null;
-    /**
-     * Last Used
-     */
-    last_used?: string | null;
-    peak_month?: PeakMonthResult | null;
-    /**
-     * Trend
-     */
-    trend: string;
-    /**
-     * Growth Rate
-     */
-    growth_rate?: number | null;
-    /**
-     * Days Analyzed
-     */
-    days_analyzed: number;
-};
-
-/**
- * PlusTagSummary
- *
- * Plus-only tag summary mirroring the backend tag summary shape.
- */
-export type PlusTagSummary = {
-    /**
-     * Id
-     */
-    id: string;
-    /**
-     * Name
-     */
-    name: string;
-    /**
-     * Usage Count
-     */
-    usage_count: number;
-};
-
-/**
  * ProductivityMetrics
  *
  * ``GET /analytics/productivity`` response.
@@ -4559,38 +4499,6 @@ export type PromptResponse = {
      * User Id
      */
     user_id?: string | null;
-};
-
-/**
- * PublishUpdate
- *
- * Request body for publish state updates.
- */
-export type PublishUpdate = {
-    /**
-     * Publish
-     */
-    publish: boolean;
-};
-
-/**
- * PublishingConfigUpdate
- *
- * Request body for publishing config updates.
- */
-export type PublishingConfigUpdate = {
-    /**
-     * Slug
-     *
-     * Custom URL slug (lowercase alphanumeric and hyphens only)
-     */
-    slug?: string | null;
-    /**
-     * Is Indexed
-     *
-     * Search engine indexing
-     */
-    is_indexed?: boolean | null;
 };
 
 /**
@@ -5010,6 +4918,24 @@ export type UserResponse = {
  * User roles for authorization.
  */
 export type UserRole = 'admin' | 'user';
+
+/**
+ * UserSearchResponse
+ */
+export type UserSearchResponse = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Name
+     */
+    name: string;
+    /**
+     * Email
+     */
+    email: string;
+};
 
 /**
  * UserSettingsResponse
@@ -5789,6 +5715,48 @@ export type OidcLogoutApiV1AuthOidcLogoutGetResponses = {
     200: unknown;
 };
 
+export type SearchUsersApiV1UsersSearchGetData = {
+    body?: never;
+    path?: never;
+    query: {
+        /**
+         * Q
+         */
+        q: string;
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/v1/users/search';
+};
+
+export type SearchUsersApiV1UsersSearchGetErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Invalid search query
+     */
+    422: unknown;
+};
+
+export type SearchUsersApiV1UsersSearchGetResponses = {
+    /**
+     * Response Search Users Api V1 Users Search Get
+     *
+     * Successful Response
+     */
+    200: Array<UserSearchResponse>;
+};
+
+export type SearchUsersApiV1UsersSearchGetResponse = SearchUsersApiV1UsersSearchGetResponses[keyof SearchUsersApiV1UsersSearchGetResponses];
+
 export type DeleteCurrentUserApiV1UsersMeDeleteData = {
     body?: never;
     path?: never;
@@ -6280,6 +6248,188 @@ export type UpdateJournalApiV1JournalsJournalIdPutResponses = {
 };
 
 export type UpdateJournalApiV1JournalsJournalIdPutResponse = UpdateJournalApiV1JournalsJournalIdPutResponses[keyof UpdateJournalApiV1JournalsJournalIdPutResponses];
+
+export type ListJournalMembersApiV1JournalsJournalIdMembersGetData = {
+    body?: never;
+    path: {
+        /**
+         * Journal Id
+         */
+        journal_id: string;
+    };
+    query?: never;
+    url: '/api/v1/journals/{journal_id}/members';
+};
+
+export type ListJournalMembersApiV1JournalsJournalIdMembersGetErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type ListJournalMembersApiV1JournalsJournalIdMembersGetError = ListJournalMembersApiV1JournalsJournalIdMembersGetErrors[keyof ListJournalMembersApiV1JournalsJournalIdMembersGetErrors];
+
+export type ListJournalMembersApiV1JournalsJournalIdMembersGetResponses = {
+    /**
+     * Response List Journal Members Api V1 Journals  Journal Id  Members Get
+     *
+     * Successful Response
+     */
+    200: Array<JournalMemberResponse>;
+};
+
+export type ListJournalMembersApiV1JournalsJournalIdMembersGetResponse = ListJournalMembersApiV1JournalsJournalIdMembersGetResponses[keyof ListJournalMembersApiV1JournalsJournalIdMembersGetResponses];
+
+export type AddJournalMemberApiV1JournalsJournalIdMembersPostData = {
+    body: JournalMemberCreate;
+    path: {
+        /**
+         * Journal Id
+         */
+        journal_id: string;
+    };
+    query?: never;
+    url: '/api/v1/journals/{journal_id}/members';
+};
+
+export type AddJournalMemberApiV1JournalsJournalIdMembersPostErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal or user not found
+     */
+    404: unknown;
+    /**
+     * User is already a journal member
+     */
+    409: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type AddJournalMemberApiV1JournalsJournalIdMembersPostError = AddJournalMemberApiV1JournalsJournalIdMembersPostErrors[keyof AddJournalMemberApiV1JournalsJournalIdMembersPostErrors];
+
+export type AddJournalMemberApiV1JournalsJournalIdMembersPostResponses = {
+    /**
+     * Successful Response
+     */
+    201: JournalMemberResponse;
+};
+
+export type AddJournalMemberApiV1JournalsJournalIdMembersPostResponse = AddJournalMemberApiV1JournalsJournalIdMembersPostResponses[keyof AddJournalMemberApiV1JournalsJournalIdMembersPostResponses];
+
+export type RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Journal Id
+         */
+        journal_id: string;
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/journals/{journal_id}/members/{user_id}';
+};
+
+export type RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal or journal member not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteError = RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteErrors[keyof RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteErrors];
+
+export type RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteResponse = RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteResponses[keyof RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteResponses];
+
+export type UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutData = {
+    body: JournalMemberUpdate;
+    path: {
+        /**
+         * Journal Id
+         */
+        journal_id: string;
+        /**
+         * User Id
+         */
+        user_id: string;
+    };
+    query?: never;
+    url: '/api/v1/journals/{journal_id}/members/{user_id}';
+};
+
+export type UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal or journal member not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutError = UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutErrors[keyof UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutErrors];
+
+export type UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutResponses = {
+    /**
+     * Successful Response
+     */
+    200: JournalMemberResponse;
+};
+
+export type UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutResponse = UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutResponses[keyof UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutResponses];
 
 export type ToggleFavoriteApiV1JournalsJournalIdFavoritePostData = {
     body?: never;
@@ -13406,127 +13556,6 @@ export type ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses = {
 
 export type ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponse = ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses[keyof ReorderActivityGroupsApiV1ActivityGroupsReorderPutResponses];
 
-export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetData = {
-    body?: never;
-    path?: never;
-    query?: never;
-    url: '/api/v1/plus/analytics/tags';
-};
-
-export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: PlusTagAnalyticsResult;
-};
-
-export type GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponse = GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses[keyof GetTagAnalyticsApiV1PlusAnalyticsTagsGetResponses];
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetData = {
-    body?: never;
-    path: {
-        /**
-         * Tag Id
-         */
-        tag_id: string;
-    };
-    query?: {
-        /**
-         * Days
-         *
-         * Number of days to analyse
-         */
-        days?: number;
-    };
-    url: '/api/v1/plus/analytics/tags/{tag_id}';
-};
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetError = GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors[keyof GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetErrors];
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: PlusTagDetailAnalyticsResult;
-};
-
-export type GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponse = GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses[keyof GetTagDetailAnalyticsApiV1PlusAnalyticsTagsTagIdGetResponses];
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchData = {
-    body: PublishUpdate;
-    path: {
-        /**
-         * Entry Id
-         */
-        entry_id: string;
-    };
-    query?: never;
-    url: '/api/v1/plus/entries/{entry_id}/publish';
-};
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchError = ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors[keyof ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchErrors];
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses = {
-    /**
-     * Response Toggle Entry Publish Api V1 Plus Entries  Entry Id  Publish Patch
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponse = ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses[keyof ToggleEntryPublishApiV1PlusEntriesEntryIdPublishPatchResponses];
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchData = {
-    body: PublishingConfigUpdate;
-    path: {
-        /**
-         * Entry Id
-         */
-        entry_id: string;
-    };
-    query?: never;
-    url: '/api/v1/plus/entries/{entry_id}/publishing-config';
-};
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchError = UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors[keyof UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchErrors];
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses = {
-    /**
-     * Response Update Publishing Config Api V1 Plus Entries  Entry Id  Publishing Config Patch
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponse = UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses[keyof UpdatePublishingConfigApiV1PlusEntriesEntryIdPublishingConfigPatchResponses];
-
 export type DownloadPublishedEntryPdfPubIdentifierPdfGetData = {
     body?: never;
     path: {
@@ -13554,97 +13583,3 @@ export type DownloadPublishedEntryPdfPubIdentifierPdfGetResponses = {
      */
     200: unknown;
 };
-
-export type GetPublishedEntryPubIdentifierGetData = {
-    body?: never;
-    path: {
-        /**
-         * Identifier
-         */
-        identifier: string;
-    };
-    query?: never;
-    url: '/pub/{identifier}';
-};
-
-export type GetPublishedEntryPubIdentifierGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetPublishedEntryPubIdentifierGetError = GetPublishedEntryPubIdentifierGetErrors[keyof GetPublishedEntryPubIdentifierGetErrors];
-
-export type GetPublishedEntryPubIdentifierGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: string;
-};
-
-export type GetPublishedEntryPubIdentifierGetResponse = GetPublishedEntryPubIdentifierGetResponses[keyof GetPublishedEntryPubIdentifierGetResponses];
-
-export type GetPublishedMediaPubMediaMediaIdGetData = {
-    body?: never;
-    path: {
-        /**
-         * Media Id
-         */
-        media_id: string;
-    };
-    query?: never;
-    url: '/pub/media/{media_id}';
-};
-
-export type GetPublishedMediaPubMediaMediaIdGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetPublishedMediaPubMediaMediaIdGetError = GetPublishedMediaPubMediaMediaIdGetErrors[keyof GetPublishedMediaPubMediaMediaIdGetErrors];
-
-export type GetPublishedMediaPubMediaMediaIdGetResponses = {
-    /**
-     * Successful Response
-     */
-    200: unknown;
-};
-
-export type GetOembedApiV1OembedGetData = {
-    body?: never;
-    path?: never;
-    query: {
-        /**
-         * Url
-         *
-         * Public URL of the entry
-         */
-        url: string;
-    };
-    url: '/api/v1/oembed';
-};
-
-export type GetOembedApiV1OembedGetErrors = {
-    /**
-     * Validation Error
-     */
-    422: HttpValidationError;
-};
-
-export type GetOembedApiV1OembedGetError = GetOembedApiV1OembedGetErrors[keyof GetOembedApiV1OembedGetErrors];
-
-export type GetOembedApiV1OembedGetResponses = {
-    /**
-     * Response Get Oembed Api V1 Oembed Get
-     *
-     * Successful Response
-     */
-    200: {
-        [key: string]: unknown;
-    };
-};
-
-export type GetOembedApiV1OembedGetResponse = GetOembedApiV1OembedGetResponses[keyof GetOembedApiV1OembedGetResponses];

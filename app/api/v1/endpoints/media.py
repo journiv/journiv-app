@@ -44,6 +44,7 @@ from app.core.signing import verify_media_signature
 from app.integrations.immich import ImmichAssetNotFoundError
 from app.integrations.service import fetch_proxy_asset
 from app.models.enums import MediaType
+from app.models.moment import Moment
 from app.models.user import User
 from app.schemas.entry import MomentMediaResponse
 from app.schemas.media import (
@@ -239,7 +240,7 @@ async def upload_media(
             try:
                 celery_app.send_task(
                     "app.tasks.media.process_media_upload",
-                    args=[str(media_record.id), full_file_path, str(current_user.id)]
+                    args=[str(media_record.id), full_file_path, str(result["media_owner_id"])]
                 )
             except Exception as e:
                 error_logger.error(
@@ -464,6 +465,7 @@ async def get_media_signed(
         # before starting the long-running streaming operation
         external_provider = None
         external_asset_id = None
+        source_owner_id = None
         file_info = None
         has_local_file = False
 
@@ -473,6 +475,13 @@ async def get_media_signed(
             external_provider = media.external_provider
             external_asset_id = media.external_asset_id
             has_local_file = bool(media.file_path)
+            if external_provider == "immich" and not has_local_file:
+                # `get_media_by_id(..., uid, ...)` already authorized this signed-URL viewer.
+                # Use the moment owner's Immich credentials to fetch the shared linked asset.
+                source_moment = session.get(Moment, media.moment_id)
+                if not source_moment:
+                    raise MediaNotFoundError("Media not found")
+                source_owner_id = source_moment.user_id
 
             # For internal media, fetch file info while we have the session
             if has_local_file or external_provider != "immich":
@@ -492,7 +501,7 @@ async def get_media_signed(
                 # fetch_proxy_asset manages its own DB session for credential lookup
                 # Session is closed before streaming begins
                 response = await fetch_proxy_asset(
-                    user_id=uid,
+                    user_id=source_owner_id,
                     provider=IntegrationProvider.IMMICH,
                     asset_id=external_asset_id,
                     variant="original",
@@ -510,9 +519,9 @@ async def get_media_signed(
                 if response.status_code in (401, 403):
                     from app.integrations.router import _update_integration_error_state
 
-                    log_warning(f"Invalid Immich token for user {uid}")
+                    log_warning(f"Invalid Immich token for user {source_owner_id}")
                     await _update_integration_error_state(
-                        uid, IntegrationProvider.IMMICH, "Authentication failed"
+                        source_owner_id, IntegrationProvider.IMMICH, "Authentication failed"
                     )
                 await _close_httpx_stream(response)
                 # Map proxied status codes
@@ -637,6 +646,7 @@ async def get_media_thumbnail_signed(
         # Fetch metadata in SHORT-LIVED session, then release DB connection
         external_provider = None
         external_asset_id = None
+        source_owner_id = None
         thumbnail_path = None
         has_local_thumbnail = False
 
@@ -645,6 +655,12 @@ async def get_media_thumbnail_signed(
             external_provider = media.external_provider
             external_asset_id = media.external_asset_id
             has_local_thumbnail = bool(media.thumbnail_path)
+            if external_provider == "immich" and not has_local_thumbnail:
+                # Thumbnails follow the same source-owner rule as original assets.
+                source_moment = session.get(Moment, media.moment_id)
+                if not source_moment:
+                    raise MediaNotFoundError("Thumbnail not found")
+                source_owner_id = source_moment.user_id
 
             # For internal media, fetch thumbnail path while we have the session
             if has_local_thumbnail or external_provider != "immich":
@@ -662,7 +678,7 @@ async def get_media_thumbnail_signed(
                 # fetch_proxy_asset manages its own DB session for credential lookup
                 # Session is closed before streaming begins
                 response = await fetch_proxy_asset(
-                    user_id=uid,
+                    user_id=source_owner_id,
                     provider=IntegrationProvider.IMMICH,
                     asset_id=external_asset_id,
                     variant="thumbnail",
@@ -675,9 +691,9 @@ async def get_media_thumbnail_signed(
                 if response.status_code in (401, 403):
                     from app.integrations.router import _update_integration_error_state
 
-                    log_warning(f"Invalid Immich token for user {uid}")
+                    log_warning(f"Invalid Immich token for user {source_owner_id}")
                     await _update_integration_error_state(
-                        uid, IntegrationProvider.IMMICH, "Authentication failed"
+                        source_owner_id, IntegrationProvider.IMMICH, "Authentication failed"
                     )
                 await _close_httpx_stream(response)
                 # If 404/401, we might want to try refreshing or just fail
@@ -872,16 +888,15 @@ async def import_from_immich_async(
         )
 
         # 2. Verify moment exists
-        from app.models.moment import Moment
+        from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
 
-        moment = session.exec(
-            select(Moment).where(Moment.id == request.moment_id, Moment.user_id == current_user.id)
-        ).first()
-        if not moment:
+        try:
+            get_owned_moment(session, current_user.id, request.moment_id)
+        except MomentNotFoundError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Moment not found"
-            )
+            ) from None
 
         # 3. Create job and process asynchronously via Celery
         import_service = ImportJobService(session)
@@ -1102,7 +1117,9 @@ async def repair_immich_thumbnails(
     """
     Repair missing thumbnails for Immich media.
     """
+    from app.models.entry import Entry
     from app.models.moment import Moment, MomentMedia
+    from app.services.moment_lookup import draft_author_condition
 
     try:
         # Verify Immich integration exists and is active
@@ -1113,7 +1130,14 @@ async def repair_immich_thumbnails(
         media_to_repair = session.exec(
             select(MomentMedia)
             .join(Moment, col(Moment.id) == col(MomentMedia.moment_id))
+            .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
             .where(col(Moment.user_id) == current_user.id)
+            .where(
+                # keep standalone Moments which get a NULL Entry ID
+                col(Entry.id).is_(None)
+                | col(Entry.is_draft).is_(False)
+                | draft_author_condition(current_user.id)
+            )
             .where(MomentMedia.external_provider == "immich")
             .where(col(MomentMedia.external_asset_id).is_not(None))
             .where(

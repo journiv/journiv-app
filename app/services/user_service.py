@@ -56,6 +56,25 @@ class UserService:
     def __init__(self, session: Session):
         self.session = session
 
+    def search_active_users(
+        self, query: str, *, exclude_user_id: uuid.UUID, limit: int
+    ) -> list[User]:
+        """Find active users matching a name or email for journal sharing."""
+        # Treat LIKE metacharacters and the escape character as literal input.
+        escaped = query.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{escaped}%"
+        statement = (
+            select(User)
+            .where(User.is_active.is_(True), User.id != exclude_user_id)
+            .where(
+                col(User.name).ilike(pattern, escape="\\")
+                | col(User.email).ilike(pattern, escape="\\")
+            )
+            .order_by(User.name, User.email)
+            .limit(limit)
+        )
+        return list(self.session.exec(statement))
+
     def is_first_user(self) -> bool:
         """
         Check if this is the first user (database has zero users).

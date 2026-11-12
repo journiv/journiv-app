@@ -24,6 +24,11 @@ vi.mock("../../api/client/api", () => ({
     unarchiveJournal: vi.fn(),
     reorderJournals: vi.fn(),
     deleteJournal: vi.fn(),
+    journalMembers: vi.fn(),
+    searchUsers: vi.fn(),
+    addJournalMember: vi.fn(),
+    updateJournalMember: vi.fn(),
+    removeJournalMember: vi.fn(),
   },
 }));
 
@@ -84,6 +89,21 @@ beforeEach(() => {
   });
   vi.mocked(api.reorderJournals).mockResolvedValue(undefined as never);
   vi.mocked(api.deleteJournal).mockResolvedValue(undefined as never);
+  vi.mocked(api.journalMembers).mockResolvedValue([]);
+  vi.mocked(api.searchUsers).mockResolvedValue([
+    { id: "u2", name: "Sam", email: "sam@example.com" },
+  ]);
+  vi.mocked(api.addJournalMember).mockResolvedValue({
+    user_id: "u2",
+    name: "Sam",
+    permission: "readonly",
+  });
+  vi.mocked(api.updateJournalMember).mockResolvedValue({
+    user_id: "u2",
+    name: "Sam",
+    permission: "edit",
+  });
+  vi.mocked(api.removeJournalMember).mockResolvedValue(undefined as never);
 });
 
 async function renderAt(path: string) {
@@ -203,6 +223,37 @@ describe("Journals management pane", () => {
     );
   });
 
+  it("reorders owned journals without shared journals", async () => {
+    // A received journal's position belongs to its owner, so it is not a peer.
+    vi.mocked(api.journals).mockResolvedValue([
+      running,
+      journal({
+        id: "shared",
+        title: "Shared",
+        position: 1,
+        access_level: "edit",
+      }),
+      { ...personal, position: 2 },
+      oldTrip,
+    ]);
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Move down" }),
+    );
+
+    await waitFor(() =>
+      expect(api.reorderJournals).toHaveBeenCalledWith({
+        updates: [
+          { id: "personal", position: 0 },
+          { id: "running", position: 1 },
+        ],
+      }),
+    );
+  });
+
   it("requires typing the title before deleting", async () => {
     await renderAt("/journals");
     await userEvent.click(
@@ -224,6 +275,209 @@ describe("Journals management pane", () => {
     await userEvent.click(del);
     await waitFor(() =>
       expect(api.deleteJournal).toHaveBeenCalledWith("running"),
+    );
+  });
+
+  it("shows the empty state when a journal has no shared people", async () => {
+    // Member queries run only after the owner opens the sharing dialog.
+    vi.mocked(api.journalMembers).mockResolvedValue([]);
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+
+    expect(await screen.findByText("No one else has access yet.")).toBeTruthy();
+  });
+
+  it("refreshes the visible member list after adding a shared person", async () => {
+    vi.mocked(api.journalMembers)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        {
+          user_id: "u2",
+          name: "Sam",
+          permission: "readonly",
+        },
+      ]);
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+    await userEvent.type(screen.getByLabelText("Find a person"), "Sam");
+    await userEvent.click(await screen.findByRole("button", { name: /Sam/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Add member" }));
+
+    expect(await screen.findByText("Sam · Can view")).toBeTruthy();
+  });
+
+  it("lists current shared people in the sharing dialog", async () => {
+    vi.mocked(api.journalMembers).mockResolvedValue([
+      {
+        user_id: "u2",
+        name: "Sam",
+        permission: "edit",
+      },
+    ]);
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+
+    expect(await screen.findByText("Sam · Can edit")).toBeTruthy();
+  });
+
+  it("shows an error instead of an empty member list when loading members fails", async () => {
+    vi.mocked(api.journalMembers).mockRejectedValueOnce(new Error("network"));
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Shared people could not be loaded.",
+    );
+    expect(screen.queryByText("No one else has access yet.")).toBeNull();
+  });
+
+  it("retries a failed member load", async () => {
+    vi.mocked(api.journalMembers)
+      .mockRejectedValueOnce(new Error("network"))
+      .mockResolvedValueOnce([
+        {
+          user_id: "u2",
+          name: "Sam",
+          permission: "edit",
+        },
+      ]);
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Retry" }));
+
+    expect(await screen.findByText("Sam · Can edit")).toBeTruthy();
+  });
+
+  it("refreshes the visible member list after removing a shared person", async () => {
+    vi.mocked(api.journalMembers)
+      .mockResolvedValueOnce([
+        {
+          user_id: "u2",
+          name: "Sam",
+          permission: "edit",
+        },
+      ])
+      .mockResolvedValueOnce([]);
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove Sam" }),
+    );
+
+    expect(await screen.findByText("No one else has access yet.")).toBeTruthy();
+  });
+
+  it("refreshes the visible member permission after changing it", async () => {
+    vi.mocked(api.journalMembers)
+      .mockResolvedValueOnce([
+        {
+          user_id: "u2",
+          name: "Sam",
+          permission: "edit",
+        },
+      ])
+      .mockResolvedValueOnce([
+        {
+          user_id: "u2",
+          name: "Sam",
+          permission: "readonly",
+        },
+      ]);
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Make Sam view-only" }),
+    );
+
+    expect(await screen.findByText("Sam · Can view")).toBeTruthy();
+  });
+
+  it("uses neutral member-operation wording when a permission change fails", async () => {
+    vi.mocked(api.journalMembers).mockResolvedValue([
+      {
+        user_id: "u2",
+        name: "Sam",
+        permission: "edit",
+      },
+    ]);
+    vi.mocked(api.updateJournalMember).mockRejectedValueOnce(
+      new Error("network"),
+    );
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Make Sam view-only" }),
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Couldn't update member. Try again.",
+    );
+  });
+
+  it("uses neutral member-operation wording when removal fails", async () => {
+    vi.mocked(api.journalMembers).mockResolvedValue([
+      {
+        user_id: "u2",
+        name: "Sam",
+        permission: "edit",
+      },
+    ]);
+    vi.mocked(api.removeJournalMember).mockRejectedValueOnce(
+      new Error("network"),
+    );
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Share…" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Remove Sam" }),
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toBe(
+      "Couldn't update member. Try again.",
     );
   });
 });

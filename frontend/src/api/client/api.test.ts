@@ -29,6 +29,68 @@ describe("browser authentication contract", () => {
   });
 });
 
+describe("journal sharing API contract", () => {
+  // The picker only needs a small, query-matched recipient list.
+  it("searches eligible recipients by query", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://journiv.test");
+    let capturedRequest: Request | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: RequestInfo | URL) => {
+        capturedRequest =
+          request instanceof Request ? request : new Request(request);
+        return Response.json([
+          { id: "u2", name: "Sam", email: "sam@example.com" },
+        ]);
+      }),
+    );
+
+    const users = await api.searchUsers("sam");
+
+    expect(users).toEqual([
+      { id: "u2", name: "Sam", email: "sam@example.com" },
+    ]);
+    expect(capturedRequest?.url).toBe(
+      "https://journiv.test/api/v1/users/search?q=sam&limit=10",
+    );
+  });
+
+  // Permissions travel with the add request; they are not a follow-up update.
+  it("adds a member with the selected permission", async () => {
+    vi.stubEnv("VITE_API_BASE_URL", "https://journiv.test");
+    let capturedRequest: Request | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (request: RequestInfo | URL) => {
+        capturedRequest =
+          request instanceof Request ? request : new Request(request);
+        return Response.json({
+          user_id: "u2",
+          name: "Sam",
+          email: "sam@example.com",
+          permission: "edit",
+          created_at: "2026-09-30T00:00:00Z",
+          updated_at: "2026-09-30T00:00:00Z",
+        });
+      }),
+    );
+
+    await api.addJournalMember("journal-1", {
+      user_id: "u2",
+      permission: "edit",
+    });
+
+    expect(capturedRequest?.method).toBe("POST");
+    expect(capturedRequest?.url).toBe(
+      "https://journiv.test/api/v1/journals/journal-1/members",
+    );
+    expect(await capturedRequest?.json()).toEqual({
+      user_id: "u2",
+      permission: "edit",
+    });
+  });
+});
+
 describe("filenameFromContentDisposition", () => {
   it("decodes an RFC 5987 filename* value", () => {
     expect(

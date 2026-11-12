@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { MomentResponse } from "../../api/generated/types.gen";
@@ -96,6 +96,23 @@ describe("MomentListItem attachment tile", () => {
     expect(pictures.querySelector(".jv-moment__media img")).not.toBeNull();
     expect(pictures.querySelector(".jv-moment__media-audio")).toBeNull();
     expect(draw(moment([])).querySelector(".jv-moment__media")).toBeNull();
+  });
+
+  it("renders a completed image with its signed thumbnail URL", () => {
+    // Shared-media thumbnails use the same signed URL path as the owner's.
+    draw(
+      moment([
+        {
+          media_type: "image",
+          // TODO: what is sig?
+          signed_thumbnail_url: "https://sig/owner-thumbnail.jpg",
+        },
+      ]),
+    );
+
+    expect(screen.getByRole("img").getAttribute("src")).toBe(
+      "https://sig/owner-thumbnail.jpg",
+    );
   });
 
   it("falls back to the placeholder when the thumbnail fails to load", () => {

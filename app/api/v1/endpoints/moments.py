@@ -45,7 +45,7 @@ from app.schemas.person import (
 from app.schemas.tag import TagResponse
 from app.services.immich_face_service import ImmichFaceService
 from app.services.media_service import MediaService
-from app.services.moment_lookup import MomentNotFoundError
+from app.services.moment_lookup import MomentNotFoundError, get_accessible_moment
 from app.services.moment_service import MomentService
 from app.services.person_service import PersonService
 from app.services.tag_service import TagService
@@ -85,7 +85,8 @@ def _build_moment_response(
     links = list(moment.mood_activity_links or [])
 
     mood_activity = [_build_mood_activity_response(link) for link in links]
-    tags = [TagResponse.model_validate(tag) for tag in (moment.tags or []) if tag.user_id == current_user.id]
+    # Tags and people belong to the moment's author, but are visible to journal collaborators.
+    tags = [TagResponse.model_validate(tag) for tag in (moment.tags or [])]
     people = [
         PersonSummaryResponse(
             id=person.id,
@@ -94,7 +95,7 @@ def _build_moment_response(
             profile_image_url=PersonService.build_profile_image_url(person),
         )
         for person in (moment.people or [])
-        if person.user_id == current_user.id and person.archived_at is None
+        if person.archived_at is None
     ]
 
     logged_date_tz = _require_logged_date_tz(moment)
@@ -216,7 +217,6 @@ def _build_moment_responses(
                 tags=[
                     TagResponse.model_validate(tag)
                     for tag in (moment.tags or [])
-                    if tag.user_id == current_user.id
                 ],
                 people=[
                     PersonSummaryResponse(
@@ -226,7 +226,7 @@ def _build_moment_responses(
                         profile_image_url=PersonService.build_profile_image_url(person),
                     )
                     for person in (moment.people or [])
-                    if person.user_id == current_user.id and person.archived_at is None
+                    if person.archived_at is None
                 ],
                 completed_goals=completed_goals_map.get(moment.id, []),
                 media_count=moment.media_count,
@@ -358,11 +358,7 @@ async def get_moment_media(
 ):
     """Get all media attached to a moment."""
     try:
-        moment = session.exec(
-            select(Moment).where(Moment.id == moment_id, Moment.user_id == current_user.id)
-        ).first()
-        if not moment:
-            raise HTTPException(status_code=404, detail="Moment not found")
+        get_accessible_moment(session, current_user.id, moment_id)
 
         media_service = MediaService(session)
         return media_service.get_signed_moment_media(
@@ -370,6 +366,8 @@ async def get_moment_media(
             current_user.id,
             moment_id,
         )
+    except MomentNotFoundError:
+        raise HTTPException(status_code=404, detail="Moment not found") from None
     except HTTPException:
         raise
     except Exception as exc:

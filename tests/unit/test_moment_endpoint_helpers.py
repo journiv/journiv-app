@@ -110,3 +110,42 @@ def test_build_moment_response_includes_active_people_only() -> None:
     assert response.people[0].name == "Alice"
 
     session.close()
+
+
+def test_build_moment_response_preserves_owner_metadata_for_a_shared_viewer() -> None:
+    """Catches filtering shared Moment tags and people by the viewer's user ID."""
+    engine = create_engine("sqlite:///:memory:")
+    BaseModel.metadata.create_all(engine)
+    session = Session(engine)
+    owner = User(
+        email=f"owner_{uuid.uuid4().hex[:8]}@example.com",
+        password="hashed_password",
+        name="Owner",
+    )
+    viewer = User(
+        email=f"viewer_{uuid.uuid4().hex[:8]}@example.com",
+        password="hashed_password",
+        name="Viewer",
+    )
+    session.add_all([owner, viewer])
+    session.commit()
+    moment = Moment(
+        user_id=owner.id,
+        logged_at_utc=datetime.now(UTC),
+        logged_date_tz=datetime.now(UTC).date(),
+    )
+    tag = Tag(name="trip", user_id=owner.id)
+    person = Person(user_id=owner.id, name="Alex", normalized_name="alex")
+    session.add_all([moment, tag, person])
+    session.commit()
+    session.add_all([
+        MomentTagLink(moment_id=moment.id, tag_id=tag.id),
+        MomentPersonLink(moment_id=moment.id, person_id=person.id),
+    ])
+    session.commit()
+    session.refresh(moment)
+
+    response = _build_moment_response(session, moment, viewer)
+
+    assert [item.name for item in response.tags] == ["trip"]
+    assert [item.name for item in response.people] == ["Alex"]

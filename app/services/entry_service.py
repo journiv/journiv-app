@@ -6,6 +6,7 @@ import secrets
 import uuid
 from typing import Any, List, Optional, cast
 
+from sqlalchemy import and_, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm.attributes import QueryableAttribute
@@ -22,14 +23,21 @@ from app.core.logging_config import log_debug, log_error, log_info, log_warning
 from app.core.time_utils import ensure_utc, utc_now
 from app.models.entry import Entry
 from app.models.journal import Journal
+from app.models.journal_member import JournalMember
 from app.models.moment import MomentMedia
 from app.schemas.entry import (
     EntryCreate,
     EntryDraftCreate,
     EntryUpdate,
 )
+from app.services.journal_access import JournalAccessDeniedError, JournalAccessService
 from app.services.media_service import MediaService
-from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
+from app.services.moment_lookup import (
+    MomentNotFoundError,
+    draft_author_condition,
+    get_owned_moment,
+    is_draft_author,
+)
 from app.utils.quill_delta import extract_media_sources, extract_plain_text
 
 DEFAULT_ENTRY_PAGE_LIMIT = 50
@@ -142,16 +150,20 @@ class EntryService:
 
         raise ValidationError("Unable to generate unique public_id after multiple attempts")
 
-    def _get_owned_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Entry:
-        statement = select(Entry).where(
-            Entry.id == entry_id,
-            Entry.user_id == user_id,
-        ).options(joinedload(self._entry_moment_relation()))
+    def _get_owned_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, *, edit: bool = False) -> Entry:
+        """Get an entry the user has journal access to, optionally requiring edit access."""
+        statement = select(Entry).where(Entry.id == entry_id).options(joinedload(self._entry_moment_relation()))
 
         entry = self.session.exec(statement).first()
         if not entry:
             log_warning(f"Entry not found for user {user_id}: {entry_id}")
             raise EntryNotFoundError("Entry not found")
+        if entry.is_draft and not is_draft_author(entry, user_id):
+            raise EntryNotFoundError("Entry not found")
+        try:
+            JournalAccessService(self.session).require(entry.journal_id, user_id, edit=edit)
+        except JournalAccessDeniedError:
+            raise EntryNotFoundError("Entry not found") from None
         return entry
 
     def _commit(self) -> None:
@@ -182,18 +194,16 @@ class EntryService:
         Returns:
             Created entry instance
         """
-        # Validate journal exists and belongs to user
-        journal_statement = select(Journal).where(
-            Journal.id == entry_data.journal_id,
-            Journal.user_id == user_id
-        )
-        journal = self.session.exec(journal_statement).first()
-        if not journal:
+        try:
+            journal = JournalAccessService(self.session).require(
+                entry_data.journal_id, user_id, edit=True
+            ).journal
+        except JournalAccessDeniedError:
             log_warning(f"Journal not found for user {user_id}: {entry_data.journal_id}")
-            raise JournalNotFoundError("Journal not found")
+            raise JournalNotFoundError("Journal not found") from None
 
         try:
-            get_owned_moment(self.session, user_id, entry_data.moment_id)
+            moment = get_owned_moment(self.session, user_id, entry_data.moment_id)
         except MomentNotFoundError:
             log_warning(f"Moment not found for user {user_id}: {entry_data.moment_id}")
             raise ValidationError("Moment not found") from None
@@ -240,22 +250,28 @@ class EntryService:
             journal_id=entry_data.journal_id,
             moment_id=entry_data.moment_id,
             word_count=word_count,
-            user_id=user_id,
+            user_id=journal.user_id,
+            created_by_user_id=user_id,
             is_draft=is_draft,
         )
 
         try:
-            self.session.add(entry)
-            self.session.flush()
             if not skip_moment_sync:
                 from app.services.moment_service import MomentService
-                moment_service = MomentService(self.session)
-                moment_service.ensure_moment_for_entry(
+
+                # Sync while the Moment still belongs to the person creating it.
+                MomentService(self.session).ensure_moment_for_entry(
                     user_id,
                     entry,
                     primary_mood_id=getattr(entry_data, "primary_mood_id", None),
                     commit=False,
                 )
+            # A journal-backed Moment follows the journal owner so all members
+            # resolve it through the same journal permission predicate.
+            moment.user_id = journal.user_id
+            self.session.add(moment)
+            self.session.add(entry)
+            self.session.flush()
             if commit:
                 self._commit()
                 self.session.refresh(entry)
@@ -291,7 +307,11 @@ class EntryService:
     ) -> None:
         try:
             from app.services.journal_service import JournalService
-            JournalService(self.session).recalculate_journal_entry_count(entry.journal_id, user_id)
+
+            # Entries belong to the journal owner, even when a member wrote them.
+            JournalService(self.session).recalculate_journal_entry_count(
+                entry.journal_id, entry.user_id
+            )
         except JournalNotFoundError:
             log_warning(f"Journal missing during entry recount for user {user_id}: {entry.journal_id}")
         except SQLAlchemyError as exc:
@@ -325,11 +345,10 @@ class EntryService:
 
     def get_entry_by_id(self, entry_id: uuid.UUID, user_id: uuid.UUID) -> Optional[Entry]:
         """Get an entry by ID, ensuring it belongs to the user."""
-        statement = select(Entry).where(
-            Entry.id == entry_id,
-            Entry.user_id == user_id,
-        )
-        return self.session.exec(statement).first()
+        try:
+            return self._get_owned_entry(entry_id, user_id)
+        except EntryNotFoundError:
+            return None
 
     def get_journal_entries(
         self,
@@ -342,9 +361,10 @@ class EntryService:
     ) -> List[Entry]:
         """Get entries for a specific journal."""
         from app.models.moment import Moment
-        from app.services.journal_service import JournalService
-
-        JournalService(self.session)._get_owned_journal(journal_id, user_id)
+        try:
+            JournalAccessService(self.session).require(journal_id, user_id)
+        except JournalAccessDeniedError:
+            raise JournalNotFoundError("Journal not found") from None
 
         # Join with Moment to access pinned status; every entry must have a moment.
         statement = select(Entry).join(Moment, col(Entry.moment_id) == col(Moment.id))
@@ -357,6 +377,8 @@ class EntryService:
 
         if not include_drafts:
             statement = statement.where(col(Entry.is_draft).is_(False))
+        else:
+            statement = statement.where(or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)))
 
         if not include_pinned:
             # Filter out pinned moments
@@ -381,10 +403,26 @@ class EntryService:
         offset: int = 0,
         include_drafts: bool = False,
     ) -> List[Entry]:
-        """Get all entries for a user across all journals."""
-        statement = select(Entry).where(
-            Entry.user_id == user_id,
-        ).options(joinedload(self._entry_moment_relation())).order_by(col(Entry.created_at).desc())
+        """Get all entries for a user across all journal, including shared journals."""
+        statement = (
+            select(Entry)
+            .join(Journal, col(Journal.id) == col(Entry.journal_id))
+            .outerjoin(
+                JournalMember,
+                and_(
+                    col(JournalMember.journal_id) == col(Journal.id),
+                    col(JournalMember.user_id) == user_id,
+                ),
+            )
+            .where(
+                or_(
+                    col(Journal.user_id) == user_id,
+                    col(JournalMember.user_id) == user_id,
+                )
+            ).where(or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)))
+            .options(joinedload(self._entry_moment_relation()))
+            .order_by(col(Entry.created_at).desc())
+        )
 
         if not include_drafts:
             statement = statement.where(col(Entry.is_draft).is_(False))
@@ -401,8 +439,14 @@ class EntryService:
         journal_id: Optional[uuid.UUID] = None,
     ) -> List[Entry]:
         """Get all draft entries for a user, newest updated first."""
+        # A shared draft belongs to its author, even if they are not the owner, as long as they still have journal access.
+        membership = select(JournalMember.id).where(
+            JournalMember.journal_id == Entry.journal_id,
+            JournalMember.user_id == user_id,
+        ).exists()
         statement = select(Entry).where(
-            Entry.user_id == user_id,
+            draft_author_condition(user_id),
+            or_(Entry.user_id == user_id, membership),
             col(Entry.is_draft).is_(True),
         ).options(joinedload(self._entry_moment_relation()))
 
@@ -439,7 +483,7 @@ class EntryService:
 
     def update_entry(self, entry_id: uuid.UUID, user_id: uuid.UUID, entry_data: EntryUpdate) -> Entry:
         """Update an entry — content fields only. Metadata lives on Moment."""
-        entry = self._get_owned_entry(entry_id, user_id)
+        entry = self._get_owned_entry(entry_id, user_id, edit=True)
         self._check_expected_version(entry, entry_data.expected_updated_at)
         was_draft = entry.is_draft
         media_service = MediaService(self.session)
@@ -452,18 +496,24 @@ class EntryService:
         old_journal_id = None
         new_journal_id = None
         if entry_data.journal_id is not None and entry_data.journal_id != entry.journal_id:
-            new_journal_statement = select(Journal).where(
-                Journal.id == entry_data.journal_id,
-                Journal.user_id == user_id
-            )
-            new_journal = self.session.exec(new_journal_statement).first()
-            if not new_journal:
+            try:
+                new_journal = JournalAccessService(self.session).require(
+                    entry_data.journal_id, user_id, edit=True
+                ).journal
+            except JournalAccessDeniedError:
                 log_warning(f"Target journal not found for user {user_id}: {entry_data.journal_id}")
-                raise JournalNotFoundError("Target journal not found")
+                raise JournalNotFoundError("Target journal not found") from None
 
             if new_journal.is_archived:
                 log_warning(f"Cannot move entry {entry_id} to archived journal {new_journal.id}")
                 raise ValidationError("Cannot move entry to an archived journal")
+            if new_journal.user_id != entry.user_id:
+                # Moving across owners needs a full transfer, not just a new journal ID.
+                log_warning(
+                    f"Cannot move entry {entry_id} across journal owners: "
+                    f"{entry.user_id} to {new_journal.user_id}"
+                )
+                raise JournalNotFoundError("Target journal not found")
 
             old_journal_id = entry.journal_id
             new_journal_id = entry_data.journal_id
@@ -541,8 +591,9 @@ class EntryService:
             raise
 
         # Delete orphaned media files AFTER successful commit
+        # The files live under the journal owner's storage namespace.
         media_service.delete_media_files_post_commit(
-            user_id, orphaned_files, orphaned_immich_assets
+            entry.user_id, orphaned_files, orphaned_immich_assets
         )
 
         # Recalculate stats for both journals if journal was changed
@@ -550,8 +601,8 @@ class EntryService:
             try:
                 from app.services.journal_service import JournalService
                 journal_service = JournalService(self.session)
-                journal_service.recalculate_journal_entry_count(old_journal_id, user_id)
-                journal_service.recalculate_journal_entry_count(new_journal_id, user_id)
+                journal_service.recalculate_journal_entry_count(old_journal_id, entry.user_id)
+                journal_service.recalculate_journal_entry_count(new_journal_id, entry.user_id)
             except JournalNotFoundError:
                 log_warning(f"Journal missing during entry update recount for user {user_id}")
             except SQLAlchemyError as exc:
@@ -570,6 +621,15 @@ class EntryService:
                 AnalyticsService(self.session).recalculate_writing_streak_stats(user_id)
             except Exception as exc:
                 log_warning(f"Failed to recalculate writing streak stats after drafting entry: {exc}")
+            try:
+                from app.services.journal_service import JournalService
+
+                # A published entry leaving the journal changes its cached totals.
+                JournalService(self.session).recalculate_journal_entry_count(
+                    entry.journal_id, entry.user_id
+                )
+            except Exception as exc:
+                log_warning(f"Failed to recalculate journal stats after drafting entry: {exc}")
         elif not entry.is_draft and entry_data.content_delta is not None:
             # A published entry's body changed, so its word_count may have too.
             # Keep the cached writing-streak totals in step (the finalize branch
@@ -579,6 +639,15 @@ class EntryService:
                 AnalyticsService(self.session).refresh_entry_totals(user_id)
             except Exception as exc:
                 log_warning(f"Failed to refresh writing streak totals after entry edit: {exc}")
+            try:
+                from app.services.journal_service import JournalService
+
+                # Word-count edits need the journal cache refreshed too.
+                JournalService(self.session).recalculate_journal_entry_count(
+                    entry.journal_id, entry.user_id
+                )
+            except Exception as exc:
+                log_warning(f"Failed to recalculate journal stats after entry edit: {exc}")
 
         log_info(f"Entry updated for user {user_id}: {entry.id}")
         return entry
@@ -590,10 +659,11 @@ class EntryService:
         Note: The associated Moment and its context (media, tags, mood, etc.) are NOT deleted.
         This effectively "reverts" a detailed entry back to a "Quick Log" (Moment without Entry).
         """
-        entry = self._get_owned_entry(entry_id, user_id)
+        entry = self._get_owned_entry(entry_id, user_id, edit=True)
 
         # Store related IDs before deleting the entry
         journal_id = entry.journal_id
+        journal_owner_id = entry.user_id
         moment_id = entry.moment_id
 
         # Hard delete the entry only — moment, media, and tags remain on the moment
@@ -608,7 +678,9 @@ class EntryService:
 
         try:
             from app.services.journal_service import JournalService
-            JournalService(self.session).recalculate_journal_entry_count(journal_id, user_id)
+            JournalService(self.session).recalculate_journal_entry_count(
+                journal_id, journal_owner_id
+            )
         except JournalNotFoundError:
             log_warning(f"Journal missing during entry delete recount for user {user_id}: {journal_id}")
         except SQLAlchemyError as exc:

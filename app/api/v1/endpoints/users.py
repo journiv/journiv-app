@@ -4,7 +4,7 @@ User endpoints.
 import hashlib
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session
 
@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.database import get_session
 from app.core.logging_config import log_error, log_user_action
 from app.models.user import User
+from app.schemas.journal import UserSearchResponse
 from app.schemas.user import (
     UserResponse,
     UserSettingsResponse,
@@ -22,6 +23,31 @@ from app.schemas.user import (
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+@router.get(
+    "/search",
+    response_model=list[UserSearchResponse],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        422: {"description": "Invalid search query"},
+    },
+)
+async def search_users(
+    q: Annotated[str, Query(min_length=2, max_length=100)],
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    limit: Annotated[int, Query(ge=1, le=25)] = 10,
+) -> list[UserSearchResponse]:
+    """Search active instance users for a journal-sharing recipient."""
+    query = q.strip()
+    if len(query) < 2:
+        raise HTTPException(status_code=422, detail="Search query must contain at least two characters")
+    users = UserService(session).search_active_users(
+        query, exclude_user_id=current_user.id, limit=limit
+    )
+    return [UserSearchResponse(id=user.id, name=user.name, email=str(user.email)) for user in users]
 
 
 class DeleteResponse(BaseModel):

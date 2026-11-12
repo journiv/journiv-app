@@ -13,6 +13,7 @@ from .import_job import ImportJob
 from .instance_detail import InstanceDetail
 from .integration import Integration
 from .journal import Journal
+from .journal_member import JournalMember
 from .moment import Moment, MomentMedia, MomentMoodActivity
 from .moment_person_link import MomentPersonLink
 from .moment_tag_link import MomentTagLink
@@ -31,6 +32,7 @@ __all__ = [
     "User",
     "UserSettings",
     "Journal",
+    "JournalMember",
     "Entry",
     "MomentMedia",
     "Mood",
