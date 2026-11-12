@@ -17,6 +17,7 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """Add journal memberships and entry author tracking."""
     connection = op.get_bind()
     is_sqlite = connection.dialect.name == "sqlite"
     # SQLite has no reusable named enum type, so its constraint below carries validation.
@@ -66,6 +67,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """Remove journal memberships and entry author tracking."""
     # Restore journal ownership before discarding collaborator attribution.
     op.execute(
         """

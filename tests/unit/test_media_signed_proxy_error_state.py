@@ -34,6 +34,7 @@ class _FakeResponse:
         pass
 
     async def aiter_bytes(self):
+        """Yield fake thumbnail bytes."""
         yield b"thumbnail"
 
 
@@ -55,6 +56,7 @@ async def test_signed_original_401_updates_integration_error_state():
 
     @contextmanager
     def fake_session_context(*_args, **_kwargs):
+        """Provide the mocked database session."""
         yield fake_session
 
     with patch.object(media_module, "_get_media_service", return_value=fake_media_service), \
@@ -84,6 +86,7 @@ async def test_signed_original_401_updates_integration_error_state():
 
 @pytest.mark.asyncio
 async def test_signed_shared_immich_thumbnail_uses_moment_owner_credentials():
+    """Fetch shared Immich thumbnails using the owner's credentials."""
     media_id = uuid4()
     viewer_id = uuid4()
     owner_id = uuid4()
@@ -100,6 +103,7 @@ async def test_signed_shared_immich_thumbnail_uses_moment_owner_credentials():
 
     @contextmanager
     def fake_session_context(*_args, **_kwargs):
+        """Provide the mocked database session."""
         yield fake_session
 
     with patch.object(media_module, "_get_media_service", return_value=fake_media_service), \
@@ -159,6 +163,7 @@ async def test_signed_media_denies_shared_drafts_before_serving(endpoint, permis
 
     @contextmanager
     def fake_session_context(*_args, **_kwargs):
+        """Provide the database session containing the shared draft."""
         yield session
 
     with patch.object(media_module, "_get_media_service", return_value=media_service), \

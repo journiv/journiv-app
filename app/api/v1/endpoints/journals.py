@@ -11,6 +11,7 @@ from app.api.dependencies import get_current_user
 from app.core.database import get_session
 from app.core.exceptions import JournalNotFoundError, UserNotFoundError
 from app.core.logging_config import log_error, log_user_action
+from app.models.journal import Journal
 from app.models.user import User
 from app.schemas.journal import (
     JournalCreate,
@@ -27,7 +28,9 @@ from app.services.journal_service import JournalService
 router = APIRouter(prefix="/journals", tags=["journals"])
 
 
-def _journal_response(journal, access_level: str, owner: User) -> JournalResponse:
+def _journal_response(
+    journal: Journal, access_level: str, owner: User
+) -> JournalResponse:
     """Build a journal response with viewer-specific access and owner details.
     """
     response = JournalResponse.model_validate(journal)
@@ -188,12 +191,20 @@ async def get_journal(
         raise HTTPException(status_code=500, detail="An error occurred while fetching journal") from None
 
 
-@router.get("/{journal_id}/members", response_model=List[JournalMemberResponse])
+@router.get(
+    "/{journal_id}/members",
+    response_model=List[JournalMemberResponse],
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal not found"},
+    },
+)
 async def list_journal_members(
     journal_id: uuid.UUID,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-):
+) -> List[JournalMemberResponse]:
     """List a journal's collaborator roster for any user with read access.
 
     Roster membership remains owner-managed; this endpoint only exposes it.
@@ -214,13 +225,23 @@ async def list_journal_members(
         raise HTTPException(status_code=404, detail="Journal not found") from None
 
 
-@router.post("/{journal_id}/members", response_model=JournalMemberResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{journal_id}/members",
+    response_model=JournalMemberResponse,
+    status_code=status.HTTP_201_CREATED,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal or user not found"},
+        409: {"description": "User is already a journal member"},
+    },
+)
 async def add_journal_member(
     journal_id: uuid.UUID,
     body: JournalMemberCreate,
     current_user: Annotated[User, Depends(get_current_user)],
     session: Annotated[Session, Depends(get_session)],
-):
+) -> JournalMemberResponse:
     """Add a collaborator to a journal.
 
     Only the journal owner can change roster membership.
@@ -229,7 +250,13 @@ async def add_journal_member(
         JournalAccessService(session).require(journal_id, current_user.id, manage=True)
         member = JournalService(session).add_member(journal_id, body.user_id, body.permission)
         user = session.get(User, member.user_id)
-        return JournalMemberResponse(user_id=user.id, name=user.name, permission=member.permission, created_at=member.created_at, updated_at=member.updated_at)
+        return JournalMemberResponse(
+            user_id=user.id,
+            name=user.name,
+            permission=member.permission,
+            created_at=member.created_at,
+            updated_at=member.updated_at,
+        )
     except JournalAccessDeniedError:
         raise HTTPException(status_code=404, detail="Journal not found") from None
     except UserNotFoundError:
@@ -238,11 +265,22 @@ async def add_journal_member(
         raise HTTPException(status_code=409, detail=str(exc)) from None
 
 
-@router.put("/{journal_id}/members/{user_id}", response_model=JournalMemberResponse)
+@router.put(
+    "/{journal_id}/members/{user_id}",
+    response_model=JournalMemberResponse,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal or journal member not found"},
+    },
+)
 async def update_journal_member(
-    journal_id: uuid.UUID, user_id: uuid.UUID, body: JournalMemberUpdate,
-    current_user: Annotated[User, Depends(get_current_user)], session: Annotated[Session, Depends(get_session)],
-):
+    journal_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: JournalMemberUpdate,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> JournalMemberResponse:
     """Change a collaborator's journal permission.
 
     Only the journal owner can change roster membership.
@@ -251,16 +289,32 @@ async def update_journal_member(
         JournalAccessService(session).require(journal_id, current_user.id, manage=True)
         member = JournalService(session).update_member(journal_id, user_id, body.permission)
         user = session.get(User, user_id)
-        return JournalMemberResponse(user_id=user.id, name=user.name, permission=member.permission, created_at=member.created_at, updated_at=member.updated_at)
+        return JournalMemberResponse(
+            user_id=user.id,
+            name=user.name,
+            permission=member.permission,
+            created_at=member.created_at,
+            updated_at=member.updated_at,
+        )
     except (JournalAccessDeniedError, JournalNotFoundError):
         raise HTTPException(status_code=404, detail="Journal not found") from None
 
 
-@router.delete("/{journal_id}/members/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(
+    "/{journal_id}/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    responses={
+        401: {"description": "Not authenticated"},
+        403: {"description": "Account inactive"},
+        404: {"description": "Journal or journal member not found"},
+    },
+)
 async def remove_journal_member(
-    journal_id: uuid.UUID, user_id: uuid.UUID,
-    current_user: Annotated[User, Depends(get_current_user)], session: Annotated[Session, Depends(get_session)],
-):
+    journal_id: uuid.UUID,
+    user_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+) -> None:
     """Remove a collaborator from a journal.
 
     Only the journal owner can change roster membership.

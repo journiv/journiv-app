@@ -4,7 +4,9 @@ Shared moment ownership lookup helpers.
 import uuid
 from typing import Any, Optional
 
-from sqlmodel import Session, select
+from sqlalchemy import func
+from sqlalchemy.sql.elements import ColumnElement
+from sqlmodel import Session, col, select
 
 from app.models.entry import Entry
 from app.models.moment import Moment
@@ -13,6 +15,16 @@ from app.services.journal_access import JournalAccessDeniedError, JournalAccessS
 
 class MomentNotFoundError(Exception):
     """Raised when a moment is not found for the user."""
+
+
+def draft_author_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Match the draft author, falling back to the entry owner for older rows."""
+    return func.coalesce(col(Entry.created_by_user_id), col(Entry.user_id)) == user_id
+
+
+def is_draft_author(entry: Entry, user_id: uuid.UUID) -> bool:
+    """Check draft authorship, including entries without creator attribution."""
+    return (entry.created_by_user_id or entry.user_id) == user_id
 
 
 def get_owned_moment(
@@ -28,6 +40,9 @@ def get_owned_moment(
         statement = statement.options(*options)
     moment = session.exec(statement).first()
     if not moment:
+        raise MomentNotFoundError("Moment not found")
+    entry = session.exec(select(Entry).where(Entry.moment_id == moment_id)).first()
+    if entry and entry.is_draft and not is_draft_author(entry, user_id):
         raise MomentNotFoundError("Moment not found")
     return moment
 
@@ -53,8 +68,8 @@ def get_accessible_moment(
         if moment.user_id != user_id:
             raise MomentNotFoundError("Moment not found")
         return moment
-    if entry.is_draft and moment.user_id != user_id:
-        # Drafts stay with their author until they are published into the shared timeline.
+    if entry.is_draft and not is_draft_author(entry, user_id):
+        # Drafts remain private to their author until they are finalized.
         raise MomentNotFoundError("Moment not found")
     try:
         JournalAccessService(session).require(entry.journal_id, user_id, edit=edit)

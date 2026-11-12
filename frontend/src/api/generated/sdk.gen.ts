@@ -256,7 +256,7 @@ export const updateCurrentUserSettingsApiV1UsersMeSettingsPut = <ThrowOnError ex
 /**
  * Get User Journals
  *
- * Get all journals for the current user.
+ * List journals the current user owns or can access.
  *
  * By default excludes archived journals. Set include_archived=true to include them.
  */
@@ -269,7 +269,7 @@ export const getUserJournalsApiV1JournalsGet = <ThrowOnError extends boolean = f
 /**
  * Create Journal
  *
- * Create a new journal.
+ * Create a journal for the current user.
  */
 export const createJournalApiV1JournalsPost = <ThrowOnError extends boolean = false>(options: Options<CreateJournalApiV1JournalsPostData, ThrowOnError>): RequestResult<CreateJournalApiV1JournalsPostResponses, CreateJournalApiV1JournalsPostErrors, ThrowOnError> => (options.client ?? client).post<CreateJournalApiV1JournalsPostResponses, CreateJournalApiV1JournalsPostErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -284,7 +284,7 @@ export const createJournalApiV1JournalsPost = <ThrowOnError extends boolean = fa
 /**
  * Get Favorite Journals
  *
- * Get all journals marked as favorites.
+ * List the current user's favorited journals.
  */
 export const getFavoriteJournalsApiV1JournalsFavoritesGet = <ThrowOnError extends boolean = false>(options?: Options<GetFavoriteJournalsApiV1JournalsFavoritesGetData, ThrowOnError>): RequestResult<GetFavoriteJournalsApiV1JournalsFavoritesGetResponses, GetFavoriteJournalsApiV1JournalsFavoritesGetErrors, ThrowOnError> => (options?.client ?? client).get<GetFavoriteJournalsApiV1JournalsFavoritesGetResponses, GetFavoriteJournalsApiV1JournalsFavoritesGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -295,7 +295,7 @@ export const getFavoriteJournalsApiV1JournalsFavoritesGet = <ThrowOnError extend
 /**
  * Reorder Journals
  *
- * Reorder journals for the current user.
+ * Reorder journals owned by the current user.
  *
  * Updates the position field for multiple journals in a single transaction.
  * Journals are ordered by: is_favorite DESC, position ASC NULLS LAST, created_at DESC.
@@ -313,7 +313,9 @@ export const reorderJournalsApiV1JournalsReorderPut = <ThrowOnError extends bool
 /**
  * Delete Journal
  *
- * Delete a journal.
+ * Delete a journal owned by the current user.
+ *
+ * Collaborators cannot delete journals they can access.
  */
 export const deleteJournalApiV1JournalsJournalIdDelete = <ThrowOnError extends boolean = false>(options: Options<DeleteJournalApiV1JournalsJournalIdDeleteData, ThrowOnError>): RequestResult<DeleteJournalApiV1JournalsJournalIdDeleteResponses, DeleteJournalApiV1JournalsJournalIdDeleteErrors, ThrowOnError> => (options.client ?? client).delete<DeleteJournalApiV1JournalsJournalIdDeleteResponses, DeleteJournalApiV1JournalsJournalIdDeleteErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -324,7 +326,9 @@ export const deleteJournalApiV1JournalsJournalIdDelete = <ThrowOnError extends b
 /**
  * Get Journal
  *
- * Get a specific journal by ID.
+ * Get a journal visible to the current user.
+ *
+ * The response includes the viewer's access level and the journal owner's details.
  */
 export const getJournalApiV1JournalsJournalIdGet = <ThrowOnError extends boolean = false>(options: Options<GetJournalApiV1JournalsJournalIdGetData, ThrowOnError>): RequestResult<GetJournalApiV1JournalsJournalIdGetResponses, GetJournalApiV1JournalsJournalIdGetErrors, ThrowOnError> => (options.client ?? client).get<GetJournalApiV1JournalsJournalIdGetResponses, GetJournalApiV1JournalsJournalIdGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -335,7 +339,9 @@ export const getJournalApiV1JournalsJournalIdGet = <ThrowOnError extends boolean
 /**
  * Update Journal
  *
- * Update a journal's name, description, or other properties.
+ * Update a journal's editable properties.
+ *
+ * Only the journal owner may modify journal metadata.
  */
 export const updateJournalApiV1JournalsJournalIdPut = <ThrowOnError extends boolean = false>(options: Options<UpdateJournalApiV1JournalsJournalIdPutData, ThrowOnError>): RequestResult<UpdateJournalApiV1JournalsJournalIdPutResponses, UpdateJournalApiV1JournalsJournalIdPutErrors, ThrowOnError> => (options.client ?? client).put<UpdateJournalApiV1JournalsJournalIdPutResponses, UpdateJournalApiV1JournalsJournalIdPutErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -349,6 +355,10 @@ export const updateJournalApiV1JournalsJournalIdPut = <ThrowOnError extends bool
 
 /**
  * List Journal Members
+ *
+ * List a journal's collaborator roster for any user with read access.
+ *
+ * Roster membership remains owner-managed; this endpoint only exposes it.
  */
 export const listJournalMembersApiV1JournalsJournalIdMembersGet = <ThrowOnError extends boolean = false>(options: Options<ListJournalMembersApiV1JournalsJournalIdMembersGetData, ThrowOnError>): RequestResult<ListJournalMembersApiV1JournalsJournalIdMembersGetResponses, ListJournalMembersApiV1JournalsJournalIdMembersGetErrors, ThrowOnError> => (options.client ?? client).get<ListJournalMembersApiV1JournalsJournalIdMembersGetResponses, ListJournalMembersApiV1JournalsJournalIdMembersGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -358,6 +368,10 @@ export const listJournalMembersApiV1JournalsJournalIdMembersGet = <ThrowOnError 
 
 /**
  * Add Journal Member
+ *
+ * Add a collaborator to a journal.
+ *
+ * Only the journal owner can change roster membership.
  */
 export const addJournalMemberApiV1JournalsJournalIdMembersPost = <ThrowOnError extends boolean = false>(options: Options<AddJournalMemberApiV1JournalsJournalIdMembersPostData, ThrowOnError>): RequestResult<AddJournalMemberApiV1JournalsJournalIdMembersPostResponses, AddJournalMemberApiV1JournalsJournalIdMembersPostErrors, ThrowOnError> => (options.client ?? client).post<AddJournalMemberApiV1JournalsJournalIdMembersPostResponses, AddJournalMemberApiV1JournalsJournalIdMembersPostErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -371,6 +385,10 @@ export const addJournalMemberApiV1JournalsJournalIdMembersPost = <ThrowOnError e
 
 /**
  * Remove Journal Member
+ *
+ * Remove a collaborator from a journal.
+ *
+ * Only the journal owner can change roster membership.
  */
 export const removeJournalMemberApiV1JournalsJournalIdMembersUserIdDelete = <ThrowOnError extends boolean = false>(options: Options<RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteData, ThrowOnError>): RequestResult<RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteResponses, RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteErrors, ThrowOnError> => (options.client ?? client).delete<RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteResponses, RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -380,6 +398,10 @@ export const removeJournalMemberApiV1JournalsJournalIdMembersUserIdDelete = <Thr
 
 /**
  * Update Journal Member
+ *
+ * Change a collaborator's journal permission.
+ *
+ * Only the journal owner can change roster membership.
  */
 export const updateJournalMemberApiV1JournalsJournalIdMembersUserIdPut = <ThrowOnError extends boolean = false>(options: Options<UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutData, ThrowOnError>): RequestResult<UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutResponses, UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutErrors, ThrowOnError> => (options.client ?? client).put<UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutResponses, UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -405,7 +427,7 @@ export const toggleFavoriteApiV1JournalsJournalIdFavoritePost = <ThrowOnError ex
 /**
  * Archive Journal
  *
- * Archive a journal.
+ * Archive a journal owned by the current user.
  *
  * Archived journals are hidden from default listings but remain accessible.
  */

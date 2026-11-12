@@ -29,7 +29,7 @@ from app.integrations.schemas import (
 )
 from app.models.immich_asset_face import ImmichAssetFace
 from app.models.integration import Integration, IntegrationProvider
-from app.models.moment import Moment, MomentMedia
+from app.models.moment import MomentMedia
 from app.models.moment_person_link import MomentPersonLink
 from app.models.person import Person
 from app.models.person_external_identity import PersonExternalIdentity
@@ -578,11 +578,12 @@ class ImmichFaceService:
         user_id: uuid.UUID,
         moment_id: uuid.UUID,
     ) -> MomentImmichPeopleSuggestionsResponse:
-        moment = self.session.exec(
-            select(Moment).where(Moment.id == moment_id, Moment.user_id == user_id)
-        ).first()
-        if not moment:
-            raise ValueError("Moment not found")
+        from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
+
+        try:
+            get_owned_moment(self.session, user_id, moment_id)
+        except MomentNotFoundError:
+            raise ValueError("Moment not found") from None
 
         media_rows = self.session.exec(
             select(MomentMedia.external_asset_id)

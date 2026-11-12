@@ -32,7 +32,12 @@ from app.schemas.entry import (
 )
 from app.services.journal_access import JournalAccessDeniedError, JournalAccessService
 from app.services.media_service import MediaService
-from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
+from app.services.moment_lookup import (
+    MomentNotFoundError,
+    draft_author_condition,
+    get_owned_moment,
+    is_draft_author,
+)
 from app.utils.quill_delta import extract_media_sources, extract_plain_text
 
 DEFAULT_ENTRY_PAGE_LIMIT = 50
@@ -152,6 +157,8 @@ class EntryService:
         entry = self.session.exec(statement).first()
         if not entry:
             log_warning(f"Entry not found for user {user_id}: {entry_id}")
+            raise EntryNotFoundError("Entry not found")
+        if entry.is_draft and not is_draft_author(entry, user_id):
             raise EntryNotFoundError("Entry not found")
         try:
             JournalAccessService(self.session).require(entry.journal_id, user_id, edit=edit)
@@ -370,6 +377,8 @@ class EntryService:
 
         if not include_drafts:
             statement = statement.where(col(Entry.is_draft).is_(False))
+        else:
+            statement = statement.where(or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)))
 
         if not include_pinned:
             # Filter out pinned moments
@@ -408,13 +417,9 @@ class EntryService:
             .where(
                 or_(
                     col(Journal.user_id) == user_id,
-                    and_(
-                        col(JournalMember.user_id) == user_id,
-                        # Membership exposes finished writing, never an author's work-in-progress.
-                        col(Entry.is_draft).is_(False),
-                    ),
+                    col(JournalMember.user_id) == user_id,
                 )
-            )
+            ).where(or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)))
             .options(joinedload(self._entry_moment_relation()))
             .order_by(col(Entry.created_at).desc())
         )
@@ -434,8 +439,14 @@ class EntryService:
         journal_id: Optional[uuid.UUID] = None,
     ) -> List[Entry]:
         """Get all draft entries for a user, newest updated first."""
+        # A shared draft belongs to its author, even if they are not the owner, as long as they still have journal access.
+        membership = select(JournalMember.id).where(
+            JournalMember.journal_id == Entry.journal_id,
+            JournalMember.user_id == user_id,
+        ).exists()
         statement = select(Entry).where(
-            Entry.user_id == user_id,
+            draft_author_condition(user_id),
+            or_(Entry.user_id == user_id, membership),
             col(Entry.is_draft).is_(True),
         ).options(joinedload(self._entry_moment_relation()))
 

@@ -15,6 +15,7 @@ from app.api.v1.endpoints.journals import (
     update_journal_member,
 )
 from app.core.exceptions import (
+    EntryNotFoundError,
     JournalNotFoundError,
     MediaNotFoundError,
     UserNotFoundError,
@@ -25,6 +26,8 @@ from app.models.enums import JournalPermission, MediaType, UploadStatus
 from app.models.journal import Journal
 from app.models.journal_member import JournalMember
 from app.models.moment import Moment, MomentMedia
+from app.models.moment_person_link import MomentPersonLink
+from app.models.person import Person
 from app.models.user import User
 from app.schemas.entry import EntryCreate, EntryDraftCreate, EntryResponse, EntryUpdate
 from app.schemas.journal import JournalMemberCreate, JournalMemberUpdate
@@ -37,17 +40,20 @@ from app.services.journal_access import (
 )
 from app.services.journal_service import JournalService
 from app.services.media_service import MediaService
-from app.services.moment_lookup import MomentNotFoundError
+from app.services.moment_lookup import MomentNotFoundError, get_accessible_moment
 from app.services.moment_service import MomentService
+from app.services.person_service import PersonService
 
 
 def _user(email: str) -> User:
+    """Build a test user from an email address."""
     return User(email=email, password="password", name=email.split("@")[0])
 
 
 def _create_shared_draft_media(
     permission: JournalPermission = JournalPermission.READONLY,
 ):
+    """Create an owner's draft image and a journal member."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     session = Session(engine)
@@ -88,6 +94,7 @@ def _create_shared_draft_media(
 def _create_shared_published_and_draft_moments(
     permission: JournalPermission,
 ):
+    """Create published and draft Moments in a shared journal."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     session = Session(engine)
@@ -168,6 +175,7 @@ def _create_shared_journal_for_actor(actor: str):
     ],
 )
 def test_member_permissions_distinguish_read_and_edit_access(actor, edit, manage, allowed):
+    """Check read, edit, and management access for each role."""
     setup_actor = "outsider" if actor == "missing" else actor
     session, _, current_user, journal = _create_shared_journal_for_actor(setup_actor)
     journal_id = uuid.uuid4() if actor == "missing" else journal.id
@@ -186,6 +194,7 @@ def test_member_permissions_distinguish_read_and_edit_access(actor, edit, manage
 
 
 def test_permission_downgrade_and_removal_revoke_access():
+    """Check that permission changes take effect immediately."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     session = Session(engine)
@@ -232,6 +241,7 @@ def test_permission_downgrade_and_removal_revoke_access():
     ],
 )
 async def test_only_owner_can_mutate_shared_journal_roster(actor, operation, allowed):
+    """Only the owner can add, update, or remove members."""
     session, _, current_user, journal = _create_shared_journal_for_actor(actor)
     target = _user(f"target-{uuid.uuid4().hex}@example.com")
     session.add(target)
@@ -302,6 +312,7 @@ async def test_only_owner_can_mutate_shared_journal_roster(actor, operation, all
 
 
 def test_adding_a_missing_user_raises_user_not_found_error():
+    """Reject adding a journal member who does not exist."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     session = Session(engine)
@@ -323,6 +334,7 @@ def test_adding_a_missing_user_raises_user_not_found_error():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("permission", [JournalPermission.READONLY, JournalPermission.EDIT])
 async def test_member_can_list_shared_journal_roster(permission):
+    """Members can view the roster without exposing emails."""
     engine = create_engine("sqlite:///:memory:")
     BaseModel.metadata.create_all(engine)
     session = Session(engine)
@@ -701,6 +713,140 @@ def test_edit_member_can_create_an_entry_in_a_shared_journal(entry_type, is_draf
     assert session.get(Journal, journal.id).entry_count == (0 if is_draft else 1)
 
 
+def test_shared_draft_author_can_access_media_and_recover_until_revoked():
+    """Authors can access and recover shared drafts until membership is revoked."""
+    session, owner, editor, journal = _create_shared_journal_for_actor("editor")
+    moment = Moment(user_id=editor.id, logged_date_tz=date(2026, 9, 30))
+    session.add(moment)
+    session.commit()
+    entry = EntryService(session).create_entry(
+        editor.id, EntryDraftCreate(journal_id=journal.id, moment_id=moment.id), is_draft=True
+    )
+    assert get_accessible_moment(session, editor.id, moment.id, edit=True).id == moment.id
+    assert MediaService(session)._get_moment_for_user(session, moment.id, editor.id).id == moment.id
+    assert entry.id in {draft.id for draft in EntryService(session).get_user_drafts(editor.id)}
+    member = session.exec(select(JournalMember).where(JournalMember.user_id == editor.id)).one()
+    session.delete(member)
+    session.commit()
+    with pytest.raises(MomentNotFoundError):
+        get_accessible_moment(session, editor.id, moment.id, edit=True)
+    assert EntryService(session).get_user_drafts(editor.id) == []
+
+
+def test_shared_draft_author_can_finalize_and_discard(monkeypatch):
+    """Authors can finalize or discard their own shared drafts."""
+    session, owner, editor, journal = _create_shared_journal_for_actor("editor")
+    monkeypatch.setattr(EntryService, "_run_entry_side_effects", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.core.celery_app.celery_app.send_task", lambda *args, **kwargs: None)
+    service = EntryService(session)
+    for finalize in (True, False):
+        moment = Moment(user_id=editor.id, logged_date_tz=date(2026, 9, 30))
+        session.add(moment)
+        session.commit()
+        entry = service.create_entry(
+            editor.id, EntryDraftCreate(journal_id=journal.id, moment_id=moment.id), is_draft=True
+        )
+        if finalize:
+            assert not service.update_entry(entry.id, editor.id, EntryUpdate(is_draft=False)).is_draft
+        else:
+            moment_id = moment.id
+            assert MomentService(session).delete_moment(moment_id, editor.id)["deleted"]
+            assert session.get(Moment, moment_id) is None
+
+
+def test_editor_draft_is_private_until_published(monkeypatch):
+    """Only the author can read, list, edit, or delete an unfinished entry."""
+    session, owner, editor, journal = _create_shared_journal_for_actor("editor")
+    other = _user(f"other-{uuid.uuid4().hex}@example.com")
+    session.add(other)
+    session.commit()
+    session.add(JournalMember(journal_id=journal.id, user_id=other.id, permission=JournalPermission.EDIT))
+    moment = Moment(user_id=editor.id, logged_date_tz=date(2026, 9, 30))
+    session.add(moment)
+    session.commit()
+    monkeypatch.setattr(EntryService, "_run_entry_side_effects", lambda *args, **kwargs: None)
+    service = EntryService(session)
+    entry = service.create_entry(
+        editor.id, EntryDraftCreate(journal_id=journal.id, moment_id=moment.id), is_draft=True
+    )
+    media = MomentMedia(
+        moment_id=moment.id, media_type=MediaType.IMAGE, file_path="images/draft.jpg",
+        file_size=1, mime_type="image/jpeg", upload_status=UploadStatus.COMPLETED,
+    )
+    session.add(media)
+    session.commit()
+    for viewer in (owner, other):
+        assert service.get_entry_by_id(entry.id, viewer.id) is None
+        with pytest.raises(EntryNotFoundError):
+            service.update_entry(entry.id, viewer.id, EntryUpdate(title="No"))
+        with pytest.raises(MomentNotFoundError):
+            get_accessible_moment(session, viewer.id, moment.id)
+        with pytest.raises(MomentNotFoundError):
+            MomentService(session).delete_moment(moment.id, viewer.id)
+        with pytest.raises(MediaNotFoundError):
+            MediaService(session).get_media_by_id(media.id, viewer.id, session)
+        assert entry.id not in {item.id for item in service.get_user_drafts(viewer.id)}
+        assert entry.id not in {item.id for item in service.get_user_entries(viewer.id, include_drafts=True)}
+        assert entry.id not in {item.id for item in service.get_journal_entries(journal.id, viewer.id, include_drafts=True)}
+        moments, _, _ = MomentService(session).get_moments(viewer.id, include_drafts=True)
+        assert moment.id not in {item.id for item in moments}
+        assert moment.id not in {item.id for item in MomentService(session).get_calendar_summary(viewer.id)}
+        items, _, _ = MediaService(session).get_media_library(session, viewer.id, journal_id=journal.id)
+        assert media.id not in {item.id for item in items}
+    assert entry.id in {item.id for item in service.get_user_drafts(editor.id)}
+    assert entry.id in {item.id for item in service.get_journal_entries(journal.id, editor.id, include_drafts=True)}
+    moments, _, _ = MomentService(session).get_moments(editor.id, include_drafts=True)
+    assert moment.id in {item.id for item in moments}
+    moments, _, _ = MomentService(session).get_moments(editor.id)
+    assert moment.id not in {item.id for item in moments}
+    items, _, _ = MediaService(session).get_media_library(session, editor.id, journal_id=journal.id)
+    assert media.id in {item.id for item in items}
+    member = session.exec(select(JournalMember).where(JournalMember.user_id == editor.id)).one()
+    member.permission = JournalPermission.READONLY
+    session.add(member)
+    session.commit()
+    assert get_accessible_moment(session, editor.id, moment.id).id == moment.id
+    with pytest.raises(MomentNotFoundError):
+        get_accessible_moment(session, editor.id, moment.id, edit=True)
+    with pytest.raises(MomentNotFoundError):
+        MediaService(session)._get_moment_for_user(session, moment.id, editor.id)
+    with pytest.raises(EntryNotFoundError):
+        service.update_entry(entry.id, editor.id, EntryUpdate(is_draft=False))
+    member.permission = JournalPermission.EDIT
+    session.add(member)
+    session.commit()
+    service.update_entry(entry.id, editor.id, EntryUpdate(is_draft=False))
+    for viewer in (owner, other):
+        assert service.get_entry_by_id(entry.id, viewer.id) is not None
+        assert get_accessible_moment(session, viewer.id, moment.id).id == moment.id
+
+
+def test_shared_people_replacement_preserves_other_users_links():
+    """Editors can change their own person tags without removing others' tags."""
+    session, owner, editor, journal = _create_shared_journal_for_actor("editor")
+    moment = Moment(user_id=owner.id, logged_date_tz=date(2026, 9, 30))
+    owner_person = Person(user_id=owner.id, name="Owner person", normalized_name="owner person")
+    editor_person = Person(user_id=editor.id, name="Editor person", normalized_name="editor person")
+    session.add_all([moment, owner_person, editor_person])
+    session.commit()
+    session.add_all([
+        Entry(user_id=owner.id, journal_id=journal.id, moment_id=moment.id),
+        MomentPersonLink(moment_id=moment.id, person_id=owner_person.id),
+    ])
+    session.commit()
+    service = PersonService(session)
+    assert [p.id for p in service.replace_moment_people(moment.id, [owner_person.id, editor_person.id], editor.id)] == [editor_person.id]
+    assert {link.person_id for link in session.exec(select(MomentPersonLink)).all()} == {owner_person.id, editor_person.id}
+    service.replace_moment_people(moment.id, [], editor.id)
+    assert {link.person_id for link in session.exec(select(MomentPersonLink)).all()} == {owner_person.id}
+    member = session.exec(select(JournalMember).where(JournalMember.user_id == editor.id)).one()
+    member.permission = JournalPermission.READONLY
+    session.add(member)
+    session.commit()
+    with pytest.raises(MomentNotFoundError):
+        service.replace_moment_people(moment.id, [editor_person.id], editor.id)
+
+
 @pytest.mark.parametrize(
     ("actor", "is_draft", "allowed"),
     [
@@ -715,6 +861,7 @@ def test_edit_member_can_create_an_entry_in_a_shared_journal(entry_type, is_draf
     ],
 )
 def test_shared_entry_creation_respects_member_permission(actor, is_draft, allowed):
+    """Only owners and editors can create shared journal entries."""
     session, owner, actor_user, journal = _create_shared_journal_for_actor(actor)
     moment = Moment(
         user_id=actor_user.id if actor == "editor" else owner.id,

@@ -30,7 +30,8 @@ class JournalAccess:
 class JournalAccessService:
     """Resolve a user's effective journal capability without leaking existence."""
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session) -> None:
+        """Use this session to check journal access."""
         self.session = session
 
     def require(
@@ -41,6 +42,7 @@ class JournalAccessService:
         edit: bool = False,
         manage: bool = False,
     ) -> JournalAccess:
+        """Require the requested read, edit, or owner-management capability."""
         journal = self.session.get(Journal, journal_id)
         if not journal:
             raise JournalAccessDeniedError("Journal not found")

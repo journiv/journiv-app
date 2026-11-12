@@ -36,7 +36,11 @@ from app.schemas.moment import (
     PeopleMatch,
 )
 from app.services.goal_service import GoalService
-from app.services.moment_lookup import get_accessible_moment, get_owned_moment
+from app.services.moment_lookup import (
+    draft_author_condition,
+    get_accessible_moment,
+    get_owned_moment,
+)
 
 
 class MomentService:
@@ -66,7 +70,7 @@ class MomentService:
 
     @staticmethod
     def _visible_to_user_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
-        """Match personal moments, owned-journal entries, and published shared entries."""
+        """Match private moments and journal entries visible to the user."""
         member_has_access = (
             select(JournalMember.id)
             .where(
@@ -81,16 +85,16 @@ class MomentService:
             .where(
                 or_(
                     col(Journal.user_id) == user_id,
-                    and_(
-                        member_has_access,
-                        # Membership exposes finished writing only.
-                        col(Entry.is_draft).is_(False),
-                    ),
-                )
+                    member_has_access,
+                ),
+                or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)),
             )
         )
         return or_(
-            col(Moment.user_id) == user_id,
+            and_(
+                col(Moment.user_id) == user_id,
+                ~select(Entry.id).where(Entry.moment_id == Moment.id).correlate(Moment).exists(),
+            ),
             col(Moment.id).in_(shared_moment_ids),
         )
 
@@ -1224,7 +1228,11 @@ class MomentService:
         Returns a result dict: {"deleted": True, "cleanup_failures": count, "errors": list}.
         Cleanup failures are logged and can be retried by a background cleanup job.
         """
-        moment = self._get_owned_moment(user_id, moment_id)
+        entry = self.session.exec(select(Entry).where(Entry.moment_id == moment_id)).first()
+        if entry and entry.is_draft:
+            moment = get_accessible_moment(self.session, user_id, moment_id, edit=True)
+        else:
+            moment = self._get_owned_moment(user_id, moment_id)
 
         from app.models.moment import MomentMedia
         from app.services.media_service import MediaService

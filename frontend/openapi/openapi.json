@@ -473,15 +473,14 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Account inactive"
+          },
           "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
+            "description": "Invalid search query"
           }
         }
       }
@@ -826,7 +825,7 @@
           "journals"
         ],
         "summary": "Create Journal",
-        "description": "Create a new journal.",
+        "description": "Create a journal for the current user.",
         "operationId": "create_journal_api_v1_journals__post",
         "security": [
           {
@@ -901,7 +900,7 @@
           "journals"
         ],
         "summary": "Get User Journals",
-        "description": "Get all journals for the current user.\n\nBy default excludes archived journals. Set include_archived=true to include them.",
+        "description": "List journals the current user owns or can access.\n\nBy default excludes archived journals. Set include_archived=true to include them.",
         "operationId": "get_user_journals_api_v1_journals__get",
         "security": [
           {
@@ -979,7 +978,7 @@
           "journals"
         ],
         "summary": "Get Favorite Journals",
-        "description": "Get all journals marked as favorites.",
+        "description": "List the current user's favorited journals.",
         "operationId": "get_favorite_journals_api_v1_journals_favorites_get",
         "security": [
           {
@@ -1047,7 +1046,7 @@
           "journals"
         ],
         "summary": "Reorder Journals",
-        "description": "Reorder journals for the current user.\n\nUpdates the position field for multiple journals in a single transaction.\nJournals are ordered by: is_favorite DESC, position ASC NULLS LAST, created_at DESC.",
+        "description": "Reorder journals owned by the current user.\n\nUpdates the position field for multiple journals in a single transaction.\nJournals are ordered by: is_favorite DESC, position ASC NULLS LAST, created_at DESC.",
         "operationId": "reorder_journals_api_v1_journals_reorder_put",
         "security": [
           {
@@ -1117,7 +1116,7 @@
           "journals"
         ],
         "summary": "Get Journal",
-        "description": "Get a specific journal by ID.",
+        "description": "Get a journal visible to the current user.\n\nThe response includes the viewer's access level and the journal owner's details.",
         "operationId": "get_journal_api_v1_journals__journal_id__get",
         "security": [
           {
@@ -1192,7 +1191,7 @@
           "journals"
         ],
         "summary": "Update Journal",
-        "description": "Update a journal's name, description, or other properties.",
+        "description": "Update a journal's editable properties.\n\nOnly the journal owner may modify journal metadata.",
         "operationId": "update_journal_api_v1_journals__journal_id__put",
         "security": [
           {
@@ -1280,7 +1279,7 @@
           "journals"
         ],
         "summary": "Delete Journal",
-        "description": "Delete a journal.",
+        "description": "Delete a journal owned by the current user.\n\nCollaborators cannot delete journals they can access.",
         "operationId": "delete_journal_api_v1_journals__journal_id__delete",
         "security": [
           {
@@ -1350,6 +1349,7 @@
           "journals"
         ],
         "summary": "List Journal Members",
+        "description": "List a journal's collaborator roster for any user with read access.\n\nRoster membership remains owner-managed; this endpoint only exposes it.",
         "operationId": "list_journal_members_api_v1_journals__journal_id__members_get",
         "security": [
           {
@@ -1399,6 +1399,15 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Account inactive"
+          },
+          "404": {
+            "description": "Journal not found"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1416,6 +1425,7 @@
           "journals"
         ],
         "summary": "Add Journal Member",
+        "description": "Add a collaborator to a journal.\n\nOnly the journal owner can change roster membership.",
         "operationId": "add_journal_member_api_v1_journals__journal_id__members_post",
         "security": [
           {
@@ -1471,6 +1481,18 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Account inactive"
+          },
+          "404": {
+            "description": "Journal or user not found"
+          },
+          "409": {
+            "description": "User is already a journal member"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1490,6 +1512,7 @@
           "journals"
         ],
         "summary": "Update Journal Member",
+        "description": "Change a collaborator's journal permission.\n\nOnly the journal owner can change roster membership.",
         "operationId": "update_journal_member_api_v1_journals__journal_id__members__user_id__put",
         "security": [
           {
@@ -1555,6 +1578,15 @@
               }
             }
           },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Account inactive"
+          },
+          "404": {
+            "description": "Journal or journal member not found"
+          },
           "422": {
             "description": "Validation Error",
             "content": {
@@ -1572,6 +1604,7 @@
           "journals"
         ],
         "summary": "Remove Journal Member",
+        "description": "Remove a collaborator from a journal.\n\nOnly the journal owner can change roster membership.",
         "operationId": "remove_journal_member_api_v1_journals__journal_id__members__user_id__delete",
         "security": [
           {
@@ -1619,6 +1652,15 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "401": {
+            "description": "Not authenticated"
+          },
+          "403": {
+            "description": "Account inactive"
+          },
+          "404": {
+            "description": "Journal or journal member not found"
           },
           "422": {
             "description": "Validation Error",
@@ -1716,7 +1758,7 @@
           "journals"
         ],
         "summary": "Archive Journal",
-        "description": "Archive a journal.\n\nArchived journals are hidden from default listings but remain accessible.",
+        "description": "Archive a journal owned by the current user.\n\nArchived journals are hidden from default listings but remain accessible.",
         "operationId": "archive_journal_api_v1_journals__journal_id__archive_post",
         "security": [
           {

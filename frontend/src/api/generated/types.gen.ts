@@ -5733,12 +5733,18 @@ export type SearchUsersApiV1UsersSearchGetData = {
 
 export type SearchUsersApiV1UsersSearchGetErrors = {
     /**
-     * Validation Error
+     * Not authenticated
      */
-    422: HttpValidationError;
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Invalid search query
+     */
+    422: unknown;
 };
-
-export type SearchUsersApiV1UsersSearchGetError = SearchUsersApiV1UsersSearchGetErrors[keyof SearchUsersApiV1UsersSearchGetErrors];
 
 export type SearchUsersApiV1UsersSearchGetResponses = {
     /**
@@ -6257,6 +6263,18 @@ export type ListJournalMembersApiV1JournalsJournalIdMembersGetData = {
 
 export type ListJournalMembersApiV1JournalsJournalIdMembersGetErrors = {
     /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal not found
+     */
+    404: unknown;
+    /**
      * Validation Error
      */
     422: HttpValidationError;
@@ -6288,6 +6306,22 @@ export type AddJournalMemberApiV1JournalsJournalIdMembersPostData = {
 };
 
 export type AddJournalMemberApiV1JournalsJournalIdMembersPostErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal or user not found
+     */
+    404: unknown;
+    /**
+     * User is already a journal member
+     */
+    409: unknown;
     /**
      * Validation Error
      */
@@ -6323,6 +6357,18 @@ export type RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteData = {
 
 export type RemoveJournalMemberApiV1JournalsJournalIdMembersUserIdDeleteErrors = {
     /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal or journal member not found
+     */
+    404: unknown;
+    /**
      * Validation Error
      */
     422: HttpValidationError;
@@ -6356,6 +6402,18 @@ export type UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutData = {
 };
 
 export type UpdateJournalMemberApiV1JournalsJournalIdMembersUserIdPutErrors = {
+    /**
+     * Not authenticated
+     */
+    401: unknown;
+    /**
+     * Account inactive
+     */
+    403: unknown;
+    /**
+     * Journal or journal member not found
+     */
+    404: unknown;
     /**
      * Validation Error
      */

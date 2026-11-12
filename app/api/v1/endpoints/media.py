@@ -888,16 +888,15 @@ async def import_from_immich_async(
         )
 
         # 2. Verify moment exists
-        from app.models.moment import Moment
+        from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
 
-        moment = session.exec(
-            select(Moment).where(Moment.id == request.moment_id, Moment.user_id == current_user.id)
-        ).first()
-        if not moment:
+        try:
+            get_owned_moment(session, current_user.id, request.moment_id)
+        except MomentNotFoundError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Moment not found"
-            )
+            ) from None
 
         # 3. Create job and process asynchronously via Celery
         import_service = ImportJobService(session)
@@ -1118,7 +1117,9 @@ async def repair_immich_thumbnails(
     """
     Repair missing thumbnails for Immich media.
     """
+    from app.models.entry import Entry
     from app.models.moment import Moment, MomentMedia
+    from app.services.moment_lookup import draft_author_condition
 
     try:
         # Verify Immich integration exists and is active
@@ -1129,7 +1130,14 @@ async def repair_immich_thumbnails(
         media_to_repair = session.exec(
             select(MomentMedia)
             .join(Moment, col(Moment.id) == col(MomentMedia.moment_id))
+            .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
             .where(col(Moment.user_id) == current_user.id)
+            .where(
+                # keep standalone Moments which get a NULL Entry ID
+                col(Entry.id).is_(None)
+                | col(Entry.is_draft).is_(False)
+                | draft_author_condition(current_user.id)
+            )
             .where(MomentMedia.external_provider == "immich")
             .where(col(MomentMedia.external_asset_id).is_not(None))
             .where(

@@ -130,6 +130,7 @@ class JournalService:
         ]
 
     def list_members(self, journal_id: uuid.UUID) -> list[tuple[JournalMember, User]]:
+        """Return a journal's collaborators ordered by name and email."""
         statement = (
             select(JournalMember, User)
             .join(User, User.id == JournalMember.user_id)
@@ -141,6 +142,7 @@ class JournalService:
     def add_member(
         self, journal_id: uuid.UUID, user_id: uuid.UUID, permission: JournalPermission
     ) -> JournalMember:
+        """Add an active non-owner user as a journal collaborator."""
         journal = self.session.get(Journal, journal_id)
         if not journal or journal.user_id == user_id:
             raise JournalNotFoundError("User cannot be added to this journal")
@@ -163,6 +165,7 @@ class JournalService:
     def update_member(
         self, journal_id: uuid.UUID, user_id: uuid.UUID, permission: JournalPermission
     ) -> JournalMember:
+        """Update a collaborator's permission for a journal."""
         member = self.session.exec(
             select(JournalMember).where(
                 JournalMember.journal_id == journal_id, JournalMember.user_id == user_id
@@ -178,6 +181,7 @@ class JournalService:
         return member
 
     def remove_member(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """Remove a collaborator's access to a journal."""
         member = self.session.exec(
             select(JournalMember).where(
                 JournalMember.journal_id == journal_id, JournalMember.user_id == user_id

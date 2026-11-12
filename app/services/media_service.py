@@ -54,7 +54,11 @@ from app.schemas.media_library import MediaLibraryItem
 from app.schemas.moment import MomentMediaThumbnail
 from app.services.audio_waveform import extract_waveform
 from app.services.media_storage_service import MediaStorageService
-from app.services.moment_lookup import MomentNotFoundError, get_accessible_moment
+from app.services.moment_lookup import (
+    MomentNotFoundError,
+    draft_author_condition,
+    get_accessible_moment,
+)
 from app.utils.import_export.media_handler import MediaHandler
 from app.utils.quill_delta import extract_media_sources
 
@@ -368,10 +372,10 @@ class MediaService:
         )
 
         if journal_id:
-            # A journal owner can browse media attached to their own drafts here. Collaborators still see published entries only.
+            # Journal browsing includes only the viewer's own drafts.
             statement = statement.where(
                 col(Entry.journal_id) == journal_id,
-                (col(Entry.is_draft).is_(False)) | (col(Moment.user_id) == user_id),
+                (col(Entry.is_draft).is_(False)) | draft_author_condition(user_id),
             )
         else:
             # Exclude draft moments the same way the Timeline does: a moment with
