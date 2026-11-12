@@ -208,16 +208,14 @@ class ExportService:
         # Get user settings
         user_settings = self._get_user_settings(user)
 
-        from app.services.moment_lookup import draft_author_condition
+        from app.services.moment_lookup import moment_draft_visibility_condition
 
         moments_query = (
             select(Moment)
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
             .where(
                 col(Moment.user_id) == user_id,
-                col(Entry.id).is_(None)
-                | col(Entry.is_draft).is_(False)
-                | draft_author_condition(user_id),
+                moment_draft_visibility_condition(user_id),
             )
         )
         if export_type == ExportType.JOURNAL and journal_ids:

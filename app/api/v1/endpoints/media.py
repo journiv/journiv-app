@@ -1119,7 +1119,7 @@ async def repair_immich_thumbnails(
     """
     from app.models.entry import Entry
     from app.models.moment import Moment, MomentMedia
-    from app.services.moment_lookup import draft_author_condition
+    from app.services.moment_lookup import moment_draft_visibility_condition
 
     try:
         # Verify Immich integration exists and is active
@@ -1133,10 +1133,7 @@ async def repair_immich_thumbnails(
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
             .where(col(Moment.user_id) == current_user.id)
             .where(
-                # keep standalone Moments which get a NULL Entry ID
-                col(Entry.id).is_(None)
-                | col(Entry.is_draft).is_(False)
-                | draft_author_condition(current_user.id)
+                moment_draft_visibility_condition(current_user.id)
             )
             .where(MomentMedia.external_provider == "immich")
             .where(col(MomentMedia.external_asset_id).is_not(None))

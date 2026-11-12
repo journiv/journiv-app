@@ -2,11 +2,17 @@
 import uuid
 from dataclasses import dataclass
 
-from sqlmodel import Session, select
+from sqlalchemy.sql.elements import ColumnElement
+from sqlmodel import Session, col, select
 
 from app.models.enums import JournalPermission
 from app.models.journal import Journal
 from app.models.journal_member import JournalMember
+
+
+def journal_access_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Match owners or members; the membership join must be scoped to user_id."""
+    return (col(Journal.user_id) == user_id) | (col(JournalMember.user_id) == user_id)
 
 
 class JournalAccessDeniedError(Exception):

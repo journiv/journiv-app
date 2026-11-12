@@ -56,8 +56,9 @@ from app.services.audio_waveform import extract_waveform
 from app.services.media_storage_service import MediaStorageService
 from app.services.moment_lookup import (
     MomentNotFoundError,
-    draft_author_condition,
+    entry_draft_visibility_condition,
     get_accessible_moment,
+    moment_without_draft_condition,
 )
 from app.utils.import_export.media_handler import MediaHandler
 from app.utils.quill_delta import extract_media_sources
@@ -375,15 +376,13 @@ class MediaService:
             # Journal browsing includes only the viewer's own drafts.
             statement = statement.where(
                 col(Entry.journal_id) == journal_id,
-                (col(Entry.is_draft).is_(False)) | draft_author_condition(user_id),
+                entry_draft_visibility_condition(user_id),
             )
         else:
             # Exclude draft moments the same way the Timeline does: a moment with
             # no entry is a quick log and stays; a moment whose entry is a draft
             # is hidden.
-            statement = statement.where(
-                (col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False))
-            )
+            statement = statement.where(moment_without_draft_condition())
 
         if media_type is not None:
             statement = statement.where(

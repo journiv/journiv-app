@@ -22,6 +22,21 @@ def draft_author_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
     return func.coalesce(col(Entry.created_by_user_id), col(Entry.user_id)) == user_id
 
 
+def entry_draft_visibility_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Match published entries and drafts authored by the user."""
+    return col(Entry.is_draft).is_(False) | draft_author_condition(user_id)
+
+
+def moment_draft_visibility_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Also include standalone moments from an outer join to Entry."""
+    return col(Entry.id).is_(None) | entry_draft_visibility_condition(user_id)
+
+
+def moment_without_draft_condition() -> ColumnElement[bool]:
+    """Match standalone moments and moments with published entries."""
+    return col(Entry.id).is_(None) | col(Entry.is_draft).is_(False)
+
+
 def is_draft_author(entry: Entry, user_id: uuid.UUID) -> bool:
     """Check draft authorship, including entries without creator attribution."""
     return (entry.created_by_user_id or entry.user_id) == user_id

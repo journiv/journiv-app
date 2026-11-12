@@ -30,11 +30,16 @@ from app.schemas.entry import (
     EntryDraftCreate,
     EntryUpdate,
 )
-from app.services.journal_access import JournalAccessDeniedError, JournalAccessService
+from app.services.journal_access import (
+    JournalAccessDeniedError,
+    JournalAccessService,
+    journal_access_condition,
+)
 from app.services.media_service import MediaService
 from app.services.moment_lookup import (
     MomentNotFoundError,
     draft_author_condition,
+    entry_draft_visibility_condition,
     get_owned_moment,
     is_draft_author,
 )
@@ -378,7 +383,7 @@ class EntryService:
         if not include_drafts:
             statement = statement.where(col(Entry.is_draft).is_(False))
         else:
-            statement = statement.where(or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)))
+            statement = statement.where(entry_draft_visibility_condition(user_id))
 
         if not include_pinned:
             # Filter out pinned moments
@@ -414,12 +419,8 @@ class EntryService:
                     col(JournalMember.user_id) == user_id,
                 ),
             )
-            .where(
-                or_(
-                    col(Journal.user_id) == user_id,
-                    col(JournalMember.user_id) == user_id,
-                )
-            ).where(or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)))
+            .where(journal_access_condition(user_id))
+            .where(entry_draft_visibility_condition(user_id))
             .options(joinedload(self._entry_moment_relation()))
             .order_by(col(Entry.created_at).desc())
         )

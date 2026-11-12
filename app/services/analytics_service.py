@@ -5,7 +5,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional, cast
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 from sqlmodel import Session, col, func, select
@@ -19,6 +19,7 @@ from app.models.journal_member import JournalMember
 from app.models.moment import Moment
 from app.models.moment_tag_link import MomentTagLink
 from app.models.tag import Tag
+from app.services.journal_access import journal_access_condition
 
 
 class AnalyticsService:
@@ -513,12 +514,7 @@ class AnalyticsService:
                 ),
             )
             # Keep owner rows as well
-            .where(
-                or_(
-                    col(Journal.user_id) == user_id,
-                    col(JournalMember.user_id) == user_id,
-                )
-            )
+            .where(journal_access_condition(user_id))
             .group_by(Journal.id, Journal.title)
             .order_by(func.count(Entry.id).desc())
         ).all()

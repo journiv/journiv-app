@@ -37,9 +37,10 @@ from app.schemas.moment import (
 )
 from app.services.goal_service import GoalService
 from app.services.moment_lookup import (
-    draft_author_condition,
+    entry_draft_visibility_condition,
     get_accessible_moment,
     get_owned_moment,
+    moment_without_draft_condition,
 )
 
 
@@ -87,7 +88,7 @@ class MomentService:
                     col(Journal.user_id) == user_id,
                     member_has_access,
                 ),
-                or_(col(Entry.is_draft).is_(False), draft_author_condition(user_id)),
+                entry_draft_visibility_condition(user_id),
             )
         )
         return or_(
@@ -674,9 +675,7 @@ class MomentService:
         if not include_drafts and not entry_id:
             # Exclude moments whose entries are drafts
             # Logic: (no entry linked) OR (entry is not a draft)
-            return statement.where(
-                (col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False))
-            )
+            return statement.where(moment_without_draft_condition())
         return statement
 
     def _apply_mood_filter(
@@ -881,7 +880,7 @@ class MomentService:
                 ),
             )
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
-            .where((col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False)))
+            .where(moment_without_draft_condition())
         )
 
     def _resolve_user_local_today(self, user_id: uuid.UUID) -> date:
@@ -981,7 +980,7 @@ class MomentService:
             select(Moment.id)
             .where(Moment.user_id == user_id)
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
-            .where((col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False)))
+            .where(moment_without_draft_condition())
         )
 
     def _fetch_memories(
