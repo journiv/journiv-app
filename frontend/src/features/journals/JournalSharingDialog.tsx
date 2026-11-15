@@ -10,6 +10,7 @@ import { AppAdaptiveDialog } from "../../components/journiv/AppAdaptiveDialog";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
+import { NativeSelect } from "../../components/ui/native-select";
 
 export function JournalSharingDialog({
   journal,
@@ -200,9 +201,8 @@ export function JournalSharingDialog({
         </div>
         <div className="space-y-2">
           <Label htmlFor="journal-member-permission">Permission</Label>
-          <select
+          <NativeSelect
             id="journal-member-permission"
-            className="h-9 rounded-md border border-input bg-transparent px-2 text-sm"
             value={permission}
             onChange={(event) =>
               setPermission(event.target.value as JournalPermission)
@@ -210,7 +210,7 @@ export function JournalSharingDialog({
           >
             <option value="readonly">Can view</option>
             <option value="edit">Can edit</option>
-          </select>
+          </NativeSelect>
         </div>
         {failed && (
           <p className="text-sm text-destructive" role="alert">

@@ -958,15 +958,19 @@ function EntryEditorForm({
       // the Timeline.
       const targetId = moment?.id ?? draft.draft?.momentId ?? "";
       const hasEntry = Boolean(moment?.entry ?? draft.draft?.entryId);
-      const selectedJournal = activeJournals.find(
-        (journal) => journal.id === journalId,
+      const currentJournal = journals.find(
+        (journal) => journal.id === initialJournalId,
       );
       if (
         hasEntry &&
         moment?.entry?.id &&
-        selectedJournal &&
-        isSharedJournal(selectedJournal)
+        currentJournal &&
+        isSharedJournal(currentJournal)
       ) {
+        if (journalDirty || promptDirty)
+          throw new Error(
+            "Journal and prompt changes cannot be saved for shared entries. Revert those changes and try again.",
+          );
         // Collaborators can change the Entry's prose, but the parent Moment's
         // metadata remains owner-only, so this deliberately skips updateMoment.
         await api.updateEntry(moment.entry.id, {

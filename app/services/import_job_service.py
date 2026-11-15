@@ -728,11 +728,17 @@ class ImportJobService:
         # the same transaction.
         locked = session.connection().execute(
             update(Moment)
-            .where(col(Moment.id) == moment_id, col(Moment.user_id) == user_id)
+            .where(col(Moment.id) == moment_id)
             .values(media_count=Moment.media_count)
         )
         if locked.rowcount != 1:
             raise ValueError("Moment not found")
+        from app.services.moment_lookup import MomentNotFoundError, get_accessible_moment
+
+        try:
+            get_accessible_moment(session, user_id, moment_id, edit=True)
+        except MomentNotFoundError:
+            raise ValueError("Moment not found") from None
 
     async def create_and_process_job_async(
         self,

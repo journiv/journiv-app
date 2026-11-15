@@ -35,6 +35,8 @@ vi.mock("../../api/client/api", () => ({
     entry: vi.fn(),
     createMoment: vi.fn(),
     updateMoment: vi.fn(),
+    updateEntry: vi.fn(),
+    prompt: vi.fn(),
     createDraftEntry: vi.fn(),
     deleteMoment: vi.fn(),
     deleteEntry: vi.fn(),
@@ -201,6 +203,82 @@ async function renderRoute(
 
 const bodyText = () =>
   screen.getByLabelText("Entry body").textContent?.trim() ?? "";
+
+describe("saving a shared entry", () => {
+  const shared = {
+    ...journal,
+    user_id: "owner",
+    access_level: "edit" as const,
+  };
+
+  it("prevents or rejects moving the entry without partially saving", async () => {
+    const person = userEvent.setup();
+    vi.mocked(api.journals).mockResolvedValue([
+      shared,
+      { ...journal, id: "other", title: "Other" },
+    ]);
+    await renderRoute("/timeline/moment-1/edit");
+    await screen.findByLabelText("Entry title");
+    const picker = screen.queryByLabelText<HTMLSelectElement>("Journal");
+    const option = picker?.querySelector<HTMLOptionElement>(
+      'option[value="other"]',
+    );
+    if (!picker || picker.disabled || !option || option.disabled) return;
+    await person.type(screen.getByLabelText("Entry title"), " changed");
+    await person.selectOptions(picker, "other");
+    if (picker.value !== "other") return;
+    await person.click(screen.getByRole("button", { name: /^(Done|Retry)$/ }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(api.updateEntry).not.toHaveBeenCalled();
+    expect(api.updateMoment).not.toHaveBeenCalled();
+  });
+
+  it("prevents or rejects removing a prompt without partially saving", async () => {
+    const person = userEvent.setup();
+    vi.mocked(api.journals).mockResolvedValue([shared]);
+    vi.mocked(api.moment).mockResolvedValue({
+      ...moment,
+      prompt_id: "prompt-1",
+    });
+    vi.mocked(api.prompt).mockResolvedValue({
+      id: "prompt-1",
+      text: "A prompt",
+    } as never);
+    await renderRoute("/timeline/moment-1/edit");
+    await screen.findByRole("complementary", { name: "Writing from a prompt" });
+    const remove = screen.queryByRole<HTMLButtonElement>("button", {
+      name: "Remove prompt",
+    });
+    if (!remove || remove.disabled) return;
+    await person.type(screen.getByLabelText("Entry title"), " changed");
+    await person.click(remove);
+    if (screen.queryByRole("complementary", { name: "Writing from a prompt" }))
+      return;
+    await person.click(screen.getByRole("button", { name: /^(Done|Retry)$/ }));
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(api.updateEntry).not.toHaveBeenCalled();
+    expect(api.updateMoment).not.toHaveBeenCalled();
+  });
+
+  it("saves collaborator prose without updating moment metadata", async () => {
+    const person = userEvent.setup();
+    vi.mocked(api.journals).mockResolvedValue([shared]);
+    vi.mocked(api.updateEntry).mockResolvedValue(entry);
+    await renderRoute("/timeline/moment-1/edit");
+    await person.type(await screen.findByLabelText("Entry title"), " changed");
+    await person.click(screen.getByRole("button", { name: /^(Done|Retry)$/ }));
+    await waitFor(() =>
+      expect(api.updateEntry).toHaveBeenCalledWith(
+        entry.id,
+        expect.objectContaining({
+          title: "A rainy morning changed",
+          content_delta: expect.anything(),
+        }),
+      ),
+    );
+    expect(api.updateMoment).not.toHaveBeenCalled();
+  });
+});
 
 describe("offering a stored draft", () => {
   it("opens on the server's content when there is no draft", async () => {

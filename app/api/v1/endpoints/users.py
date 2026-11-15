@@ -25,13 +25,29 @@ from app.services.user_service import UserService
 router = APIRouter(prefix="/users", tags=["users"])
 
 
+class SearchValidationIssue(BaseModel):
+    loc: list[str | int] | None
+    msg: str | None
+    type: str | None
+
+
+class SearchValidationError(BaseModel):
+    error: str
+    message: list[SearchValidationIssue]
+    request_id: str | None
+
+
+class SearchQueryError(BaseModel):
+    detail: str
+
+
 @router.get(
     "/search",
     response_model=list[UserSearchResponse],
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
-        422: {"description": "Invalid search query"},
+        422: {"description": "Invalid search query", "model": SearchValidationError | SearchQueryError},
     },
 )
 async def search_users(

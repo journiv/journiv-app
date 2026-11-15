@@ -4546,6 +4546,52 @@ export type ReverseGeocodeRequest = {
 };
 
 /**
+ * SearchQueryError
+ */
+export type SearchQueryError = {
+    /**
+     * Detail
+     */
+    detail: string;
+};
+
+/**
+ * SearchValidationError
+ */
+export type SearchValidationError = {
+    /**
+     * Error
+     */
+    error: string;
+    /**
+     * Message
+     */
+    message: Array<SearchValidationIssue>;
+    /**
+     * Request Id
+     */
+    request_id: string | null;
+};
+
+/**
+ * SearchValidationIssue
+ */
+export type SearchValidationIssue = {
+    /**
+     * Loc
+     */
+    loc: Array<string | number> | null;
+    /**
+     * Msg
+     */
+    msg: string | null;
+    /**
+     * Type
+     */
+    type: string | null;
+};
+
+/**
  * TagAnalyticsResponse
  *
  * Extended tag analytics response schema with required time-series data.
@@ -5741,10 +5787,14 @@ export type SearchUsersApiV1UsersSearchGetErrors = {
      */
     403: unknown;
     /**
+     * Response 422 Search Users Api V1 Users Search Get
+     *
      * Invalid search query
      */
-    422: unknown;
+    422: SearchValidationError | SearchQueryError;
 };
+
+export type SearchUsersApiV1UsersSearchGetError = SearchUsersApiV1UsersSearchGetErrors[keyof SearchUsersApiV1UsersSearchGetErrors];
 
 export type SearchUsersApiV1UsersSearchGetResponses = {
     /**

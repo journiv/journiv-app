@@ -332,7 +332,7 @@ class EntryService:
                 moment = self.session.get(Moment, entry.moment_id)
                 if moment and moment.logged_date_tz:
                     analytics_service = AnalyticsService(self.session)
-                    analytics_service.update_writing_streak(user_id, moment.logged_date_tz)
+                    analytics_service.update_writing_streak(entry.user_id, moment.logged_date_tz)
             except Exception as exc:
                 log_error(exc)
 
@@ -619,7 +619,7 @@ class EntryService:
             # dates that define the current and longest writing streaks.
             try:
                 from app.services.analytics_service import AnalyticsService
-                AnalyticsService(self.session).recalculate_writing_streak_stats(user_id)
+                AnalyticsService(self.session).recalculate_writing_streak_stats(entry.user_id)
             except Exception as exc:
                 log_warning(f"Failed to recalculate writing streak stats after drafting entry: {exc}")
             try:
@@ -637,7 +637,7 @@ class EntryService:
             # above already covers the draft -> published case).
             try:
                 from app.services.analytics_service import AnalyticsService
-                AnalyticsService(self.session).refresh_entry_totals(user_id)
+                AnalyticsService(self.session).refresh_entry_totals(entry.user_id)
             except Exception as exc:
                 log_warning(f"Failed to refresh writing streak totals after entry edit: {exc}")
             try:
@@ -692,7 +692,7 @@ class EntryService:
         try:
             from app.services.analytics_service import AnalyticsService
             analytics_service = AnalyticsService(self.session)
-            analytics_service.recalculate_writing_streak_stats(user_id)
+            analytics_service.recalculate_writing_streak_stats(journal_owner_id)
         except Exception as exc:
             log_warning(f"Failed to update writing streak stats after entry deletion: {exc}")
 

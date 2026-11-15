@@ -978,7 +978,7 @@ class MomentService:
     def _base_memories_probe_statement(self, user_id: uuid.UUID) -> Any:
         return (
             select(Moment.id)
-            .where(Moment.user_id == user_id)
+            .where(self._visible_to_user_condition(user_id))
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
             .where(moment_without_draft_condition())
         )
@@ -1232,6 +1232,7 @@ class MomentService:
             moment = get_accessible_moment(self.session, user_id, moment_id, edit=True)
         else:
             moment = self._get_owned_moment(user_id, moment_id)
+        media_owner_id = moment.user_id
 
         from app.models.moment import MomentMedia
         from app.services.media_service import MediaService
@@ -1251,7 +1252,7 @@ class MomentService:
             if file_info:
                 media_files_to_clean.append(file_info)
 
-            if media_service._should_remove_immich_asset(self.session, media, user_id):
+            if media_service._should_remove_immich_asset(self.session, media, media_owner_id):
                 immich_assets.append(media.external_asset_id)
 
         # 2. Delete the Moment record (and linked Entry/Media via DB cascade)
@@ -1267,7 +1268,7 @@ class MomentService:
 
             celery_app.send_task(
                 "app.tasks.media.cleanup_moment_media_files",
-                args=[str(user_id), media_files_to_clean, cleaned_assets],
+                args=[str(media_owner_id), media_files_to_clean, cleaned_assets],
             )
             return {
                 "deleted": True,
@@ -1283,7 +1284,7 @@ class MomentService:
             deletion_errors = []
             try:
                 media_service.delete_media_files_post_commit(
-                    user_id,
+                    media_owner_id,
                     media_files_to_clean,
                     cleaned_assets,
                 )

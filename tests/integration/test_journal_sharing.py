@@ -16,7 +16,7 @@ def test_owner_can_search_add_and_remove_a_journal_collaborator(
         "GET",
         "/users/search",
         token=api_user.access_token,
-        params={"q": collaborator.email[:8]},
+        params={"q": collaborator.email},
         expected=(200,),
     ).json()
     assert any(user["id"] == collaborator.user_id for user in search)

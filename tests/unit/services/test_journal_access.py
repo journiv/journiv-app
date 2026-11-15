@@ -2,10 +2,14 @@
 
 import uuid
 from datetime import date
+from io import BytesIO
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, create_engine, select
 
 from app.api.v1.endpoints.journals import (
@@ -22,27 +26,35 @@ from app.core.exceptions import (
 )
 from app.models.base import BaseModel
 from app.models.entry import Entry
-from app.models.enums import JournalPermission, MediaType, UploadStatus
+from app.models.enums import ExportType, JournalPermission, MediaType, UploadStatus
 from app.models.journal import Journal
 from app.models.journal_member import JournalMember
+from app.models.integration import Integration, IntegrationProvider
 from app.models.moment import Moment, MomentMedia
 from app.models.moment_person_link import MomentPersonLink
 from app.models.person import Person
 from app.models.user import User
 from app.schemas.entry import EntryCreate, EntryDraftCreate, EntryResponse, EntryUpdate
 from app.schemas.journal import JournalMemberCreate, JournalMemberUpdate
-from app.schemas.moment import MomentUpdate
+from app.schemas.media import MediaBatchSignItem, MediaBatchSignRequest
+from app.schemas.moment import MemoriesAppliedFilter, MomentUpdate
 from app.services.analytics_service import AnalyticsService
 from app.services.entry_service import EntryService
+from app.services.export_service import ExportService
 from app.services.journal_access import (
     JournalAccessDeniedError,
     JournalAccessService,
 )
 from app.services.journal_service import JournalService
+from app.services.import_job_service import ImportJobService
+from app.services.immich_face_service import ImmichFaceService
 from app.services.media_service import MediaService
 from app.services.moment_lookup import MomentNotFoundError, get_accessible_moment
 from app.services.moment_service import MomentService
 from app.services.person_service import PersonService
+from app.services.pdf_service import EntryPDFService, PDFEntryNotFoundError
+from app.services.tag_service import TagService
+from app.services.user_service import UserService
 
 
 def _user(email: str) -> User:
@@ -89,6 +101,252 @@ def _create_shared_draft_media(
     ])
     session.commit()
     return session, owner, reader, journal, media
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duplicate", [True, False])
+async def test_add_member_rolls_back_integrity_errors(monkeypatch, duplicate):
+    """Roll back failed inserts and report only duplicate memberships as conflicts."""
+    session, owner, member, journal, _ = _create_shared_draft_media()
+    message = (
+        "UNIQUE constraint failed: journal_member.journal_id, journal_member.user_id"
+        if duplicate else "FOREIGN KEY constraint failed"
+    )
+    error = IntegrityError("insert", {}, Exception(message))
+    monkeypatch.setattr(JournalService, "add_member", MagicMock(side_effect=error))
+    rollback = MagicMock(wraps=session.rollback)
+    monkeypatch.setattr(session, "rollback", rollback)
+    body = JournalMemberCreate(user_id=member.id, permission=JournalPermission.READONLY)
+
+    if duplicate:
+        with pytest.raises(HTTPException) as caught:
+            await add_journal_member(journal.id, body, owner, session)
+        assert caught.value.status_code == 409
+    else:
+        with pytest.raises(IntegrityError) as caught:
+            await add_journal_member(journal.id, body, owner, session)
+        assert caught.value is error
+    rollback.assert_called_once()
+
+
+def test_deleted_collaborator_draft_never_becomes_owner_draft():
+    """An unknown draft author does not grant the journal owner access."""
+    session, owner, member, journal, media = _create_shared_draft_media(JournalPermission.EDIT)
+    entry = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    entry.created_by_user_id = None
+    session.add(entry)
+    session.commit()
+    service = EntryService(session)
+    assert service.get_entry_by_id(entry.id, owner.id) is None
+    assert entry.id not in {item.id for item in service.get_journal_entries(journal.id, owner.id, include_drafts=True)}
+    with pytest.raises(EntryNotFoundError):
+        service.update_entry(entry.id, owner.id, EntryUpdate(is_draft=False))
+
+
+def test_deleting_collaborator_removes_draft_and_anonymizes_published_entry():
+    """Deleting an author removes drafts while preserving published entries."""
+    session, owner, member, journal, media = _create_shared_draft_media(JournalPermission.EDIT)
+    session.execute(text("PRAGMA foreign_keys=ON"))
+    draft = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    draft.created_by_user_id = member.id
+    draft_id = draft.id
+    moment = Moment(user_id=owner.id, logged_date_tz=date(2026, 9, 29))
+    session.add(moment)
+    session.flush()
+    published = Entry(user_id=owner.id, journal_id=journal.id, moment_id=moment.id,
+                      created_by_user_id=member.id, is_draft=False)
+    session.add_all([draft, published])
+    session.commit()
+    published_id = published.id
+
+    UserService(session).delete_user(str(member.id), bypass_admin_check=True)
+    session.expire_all()
+    assert session.get(Entry, draft_id) is None
+    remaining = session.get(Entry, published_id)
+    assert remaining is not None
+    assert remaining.created_by_user_id is None
+    assert EntryResponse.model_validate(remaining).author_name == "deleted user"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("permission,is_author,allowed", [
+    (JournalPermission.EDIT, True, True),
+    (JournalPermission.EDIT, False, False),
+    (JournalPermission.READONLY, True, False),
+])
+async def test_immich_suggestions_require_draft_author_with_edit_access(permission, is_author, allowed):
+    """Only draft authors with edit access can request Immich suggestions."""
+    session, _, member, _, media = _create_shared_draft_media(permission)
+    entry = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    if is_author:
+        entry.created_by_user_id = member.id
+    media.external_provider = "immich"
+    media.external_asset_id = "asset-1"
+    session.add_all([entry, media])
+    session.commit()
+    service = ImmichFaceService(session)
+    service.get_batch_faces = AsyncMock(return_value=MagicMock(results={}))
+
+    if allowed:
+        result = await service.get_moment_suggestions(member.id, media.moment_id)
+        assert result.people == []
+        service.get_batch_faces.assert_awaited_once_with(member.id, ["asset-1"], refresh=False)
+    else:
+        with pytest.raises(ValueError, match="Moment not found"):
+            await service.get_moment_suggestions(member.id, media.moment_id)
+        service.get_batch_faces.assert_not_awaited()
+
+
+@pytest.mark.parametrize("dispatch_fails", [False, True])
+def test_shared_draft_deletion_cleans_media_as_moment_owner(monkeypatch, dispatch_fails):
+    """Queued and fallback media cleanup use the moment owner's identity."""
+    session, owner, editor, _, media = _create_shared_draft_media(JournalPermission.EDIT)
+    entry = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    entry.created_by_user_id = editor.id
+    session.add(entry)
+    session.commit()
+    should_remove = MagicMock(return_value=True)
+    cleanup = MagicMock()
+    dispatch = MagicMock(side_effect=RuntimeError("unavailable") if dispatch_fails else None)
+    monkeypatch.setattr(MediaService, "_should_remove_immich_asset", should_remove)
+    monkeypatch.setattr(MediaService, "delete_media_files_post_commit", cleanup)
+    monkeypatch.setattr("app.core.celery_app.celery_app.send_task", dispatch)
+
+    result = MomentService(session).delete_moment(media.moment_id, editor.id)
+
+    assert should_remove.call_args.args[2] == owner.id
+    assert dispatch.call_args.kwargs["args"][0] == str(owner.id)
+    assert result["cleanup_queued"] is not dispatch_fails
+    if dispatch_fails:
+        # If queuing fails, cleanup runs synchronously using the owner's ID.
+        assert cleanup.call_args.args[0] == owner.id
+    else:
+        cleanup.assert_not_called()
+
+
+@pytest.mark.parametrize("permission", [JournalPermission.EDIT, JournalPermission.READONLY])
+def test_shared_moment_tags_respect_read_and_edit_permissions(permission):
+    """Members can read published tags, but only editors can add them."""
+    session, _, member, _, media = _create_shared_draft_media(permission)
+    entry = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    service = TagService(session)
+    with pytest.raises(ValueError, match="Moment not found"):
+        service.get_moment_tags(media.moment_id, member.id)
+    entry.is_draft = False
+    session.add(entry)
+    session.commit()
+    assert service.get_moment_tags(media.moment_id, member.id) == []
+    tag = service.create_or_get_tags(member.id, ["shared"])[0]
+    if permission == JournalPermission.EDIT:
+        service.add_tag_to_moment(media.moment_id, tag.id, member.id)
+        assert len(service.bulk_add_tags_to_moment(media.moment_id, ["another"], member.id)) == 2
+    else:
+        with pytest.raises(ValueError, match="Moment not found"):
+            service.add_tag_to_moment(media.moment_id, tag.id, member.id)
+        with pytest.raises(ValueError, match="Moment not found"):
+            service.bulk_add_tags_to_moment(media.moment_id, ["another"], member.id)
+
+
+def test_entry_pdf_respects_shared_access_and_draft_authorship(monkeypatch):
+    """PDF exports require journal access and respect draft authorship."""
+    session, owner, member, journal, media = _create_shared_draft_media()
+    entry = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    service = EntryPDFService(session)
+    monkeypatch.setattr(service, "_render_entry_pdf", MagicMock(return_value=BytesIO(b"pdf")))
+
+    with pytest.raises(PDFEntryNotFoundError):
+        service.generate_owned_entry_pdf(entry_id=entry.id, user_id=member.id)
+    entry.is_draft = False
+    session.add(entry)
+    session.commit()
+    assert service.generate_owned_entry_pdf(entry_id=entry.id, user_id=member.id)[0].getvalue() == b"pdf"
+    entry.is_draft = True
+    entry.created_by_user_id = member.id
+    session.add(entry)
+    session.commit()
+    assert service.generate_owned_entry_pdf(entry_id=entry.id, user_id=member.id)[0].getvalue() == b"pdf"
+    with pytest.raises(PDFEntryNotFoundError):
+        service.generate_owned_entry_pdf(entry_id=entry.id, user_id=owner.id)
+    membership = session.exec(select(JournalMember).where(JournalMember.journal_id == journal.id)).one()
+    session.delete(membership)
+    session.commit()
+    with pytest.raises(PDFEntryNotFoundError):
+        service.generate_owned_entry_pdf(entry_id=entry.id, user_id=member.id)
+
+
+def test_auto_memories_include_shared_published_moments(monkeypatch):
+    """Auto memories include shared published moments but exclude drafts."""
+    session, owner, member, journal, media = _create_shared_draft_media()
+    moment = session.get(Moment, media.moment_id)
+    moment.logged_date_tz = date(2025, 2, 23)
+    entry = session.exec(select(Entry).where(Entry.moment_id == moment.id)).one()
+    entry.is_draft = False
+    hidden = Moment(user_id=owner.id, logged_date_tz=date(2025, 2, 23))
+    session.add_all([moment, entry, hidden])
+    session.commit()
+    session.add(Entry(user_id=owner.id, journal_id=journal.id, moment_id=hidden.id, is_draft=True))
+    session.commit()
+    service = MomentService(session)
+    monkeypatch.setattr(service, "_resolve_user_local_today", lambda user_id: date(2026, 2, 23))
+
+    memories, applied = service.get_memories(member.id)
+    assert applied == MemoriesAppliedFilter.last_years
+    assert [item.id for item in memories] == [moment.id]
+
+
+@pytest.mark.parametrize("permission,is_draft,allowed", [
+    (JournalPermission.EDIT, False, True),
+    (JournalPermission.READONLY, False, False),
+    (JournalPermission.EDIT, True, False),
+])
+def test_import_job_lock_requires_editable_moment(permission, is_draft, allowed):
+    """Import job creation requires edit access to the visible moment."""
+    session, _, member, _, media = _create_shared_draft_media(permission)
+    entry = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    entry.is_draft = is_draft
+    session.add(entry)
+    session.commit()
+    if allowed:
+        ImportJobService._lock_moment_for_job_creation(session, media.moment_id, member.id)
+    else:
+        with pytest.raises(ValueError, match="Moment not found"):
+            ImportJobService._lock_moment_for_job_creation(session, media.moment_id, member.id)
+
+
+@pytest.mark.asyncio
+async def test_batch_sign_shared_immich_respects_visibility_and_owner_integration():
+    """Sign shared Immich media URLs only when visible and its owner's integration is active."""
+    session, owner, reader, journal, media = _create_shared_draft_media()
+    media.external_provider = "immich"
+    media.external_asset_id = str(uuid.uuid4())
+    media.file_path = None
+    session.add(media)
+    session.add(Integration(
+        user_id=owner.id, provider=IntegrationProvider.IMMICH,
+        base_url="http://immich.test", access_token_encrypted="encrypted",
+        external_user_id="immich-user", is_active=True,
+    ))
+    session.commit()
+    request = MediaBatchSignRequest(items=[MediaBatchSignItem(id=str(media.id), variant="original")])
+    service = MediaService()
+
+    assert (await service.batch_sign_media(request, reader.id, session)).errors[0].error == "Media not found"
+    entry = session.exec(select(Entry).where(Entry.moment_id == media.moment_id)).one()
+    entry.is_draft = False
+    session.add(entry)
+    session.commit()
+    assert len((await service.batch_sign_media(request, reader.id, session)).results) == 1
+
+    integration = session.exec(select(Integration).where(Integration.user_id == owner.id)).one()
+    integration.is_active = False
+    session.add(integration)
+    session.commit()
+    assert (await service.batch_sign_media(request, reader.id, session)).errors[0].error == "Immich integration not active"
+
+    member = session.exec(select(JournalMember).where(JournalMember.journal_id == journal.id)).one()
+    session.delete(member)
+    session.commit()
+    assert (await service.batch_sign_media(request, reader.id, session)).errors[0].error == "Media not found"
 
 
 def _create_shared_published_and_draft_moments(
@@ -559,6 +817,30 @@ def test_moment_media_thumbnails_include_signed_url_for_completed_owner_image():
 
     assert media_counts == {moment.id: 1}
     assert media_map[moment.id][0].signed_thumbnail_url is not None
+
+
+def test_moment_media_thumbnails_filter_inaccessible_moments():
+    """Return thumbnails only for visible moments in a mixed batch."""
+    session, owner, reader, _, draft_media = _create_shared_draft_media()
+    published = Moment(user_id=owner.id, logged_date_tz=date(2026, 9, 29))
+    session.add(published)
+    session.commit()
+    draft = session.exec(select(Entry).where(Entry.moment_id == draft_media.moment_id)).one()
+    session.add(Entry(user_id=owner.id, journal_id=draft.journal_id, moment_id=published.id))
+    session.add(MomentMedia(
+        moment_id=published.id, media_type=MediaType.IMAGE,
+        file_path="images/published.jpg", file_size=1, mime_type="image/jpeg",
+        upload_status=UploadStatus.COMPLETED,
+    ))
+    session.commit()
+    service = MediaService(session)
+
+    assert service.get_moment_media_thumbnails(session, reader.id, [draft_media.moment_id]) == ({}, {})
+    counts, thumbnails = service.get_moment_media_thumbnails(
+        session, reader.id, [draft_media.moment_id, published.id, uuid.uuid4()]
+    )
+    assert counts == {published.id: 1}
+    assert set(thumbnails) == {published.id}
 
 
 def test_signed_thumbnail_lookup_allows_shared_member():

@@ -5,6 +5,7 @@ import uuid
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
@@ -263,6 +264,16 @@ async def add_journal_member(
         raise HTTPException(status_code=404, detail="User not found") from None
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    except IntegrityError as exc:
+        session.rollback()
+        constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+        sqlite_duplicate = (
+            "UNIQUE constraint failed: journal_member.journal_id, journal_member.user_id"
+            in str(exc.orig)
+        )
+        if constraint == "uq_journal_member_journal_user" or sqlite_duplicate:
+            raise HTTPException(status_code=409, detail="User is already a journal member") from None
+        raise
 
 
 @router.put(

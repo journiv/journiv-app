@@ -419,10 +419,13 @@ class ExportService:
         journal_ids: Optional[List[str]] = None,
     ) -> int:
         """Count the number of entries that will be included in the export."""
+        from app.services.moment_lookup import entry_draft_visibility_condition
+
         query = (
             select(func.count(Entry.id))
             .join(Journal, Entry.journal_id == Journal.id)
             .where(Journal.user_id == user_id)
+            .where(entry_draft_visibility_condition(user_id))
         )
 
         if export_type == ExportType.JOURNAL and journal_ids:

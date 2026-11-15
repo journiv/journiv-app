@@ -53,6 +53,7 @@ from app.schemas.media import (
 from app.schemas.media_library import MediaLibraryItem
 from app.schemas.moment import MomentMediaThumbnail
 from app.services.audio_waveform import extract_waveform
+from app.services.journal_access import journal_access_condition
 from app.services.media_storage_service import MediaStorageService
 from app.services.moment_lookup import (
     MomentNotFoundError,
@@ -461,13 +462,14 @@ class MediaService:
     ) -> tuple[dict[uuid.UUID, int], dict[uuid.UUID, list[MomentMediaThumbnail]]]:
         if not moment_ids:
             return {}, {}
-        visible_ids = []
-        for moment_id in moment_ids:
-            try:
-                get_accessible_moment(session, user_id, moment_id)
-                visible_ids.append(moment_id)
-            except MomentNotFoundError:
-                continue
+        from app.services.moment_service import MomentService
+
+        visible_ids = session.exec(
+            select(Moment.id).where(
+                col(Moment.id).in_(moment_ids),
+                MomentService._visible_to_user_condition(user_id),
+            )
+        ).all()
         if not visible_ids:
             return {}, {}
         media_items = session.exec(
@@ -1064,6 +1066,20 @@ class MediaService:
 
         # Finalize DB write in a short-lived session to avoid holding connections during file I/O.
         with get_session_context() as db_session:
+            try:
+                self._get_moment_for_user(db_session, moment_id, user_id)
+            except MomentNotFoundError:
+                if not media_info.get("was_deduplicated") and media_info.get("file_path"):
+                    try:
+                        self.media_storage_service.delete_media(
+                            relative_path=media_info["file_path"],
+                            checksum=media_info.get("checksum"),
+                            user_id=str(media_owner_id),
+                            force=True,
+                        )
+                    except (RuntimeError, OSError) as delete_exc:
+                        log_warning(f"Failed to cleanup unauthorized upload: {delete_exc}")
+                raise
             # Check if MomentMedia record already exists for this moment and checksum
             # This prevents duplicate media within the same moment
             checksum = media_info.get("checksum")
@@ -2697,21 +2713,35 @@ class MediaService:
                     MomentMedia.file_path,
                     MomentMedia.thumbnail_path,
                     MomentMedia.media_type,
+                    Moment.user_id,
                 )
                 .join(Moment, col(MomentMedia.moment_id) == Moment.id)
+                .outerjoin(Entry, col(Entry.moment_id) == Moment.id)
+                .outerjoin(Journal, col(Entry.journal_id) == Journal.id)
+                .outerjoin(
+                    JournalMember,
+                    and_(JournalMember.journal_id == Journal.id, JournalMember.user_id == current_user_id),
+                )
                 .where(
                     or_(
                         col(MomentMedia.id).in_(item_ids_to_query),
                         col(MomentMedia.external_asset_id).in_(query_ids_str)
                     )
                 )
-                .where(Moment.user_id == current_user_id)
+                # Match get_accessible_moment's read-access rules in bulk:
+                # standalone moments are owner-only; entries require journal
+                # access, and drafts additionally require authorship.
+                .where(or_(
+                    and_(col(Entry.id).is_(None), Moment.user_id == current_user_id),
+                    and_(col(Entry.id).is_not(None), entry_draft_visibility_condition(current_user_id),
+                         journal_access_condition(current_user_id)),
+                ))
             ).all()
             logger.info(f"Batch sign found {len(rows)} matching rows")
             logger.debug(f"Batch sign found matching rows: {rows}")
 
             # Build map indexed by both internal ID and external asset ID
-            for media_id, upload_status, external_provider, external_asset_id, file_path, thumbnail_path, media_type in rows:
+            for media_id, upload_status, external_provider, external_asset_id, file_path, thumbnail_path, media_type, owner_id in rows:
                 media_data = {
                     "id": str(media_id),
                     "upload_status": upload_status,
@@ -2720,6 +2750,7 @@ class MediaService:
                     "file_path": file_path,
                     "thumbnail_path": thumbnail_path,
                     "media_type": media_type,
+                    "owner_id": owner_id,
                 }
 
                 # Index by internal ID
@@ -2729,19 +2760,20 @@ class MediaService:
                 if external_asset_id:
                     valid_media_map[external_asset_id] = media_data
 
-        # 3. Validate Immich integration once if needed
-        needs_immich = any(
-            meta.get("external_provider") == "immich"
+        # 3. Validate each Immich media owner's integration in bulk.
+        immich_owner_ids = {
+            meta["owner_id"]
             for meta in valid_media_map.values()
-        )
-        immich_active = True
-        if needs_immich:
-            integration = session.exec(
-                select(Integration)
-                .where(Integration.user_id == current_user_id)
+            if meta.get("external_provider") == "immich"
+        }
+        active_immich_owners = set()
+        if immich_owner_ids:
+            active_immich_owners = set(session.exec(
+                select(Integration.user_id)
+                .where(col(Integration.user_id).in_(immich_owner_ids))
                 .where(Integration.provider == IntegrationProvider.IMMICH)
-            ).first()
-            immich_active = bool(integration and integration.is_active)
+                .where(col(Integration.is_active).is_(True))
+            ).all())
 
         # 4. Generate signatures
         now = int(time.time())
@@ -2774,7 +2806,7 @@ class MediaService:
                 continue
 
             if external_provider == "immich":
-                if not immich_active:
+                if media_meta["owner_id"] not in active_immich_owners:
                     errors[item_key] = "Immich integration not active"
                     continue
                 if not external_asset_id:

@@ -838,6 +838,7 @@ class ImportService:
         entry = Entry(
             journal_id=journal_id,
             user_id=user_id,
+            created_by_user_id=user_id,
             moment_id=moment.id,
             title=entry_dto.title,
             content_delta=content_delta,

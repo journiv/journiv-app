@@ -370,6 +370,17 @@ class UserService:
 
         user_email = user.email
 
+        # Remove shared drafts before the author foreign key is set to NULL.
+        # Published entries remain in the journal with a deleted-user attribution.
+        from app.models.entry import Entry
+
+        drafts = self.session.exec(select(Entry).where(
+            Entry.created_by_user_id == user.id,
+            col(Entry.is_draft).is_(True),
+        )).all()
+        for draft in drafts:
+            self.session.delete(draft)
+
         # Delete the user - cascade deletion handles all related data
         self.session.delete(user)
 

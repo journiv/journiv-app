@@ -578,10 +578,10 @@ class ImmichFaceService:
         user_id: uuid.UUID,
         moment_id: uuid.UUID,
     ) -> MomentImmichPeopleSuggestionsResponse:
-        from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
+        from app.services.moment_lookup import MomentNotFoundError, get_accessible_moment
 
         try:
-            get_owned_moment(self.session, user_id, moment_id)
+            get_accessible_moment(self.session, user_id, moment_id, edit=True)
         except MomentNotFoundError:
             raise ValueError("Moment not found") from None
 

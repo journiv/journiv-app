@@ -480,7 +480,22 @@
             "description": "Account inactive"
           },
           "422": {
-            "description": "Invalid search query"
+            "description": "Invalid search query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SearchValidationError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SearchQueryError"
+                    }
+                  ],
+                  "title": "Response 422 Search Users Api V1 Users Search Get"
+                }
+              }
+            }
           }
         }
       }
@@ -22904,6 +22919,106 @@
         ],
         "title": "ReverseGeocodeRequest",
         "description": "Request schema for reverse geocoding (lat/lon to location name)."
+      },
+      "SearchQueryError": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "SearchQueryError"
+      },
+      "SearchValidationError": {
+        "properties": {
+          "error": {
+            "type": "string",
+            "title": "Error"
+          },
+          "message": {
+            "items": {
+              "$ref": "#/components/schemas/SearchValidationIssue"
+            },
+            "type": "array",
+            "title": "Message"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Request Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "error",
+          "message",
+          "request_id"
+        ],
+        "title": "SearchValidationError"
+      },
+      "SearchValidationIssue": {
+        "properties": {
+          "loc": {
+            "anyOf": [
+              {
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "integer"
+                    }
+                  ]
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loc"
+          },
+          "msg": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Msg"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "SearchValidationIssue"
       },
       "TagAnalyticsResponse": {
         "properties": {

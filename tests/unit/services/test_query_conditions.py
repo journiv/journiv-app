@@ -17,12 +17,12 @@ from app.services.moment_lookup import (
         (False, "other", "other", True, True),
         (True, "viewer", "other", True, False),
         (True, "other", "viewer", False, False),
-        (True, None, "viewer", True, False),
+        (True, None, "viewer", False, False),
         (True, None, "other", False, False),
     ],
 )
 def test_draft_conditions(is_draft, creator, owner, visible, without_draft):
-    """Check published entries and draft authorship, including legacy owner fallback."""
+    """Check published entries and fail closed for unknown authors."""
     viewer, other = uuid.uuid4(), uuid.uuid4()
     users = {"viewer": viewer.hex, "other": other.hex, None: None}
     engine = create_engine("sqlite://")
@@ -40,4 +40,3 @@ def test_draft_conditions(is_draft, creator, owner, visible, without_draft):
             moment_without_draft_condition(),
         )).one()
         assert tuple(result) == (visible, visible, without_draft)
-

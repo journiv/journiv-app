@@ -888,10 +888,10 @@ async def import_from_immich_async(
         )
 
         # 2. Verify moment exists
-        from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
+        from app.services.moment_lookup import MomentNotFoundError, get_accessible_moment
 
         try:
-            get_owned_moment(session, current_user.id, request.moment_id)
+            get_accessible_moment(session, current_user.id, request.moment_id, edit=True)
         except MomentNotFoundError:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,

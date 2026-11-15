@@ -4,7 +4,6 @@ Shared moment ownership lookup helpers.
 import uuid
 from typing import Any, Optional
 
-from sqlalchemy import func
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, select
 
@@ -18,8 +17,8 @@ class MomentNotFoundError(Exception):
 
 
 def draft_author_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
-    """Match the draft author, falling back to the entry owner for older rows."""
-    return func.coalesce(col(Entry.created_by_user_id), col(Entry.user_id)) == user_id
+    """Match the attributed author; unknown authors are not visible."""
+    return (col(Entry.created_by_user_id) == user_id).is_(True)
 
 
 def entry_draft_visibility_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
@@ -38,8 +37,8 @@ def moment_without_draft_condition() -> ColumnElement[bool]:
 
 
 def is_draft_author(entry: Entry, user_id: uuid.UUID) -> bool:
-    """Check draft authorship, including entries without creator attribution."""
-    return (entry.created_by_user_id or entry.user_id) == user_id
+    """Check draft authorship without treating an unknown author as the owner."""
+    return entry.created_by_user_id == user_id
 
 
 def get_owned_moment(

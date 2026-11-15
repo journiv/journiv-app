@@ -104,7 +104,6 @@ describe("MomentListItem attachment tile", () => {
       moment([
         {
           media_type: "image",
-          // TODO: what is sig?
           signed_thumbnail_url: "https://sig/owner-thumbnail.jpg",
         },
       ]),
