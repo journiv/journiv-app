@@ -18,7 +18,7 @@ from typing import Any, BinaryIO, Dict, Optional, Tuple
 
 import magic
 from fastapi import UploadFile
-from sqlalchemy import update
+from sqlalchemy import and_, update
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlmodel import Session, col, func, or_, select
 
@@ -40,6 +40,8 @@ from app.core.media_signing import (
 from app.models.entry import Entry
 from app.models.enums import MediaType, UploadStatus
 from app.models.integration import Integration, IntegrationProvider
+from app.models.journal import Journal
+from app.models.journal_member import JournalMember
 from app.models.moment import Moment, MomentMedia
 from app.schemas.entry import MomentMediaResponse
 from app.schemas.media import (
@@ -51,8 +53,14 @@ from app.schemas.media import (
 from app.schemas.media_library import MediaLibraryItem
 from app.schemas.moment import MomentMediaThumbnail
 from app.services.audio_waveform import extract_waveform
+from app.services.journal_access import journal_access_condition
 from app.services.media_storage_service import MediaStorageService
-from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
+from app.services.moment_lookup import (
+    MomentNotFoundError,
+    entry_draft_visibility_condition,
+    get_accessible_moment,
+    moment_without_draft_condition,
+)
 from app.utils.import_export.media_handler import MediaHandler
 from app.utils.quill_delta import extract_media_sources
 
@@ -194,7 +202,7 @@ class MediaService:
         user_id: uuid.UUID,
     ) -> Moment:
         try:
-            return get_owned_moment(session, user_id, moment_id)
+            return get_accessible_moment(session, user_id, moment_id, edit=True)
         except MomentNotFoundError:
             log_warning(f"Moment not found for user {user_id}: {moment_id}")
             raise
@@ -286,12 +294,15 @@ class MediaService:
         *,
         include_incomplete: bool = False,
     ) -> list[MomentMediaResponse]:
+        try:
+            get_accessible_moment(session, user_id, moment_id)
+        except MomentNotFoundError:
+            return []
         media_items = session.exec(
             select(MomentMedia)
             .join(Moment, col(MomentMedia.moment_id) == Moment.id)
             .where(
                 col(MomentMedia.moment_id) == moment_id,
-                Moment.user_id == user_id,
             )
         ).all()
         immich_base_url = self._get_immich_base_url(session, user_id)
@@ -347,25 +358,32 @@ class MediaService:
                 col(Moment.logged_timezone),
             )
             .join(Moment, col(MomentMedia.moment_id) == Moment.id)
+            .outerjoin(Entry, col(Entry.moment_id) == Moment.id)
+            .outerjoin(Journal, col(Journal.id) == col(Entry.journal_id))
+            .outerjoin(
+                JournalMember,
+                and_(
+                    col(JournalMember.journal_id) == col(Journal.id),
+                    col(JournalMember.user_id) == user_id,
+                ),
+            )
             .where(
-                Moment.user_id == user_id,
+                (col(Moment.user_id) == user_id) | (col(JournalMember.user_id) == user_id),
                 col(MomentMedia.upload_status) == UploadStatus.COMPLETED,
             )
         )
 
         if journal_id:
-            statement = statement.join(
-                Entry, col(Entry.moment_id) == Moment.id
-            ).where(col(Entry.journal_id) == journal_id)
+            # Journal browsing includes only the viewer's own drafts.
+            statement = statement.where(
+                col(Entry.journal_id) == journal_id,
+                entry_draft_visibility_condition(user_id),
+            )
         else:
             # Exclude draft moments the same way the Timeline does: a moment with
             # no entry is a quick log and stays; a moment whose entry is a draft
             # is hidden.
-            statement = statement.outerjoin(
-                Entry, col(Entry.moment_id) == Moment.id
-            ).where(
-                (col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False))
-            )
+            statement = statement.where(moment_without_draft_condition())
 
         if media_type is not None:
             statement = statement.where(
@@ -444,12 +462,21 @@ class MediaService:
     ) -> tuple[dict[uuid.UUID, int], dict[uuid.UUID, list[MomentMediaThumbnail]]]:
         if not moment_ids:
             return {}, {}
+        from app.services.moment_service import MomentService
+
+        visible_ids = session.exec(
+            select(Moment.id).where(
+                col(Moment.id).in_(moment_ids),
+                MomentService._visible_to_user_condition(user_id),
+            )
+        ).all()
+        if not visible_ids:
+            return {}, {}
         media_items = session.exec(
             select(MomentMedia)
             .join(Moment, col(MomentMedia.moment_id) == Moment.id)
             .where(
-                col(MomentMedia.moment_id).in_(moment_ids),
-                Moment.user_id == user_id,
+                col(MomentMedia.moment_id).in_(visible_ids),
             )
             .order_by(col(MomentMedia.created_at).desc())
         ).all()
@@ -1006,22 +1033,24 @@ class MediaService:
             self._validate_streamed_upload(file_size, filename, header_bytes)
             media_type = self._detect_media_type(header_bytes)
 
-            # 4. Verify moment exists and belongs to user (short-lived session)
+            # 4. Authorize the uploader and resolve the durable owner used for
+            # storage, deduplication, and worker processing.
             with get_session_context() as validation_session:
-                self._get_moment_for_user(validation_session, moment_id, user_id)
+                moment = self._get_moment_for_user(validation_session, moment_id, user_id)
+                media_owner_id = moment.user_id
 
             # 5. Save file
             if use_temp_fallback:
                 media_info = await self.save_uploaded_file(
                     original_filename=filename,
-                    user_id=str(user_id),
+                    user_id=str(media_owner_id),
                     media_type=media_type,
                     file_path=str(temp_path)
                 )
             else:
                 media_info = await self.save_uploaded_file(
                     original_filename=filename,
-                    user_id=str(user_id),
+                    user_id=str(media_owner_id),
                     media_type=media_type,
                     file_stream=source_stream,
                     file_size_override=file_size,
@@ -1037,6 +1066,20 @@ class MediaService:
 
         # Finalize DB write in a short-lived session to avoid holding connections during file I/O.
         with get_session_context() as db_session:
+            try:
+                self._get_moment_for_user(db_session, moment_id, user_id)
+            except MomentNotFoundError:
+                if not media_info.get("was_deduplicated") and media_info.get("file_path"):
+                    try:
+                        self.media_storage_service.delete_media(
+                            relative_path=media_info["file_path"],
+                            checksum=media_info.get("checksum"),
+                            user_id=str(media_owner_id),
+                            force=True,
+                        )
+                    except (RuntimeError, OSError) as delete_exc:
+                        log_warning(f"Failed to cleanup unauthorized upload: {delete_exc}")
+                raise
             # Check if MomentMedia record already exists for this moment and checksum
             # This prevents duplicate media within the same moment
             checksum = media_info.get("checksum")
@@ -1070,7 +1113,7 @@ class MediaService:
                         .join(Moment, col(MomentMedia.moment_id) == Moment.id)
                         .where(
                             col(MomentMedia.checksum) == checksum,
-                            Moment.user_id == user_id,
+                            Moment.user_id == media_owner_id,
                         )
                     )
                     existing_media = db_session.exec(stmt).first()
@@ -1085,7 +1128,7 @@ class MediaService:
                             self.media_storage_service.delete_media(
                                 relative_path=media_info["file_path"],
                                 checksum=media_info["checksum"],
-                                user_id=str(user_id),
+                                user_id=str(media_owner_id),
                                 force=True,
                             )
                         except (RuntimeError, OSError) as delete_exc:
@@ -1187,7 +1230,7 @@ class MediaService:
                             # If checksum is missing or existing record not found, log and re-raise
                             log_warning(
                                 "IntegrityError for moment_media constraint but existing record not found",
-                                user_id=str(user_id),
+                                user_id=str(media_owner_id),
                                 moment_id=str(moment_id),
                                 checksum=checksum_value[:16] if checksum_value and len(checksum_value) >= 16 else None
                             )
@@ -1200,7 +1243,7 @@ class MediaService:
                                 self.media_storage_service.delete_media(
                                     relative_path=media_info["file_path"],
                                     checksum=media_info["checksum"],
-                                    user_id=str(user_id),
+                                    user_id=str(media_owner_id),
                                     force=True
                                 )
                                 log_info(f"Cleaned up orphaned file after IntegrityError: {media_info['file_path']}", user_id=str(user_id))
@@ -1217,7 +1260,7 @@ class MediaService:
                             self.media_storage_service.delete_media(
                                 relative_path=media_info["file_path"],
                                 checksum=media_info["checksum"],
-                                user_id=str(user_id),
+                                user_id=str(media_owner_id),
                                 force=True  # Force deletion since no DB record exists
                             )
                         except (RuntimeError, OSError) as delete_exc:
@@ -1230,6 +1273,7 @@ class MediaService:
         return {
             "media_record": media_record,
             "full_file_path": full_file_path_result or media_info["full_file_path"],
+            "media_owner_id": media_owner_id,
         }
 
     def _commit(self) -> None:
@@ -2123,7 +2167,14 @@ class MediaService:
             log_error(f"Failed to resolve thumbnail path {path}: {e}")
             return str(path)
 
-    def get_media_by_id(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> MomentMedia:
+    def get_media_by_id(
+        self,
+        media_id: uuid.UUID,
+        user_id: uuid.UUID,
+        session: Session,
+        *,
+        edit: bool = False,
+    ) -> MomentMedia:
         """Get media record by ID with ownership validation.
 
         Args:
@@ -2137,15 +2188,13 @@ class MediaService:
         Raises:
             MediaNotFoundError: If media not found or user doesn't have access
         """
-        statement = (
-            select(MomentMedia)
-            .join(Moment, col(MomentMedia.moment_id) == Moment.id)
-            .where(col(MomentMedia.id) == media_id)
-            .where(Moment.user_id == user_id)
-        )
-        media = session.exec(statement).first()
+        media = session.get(MomentMedia, media_id)
         if not media:
             raise MediaNotFoundError("Media not found")
+        try:
+            get_accessible_moment(session, user_id, media.moment_id, edit=edit)
+        except MomentNotFoundError:
+            raise MediaNotFoundError("Media not found") from None
         return media
 
     def get_media_file_path(self, media: MomentMedia) -> Path:
@@ -2292,19 +2341,21 @@ class MediaService:
             MediaStorageService as RuntimeMediaStorageService,
         )
 
-        if file_info.get("thumbnail_path"):
-            self._safe_delete_auxiliary_file(file_info["thumbnail_path"], "thumbnail")
-        if file_info.get("display_path"):
-            self._safe_delete_auxiliary_file(file_info["display_path"], "display version")
-
         try:
             storage_service = RuntimeMediaStorageService(self.media_root, session)
-            storage_service.delete_media(
+            deleted = storage_service.delete_media(
                 relative_path=file_info["file_path"],
                 checksum=file_info["checksum"],
                 user_id=str(user_id),
                 force=bool(file_info.get("force")),
             )
+            if not deleted:
+                # The original is still shared, so its generated variants are too.
+                return
+            if file_info.get("thumbnail_path"):
+                self._safe_delete_auxiliary_file(file_info["thumbnail_path"], "thumbnail")
+            if file_info.get("display_path"):
+                self._safe_delete_auxiliary_file(file_info["display_path"], "display version")
         except Exception as exc:
             log_warning(f"Failed to delete media file {file_info['file_path']}: {exc}")
 
@@ -2333,6 +2384,10 @@ class MediaService:
         effective_session = self._get_session(session)
         if old_delta is None or new_delta is None:
             return [], []
+        moment = effective_session.get(Moment, moment_id)
+        if not moment:
+            return [], []
+        media_owner_id = moment.user_id
 
         old_sources = set(extract_media_sources(old_delta))
         new_sources = set(extract_media_sources(new_delta))
@@ -2364,7 +2419,7 @@ class MediaService:
             file_info = self._build_file_deletion_info(media, force=force_delete)
             if file_info:
                 media_files_to_delete.append(file_info)
-            if self._should_remove_immich_asset(effective_session, media, user_id):
+            if self._should_remove_immich_asset(effective_session, media, media_owner_id):
                 if media.external_asset_id:
                     immich_assets_to_remove.append(media.external_asset_id)
 
@@ -2388,11 +2443,16 @@ class MediaService:
         session: Optional[Session] = None,
     ) -> bool:
         effective_session = self._get_session(session)
-        media = self.get_media_by_id(media_id, user_id, effective_session)
+        media = self.get_media_by_id(media_id, user_id, effective_session, edit=True)
+        moment = effective_session.get(Moment, media.moment_id)
+        if not moment:
+            raise MediaNotFoundError("Media not found")
+        # Storage and Immich references follow the durable Moment owner.
+        media_owner_id = moment.user_id
         file_info = self._build_file_deletion_info(media, force=media.checksum is None)
         asset_to_remove = (
             media.external_asset_id
-            if self._should_remove_immich_asset(effective_session, media, user_id)
+            if self._should_remove_immich_asset(effective_session, media, media_owner_id)
             else None
         )
         moment_id = media.moment_id
@@ -2413,7 +2473,7 @@ class MediaService:
 
         files = [file_info] if file_info else []
         immich_assets = [asset_to_remove] if asset_to_remove else []
-        self.delete_media_files_post_commit(user_id, files, immich_assets)
+        self.delete_media_files_post_commit(media_owner_id, files, immich_assets)
         return True
 
     async def delete_media_by_id(self, media_id: uuid.UUID, user_id: uuid.UUID, session: Session) -> None:
@@ -2653,21 +2713,35 @@ class MediaService:
                     MomentMedia.file_path,
                     MomentMedia.thumbnail_path,
                     MomentMedia.media_type,
+                    Moment.user_id,
                 )
                 .join(Moment, col(MomentMedia.moment_id) == Moment.id)
+                .outerjoin(Entry, col(Entry.moment_id) == Moment.id)
+                .outerjoin(Journal, col(Entry.journal_id) == Journal.id)
+                .outerjoin(
+                    JournalMember,
+                    and_(JournalMember.journal_id == Journal.id, JournalMember.user_id == current_user_id),
+                )
                 .where(
                     or_(
                         col(MomentMedia.id).in_(item_ids_to_query),
                         col(MomentMedia.external_asset_id).in_(query_ids_str)
                     )
                 )
-                .where(Moment.user_id == current_user_id)
+                # Match get_accessible_moment's read-access rules in bulk:
+                # standalone moments are owner-only; entries require journal
+                # access, and drafts additionally require authorship.
+                .where(or_(
+                    and_(col(Entry.id).is_(None), Moment.user_id == current_user_id),
+                    and_(col(Entry.id).is_not(None), entry_draft_visibility_condition(current_user_id),
+                         journal_access_condition(current_user_id)),
+                ))
             ).all()
             logger.info(f"Batch sign found {len(rows)} matching rows")
             logger.debug(f"Batch sign found matching rows: {rows}")
 
             # Build map indexed by both internal ID and external asset ID
-            for media_id, upload_status, external_provider, external_asset_id, file_path, thumbnail_path, media_type in rows:
+            for media_id, upload_status, external_provider, external_asset_id, file_path, thumbnail_path, media_type, owner_id in rows:
                 media_data = {
                     "id": str(media_id),
                     "upload_status": upload_status,
@@ -2676,6 +2750,7 @@ class MediaService:
                     "file_path": file_path,
                     "thumbnail_path": thumbnail_path,
                     "media_type": media_type,
+                    "owner_id": owner_id,
                 }
 
                 # Index by internal ID
@@ -2685,19 +2760,20 @@ class MediaService:
                 if external_asset_id:
                     valid_media_map[external_asset_id] = media_data
 
-        # 3. Validate Immich integration once if needed
-        needs_immich = any(
-            meta.get("external_provider") == "immich"
+        # 3. Validate each Immich media owner's integration in bulk.
+        immich_owner_ids = {
+            meta["owner_id"]
             for meta in valid_media_map.values()
-        )
-        immich_active = True
-        if needs_immich:
-            integration = session.exec(
-                select(Integration)
-                .where(Integration.user_id == current_user_id)
+            if meta.get("external_provider") == "immich"
+        }
+        active_immich_owners = set()
+        if immich_owner_ids:
+            active_immich_owners = set(session.exec(
+                select(Integration.user_id)
+                .where(col(Integration.user_id).in_(immich_owner_ids))
                 .where(Integration.provider == IntegrationProvider.IMMICH)
-            ).first()
-            immich_active = bool(integration and integration.is_active)
+                .where(col(Integration.is_active).is_(True))
+            ).all())
 
         # 4. Generate signatures
         now = int(time.time())
@@ -2730,7 +2806,7 @@ class MediaService:
                 continue
 
             if external_provider == "immich":
-                if not immich_active:
+                if media_meta["owner_id"] not in active_immich_owners:
                     errors[item_key] = "Immich integration not active"
                     continue
                 if not external_asset_id:

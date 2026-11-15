@@ -14,7 +14,9 @@ import { useShell } from "../shell/AppShell";
 import { DeleteJournalDialog } from "./DeleteJournalDialog";
 import { JournalFormDialog, type JournalFormValues } from "./JournalFormDialog";
 import { JournalRow } from "./JournalRow";
+import { JournalSharingDialog } from "./JournalSharingDialog";
 import { useJournalMutations } from "./useJournalMutations";
+import { canManageJournal, isSharedJournal } from "../../lib/journalAccess";
 import "./journals.css";
 
 export function JournalsPage() {
@@ -33,10 +35,16 @@ export function JournalsPage() {
   const [deleteTarget, setDeleteTarget] = useState<JournalResponse | null>(
     null,
   );
+  const [sharingJournal, setSharingJournal] = useState<JournalResponse | null>(
+    null,
+  );
 
   const { active, archived } = groupJournals(journals);
-  const favs = active.filter((j) => j.is_favorite);
-  const rest = active.filter((j) => !j.is_favorite);
+  // Received journals have the owner's ordering, not the viewer's personal order.
+  const ownedActive = active.filter((journal) => !isSharedJournal(journal));
+  const sharedActive = active.filter(isSharedJournal);
+  const favs = ownedActive.filter((j) => j.is_favorite);
+  const rest = ownedActive.filter((j) => !j.is_favorite);
 
   function openCreate() {
     create.reset();
@@ -68,7 +76,8 @@ export function JournalsPage() {
     setDeleteTarget(null);
   }
   function move(id: string, direction: "up" | "down") {
-    const updates = reorderWithinGroup(journals, id, direction);
+    // Shared journals are visible here but cannot be reordered by this user.
+    const updates = reorderWithinGroup(ownedActive, id, direction);
     if (updates) reorder.mutate({ updates });
   }
 
@@ -78,14 +87,18 @@ export function JournalsPage() {
         key={journal.id}
         journal={journal}
         search={q}
-        canMoveUp={peers[0]?.id !== journal.id}
-        canMoveDown={peers[peers.length - 1]?.id !== journal.id}
+        canMoveUp={canManageJournal(journal) && peers[0]?.id !== journal.id}
+        canMoveDown={
+          canManageJournal(journal) &&
+          peers[peers.length - 1]?.id !== journal.id
+        }
         onRename={openEdit}
         onEditAppearance={openEdit}
         onDelete={openDelete}
         onToggleFavorite={(j) => toggleFavorite.mutate(j)}
         onSetArchived={(id, archived) => setArchived.mutate({ id, archived })}
         onMove={move}
+        onShare={setSharingJournal}
       />
     );
   }
@@ -162,6 +175,15 @@ export function JournalsPage() {
           </ul>
         )}
 
+        {!isLoading && !isError && sharedActive.length > 0 && (
+          <section aria-label="Shared with me">
+            <h2 className="jv-label">Shared with me</h2>
+            <ul className="jv-jlist">
+              {sharedActive.map((j) => renderRow(j, []))}
+            </ul>
+          </section>
+        )}
+
         {!isLoading && !isError && archived.length > 0 && (
           <details className="jv-journals__archived">
             <summary className="jv-journals__archived-summary">
@@ -196,6 +218,11 @@ export function JournalsPage() {
           failed={remove.isError}
         />
       )}
+      <JournalSharingDialog
+        journal={sharingJournal}
+        open={sharingJournal !== null}
+        onOpenChange={(open) => !open && setSharingJournal(null)}
+      />
     </section>
   );
 }

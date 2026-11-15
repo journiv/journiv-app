@@ -24,6 +24,7 @@ if TYPE_CHECKING:
     from .goal import Goal, GoalLog
     from .goal_category import GoalCategory
     from .journal import Journal
+    from .journal_member import JournalMember
     from .moment import Moment
     from .mood import Mood
     from .mood_group import MoodGroup
@@ -69,6 +70,11 @@ class User(BaseModel, table=True):
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
+    shared_journal_memberships: List["JournalMember"] = Relationship(
+        back_populates="user",
+        # Deleting a user only revokes their access, not the shared journal.
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
     user_prompts: List["Prompt"] = Relationship(
         back_populates="user",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
@@ -99,7 +105,11 @@ class User(BaseModel, table=True):
     )
     entries: List["Entry"] = Relationship(
         back_populates="user",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={
+            "cascade": "all, delete-orphan",
+            # Entries can now name an author as well as their journal owner's user_id.
+            "foreign_keys": "[Entry.user_id]",
+        },
     )
     moments: List["Moment"] = Relationship(
         back_populates="user",

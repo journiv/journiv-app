@@ -107,10 +107,25 @@ class Entry(BaseModel, table=True):
             index=True
         )
     )
+    created_by_user_id: Optional[uuid.UUID] = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("user.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        ),
+        description="Actor who created the entry, retained separately from journal ownership",
+    )
 
     # Relations
     journal: "Journal" = Relationship(back_populates="entries")
-    user: "User" = Relationship(back_populates="entries")
+    user: "User" = Relationship(
+        back_populates="entries",
+        sa_relationship_kwargs={"foreign_keys": "[Entry.user_id]"},
+    )
+    created_by_user: Optional["User"] = Relationship(
+        sa_relationship_kwargs={"foreign_keys": "[Entry.created_by_user_id]"},
+    )
     moment: "Moment" = Relationship(back_populates="entry")
 
     # Table constraints and indexes
@@ -129,6 +144,13 @@ class Entry(BaseModel, table=True):
         if v and len(v.strip()) == 0:
             return None
         return v.strip() if v else v
+
+    @property
+    def author_name(self) -> str:
+        """Resolve the byline without persisting a name snapshot."""
+        if self.created_by_user:
+            return self.created_by_user.name
+        return "deleted user"
 
 
 def _should_refresh_plain_text(entry: Entry) -> bool:

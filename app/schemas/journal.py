@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import JournalColor
+from app.models.enums import JournalColor, JournalPermission
 from app.schemas.base import TimestampMixin
 
 
@@ -46,6 +46,31 @@ class JournalResponse(JournalBase, TimestampMixin):
     last_entry_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
+    # These are viewer-specific, so they are filled in after the journal model is loaded.
+    access_level: str = "owner"
+    owner_name: Optional[str] = None
+    owner_id: Optional[uuid.UUID] = None
+
+
+class JournalMemberCreate(BaseModel):
+    user_id: uuid.UUID
+    permission: JournalPermission
+
+
+class JournalMemberUpdate(BaseModel):
+    permission: JournalPermission
+
+
+class JournalMemberResponse(TimestampMixin):
+    user_id: uuid.UUID
+    name: str
+    permission: JournalPermission
+
+
+class UserSearchResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    email: str
 
 
 class JournalReorderItem(BaseModel):

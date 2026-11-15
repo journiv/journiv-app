@@ -8,11 +8,14 @@ from sqlalchemy import case, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlmodel import Session, col, func, select
 
-from app.core.exceptions import JournalNotFoundError
+from app.core.exceptions import JournalNotFoundError, UserNotFoundError
 from app.core.logging_config import log_error, log_info, log_warning
 from app.core.time_utils import utc_now
 from app.models.entry import Entry
+from app.models.enums import JournalPermission
 from app.models.journal import Journal
+from app.models.journal_member import JournalMember
+from app.models.user import User
 from app.schemas.journal import JournalCreate, JournalUpdate
 
 
@@ -100,6 +103,94 @@ class JournalService:
             col(Journal.created_at).desc()
         )
         return list(self.session.exec(statement))
+
+    def get_accessible_journals(
+        self, user_id: uuid.UUID, include_archived: bool = False
+    ) -> list[tuple[Journal, str, User]]:
+        """Return owned and shared journals with the viewer's effective level."""
+        owned = self.get_user_journals(user_id, include_archived)
+        member_statement = (
+            select(Journal, JournalMember.permission, User)
+            .join(JournalMember, JournalMember.journal_id == Journal.id)
+            .join(User, User.id == Journal.user_id)
+            .where(JournalMember.user_id == user_id)
+        )
+        if not include_archived:
+            member_statement = member_statement.where(col(Journal.is_archived).is_(False))
+        shared = list(self.session.exec(member_statement))
+        owner = self.session.get(User, user_id)
+        # Owned journals retain their existing ordering; shared journals are separate memberships.
+        return [
+            (journal, "owner", owner)
+            for journal in owned
+            if owner is not None
+        ] + [
+            (journal, permission.value, owner_user)
+            for journal, permission, owner_user in shared
+        ]
+
+    def list_members(self, journal_id: uuid.UUID) -> list[tuple[JournalMember, User]]:
+        """Return a journal's collaborators ordered by name and email."""
+        statement = (
+            select(JournalMember, User)
+            .join(User, User.id == JournalMember.user_id)
+            .where(JournalMember.journal_id == journal_id)
+            .order_by(User.name, User.email)
+        )
+        return list(self.session.exec(statement))
+
+    def add_member(
+        self, journal_id: uuid.UUID, user_id: uuid.UUID, permission: JournalPermission
+    ) -> JournalMember:
+        """Add an active non-owner user as a journal collaborator."""
+        journal = self.session.get(Journal, journal_id)
+        if not journal or journal.user_id == user_id:
+            raise JournalNotFoundError("User cannot be added to this journal")
+        user = self.session.get(User, user_id)
+        if not user or not user.is_active:
+            raise UserNotFoundError("User not found")
+        existing = self.session.exec(
+            select(JournalMember).where(
+                JournalMember.journal_id == journal_id, JournalMember.user_id == user_id
+            )
+        ).first()
+        if existing:
+            raise ValueError("User is already a journal member")
+        member = JournalMember(journal_id=journal_id, user_id=user_id, permission=permission)
+        self.session.add(member)
+        self.session.commit()
+        self.session.refresh(member)
+        return member
+
+    def update_member(
+        self, journal_id: uuid.UUID, user_id: uuid.UUID, permission: JournalPermission
+    ) -> JournalMember:
+        """Update a collaborator's permission for a journal."""
+        member = self.session.exec(
+            select(JournalMember).where(
+                JournalMember.journal_id == journal_id, JournalMember.user_id == user_id
+            )
+        ).first()
+        if not member:
+            raise JournalNotFoundError("Journal member not found")
+        member.permission = permission
+        member.updated_at = utc_now()
+        self.session.add(member)
+        self.session.commit()
+        self.session.refresh(member)
+        return member
+
+    def remove_member(self, journal_id: uuid.UUID, user_id: uuid.UUID) -> None:
+        """Remove a collaborator's access to a journal."""
+        member = self.session.exec(
+            select(JournalMember).where(
+                JournalMember.journal_id == journal_id, JournalMember.user_id == user_id
+            )
+        ).first()
+        if not member:
+            raise JournalNotFoundError("Journal member not found")
+        self.session.delete(member)
+        self.session.commit()
 
     def update_journal(self, journal_id: uuid.UUID, user_id: uuid.UUID, journal_data: JournalUpdate) -> Journal:
         """Update a journal."""

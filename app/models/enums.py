@@ -80,6 +80,14 @@ class UserRole(str, Enum):
     USER = "user"
 
 
+class JournalPermission(str, Enum):
+    """Permissions granted to a recipient of a shared journal."""
+
+    READONLY = "readonly"
+    EDIT = "edit"
+    # Could be extended in the future with more granular permissions like "comment"
+
+
 class JournalColor(str, Enum):
     """Preset colors for journals."""
     RED = "#EF4444"

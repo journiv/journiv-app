@@ -647,11 +647,16 @@ class EntryPDFService:
         entry_id: UUID,
         user_id: UUID,
     ) -> tuple[BytesIO, str]:
-        entry = self.session.exec(
-            select(Entry).where(Entry.id == entry_id, Entry.user_id == user_id)
-        ).first()
-        if not entry:
+        from app.services.journal_access import JournalAccessDeniedError, JournalAccessService
+        from app.services.moment_lookup import is_draft_author
+
+        entry = self.session.exec(select(Entry).where(Entry.id == entry_id)).first()
+        if not entry or (entry.is_draft and not is_draft_author(entry, user_id)):
             raise PDFEntryNotFoundError("Entry not found or access denied")
+        try:
+            JournalAccessService(self.session).require(entry.journal_id, user_id)
+        except JournalAccessDeniedError:
+            raise PDFEntryNotFoundError("Entry not found or access denied") from None
 
         moment = self.session.get(Moment, entry.moment_id) if entry.moment_id else None
         delta_payload = entry.content_delta or {"ops": []}

@@ -34,7 +34,7 @@ from app.schemas.person import (
     PersonSort,
     PersonUpdate,
 )
-from app.services.moment_lookup import MomentNotFoundError
+from app.services.moment_lookup import get_accessible_moment
 
 try:
     from PIL import Image as _PILImage
@@ -337,14 +337,6 @@ class PersonService:
             created_at=person.created_at,
             updated_at=person.updated_at,
         )
-
-    def _get_owned_moment(self, user_id: uuid.UUID, moment_id: uuid.UUID) -> Moment:
-        moment = self.session.exec(
-            select(Moment).where(col(Moment.id) == moment_id, col(Moment.user_id) == user_id)
-        ).first()
-        if not moment:
-            raise MomentNotFoundError("Moment not found")
-        return moment
 
     def _get_owned_person(
         self,
@@ -703,7 +695,8 @@ class PersonService:
         *,
         include_archived: bool = False,
     ) -> List[PersonResponse]:
-        self._get_owned_moment(user_id, moment_id)
+        # require read access, including draft
+        get_accessible_moment(self.session, user_id, moment_id)
         statement = (
             self._list_people_statement(
                 user_id=user_id,
@@ -723,8 +716,21 @@ class PersonService:
         person_ids: Sequence[uuid.UUID],
         user_id: uuid.UUID,
     ) -> List[PersonResponse]:
-        self._get_owned_moment(user_id, moment_id)
+        """Replace the caller's person tags, preserving other members' tags.
+
+        Requires edit access. Already-linked people from other members may be
+        included in the request, but only the caller's active people can be
+        newly linked. Returns the caller's linked people.
+        """
+        # require write access, including draft
+        get_accessible_moment(self.session, user_id, moment_id, edit=True)
         requested_ids = list(dict.fromkeys(person_ids))
+
+        # The Moment response includes collaborators' visible tags. Accept those
+        # existing IDs in a replacement, but never add or remove their links.
+        linked_ids = set(self.session.exec(
+            select(MomentPersonLink.person_id).where(col(MomentPersonLink.moment_id) == moment_id)
+        ).all())
 
         if requested_ids:
             people = self.session.exec(
@@ -734,17 +740,19 @@ class PersonService:
                     col(Person.id).in_(requested_ids),
                 )
             ).all()
-            if len(people) != len(requested_ids):
+            allowed_ids = linked_ids | {person.id for person in people}
+            if any(person_id not in allowed_ids for person_id in requested_ids):
                 raise ValueError("One or more people were not found")
 
         current_links = self.session.exec(
-            select(MomentPersonLink).where(col(MomentPersonLink.moment_id) == moment_id)
+            select(MomentPersonLink)
+            .join(Person, col(Person.id) == col(MomentPersonLink.person_id))
+            .where(col(MomentPersonLink.moment_id) == moment_id, col(Person.user_id) == user_id)
         ).all()
-        current_ids = {link.person_id for link in current_links}
         requested_set = set(requested_ids)
 
         to_remove = [link for link in current_links if link.person_id not in requested_set]
-        to_add = [person_id for person_id in requested_ids if person_id not in current_ids]
+        to_add = [person_id for person_id in requested_ids if person_id not in linked_ids]
 
         for link in to_remove:
             self.session.delete(link)
@@ -762,7 +770,7 @@ class PersonService:
         person_id: uuid.UUID,
         user_id: uuid.UUID,
     ) -> bool:
-        self._get_owned_moment(user_id, moment_id)
+        get_accessible_moment(self.session, user_id, moment_id, edit=True)
         self._get_owned_person(user_id, person_id, include_archived=True)
         link = self.session.exec(
             select(MomentPersonLink).where(

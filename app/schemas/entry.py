@@ -127,6 +127,8 @@ class EntryResponse(EntryBase, TimestampMixin):
     word_count: int
     is_draft: bool = False
     user_id: uuid.UUID
+    created_by_user_id: Optional[uuid.UUID] = None
+    author_name: str = ""
     public_id: Optional[str] = Field(
         default=None,
         description="Public URL-safe identifier (12 chars, generated on first publish)",
@@ -157,6 +159,8 @@ class EntryPreviewResponse(TimestampMixin):
     moment_id: uuid.UUID
     word_count: int = 0
     is_draft: bool = False
+    created_by_user_id: Optional[uuid.UUID] = None
+    author_name: str = ""
     public_id: Optional[str] = Field(
         default=None,
         description="Public URL-safe identifier (12 chars, generated on first publish)",

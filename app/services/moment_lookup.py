@@ -4,13 +4,41 @@ Shared moment ownership lookup helpers.
 import uuid
 from typing import Any, Optional
 
-from sqlmodel import Session, select
+from sqlalchemy.sql.elements import ColumnElement
+from sqlmodel import Session, col, select
 
+from app.models.entry import Entry
 from app.models.moment import Moment
+from app.services.journal_access import JournalAccessDeniedError, JournalAccessService
 
 
 class MomentNotFoundError(Exception):
     """Raised when a moment is not found for the user."""
+
+
+def draft_author_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Match the attributed author; unknown authors are not visible."""
+    return (col(Entry.created_by_user_id) == user_id).is_(True)
+
+
+def entry_draft_visibility_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Match published entries and drafts authored by the user."""
+    return col(Entry.is_draft).is_(False) | draft_author_condition(user_id)
+
+
+def moment_draft_visibility_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+    """Also include standalone moments from an outer join to Entry."""
+    return col(Entry.id).is_(None) | entry_draft_visibility_condition(user_id)
+
+
+def moment_without_draft_condition() -> ColumnElement[bool]:
+    """Match standalone moments and moments with published entries."""
+    return col(Entry.id).is_(None) | col(Entry.is_draft).is_(False)
+
+
+def is_draft_author(entry: Entry, user_id: uuid.UUID) -> bool:
+    """Check draft authorship without treating an unknown author as the owner."""
+    return entry.created_by_user_id == user_id
 
 
 def get_owned_moment(
@@ -27,4 +55,38 @@ def get_owned_moment(
     moment = session.exec(statement).first()
     if not moment:
         raise MomentNotFoundError("Moment not found")
+    entry = session.exec(select(Entry).where(Entry.moment_id == moment_id)).first()
+    if entry and entry.is_draft and not is_draft_author(entry, user_id):
+        raise MomentNotFoundError("Moment not found")
+    return moment
+
+
+def get_accessible_moment(
+    session: Session,
+    user_id: uuid.UUID,
+    moment_id: uuid.UUID,
+    *,
+    edit: bool = False,
+    options: Optional[list[Any]] = None,
+) -> Moment:
+    """Fetch a private Moment or a journal-backed Moment the actor can access."""
+    statement = select(Moment).where(Moment.id == moment_id)
+    if options:
+        statement = statement.options(*options)
+    moment = session.exec(statement).first()
+    if not moment:
+        raise MomentNotFoundError("Moment not found")
+    entry = session.exec(select(Entry).where(Entry.moment_id == moment_id)).first()
+    if entry is None:
+        # Standalone quick logs never become shared just because another journal is shared.
+        if moment.user_id != user_id:
+            raise MomentNotFoundError("Moment not found")
+        return moment
+    if entry.is_draft and not is_draft_author(entry, user_id):
+        # Drafts remain private to their author until they are finalized.
+        raise MomentNotFoundError("Moment not found")
+    try:
+        JournalAccessService(session).require(entry.journal_id, user_id, edit=edit)
+    except JournalAccessDeniedError:
+        raise MomentNotFoundError("Moment not found") from None
     return moment

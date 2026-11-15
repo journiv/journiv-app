@@ -12,13 +12,15 @@ from sqlmodel import Session, create_engine
 from app.core.exceptions import MediaNotFoundError
 from app.models.base import BaseModel
 from app.models.entry import Entry
-from app.models.enums import JournalColor
+from app.models.enums import JournalColor, JournalPermission
 from app.models.journal import Journal
-from app.models.moment import Moment
+from app.models.journal_member import JournalMember
+from app.models.moment import Moment, MomentMedia
 from app.models.user import User
 from app.services import media_service as media_service_module
 from app.services.media_service import MediaService
 from app.services.media_storage_service import MediaStorageService
+from app.services.moment_lookup import MomentNotFoundError
 
 
 def _sample_jpeg_bytes() -> bytes:
@@ -95,6 +97,41 @@ def _build_service(tmp_path: Path, session: Session) -> MediaService:
     service.media_root = media_root
     service.media_storage_service = MediaStorageService(media_root, session)
     return service
+
+
+@pytest.mark.asyncio
+async def test_upload_rechecks_access_after_storage(tmp_path, test_db, test_user, test_entry, monkeypatch):
+    """Revoked access aborts the upload and removes the newly stored file."""
+    from contextlib import contextmanager
+    from sqlmodel import select
+
+    editor = User(email=f"{uuid.uuid4()}@example.com", password="password", name="Editor")
+    test_db.add(editor)
+    test_db.commit()
+    member = JournalMember(journal_id=test_entry.journal_id, user_id=editor.id, permission=JournalPermission.EDIT)
+    test_db.add(member)
+    test_db.commit()
+    service = _build_service(tmp_path, test_db)
+    original_save = service.save_uploaded_file
+    saved = {}
+
+    @contextmanager
+    def session_context():
+        yield test_db
+
+    async def save_then_revoke(**kwargs):
+        saved.update(await original_save(**kwargs))
+        test_db.delete(member)
+        test_db.commit()
+        return saved
+
+    monkeypatch.setattr(media_service_module, "get_session_context", session_context)
+    monkeypatch.setattr(service, "save_uploaded_file", save_then_revoke)
+    upload = UploadFile(filename="upload.jpg", file=BytesIO(_sample_jpeg_bytes()))
+    with pytest.raises(MomentNotFoundError):
+        await service.upload_media(upload, editor.id, test_entry.moment_id)
+    assert not service.media_storage_service.get_full_path(saved["file_path"]).exists()
+    assert not test_db.exec(select(MomentMedia)).all()
 
 
 @pytest.mark.asyncio

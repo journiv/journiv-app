@@ -10,6 +10,7 @@ from typing import Any, List, Optional, Tuple
 from sqlalchemy import String, and_, cast, extract, func, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import selectinload
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, delete, select
 
 from app.core.db_utils import normalize_uuid_list
@@ -19,6 +20,8 @@ from app.core.time_utils import ensure_utc, local_date_for_user, utc_now
 from app.models.activity import Activity
 from app.models.entry import Entry
 from app.models.goal import GoalLog
+from app.models.journal import Journal
+from app.models.journal_member import JournalMember
 from app.models.moment import Moment, MomentMoodActivity
 from app.models.moment_person_link import MomentPersonLink
 from app.models.moment_tag_link import MomentTagLink
@@ -33,7 +36,12 @@ from app.schemas.moment import (
     PeopleMatch,
 )
 from app.services.goal_service import GoalService
-from app.services.moment_lookup import get_owned_moment
+from app.services.moment_lookup import (
+    entry_draft_visibility_condition,
+    get_accessible_moment,
+    get_owned_moment,
+    moment_without_draft_condition,
+)
 
 
 class MomentService:
@@ -61,16 +69,47 @@ class MomentService:
             self.session.rollback()
             raise
 
+    @staticmethod
+    def _visible_to_user_condition(user_id: uuid.UUID) -> ColumnElement[bool]:
+        """Match private moments and journal entries visible to the user."""
+        member_has_access = (
+            select(JournalMember.id)
+            .where(
+                JournalMember.journal_id == Journal.id,
+                JournalMember.user_id == user_id,
+            )
+            .exists()
+        )
+        shared_moment_ids = (
+            select(Entry.moment_id)
+            .join(Journal, col(Journal.id) == col(Entry.journal_id))
+            .where(
+                or_(
+                    col(Journal.user_id) == user_id,
+                    member_has_access,
+                ),
+                entry_draft_visibility_condition(user_id),
+            )
+        )
+        return or_(
+            and_(
+                col(Moment.user_id) == user_id,
+                ~select(Entry.id).where(Entry.moment_id == Moment.id).correlate(Moment).exists(),
+            ),
+            col(Moment.id).in_(shared_moment_ids),
+        )
+
     def _get_owned_moment(self, user_id: uuid.UUID, moment_id: uuid.UUID) -> Moment:
         return get_owned_moment(self.session, user_id, moment_id)
 
     def _get_owned_moment_with_relations(
         self, user_id: uuid.UUID, moment_id: uuid.UUID
     ) -> Moment:
-        return get_owned_moment(
+        return get_accessible_moment(
             self.session,
             user_id,
             moment_id,
+            edit=False,
             options=[
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
@@ -289,7 +328,7 @@ class MomentService:
         """Delete user moments that no longer have meaningful content."""
         statement = (
             select(Moment)
-            .where(Moment.user_id == user_id)
+            .where(self._visible_to_user_condition(user_id))
             .options(
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
@@ -636,9 +675,7 @@ class MomentService:
         if not include_drafts and not entry_id:
             # Exclude moments whose entries are drafts
             # Logic: (no entry linked) OR (entry is not a draft)
-            return statement.where(
-                (col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False))
-            )
+            return statement.where(moment_without_draft_condition())
         return statement
 
     def _apply_mood_filter(
@@ -830,7 +867,7 @@ class MomentService:
     def _base_moment_statement(self, user_id: uuid.UUID) -> Any:
         return (
             select(Moment)
-            .where(Moment.user_id == user_id)
+            .where(self._visible_to_user_condition(user_id))
             .options(
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
@@ -843,7 +880,7 @@ class MomentService:
                 ),
             )
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
-            .where((col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False)))
+            .where(moment_without_draft_condition())
         )
 
     def _resolve_user_local_today(self, user_id: uuid.UUID) -> date:
@@ -941,9 +978,9 @@ class MomentService:
     def _base_memories_probe_statement(self, user_id: uuid.UUID) -> Any:
         return (
             select(Moment.id)
-            .where(Moment.user_id == user_id)
+            .where(self._visible_to_user_condition(user_id))
             .outerjoin(Entry, col(Entry.moment_id) == col(Moment.id))
-            .where((col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False)))
+            .where(moment_without_draft_condition())
         )
 
     def _fetch_memories(
@@ -1114,7 +1151,7 @@ class MomentService:
         """Get moments for a user with filtering."""
         statement = (
             select(Moment)
-            .where(Moment.user_id == user_id)
+            .where(self._visible_to_user_condition(user_id))
             .options(
                 selectinload(Moment.entry),  # type: ignore[arg-type]
                 selectinload(Moment.tags),  # type: ignore[arg-type]
@@ -1165,7 +1202,7 @@ class MomentService:
         end_date: Optional[date] = None,
         journal_id: Optional[uuid.UUID] = None,
     ) -> List[Moment]:
-        statement = select(Moment).where(Moment.user_id == user_id)
+        statement = select(Moment).where(self._visible_to_user_condition(user_id))
         if journal_id:
             statement = statement.join(
                 Entry, col(Entry.moment_id) == col(Moment.id)
@@ -1190,7 +1227,12 @@ class MomentService:
         Returns a result dict: {"deleted": True, "cleanup_failures": count, "errors": list}.
         Cleanup failures are logged and can be retried by a background cleanup job.
         """
-        moment = self._get_owned_moment(user_id, moment_id)
+        entry = self.session.exec(select(Entry).where(Entry.moment_id == moment_id)).first()
+        if entry and entry.is_draft:
+            moment = get_accessible_moment(self.session, user_id, moment_id, edit=True)
+        else:
+            moment = self._get_owned_moment(user_id, moment_id)
+        media_owner_id = moment.user_id
 
         from app.models.moment import MomentMedia
         from app.services.media_service import MediaService
@@ -1210,7 +1252,7 @@ class MomentService:
             if file_info:
                 media_files_to_clean.append(file_info)
 
-            if media_service._should_remove_immich_asset(self.session, media, user_id):
+            if media_service._should_remove_immich_asset(self.session, media, media_owner_id):
                 immich_assets.append(media.external_asset_id)
 
         # 2. Delete the Moment record (and linked Entry/Media via DB cascade)
@@ -1226,7 +1268,7 @@ class MomentService:
 
             celery_app.send_task(
                 "app.tasks.media.cleanup_moment_media_files",
-                args=[str(user_id), media_files_to_clean, cleaned_assets],
+                args=[str(media_owner_id), media_files_to_clean, cleaned_assets],
             )
             return {
                 "deleted": True,
@@ -1242,7 +1284,7 @@ class MomentService:
             deletion_errors = []
             try:
                 media_service.delete_media_files_post_commit(
-                    user_id,
+                    media_owner_id,
                     media_files_to_clean,
                     cleaned_assets,
                 )

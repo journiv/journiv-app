@@ -39,6 +39,7 @@ import { shouldClearMediaParam } from "../../components/journiv/media/mediaViewe
 import { StatusView } from "../../components/journiv/StatusView";
 import { useMomentMedia } from "../../components/journiv/useMomentMedia";
 import { useJournalLookup } from "../../lib/useJournalLookup";
+import { canEditJournal } from "../../lib/journalAccess";
 import { mediaPath } from "../../lib/mediaUrl";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
@@ -386,22 +387,26 @@ export function ReaderPage() {
         title={<JournalBadge journal={journal} />}
         actions={
           <>
-            <Button
-              variant={hasWriting ? "secondary" : "default"}
-              onClick={edit}
-            >
-              {hasWriting ? (
-                <>
-                  <Pencil aria-hidden="true" size={15} />
-                  Edit
-                </>
-              ) : (
-                <>
-                  <NotebookPen aria-hidden="true" size={15} />
-                  Write
-                </>
-              )}
-            </Button>
+            {/* Read-only members may read the Moment, but cannot start or edit
+                its Entry. */}
+            {(!journal || canEditJournal(journal)) && (
+              <Button
+                variant={hasWriting ? "secondary" : "default"}
+                onClick={edit}
+              >
+                {hasWriting ? (
+                  <>
+                    <Pencil aria-hidden="true" size={15} />
+                    Edit
+                  </>
+                ) : (
+                  <>
+                    <NotebookPen aria-hidden="true" size={15} />
+                    Write
+                  </>
+                )}
+              </Button>
+            )}
             {entryId && (
               <AppAdaptiveMenu label="Entry actions" actions={entryActions} />
             )}

@@ -17,6 +17,7 @@ from .enums import JournalColor
 
 if TYPE_CHECKING:
     from .entry import Entry
+    from .journal_member import JournalMember
     from .user import User
 
 
@@ -68,6 +69,11 @@ class Journal(BaseModel, table=True):
     entries: List["Entry"] = Relationship(
         back_populates="journal",
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    # Memberships are access grants, so deleting a journal clears its roster too.
+    members: List["JournalMember"] = Relationship(
+        back_populates="journal",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
     )
 
     # Table constraints and indexes

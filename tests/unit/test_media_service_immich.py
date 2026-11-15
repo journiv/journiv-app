@@ -60,7 +60,7 @@ def create_mock_media(
 ):
     # Determine what select().all() should return
     # Query in batch_sign_media returns tuple:
-    # (id, upload_status, external_provider, external_asset_id, file_path, thumbnail_path, media_type)
+    # (id, upload_status, external_provider, external_asset_id, file_path, thumbnail_path, media_type, owner_id)
     return (
         media_id,
         status,
@@ -68,7 +68,8 @@ def create_mock_media(
         asset_id,
         file_path,
         thumbnail_path,
-        media_type
+        media_type,
+        user_id,
     )
 
 @pytest.mark.asyncio
@@ -90,7 +91,7 @@ async def test_batch_sign_immich_link_only_success(
     )
 
     # Setup session mocks
-    mock_session.exec.return_value.all.return_value = [mock_row]
+    mock_session.exec.return_value.all.side_effect = [[mock_row], [user_id]]
     # Mock integration query
     mock_session.exec.return_value.first.return_value = active_immich_integration
 
@@ -126,7 +127,7 @@ async def test_batch_sign_immich_link_only_processing(
         file_path=None
     )
 
-    mock_session.exec.return_value.all.return_value = [mock_row]
+    mock_session.exec.return_value.all.side_effect = [[mock_row], [user_id]]
     mock_session.exec.return_value.first.return_value = active_immich_integration
 
     request = MediaBatchSignRequest(items=[
@@ -158,7 +159,7 @@ async def test_batch_sign_immich_copy_mode_success(
         thumbnail_path="thumbs/thumb.jpg"
     )
 
-    mock_session.exec.return_value.all.return_value = [mock_row]
+    mock_session.exec.return_value.all.side_effect = [[mock_row], [user_id]]
     mock_session.exec.return_value.first.return_value = active_immich_integration
 
     request = MediaBatchSignRequest(items=[
@@ -191,7 +192,7 @@ async def test_batch_sign_immich_copy_mode_processing(
         file_path=None  # Placeholder usually has None
     )
 
-    mock_session.exec.return_value.all.return_value = [mock_row]
+    mock_session.exec.return_value.all.side_effect = [[mock_row], [user_id]]
     mock_session.exec.return_value.first.return_value = active_immich_integration
 
     request = MediaBatchSignRequest(items=[
@@ -221,7 +222,7 @@ async def test_batch_sign_immich_copy_mode_thumbnail_missing(
         thumbnail_path=None
     )
 
-    mock_session.exec.return_value.all.return_value = [mock_row]
+    mock_session.exec.return_value.all.side_effect = [[mock_row], [user_id]]
     mock_session.exec.return_value.first.return_value = active_immich_integration
 
     # Request thumbnail
@@ -253,7 +254,7 @@ async def test_batch_sign_immich_link_only_thumbnail_proxy(
         thumbnail_path=None
     )
 
-    mock_session.exec.return_value.all.return_value = [mock_row]
+    mock_session.exec.return_value.all.side_effect = [[mock_row], [user_id]]
     mock_session.exec.return_value.first.return_value = active_immich_integration
 
     request = MediaBatchSignRequest(items=[

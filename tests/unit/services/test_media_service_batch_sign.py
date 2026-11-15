@@ -40,6 +40,7 @@ async def test_batch_sign_local_media_success(tmp_path):
             "/data/media/file.jpg",
             "/data/media/thumb.jpg",
             MediaType.IMAGE,
+            user_id,
         )
     ]
     session.exec.return_value.all.return_value = rows
@@ -74,11 +75,12 @@ async def test_batch_sign_immich_integration_inactive(tmp_path):
                         None,
                         None,
                         MediaType.IMAGE,
+                        user_id,
                     )
                 ]
             )
         ),
-        MagicMock(first=MagicMock(return_value=None)),
+        MagicMock(all=MagicMock(return_value=[])),
     ]
 
     service = _build_service(tmp_path)
@@ -106,6 +108,7 @@ async def test_batch_sign_thumbnail_missing(tmp_path):
             "/data/media/file.jpg",
             None,
             MediaType.IMAGE,
+            user_id,
         )
     ]
 

@@ -5,6 +5,7 @@ import uuid
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Optional, cast
 
+from sqlalchemy import and_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import joinedload
 from sqlmodel import Session, col, func, select
@@ -14,9 +15,11 @@ from app.core.time_utils import utc_now
 from app.models.analytics import WritingStreak
 from app.models.entry import Entry
 from app.models.journal import Journal
+from app.models.journal_member import JournalMember
 from app.models.moment import Moment
 from app.models.moment_tag_link import MomentTagLink
 from app.models.tag import Tag
+from app.services.journal_access import journal_access_condition
 
 
 class AnalyticsService:
@@ -503,9 +506,15 @@ class AnalyticsService:
                 Moment,
                 col(Entry.moment_id) == col(Moment.id)
             )
-            .where(
-                Journal.user_id == user_id,
+            .outerjoin(
+                JournalMember,
+                and_(
+                    col(JournalMember.journal_id) == col(Journal.id),
+                    col(JournalMember.user_id) == user_id,
+                ),
             )
+            # Keep owner rows as well
+            .where(journal_access_condition(user_id))
             .group_by(Journal.id, Journal.title)
             .order_by(func.count(Entry.id).desc())
         ).all()

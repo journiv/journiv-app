@@ -17,6 +17,7 @@ import {
 } from "../../lib/moment";
 import { cx } from "../../lib/cx";
 import { Badge } from "../../components/ui/badge";
+import { isSharedJournal } from "../../lib/journalAccess";
 
 /**
  * One Moment in the Timeline.
@@ -55,6 +56,10 @@ export function MomentListItem({
   const lead = momentLeadText(moment);
   const kindLabel = momentKindLabel(moment, kind);
   const leadMedia = momentLeadMedia(moment);
+  // Keep the saved author name: shared-entry attribution should not depend on a
+  // separate user lookup when rendering a list.
+  const authorName = (moment.entry as { author_name?: string } | undefined)
+    ?.author_name;
   // A thumbnail URL can be issued for a file that is gone or unreachable. Keyed
   // by URL so a refreshed signed URL gets a fresh try.
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
@@ -73,6 +78,9 @@ export function MomentListItem({
           )}
         </span>
         {title && <span className="jv-moment-title jv-clamp-2">{title}</span>}
+        {journal && isSharedJournal(journal) && authorName && (
+          <span className="jv-meta">By {authorName}</span>
+        )}
         {lead && (
           <span
             className={cx(
@@ -96,7 +104,7 @@ export function MomentListItem({
           {leadMedia.kind === "image" && leadMedia.src !== failedSrc ? (
             <img
               src={leadMedia.src}
-              alt=""
+              alt="Attachment thumbnail"
               loading="lazy"
               decoding="async"
               onError={() => setFailedSrc(leadMedia.src)}
