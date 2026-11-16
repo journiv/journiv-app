@@ -192,7 +192,13 @@ def test_journal_pdf_stream_renders_template_with_base_url(monkeypatch):
                 "mood": None,
                 "tags": None,
                 "content": "<p>Body</p>",
-                "attachment_items": [],
+                "attachment_items": [
+                    {
+                        "kind": "video",
+                        "label": None,
+                        "preview_url": "https://journiv.test/video-preview.jpg",
+                    }
+                ],
             }
         ],
         base_url="https://journiv.test",
@@ -202,6 +208,7 @@ def test_journal_pdf_stream_renders_template_with_base_url(monkeypatch):
     assert rendered["base_url"] == "https://journiv.test"
     assert "Journal &amp; Notes" in rendered["html"]
     assert "<p>Body</p>" in rendered["html"]
+    assert "<div class=\"attachment-label\">Video preview</div>" in rendered["html"]
     assert ".journal-entry + .journal-entry" in rendered["html"]
     assert "break-before: page;" in rendered["html"]
     assert "page-break-before: always;" in rendered["html"]
