@@ -38,6 +38,7 @@ import {
   deleteUserApiV1AdminUsersUserIdDelete,
   disconnectApiV1IntegrationsProviderDisconnectDelete,
   downloadEntryPdfApiV1EntriesEntryIdPdfGet,
+  downloadJournalPdfApiV1JournalsJournalIdPdfGet,
   fetchWeatherApiV1WeatherFetchPost,
   forceVersionCheckApiV1InstanceVersionCheckPost,
   getActivitiesApiV1ActivitiesGet,
@@ -134,6 +135,7 @@ import type {
   AdminUserCreate,
   AdminUserListResponse,
   AdminUserUpdate,
+  DownloadJournalPdfApiV1JournalsJournalIdPdfGetData,
   EntryDraftCreate,
   ExportJobCreateRequest,
   GetSystemPromptsApiV1PromptsGetData,
@@ -1032,6 +1034,28 @@ export const api = {
     });
     if (!(result.data instanceof Blob)) {
       throw new Error("The PDF download did not return a file.");
+    }
+    return {
+      blob: result.data,
+      filename: filenameFromContentDisposition(
+        result.response.headers.get("Content-Disposition"),
+      ),
+    };
+  },
+  downloadJournalPdf: async (
+    journal_id: string,
+    query?: NonNullable<
+      DownloadJournalPdfApiV1JournalsJournalIdPdfGetData["query"]
+    >,
+  ): Promise<DownloadedPdf> => {
+    const result = await downloadJournalPdfApiV1JournalsJournalIdPdfGet({
+      ...options(),
+      path: { journal_id },
+      query,
+      parseAs: "blob",
+    });
+    if (!(result.data instanceof Blob)) {
+      throw new Error("The journal PDF download did not return a file.");
     }
     return {
       blob: result.data,

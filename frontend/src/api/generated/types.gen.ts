@@ -13648,3 +13648,50 @@ export type GetOembedApiV1OembedGetResponses = {
 };
 
 export type GetOembedApiV1OembedGetResponse = GetOembedApiV1OembedGetResponses[keyof GetOembedApiV1OembedGetResponses];
+
+export type DownloadJournalPdfApiV1JournalsJournalIdPdfGetData = {
+    body?: never;
+    path: {
+        /**
+         * Journal Id
+         */
+        journal_id: string;
+    };
+    query?: {
+        /**
+         * Start Date
+         */
+        start_date?: string | null;
+        /**
+         * End Date
+         */
+        end_date?: string | null;
+        /**
+         * Tag Id
+         */
+        tag_id?: string | null;
+    };
+    url: '/api/v1/journals/{journal_id}/pdf';
+};
+
+export type DownloadJournalPdfApiV1JournalsJournalIdPdfGetErrors = {
+    /**
+     * Journal or tag not found
+     */
+    404: unknown;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type DownloadJournalPdfApiV1JournalsJournalIdPdfGetError = DownloadJournalPdfApiV1JournalsJournalIdPdfGetErrors[keyof DownloadJournalPdfApiV1JournalsJournalIdPdfGetErrors];
+
+export type DownloadJournalPdfApiV1JournalsJournalIdPdfGetResponses = {
+    /**
+     * Journal PDF
+     */
+    200: Blob | File;
+};
+
+export type DownloadJournalPdfApiV1JournalsJournalIdPdfGetResponse = DownloadJournalPdfApiV1JournalsJournalIdPdfGetResponses[keyof DownloadJournalPdfApiV1JournalsJournalIdPdfGetResponses];

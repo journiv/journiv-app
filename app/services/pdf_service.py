@@ -9,6 +9,7 @@ import logging
 import re
 import time
 from copy import deepcopy
+from datetime import date
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
@@ -20,6 +21,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from sqlmodel import Session, col, select
 
 from app.core.config import settings
+from app.core.exceptions import JournalNotFoundError, TagNotFoundError
 from app.core.logging_config import LogCategory
 from app.core.media_signing import (
     signed_url_for_immich,
@@ -27,7 +29,11 @@ from app.core.media_signing import (
 )
 from app.models.entry import Entry
 from app.models.moment import Moment, MomentMedia
+from app.models.moment_tag_link import MomentTagLink
+from app.models.mood import Mood
+from app.services.journal_service import JournalService
 from app.services.media_service import MediaService
+from app.services.tag_service import TagService
 from app.utils.quill_delta import extract_media_sources
 from app.utils.render_engine import render_delta_to_html
 
@@ -297,6 +303,7 @@ class PDFService:
                 location=location,
                 tags=tags,
                 attachment_items=attachment_items or [],
+                journal_entries=None,
             )
 
             # Generate PDF using WeasyPrint
@@ -371,6 +378,46 @@ class PDFService:
         stream = BytesIO(pdf_bytes)
         stream.seek(0)
         return stream
+
+    def generate_journal_pdf_stream(
+        self,
+        *,
+        journal_title: str,
+        entries: list[dict[str, Any]],
+        base_url: Optional[str] = None,
+    ) -> BytesIO:
+        try:
+            from weasyprint import HTML
+
+            template = self.jinja_env.get_template("pdf_export.html")
+            html_content = template.render(
+                title=journal_title,
+                content="",
+                date=None,
+                location=None,
+                mood=None,
+                tags=None,
+                attachment_items=[],
+                journal_entries=entries,
+            )
+            pdf_bytes = HTML(string=html_content, base_url=base_url).write_pdf()
+            logger.info(
+                "Journal PDF generated successfully (entry_count=%s, size=%s bytes)",
+                len(entries),
+                len(pdf_bytes),
+            )
+            stream = BytesIO(pdf_bytes)
+            stream.seek(0)
+            return stream
+        except ImportError as e:
+            logger.error("WeasyPrint not installed: %s", e)
+            raise RuntimeError(
+                "PDF generation requires WeasyPrint. "
+                "Install with: pip install weasyprint"
+            ) from e
+        except Exception:
+            logger.exception("Journal PDF generation failed")
+            raise
 
 
 class PDFEntryNotFoundError(Exception):
@@ -751,3 +798,134 @@ class EntryPDFService:
             media_preview_resolver=media_preview_resolver,
         )
         return pdf_stream, self._build_filename(entry, include_public_id=True)
+
+
+class JournalPDFService:
+    """Service responsible for exporting a user's Journal as one PDF."""
+
+    def __init__(self, session: Session):
+        self.session = session
+        self.entry_pdf_service = EntryPDFService(session)
+
+    def generate_journal_pdf(
+        self,
+        *,
+        journal_id: UUID,
+        user_id: UUID,
+        start_date: Optional[date] = None,
+        end_date: Optional[date] = None,
+        tag_id: Optional[UUID] = None,
+    ) -> tuple[BytesIO, str]:
+        if start_date and end_date and start_date > end_date:
+            raise ValueError("Start date must be on or before end date")
+
+        journal = JournalService(self.session).get_journal_by_id(journal_id, user_id)
+        if not journal:
+            raise JournalNotFoundError("Journal not found")
+
+        tag = None
+        if tag_id:
+            tag = TagService(self.session).get_tag_by_id(tag_id, user_id)
+            if not tag:
+                raise TagNotFoundError("Tag not found")
+
+        statement = (
+            select(Entry, Moment)
+            .join(Moment, col(Entry.moment_id) == col(Moment.id))
+            .where(
+                Entry.journal_id == journal_id,
+                col(Entry.is_draft).is_(False),
+            )
+        )
+        if start_date:
+            statement = statement.where(Moment.logged_date_tz >= start_date)
+        if end_date:
+            statement = statement.where(Moment.logged_date_tz <= end_date)
+        if tag:
+            statement = statement.join(
+                MomentTagLink, col(MomentTagLink.moment_id) == col(Moment.id)
+            ).where(MomentTagLink.tag_id == tag.id)
+        statement = statement.order_by(
+            col(Moment.logged_date_tz).asc(),
+            col(Moment.logged_at_utc).asc(),
+            col(Entry.id).asc(),
+        )
+        entry_moments = self.session.exec(statement).all()
+
+        media_by_moment_id: dict[UUID, list[MomentMedia]] = {}
+        moment_ids = [moment.id for _, moment in entry_moments]
+        for offset in range(0, len(moment_ids), 500):
+            batch_ids = moment_ids[offset : offset + 500]
+            media_items = self.session.exec(
+                select(MomentMedia).where(
+                    col(MomentMedia.moment_id).in_(batch_ids)
+                )
+            ).all()
+            for media_item in media_items:
+                media_by_moment_id.setdefault(media_item.moment_id, []).append(
+                    media_item
+                )
+
+        journal_entries: list[dict[str, Any]] = []
+        for entry, moment in entry_moments:
+            media_items = media_by_moment_id.get(moment.id, [])
+            media_url_resolver = None
+            thumbnail_url_resolver = None
+            if media_items:
+                media_url_resolver = self.entry_pdf_service._build_media_url_resolver(
+                    media_items=media_items,
+                    user_id=user_id,
+                )
+                thumbnail_url_resolver = (
+                    self.entry_pdf_service._build_media_url_resolver(
+                        media_items=media_items,
+                        user_id=user_id,
+                        variant="thumbnail",
+                    )
+                )
+            attachment_items = self.entry_pdf_service._collect_attachment_items(
+                delta_payload=entry.content_delta or {"ops": []},
+                media_items=media_items,
+                media_url_resolver=media_url_resolver,
+                thumbnail_url_resolver=thumbnail_url_resolver,
+            )
+            delta_payload = self.entry_pdf_service.pdf_service._sanitize_delta_media_references_for_pdf(
+                entry.content_delta or {"ops": []},
+                media_url_resolver=media_url_resolver,
+            )
+            content_html = render_delta_to_html(
+                delta_payload,
+                media_url_resolver=media_url_resolver,
+                print_mode=True,
+                suppress_media_types={"audio"},
+                media_preview_resolver=thumbnail_url_resolver,
+            )
+            content_html = PDFService._sanitize_html_for_template(content_html)
+            date_str, tags_str, location_str = (
+                self.entry_pdf_service._extract_moment_metadata(moment)
+            )
+            mood = None
+            if moment.primary_mood_id:
+                mood_definition = self.session.get(Mood, moment.primary_mood_id)
+                mood = mood_definition.name if mood_definition else None
+            journal_entries.append(
+                {
+                    "title": entry.title or "Untitled Entry",
+                    "date": date_str,
+                    "location": location_str,
+                    "mood": mood,
+                    "tags": tags_str,
+                    "content": content_html,
+                    "attachment_items": attachment_items,
+                }
+            )
+
+        pdf_stream = self.entry_pdf_service.pdf_service.generate_journal_pdf_stream(
+            journal_title=journal.title,
+            entries=journal_entries,
+            base_url=self.entry_pdf_service._get_base_url(),
+        )
+        filename = re.sub(r"[^A-Za-z0-9._-]+", "-", Path(journal.title).name).strip(
+            " .-_"
+        )
+        return pdf_stream, f"{filename[:100] or 'journal'}-journal.pdf"

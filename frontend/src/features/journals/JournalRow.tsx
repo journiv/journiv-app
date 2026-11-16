@@ -4,6 +4,7 @@ import {
   ArrowDown,
   ArrowUp,
   Archive as ArchiveIcon,
+  Download,
   Palette,
   Pencil,
   Star,
@@ -36,6 +37,7 @@ export function JournalRow({
   onRename,
   onEditAppearance,
   onDelete,
+  onExportPdf,
   onToggleFavorite,
   onSetArchived,
   onMove,
@@ -47,12 +49,20 @@ export function JournalRow({
   onRename: (journal: JournalResponse) => void;
   onEditAppearance: (journal: JournalResponse) => void;
   onDelete: (journal: JournalResponse) => void;
+  onExportPdf: (journal: JournalResponse) => void;
   onToggleFavorite: (journal: JournalResponse) => void;
   onSetArchived: (id: string, archived: boolean) => void;
   onMove: (id: string, direction: "up" | "down") => void;
 }) {
   const archived = journal.is_archived;
   const menuActions: AppMenuAction[] = [
+    {
+      kind: "command",
+      id: "export-pdf",
+      label: "Download all entries as PDF…",
+      icon: Download,
+      onSelect: () => onExportPdf(journal),
+    },
     {
       kind: "command",
       id: "rename",

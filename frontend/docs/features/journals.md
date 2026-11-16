@@ -24,8 +24,15 @@ Create and edit use AppAdaptiveDialog with caller-owned form state, validated
 title, description, curated colour and icon choices, one Create or Save primary,
 and a human alert on failure.
 
+Each Journal row's three-dot menu offers **Download all entries as PDF…**. The
+adaptive dialog can export the whole Journal or filter by an inclusive date
+range (Moment local dates) and one tag. Entries are ordered oldest first;
+drafts are excluded, and each entry starts on a new page in the PDF. The
+browser download is the success signal, and a failed request leaves the
+selected filters available for retry. Scheduled exports are not part of this
+feature.
+
 Deletion is a typed-title AppAdaptiveDialog because it includes the reversible
 Archive alternative. DELETE /journals/{id} deletes Entries' narrative while
 parent Moments survive as quick logs; state that effect plainly. Do not replace
 the flow with simple confirmation or an invented Undo.
-
