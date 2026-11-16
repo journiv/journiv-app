@@ -2,14 +2,16 @@
 Journal endpoints.
 """
 import uuid
-from typing import Annotated, List
+from datetime import date
+from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlmodel import Session
 
 from app.api.dependencies import get_current_user
 from app.core.database import get_session
-from app.core.exceptions import JournalNotFoundError
+from app.core.exceptions import JournalNotFoundError, TagNotFoundError
 from app.core.logging_config import log_error, log_user_action
 from app.models.user import User
 from app.schemas.journal import (
@@ -19,6 +21,7 @@ from app.schemas.journal import (
     JournalUpdate,
 )
 from app.services.journal_service import JournalService
+from app.services.pdf_service import JournalPDFService, build_content_disposition
 
 router = APIRouter(prefix="/journals", tags=["journals"])
 
@@ -31,8 +34,8 @@ router = APIRouter(prefix="/journals", tags=["journals"])
         400: {"description": "Invalid journal data"},
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def create_journal(
     journal_data: JournalCreate,
@@ -58,8 +61,8 @@ async def create_journal(
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def get_user_journals(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -81,13 +84,73 @@ async def get_user_journals(
 
 
 @router.get(
+    "/{journal_id}/pdf",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "Journal PDF",
+            "content": {
+                "application/pdf": {"schema": {"type": "string", "format": "binary"}}
+            },
+        },
+        404: {"description": "Journal or tag not found"},
+        422: {"description": "Invalid date range"},
+    },
+)
+def download_journal_pdf(
+    journal_id: uuid.UUID,
+    current_user: Annotated[User, Depends(get_current_user)],
+    session: Annotated[Session, Depends(get_session)],
+    start_date: Annotated[
+        Optional[date], Query(description="Include entries from this local date")
+    ] = None,
+    end_date: Annotated[
+        Optional[date], Query(description="Include entries through this local date")
+    ] = None,
+    tag_id: Annotated[
+        Optional[uuid.UUID], Query(description="Include only entries with this tag")
+    ] = None,
+):
+    """Download all entries in a journal as one PDF, optionally filtered."""
+    try:
+        pdf_stream, filename = JournalPDFService(session).generate_journal_pdf(
+            journal_id=journal_id,
+            user_id=current_user.id,
+            start_date=start_date,
+            end_date=end_date,
+            tag_id=tag_id,
+        )
+        log_user_action(
+            current_user.email,
+            f"downloaded PDF for journal {journal_id}",
+            request_id=None,
+        )
+        return StreamingResponse(
+            pdf_stream,
+            media_type="application/pdf",
+            headers={"Content-Disposition": build_content_disposition(filename)},
+        )
+    except JournalNotFoundError:
+        raise HTTPException(status_code=404, detail="Journal not found") from None
+    except TagNotFoundError:
+        raise HTTPException(status_code=404, detail="Tag not found") from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    except Exception as e:
+        log_error(e, request_id=None, user_email=current_user.email)
+        raise HTTPException(
+            status_code=500, detail="Failed to generate journal PDF"
+        ) from None
+
+
+@router.get(
     "/favorites",
     response_model=List[JournalResponse],
     responses={
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def get_favorite_journals(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -150,8 +213,8 @@ async def reorder_journals(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def get_journal(
     journal_id: uuid.UUID,
@@ -180,8 +243,8 @@ async def get_journal(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def update_journal(
     journal_id: uuid.UUID,
@@ -211,8 +274,8 @@ async def update_journal(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def delete_journal(
     journal_id: uuid.UUID,
@@ -240,8 +303,8 @@ async def delete_journal(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def toggle_favorite(
     journal_id: uuid.UUID,
@@ -268,8 +331,8 @@ async def toggle_favorite(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def archive_journal(
     journal_id: uuid.UUID,
@@ -300,8 +363,8 @@ async def archive_journal(
         401: {"description": "Not authenticated"},
         403: {"description": "Account inactive"},
         404: {"description": "Journal not found"},
-        500: {"description": "Internal server error"},
-    }
+        500: {"description": "Internal server error"}
+    },
 )
 async def unarchive_journal(
     journal_id: uuid.UUID,
@@ -319,5 +382,3 @@ async def unarchive_journal(
     except Exception as e:
         log_error(e, request_id=None, user_email=current_user.email)
         raise HTTPException(status_code=500, detail="An error occurred while unarchiving journal") from None
-
-

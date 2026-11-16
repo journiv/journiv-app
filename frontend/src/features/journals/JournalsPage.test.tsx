@@ -2,7 +2,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import type {
@@ -24,8 +24,15 @@ vi.mock("../../api/client/api", () => ({
     unarchiveJournal: vi.fn(),
     reorderJournals: vi.fn(),
     deleteJournal: vi.fn(),
+    downloadJournalPdf: vi.fn(),
+    tags: vi.fn(),
   },
 }));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 const now = "2026-08-20T08:00:00Z";
 const user: UserResponse = {
@@ -84,6 +91,20 @@ beforeEach(() => {
   });
   vi.mocked(api.reorderJournals).mockResolvedValue(undefined as never);
   vi.mocked(api.deleteJournal).mockResolvedValue(undefined as never);
+  vi.mocked(api.tags).mockResolvedValue([
+    {
+      id: "therapy-tag",
+      name: "share in therapy",
+      user_id: "u1",
+      usage_count: 2,
+      created_at: now,
+      updated_at: now,
+    },
+  ]);
+  vi.mocked(api.downloadJournalPdf).mockResolvedValue({
+    blob: new Blob(["pdf"], { type: "application/pdf" }),
+    filename: "Running-journal.pdf",
+  });
 });
 
 async function renderAt(path: string) {
@@ -182,6 +203,50 @@ describe("Journals management pane", () => {
     );
     await waitFor(() =>
       expect(api.archiveJournal).toHaveBeenCalledWith("personal"),
+    );
+  });
+
+  it("keeps the PDF download option available for any journal", async () => {
+    await renderAt("/journals");
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Personal actions" }),
+    );
+    expect(
+      await screen.findByRole("menuitem", {
+        name: "Download all entries as PDF…",
+      }),
+    ).toBeTruthy();
+  });
+
+  it("exports a journal PDF with the selected date range and tag", async () => {
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:journal-pdf"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    await renderAt("/journals");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Download all entries as PDF…",
+      }),
+    );
+    await screen.findByRole("dialog", { name: "Export Running as PDF" });
+    await userEvent.type(screen.getByLabelText("From date"), "2026-08-01");
+    await userEvent.type(screen.getByLabelText("To date"), "2026-08-20");
+    await userEvent.selectOptions(screen.getByLabelText("Tag"), "therapy-tag");
+    await userEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+
+    await waitFor(() =>
+      expect(api.downloadJournalPdf).toHaveBeenCalledWith("running", {
+        start_date: "2026-08-01",
+        end_date: "2026-08-20",
+        tag_id: "therapy-tag",
+      }),
     );
   });
 

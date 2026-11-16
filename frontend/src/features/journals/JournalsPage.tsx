@@ -1,7 +1,9 @@
 import { Menu, NotebookText, Plus, TriangleAlert } from "lucide-react";
+import { useMutation } from "@tanstack/react-query";
 import { useState } from "react";
 import { useSearch } from "@tanstack/react-router";
 import type { JournalResponse } from "../../api/generated/types.gen";
+import { api } from "../../api/client/api";
 import { PageBar } from "../../components/journiv/PageBar";
 import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
@@ -14,6 +16,10 @@ import { useShell } from "../shell/AppShell";
 import { DeleteJournalDialog } from "./DeleteJournalDialog";
 import { JournalFormDialog, type JournalFormValues } from "./JournalFormDialog";
 import { JournalRow } from "./JournalRow";
+import {
+  JournalPdfExportDialog,
+  type JournalPdfFilters,
+} from "./JournalPdfExportDialog";
 import { useJournalMutations } from "./useJournalMutations";
 import "./journals.css";
 
@@ -33,6 +39,31 @@ export function JournalsPage() {
   const [deleteTarget, setDeleteTarget] = useState<JournalResponse | null>(
     null,
   );
+  const [pdfTarget, setPdfTarget] = useState<JournalResponse | null>(null);
+
+  const exportPdf = useMutation({
+    mutationFn: async ({
+      journalId,
+      filters,
+    }: {
+      journalId: string;
+      filters: JournalPdfFilters;
+    }) => {
+      const { blob, filename } = await api.downloadJournalPdf(
+        journalId,
+        filters,
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename ?? "journal.pdf";
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    },
+    onSuccess: () => setPdfTarget(null),
+  });
 
   const { active, archived } = groupJournals(journals);
   const favs = active.filter((j) => j.is_favorite);
@@ -62,6 +93,10 @@ export function JournalsPage() {
     remove.reset();
     setDeleteTarget(journal);
   }
+  function openPdfExport(journal: JournalResponse) {
+    exportPdf.reset();
+    setPdfTarget(journal);
+  }
   async function confirmDelete() {
     if (!deleteTarget) return;
     await remove.mutateAsync(deleteTarget.id);
@@ -83,6 +118,7 @@ export function JournalsPage() {
         onRename={openEdit}
         onEditAppearance={openEdit}
         onDelete={openDelete}
+        onExportPdf={openPdfExport}
         onToggleFavorite={(j) => toggleFavorite.mutate(j)}
         onSetArchived={(id, archived) => setArchived.mutate({ id, archived })}
         onMove={move}
@@ -194,6 +230,21 @@ export function JournalsPage() {
           }}
           deleting={remove.isPending}
           failed={remove.isError}
+        />
+      )}
+      {pdfTarget && (
+        <JournalPdfExportDialog
+          key={pdfTarget.id}
+          open
+          onOpenChange={(open) => {
+            if (!open) setPdfTarget(null);
+          }}
+          journalTitle={pdfTarget.title}
+          downloading={exportPdf.isPending}
+          failed={exportPdf.isError}
+          onExport={(filters) =>
+            exportPdf.mutate({ journalId: pdfTarget.id, filters })
+          }
         />
       )}
     </section>

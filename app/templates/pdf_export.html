@@ -298,9 +298,118 @@
         img, video, pre, blockquote {
             page-break-inside: avoid;
         }
+
+        .journal-cover {
+            padding-top: 30%;
+            text-align: center;
+        }
+
+        .journal-cover--has-entries {
+            page-break-after: always;
+        }
+
+        .journal-cover h1 {
+            border: 0;
+            font-size: 32pt;
+        }
+
+        .journal-entry {
+            margin-bottom: 2em;
+        }
+
+        .journal-entry + .journal-entry {
+            break-before: page;
+            page-break-before: always;
+        }
+
+        .journal-entry h2 {
+            margin-top: 0;
+            font-size: 20pt;
+        }
     </style>
 </head>
 <body>
+    {% if journal_entries is not none %}
+    {% if journal_entries %}
+    <header class="journal-cover journal-cover--has-entries">
+        <h1>{{ title }}</h1>
+        <p>{{ journal_entries|length }} entries</p>
+    </header>
+    {% for entry in journal_entries %}
+    <section class="journal-entry">
+        <div class="metadata">
+            <h2>{{ entry.title }}</h2>
+            {% if entry.date %}
+            <div class="metadata-item">
+                <span class="metadata-label">Date:</span>
+                <span>{{ entry.date }}</span>
+            </div>
+            {% endif %}
+            {% if entry.location %}
+            <div class="metadata-item">
+                <span class="metadata-label">Location:</span>
+                <span>{{ entry.location }}</span>
+            </div>
+            {% endif %}
+            {% if entry.mood %}
+            <div class="metadata-item">
+                <span class="metadata-label">Mood:</span>
+                <span>{{ entry.mood }}</span>
+            </div>
+            {% endif %}
+            {% if entry.tags %}
+            <div class="metadata-item">
+                <span class="metadata-label">Tags:</span>
+                <span>{{ entry.tags }}</span>
+            </div>
+            {% endif %}
+        </div>
+
+        {% if entry.attachment_items %}
+        <div class="attachments">
+            {% for attachment in entry.attachment_items %}
+            {% if attachment.kind == "image" %}
+            <div class="attachment-card">
+                <div class="attachment-kind">Image</div>
+                {% if attachment.label %}
+                <div class="attachment-label">{{ attachment.label }}</div>
+                {% endif %}
+                <img src="{{ attachment.url }}" alt="{{ attachment.alt_text }}">
+            </div>
+            {% else %}
+            <div class="attachment-card">
+                <div class="attachment-kind">{{ attachment.kind }}</div>
+                {% if attachment.label %}
+                <div class="attachment-label">{{ attachment.label }}</div>
+                {% endif %}
+                {% if attachment.preview_url %}
+                <div class="media-preview media-preview-video">
+                    <img src="{{ attachment.preview_url }}" alt="">
+                    <span class="media-preview-overlay">
+                        <span class="media-video-badge">
+                            <span class="media-video-glyph">▶</span>
+                        </span>
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="content">
+            {{ entry.content|safe }}
+        </div>
+    </section>
+    {% endfor %}
+    {% else %}
+    <section class="journal-cover">
+        <h1>{{ title }}</h1>
+        <p>No entries matched these filters.</p>
+    </section>
+    {% endif %}
+    {% else %}
     <!-- Entry metadata -->
     <div class="metadata">
         <h1>{{ title }}</h1>
@@ -363,5 +472,6 @@
     <div class="content">
         {{ content|safe }}
     </div>
+    {% endif %}
 </body>
 </html>
