@@ -852,13 +852,23 @@ class JournalPDFService:
         )
         entry_moments = self.session.exec(statement).all()
 
+        media_by_moment_id: dict[UUID, list[MomentMedia]] = {}
+        moment_ids = [moment.id for _, moment in entry_moments]
+        for offset in range(0, len(moment_ids), 500):
+            batch_ids = moment_ids[offset : offset + 500]
+            media_items = self.session.exec(
+                select(MomentMedia).where(
+                    col(MomentMedia.moment_id).in_(batch_ids)
+                )
+            ).all()
+            for media_item in media_items:
+                media_by_moment_id.setdefault(media_item.moment_id, []).append(
+                    media_item
+                )
+
         journal_entries: list[dict[str, Any]] = []
         for entry, moment in entry_moments:
-            media_items = list(
-                self.session.exec(
-                    select(MomentMedia).where(MomentMedia.moment_id == moment.id)
-                ).all()
-            )
+            media_items = media_by_moment_id.get(moment.id, [])
             media_url_resolver = None
             thumbnail_url_resolver = None
             if media_items:

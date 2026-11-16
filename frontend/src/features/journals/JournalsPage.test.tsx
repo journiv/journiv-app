@@ -250,6 +250,47 @@ describe("Journals management pane", () => {
     );
   });
 
+  it("prevents dismissing the export dialog while the PDF is downloading", async () => {
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:journal-pdf"),
+      revokeObjectURL: vi.fn(),
+    });
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    let resolveDownload:
+      | ((result: { blob: Blob; filename: string }) => void)
+      | undefined;
+    vi.mocked(api.downloadJournalPdf).mockReturnValue(
+      new Promise((resolve) => {
+        resolveDownload = resolve;
+      }),
+    );
+    await renderAt("/journals");
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Download all entries as PDF…",
+      }),
+    );
+    const dialogName = "Export Running as PDF";
+    await screen.findByRole("dialog", { name: dialogName });
+    await userEvent.click(screen.getByRole("button", { name: "Download PDF" }));
+    await screen.findByRole("button", { name: "Preparing…" });
+    await userEvent.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: dialogName })).toBeTruthy();
+
+    resolveDownload?.({
+      blob: new Blob(["pdf"], { type: "application/pdf" }),
+      filename: "Running-journal.pdf",
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: dialogName })).toBeNull(),
+    );
+  });
+
   it("reorders within the peer group via Move down", async () => {
     await renderAt("/journals");
     await userEvent.click(

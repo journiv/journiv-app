@@ -70,6 +70,14 @@ def test_journal_pdf_filters_by_inclusive_date_range_and_tag(monkeypatch):
         session,
         user_id=user.id,
         journal_id=journal.id,
+        logged_date=date(2024, 12, 31),
+        title="Before range",
+        tag_ids=(share_tag.id,),
+    )
+    _add_entry(
+        session,
+        user_id=user.id,
+        journal_id=journal.id,
         logged_date=date(2025, 1, 1),
         title="Start boundary",
         tag_ids=(share_tag.id,),
@@ -80,6 +88,14 @@ def test_journal_pdf_filters_by_inclusive_date_range_and_tag(monkeypatch):
         journal_id=journal.id,
         logged_date=date(2025, 1, 31),
         title="End boundary",
+        tag_ids=(share_tag.id,),
+    )
+    _add_entry(
+        session,
+        user_id=user.id,
+        journal_id=journal.id,
+        logged_date=date(2025, 2, 1),
+        title="After range",
         tag_ids=(share_tag.id,),
     )
     _add_entry(
@@ -145,9 +161,11 @@ def test_journal_pdf_filters_by_inclusive_date_range_and_tag(monkeypatch):
 
     service.generate_journal_pdf(journal_id=journal.id, user_id=user.id)
     assert [entry["title"] for entry in generated["entries"]] == [
+        "Before range",
         "Start boundary",
         "Other tag",
         "End boundary",
+        "After range",
     ]
 
 

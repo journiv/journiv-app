@@ -1,12 +1,12 @@
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { tagsQuery } from "../../api/query/options";
 import { AppAdaptiveDialog } from "../../components/journiv/AppAdaptiveDialog";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Button } from "../../components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "../../components/ui/field";
 import { Input } from "../../components/ui/input";
 import { NativeSelect } from "../../components/ui/native-select";
-import { tagsQuery } from "../../api/query/options";
 
 export type JournalPdfFilters = {
   start_date?: string;
@@ -39,6 +39,7 @@ export function JournalPdfExportDialog({
     <AppAdaptiveDialog
       open={open}
       onOpenChange={onOpenChange}
+      dismissible={!downloading}
       title={`Export ${journalTitle} as PDF`}
       description="Include every entry, or narrow the export by date and tag."
       footer={
