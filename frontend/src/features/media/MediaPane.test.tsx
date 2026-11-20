@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import type {
+  ActivityResponse,
   JournalResponse,
   MediaLibraryItem,
   MediaLibraryPageResponse,
@@ -25,6 +26,7 @@ vi.mock("../../api/client/api", () => ({
     entry: vi.fn(),
     momentMedia: vi.fn(),
     mediaLibrary: vi.fn(),
+    activities: vi.fn(),
   },
 }));
 
@@ -94,6 +96,15 @@ const firstPage: MediaLibraryPageResponse = {
   next_cursor_id: "c",
 };
 
+const activity = {
+  id: "act-1",
+  name: "Cycling",
+  icon: null,
+  color: null,
+  created_at: now,
+  updated_at: now,
+} as unknown as ActivityResponse;
+
 beforeEach(() => {
   vi.clearAllMocks();
   sessionStorage.clear();
@@ -102,6 +113,7 @@ beforeEach(() => {
   vi.mocked(api.journals).mockResolvedValue([journal]);
   vi.mocked(api.moods).mockResolvedValue([]);
   vi.mocked(api.mediaLibrary).mockResolvedValue(firstPage);
+  vi.mocked(api.activities).mockResolvedValue([activity]);
   vi.mocked(api.moment).mockResolvedValue(moment);
   vi.mocked(api.entry).mockResolvedValue({
     ...moment.entry,
@@ -144,6 +156,35 @@ describe("MediaPane", () => {
     expect(router.state.location.search.view).toBe("media");
     // The grid is still mounted beside the reader.
     expect(screen.getByRole("heading", { name: "Media" })).toBeTruthy();
+  });
+
+  it("shows only the list's entity scope and keeps it when a tile opens", async () => {
+    const { router } = await renderRoute(
+      "/timeline?q=&activity=act-1&view=media",
+    );
+
+    expect(
+      await screen.findByRole("heading", { name: "Cycling" }),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(vi.mocked(api.mediaLibrary)).toHaveBeenCalledWith(
+        expect.objectContaining({ activity_ids: ["act-1"] }),
+      ),
+    );
+
+    const tiles = await screen.findAllByRole("link", { name: /Photo|Video/ });
+    await userEvent.click(tiles[0]);
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/timeline/m-a"),
+    );
+    expect(router.state.location.search.view).toBe("media");
+    expect(router.state.location.search.activity).toBe("act-1");
+
+    await userEvent.click(screen.getByRole("link", { name: "All moments" }));
+    await waitFor(() =>
+      expect(router.state.location.search.activity).toBeUndefined(),
+    );
+    expect(router.state.location.search.view).toBe("media");
   });
 
   it("paginates with Load more", async () => {

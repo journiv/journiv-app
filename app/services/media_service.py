@@ -49,7 +49,7 @@ from app.schemas.media import (
     MediaBatchSignResult,
 )
 from app.schemas.media_library import MediaLibraryItem
-from app.schemas.moment import MomentMediaThumbnail
+from app.schemas.moment import MomentMediaThumbnail, PeopleMatch
 from app.services.audio_waveform import extract_waveform
 from app.services.media_storage_service import MediaStorageService
 from app.services.moment_lookup import MomentNotFoundError, get_owned_moment
@@ -329,6 +329,12 @@ class MediaService:
         cursor_id: Optional[uuid.UUID] = None,
         journal_id: Optional[uuid.UUID] = None,
         media_type: Optional[MediaType] = None,
+        mood_ids: Optional[list[uuid.UUID]] = None,
+        person_ids: Optional[list[uuid.UUID]] = None,
+        people_match: PeopleMatch = PeopleMatch.any,
+        tag_ids: Optional[list[uuid.UUID]] = None,
+        activity_ids: Optional[list[uuid.UUID]] = None,
+        goal_id: Optional[uuid.UUID] = None,
     ) -> Tuple[list[MediaLibraryItem], Optional[datetime], Optional[uuid.UUID]]:
         """
         A flat, paginated view of the user's completed media across all moments.
@@ -338,7 +344,13 @@ class MediaService:
         are excluded, exactly as the Timeline excludes them. Only ``completed``
         media appears — pending/failed items are still visible in the reader but
         would be noise in a browse wall.
+
+        The entity-scope filters (mood, person, tag, activity, goal) narrow to
+        media of the moments ``GET /moments`` would list for the same scope.
         """
+        # Imported here: moment_service reaches back into this module.
+        from app.services.moment_service import MomentService
+
         statement = (
             select(
                 MomentMedia,
@@ -366,6 +378,16 @@ class MediaService:
             ).where(
                 (col(Entry.id).is_(None)) | (col(Entry.is_draft).is_(False))
             )
+
+        statement = MomentService(session).apply_scope_filters(
+            statement,
+            mood_ids=mood_ids,
+            person_ids=person_ids,
+            people_match=people_match,
+            tag_ids=tag_ids,
+            activity_ids=activity_ids,
+            goal_id=goal_id,
+        )
 
         if media_type is not None:
             statement = statement.where(

@@ -6,6 +6,8 @@ import {
 import { api } from "../client/api";
 import { retryTransient } from "../client/errors";
 import {
+  normalizeCalendarFilters,
+  normalizeMediaFilters,
   normalizeMomentFilters,
   queryKeys,
   sameMomentScope,
@@ -493,12 +495,7 @@ export const momentsQuery = (filters: MomentFilters) => {
 export const momentCalendarQuery = (filters: CalendarFilters) =>
   queryOptions({
     queryKey: queryKeys.momentCalendar(filters),
-    queryFn: () =>
-      api.momentCalendar({
-        start_date: filters.start,
-        end_date: filters.end,
-        ...(filters.journal_id ? { journal_id: filters.journal_id } : {}),
-      }),
+    queryFn: () => api.momentCalendar(normalizeCalendarFilters(filters)),
     staleTime: 60_000,
   });
 /** Flat, paginated media across every moment — the Media grid. */
@@ -507,10 +504,7 @@ export const mediaLibraryQuery = (filters: MediaFilters) =>
     queryKey: queryKeys.mediaLibrary(filters),
     queryFn: ({ pageParam }) =>
       api.mediaLibrary({
-        ...(filters.journal_id ? { journal_id: filters.journal_id } : {}),
-        ...(filters.media_type
-          ? { media_type: filters.media_type as "image" | "video" | "audio" }
-          : {}),
+        ...normalizeMediaFilters(filters),
         ...(pageParam ?? {}),
       }),
     initialPageParam: undefined as

@@ -758,6 +758,29 @@ class MomentService:
             )
         )
 
+    def apply_scope_filters(
+        self,
+        statement: Any,
+        *,
+        mood_ids: Optional[List[uuid.UUID]] = None,
+        person_ids: Optional[List[uuid.UUID]] = None,
+        people_match: PeopleMatch = PeopleMatch.any,
+        tag_ids: Optional[List[uuid.UUID]] = None,
+        activity_ids: Optional[List[uuid.UUID]] = None,
+        goal_id: Optional[uuid.UUID] = None,
+    ) -> Any:
+        """Narrow a statement over ``Moment`` to one entity scope.
+
+        The single definition of "moments with this mood / person / tag /
+        activity / goal", shared by the Timeline list, the calendar summary and
+        the media library so the three views of one scope always agree.
+        """
+        statement = self._apply_mood_filter(statement, mood_ids)
+        statement = self._apply_people_filter(statement, person_ids, people_match)
+        statement = self._apply_tag_filter(statement, tag_ids)
+        statement = self._apply_activity_filter(statement, activity_ids)
+        return self._apply_goal_filter(statement, goal_id)
+
     def _apply_cursor_filter(
         self,
         statement: Any,
@@ -1130,11 +1153,15 @@ class MomentService:
 
         statement = self._apply_journal_join(statement, journal_id)
         statement = self._apply_draft_filter(statement, include_drafts, None)
-        statement = self._apply_mood_filter(statement, mood_ids)
-        statement = self._apply_people_filter(statement, person_ids, people_match)
-        statement = self._apply_tag_filter(statement, tag_ids)
-        statement = self._apply_activity_filter(statement, activity_ids)
-        statement = self._apply_goal_filter(statement, goal_id)
+        statement = self.apply_scope_filters(
+            statement,
+            mood_ids=mood_ids,
+            person_ids=person_ids,
+            people_match=people_match,
+            tag_ids=tag_ids,
+            activity_ids=activity_ids,
+            goal_id=goal_id,
+        )
         statement = self._apply_search_filter(statement, search)
         statement = self._apply_cursor_filter(
             statement, cursor_logged_at_utc, cursor_id
@@ -1164,6 +1191,12 @@ class MomentService:
         start_date: Optional[date] = None,
         end_date: Optional[date] = None,
         journal_id: Optional[uuid.UUID] = None,
+        mood_ids: Optional[List[uuid.UUID]] = None,
+        person_ids: Optional[List[uuid.UUID]] = None,
+        people_match: PeopleMatch = PeopleMatch.any,
+        tag_ids: Optional[List[uuid.UUID]] = None,
+        activity_ids: Optional[List[uuid.UUID]] = None,
+        goal_id: Optional[uuid.UUID] = None,
     ) -> List[Moment]:
         statement = select(Moment).where(Moment.user_id == user_id)
         if journal_id:
@@ -1172,6 +1205,15 @@ class MomentService:
             ).where(
                 col(Entry.journal_id) == journal_id
             )
+        statement = self.apply_scope_filters(
+            statement,
+            mood_ids=mood_ids,
+            person_ids=person_ids,
+            people_match=people_match,
+            tag_ids=tag_ids,
+            activity_ids=activity_ids,
+            goal_id=goal_id,
+        )
         if start_date:
             statement = statement.where(col(Moment.logged_date_tz) >= start_date)
         if end_date:

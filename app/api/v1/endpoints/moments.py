@@ -285,11 +285,28 @@ async def get_moment_calendar(
     start_date: Annotated[date | None, Query()] = None,
     end_date: Annotated[date | None, Query()] = None,
     journal_id: Annotated[uuid.UUID | None, Query()] = None,
+    mood_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    person_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    people_match: Annotated[PeopleMatch | None, Query()] = None,
+    tag_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    activity_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    goal_id: Annotated[uuid.UUID | None, Query()] = None,
 ):
+    """Per-day summary for the calendar, narrowed by the same journal and
+    entity-scope filters as ``GET /moments``."""
     moment_service = MomentService(session)
     try:
         moments = moment_service.get_calendar_summary(
-            current_user.id, start_date, end_date, journal_id=journal_id
+            current_user.id,
+            start_date,
+            end_date,
+            journal_id=journal_id,
+            mood_ids=mood_ids or None,
+            person_ids=person_ids or None,
+            people_match=people_match or PeopleMatch.any,
+            tag_ids=tag_ids or None,
+            activity_ids=activity_ids or None,
+            goal_id=goal_id,
         )
     except Exception as exc:
         log_error(exc, message="Error fetching moment calendar summary", user_id=str(current_user.id))

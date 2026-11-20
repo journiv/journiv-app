@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Annotated, AsyncGenerator, Optional
+from typing import Annotated, AsyncGenerator, List, Optional
 
 import aiofiles
 import httpx
@@ -56,6 +56,7 @@ from app.schemas.media import (
     MediaSignedUrlResponse,
 )
 from app.schemas.media_library import MediaLibraryPageResponse
+from app.schemas.moment import PeopleMatch
 from app.services import media_service as media_service_module
 from app.services.import_job_service import ImportJobService
 from app.services.media_service import (
@@ -802,8 +803,15 @@ async def get_media_library(
     cursor_id: Annotated[uuid.UUID | None, Query()] = None,
     journal_id: Annotated[uuid.UUID | None, Query()] = None,
     media_type: Annotated[MediaType | None, Query()] = None,
+    mood_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    person_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    people_match: Annotated[PeopleMatch | None, Query()] = None,
+    tag_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    activity_ids: List[uuid.UUID] = Query(default_factory=list),  # noqa: B008
+    goal_id: Annotated[uuid.UUID | None, Query()] = None,
 ):
-    """A flat, paginated view of the user's completed media across all moments."""
+    """A flat, paginated view of the user's completed media across all moments,
+    narrowed by the same journal and entity-scope filters as ``GET /moments``."""
     if (cursor_logged_at_utc is None) ^ (cursor_id is None):
         raise HTTPException(
             status_code=400,
@@ -819,6 +827,12 @@ async def get_media_library(
             cursor_id=cursor_id,
             journal_id=journal_id,
             media_type=media_type,
+            mood_ids=mood_ids or None,
+            person_ids=person_ids or None,
+            people_match=people_match or PeopleMatch.any,
+            tag_ids=tag_ids or None,
+            activity_ids=activity_ids or None,
+            goal_id=goal_id,
         )
     except Exception as exc:
         error_logger.error(

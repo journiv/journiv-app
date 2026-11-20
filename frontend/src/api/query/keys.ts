@@ -14,7 +14,15 @@ export type MomentFilters = {
   end_date?: string;
 };
 
-export function normalizeMomentFilters(filters: MomentFilters) {
+/** The journal / entity scope of a moment view. `GET /moments`,
+ *  `GET /moments/calendar` and `GET /media` take the same scope params, so the
+ *  list, calendar and media views of one scope always show the same moments. */
+export type ScopeFilters = Pick<
+  MomentFilters,
+  "journal_id" | "person_id" | "tag_id" | "activity_id" | "mood_id" | "goal_id"
+>;
+
+function normalizeScopeFilters(filters: ScopeFilters) {
   return {
     ...(filters.journal_id ? { journal_id: filters.journal_id } : {}),
     ...(filters.person_id ? { person_ids: [filters.person_id] } : {}),
@@ -22,6 +30,12 @@ export function normalizeMomentFilters(filters: MomentFilters) {
     ...(filters.activity_id ? { activity_ids: [filters.activity_id] } : {}),
     ...(filters.mood_id ? { mood_ids: [filters.mood_id] } : {}),
     ...(filters.goal_id ? { goal_id: filters.goal_id } : {}),
+  };
+}
+
+export function normalizeMomentFilters(filters: MomentFilters) {
+  return {
+    ...normalizeScopeFilters(filters),
     ...(filters.search?.trim() ? { search: filters.search.trim() } : {}),
     ...(filters.start_date ? { start_date: filters.start_date } : {}),
     ...(filters.end_date ? { end_date: filters.end_date } : {}),
@@ -54,16 +68,17 @@ export function sameMomentScope(
   return JSON.stringify(aScope) === JSON.stringify(bScope);
 }
 
-export type CalendarFilters = {
-  journal_id?: string;
+export type CalendarFilters = ScopeFilters & {
   start: string;
   end: string;
 };
-export type MediaFilters = { journal_id?: string; media_type?: string };
+export type MediaFilters = ScopeFilters & {
+  media_type?: "image" | "video" | "audio";
+};
 
 export function normalizeCalendarFilters(filters: CalendarFilters) {
   return {
-    ...(filters.journal_id ? { journal_id: filters.journal_id } : {}),
+    ...normalizeScopeFilters(filters),
     start_date: filters.start,
     end_date: filters.end,
   };
@@ -71,7 +86,7 @@ export function normalizeCalendarFilters(filters: CalendarFilters) {
 
 export function normalizeMediaFilters(filters: MediaFilters) {
   return {
-    ...(filters.journal_id ? { journal_id: filters.journal_id } : {}),
+    ...normalizeScopeFilters(filters),
     ...(filters.media_type ? { media_type: filters.media_type } : {}),
   };
 }

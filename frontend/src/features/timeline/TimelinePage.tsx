@@ -5,14 +5,7 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  Menu,
-  NotebookPen,
-  SearchX,
-  TriangleAlert,
-  Zap,
-} from "lucide-react";
+import { Menu, NotebookPen, SearchX, TriangleAlert, Zap } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { momentsQuery } from "../../api/query/options";
 import { ListViewSwitch } from "../../components/journiv/ListViewSwitch";
@@ -27,7 +20,7 @@ import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { QUICK_LOG_ENABLED, useShell } from "../shell/shellContext";
 import { groupMomentsByDay } from "./dateGroups";
 import { MomentListItem } from "./MomentListItem";
-import { scopeSearchFrom, useMomentScope } from "./momentScope";
+import { ScopeClearLink, scopeSearchFrom, useMomentScope } from "./momentScope";
 import "./timeline.css";
 
 export function TimelinePage() {
@@ -105,12 +98,7 @@ export function TimelinePage() {
       />
 
       <header className="jv-list-header">
-        {scope.kind !== "all" && (
-          <Link className="jv-scope-clear" to="/timeline" search={{ q: "" }}>
-            <ArrowLeft aria-hidden="true" size={14} />
-            All moments
-          </Link>
-        )}
+        {scope.kind !== "all" && <ScopeClearLink />}
         <div className="jv-list-header__row">
           <h1 className="jv-display jv-list-header__title">
             {scope.glyph}

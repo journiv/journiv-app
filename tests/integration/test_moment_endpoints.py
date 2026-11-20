@@ -474,3 +474,46 @@ def test_moment_calendar_filters_by_journal_and_reports_counts(
 
 def test_moment_calendar_requires_auth(api_client: JournivApiClient):
     api_client.request("GET", "/moments/calendar", expected=(401,))
+
+
+def test_moment_calendar_filters_by_entity_scope(
+    api_client: JournivApiClient,
+    api_user: ApiUser,
+    moment_factory,
+):
+    """The calendar narrows to the same entity scope as the moment list, so a
+    tag's or activity's calendar never counts unrelated days."""
+    activity = api_client.create_activity(api_user.access_token, name="Cycling")
+    with_activity = moment_factory(
+        note="Rode to the lake",
+        logged_date="2026-04-10",
+        mood_activity=[{"activity_id": activity["id"]}],
+    )
+    moment_factory(note="Stayed in", logged_date="2026-04-10")
+    tagged = moment_factory(note="Tagged day", logged_date="2026-04-12")
+    tag_id = api_client.request(
+        "POST",
+        f"/moments/{tagged['id']}/tags",
+        token=api_user.access_token,
+        json=["calendar-scope"],
+        expected=(200, 201),
+    ).json()[0]["id"]
+
+    def days(**params):
+        body = api_client.request(
+            "GET",
+            "/moments/calendar",
+            token=api_user.access_token,
+            params={"start_date": "2026-04-01", "end_date": "2026-04-30", **params},
+            expected=(200,),
+        ).json()
+        return {item["logged_date_tz"]: item["moment_count"] for item in body}
+
+    assert days() == {"2026-04-10": 2, "2026-04-12": 1}
+    assert days(activity_ids=[activity["id"]]) == {"2026-04-10": 1}
+    assert days(tag_ids=[tag_id]) == {"2026-04-12": 1}
+    # The calendar and the list agree on the scope.
+    listed = api_client.list_moments(
+        api_user.access_token, activity_ids=[activity["id"]]
+    )
+    assert [m["id"] for m in listed] == [with_activity["id"]]

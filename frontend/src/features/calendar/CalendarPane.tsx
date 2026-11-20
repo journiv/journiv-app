@@ -29,6 +29,13 @@ import { useMoodLookup } from "../../lib/useMoodLookup";
 import { useShell } from "../shell/AppShell";
 import { MomentListItem } from "../timeline/MomentListItem";
 import {
+  isEntityScope,
+  type MomentScope,
+  ScopeClearLink,
+  scopeSearchFrom,
+  useMomentScope,
+} from "../timeline/momentScope";
+import {
   buildMonthGrid,
   currentMonth,
   formatDayHeading,
@@ -57,12 +64,15 @@ export function CalendarPane() {
     q?: string;
     month?: string;
     date?: string;
-  };
+  } & Parameters<typeof scopeSearchFrom>[0];
   const shell = useShell();
   const navigate = useNavigate();
   const journals = useJournalLookup();
   const moods = useMoodLookup();
-  const scopeJournal = journals.get(params.journalId);
+  // The same scope as the list beside it: a journal, or a person / tag /
+  // activity / mood / goal carried in the URL (docs/domain/moments.md).
+  const scope = useMomentScope();
+  const scopeSearch = scopeSearchFrom(search);
   const timezone = viewerTimezone();
   const today = todayInTimezone(timezone);
   const month =
@@ -75,7 +85,7 @@ export function CalendarPane() {
   const years = yearOptions(year);
 
   const calendar = useQuery(
-    momentCalendarQuery({ journal_id: params.journalId, start, end }),
+    momentCalendarQuery({ ...scope.filters, start, end }),
   );
   const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
     "calendar",
@@ -89,13 +99,18 @@ export function CalendarPane() {
   const listParams = params.journalId
     ? { journalId: params.journalId }
     : undefined;
-  const baseSearch = { q: search.q ?? "", view: "calendar" as const, month };
+  const baseSearch = {
+    q: search.q ?? "",
+    ...scopeSearch,
+    view: "calendar" as const,
+    month,
+  };
 
   const goToMonth = (next: string) =>
     navigate({
       to: listRoute,
       params: listParams,
-      search: { q: search.q ?? "", view: "calendar", month: next },
+      search: { ...baseSearch, month: next },
       replace: true,
     });
 
@@ -108,17 +123,19 @@ export function CalendarPane() {
             <Menu aria-hidden="true" size={19} />
           </IconButton>
         }
-        title={
-          <span className="jv-label jv-truncate">
-            {scopeJournal?.title ?? "All journals"}
-          </span>
-        }
+        title={<span className="jv-label jv-truncate">{scope.title}</span>}
       />
 
       <header className="jv-list-header">
+        {isEntityScope(scope) && (
+          <ScopeClearLink view="calendar" month={month} />
+        )}
         <div className="jv-list-header__row">
           <h1 className="jv-display jv-list-header__title">
-            <span className="jv-truncate">Calendar</span>
+            {isEntityScope(scope) && scope.glyph}
+            <span className="jv-truncate">
+              {isEntityScope(scope) ? scope.title : "Calendar"}
+            </span>
           </h1>
           <ListViewSwitch className="jv-list-header__switch" />
         </div>
@@ -296,6 +313,8 @@ export function CalendarPane() {
               <SelectedDay
                 date={search.date}
                 month={month}
+                scope={scope}
+                scopeSearch={scopeSearch}
                 journalId={params.journalId}
                 momentId={params.momentId}
                 q={search.q ?? ""}
@@ -312,6 +331,8 @@ export function CalendarPane() {
 function SelectedDay({
   date,
   month,
+  scope,
+  scopeSearch,
   journalId,
   momentId,
   q,
@@ -319,13 +340,15 @@ function SelectedDay({
 }: {
   date: string;
   month: string;
+  scope: MomentScope;
+  scopeSearch: Record<string, string>;
   journalId?: string;
   momentId?: string;
   q: string;
   journals: ReturnType<typeof useJournalLookup>;
 }) {
   const data = useInfiniteQuery(
-    momentsQuery({ journal_id: journalId, start_date: date, end_date: date }),
+    momentsQuery({ ...scope.filters, start_date: date, end_date: date }),
   );
   const moments = data.data?.pages.flatMap((page) => page.items) ?? [];
 
@@ -373,6 +396,7 @@ function SelectedDay({
           view="calendar"
           month={month}
           date={date}
+          scopeSearch={scopeSearch}
         />
       ))}
     </section>
