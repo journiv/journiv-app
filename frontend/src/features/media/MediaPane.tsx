@@ -19,9 +19,14 @@ import { IconButton } from "../../components/ui/icon-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { StatusView } from "../../components/journiv/StatusView";
 import { cx } from "../../lib/cx";
-import { useJournalLookup } from "../../lib/useJournalLookup";
 import { usePaneScrollRestoration } from "../../lib/usePaneScrollRestoration";
 import { useShell } from "../shell/AppShell";
+import {
+  isEntityScope,
+  ScopeClearLink,
+  scopeSearchFrom,
+  useMomentScope,
+} from "../timeline/momentScope";
 import { groupMediaByMonth } from "./mediaGroups";
 import "./media.css";
 
@@ -32,13 +37,15 @@ export function MediaPane() {
     journalId?: string;
     momentId?: string;
   };
-  const search = useSearch({ strict: false }) as { q?: string };
+  const search = useSearch({ strict: false }) as { q?: string } & Parameters<
+    typeof scopeSearchFrom
+  >[0];
   const shell = useShell();
-  const journals = useJournalLookup();
-  const scopeJournal = journals.get(params.journalId);
-  const data = useInfiniteQuery(
-    mediaLibraryQuery({ journal_id: params.journalId }),
-  );
+  // The same scope as the list beside it: a journal, or a person / tag /
+  // activity / mood / goal carried in the URL (docs/domain/moments.md).
+  const scope = useMomentScope();
+  const scopeSearch = scopeSearchFrom(search);
+  const data = useInfiniteQuery(mediaLibraryQuery(scope.filters));
   const scrollRef = usePaneScrollRestoration<HTMLDivElement>(
     "media",
     data.isLoading,
@@ -101,17 +108,17 @@ export function MediaPane() {
             <Menu aria-hidden="true" size={19} />
           </IconButton>
         }
-        title={
-          <span className="jv-label jv-truncate">
-            {scopeJournal?.title ?? "All journals"}
-          </span>
-        }
+        title={<span className="jv-label jv-truncate">{scope.title}</span>}
       />
 
       <header className="jv-list-header">
+        {isEntityScope(scope) && <ScopeClearLink view="media" />}
         <div className="jv-list-header__row">
           <h1 className="jv-display jv-list-header__title">
-            <span className="jv-truncate">Media</span>
+            {isEntityScope(scope) && scope.glyph}
+            <span className="jv-truncate">
+              {isEntityScope(scope) ? scope.title : "Media"}
+            </span>
           </h1>
           <ListViewSwitch className="jv-list-header__switch" />
         </div>
@@ -142,7 +149,9 @@ export function MediaPane() {
             description={
               params.journalId
                 ? "Photos and videos added to this journal's entries will appear here."
-                : "Photos and videos you add to entries will appear here."
+                : isEntityScope(scope)
+                  ? `Photos and videos added to ${scope.title} moments will appear here.`
+                  : "Photos and videos you add to entries will appear here."
             }
           />
         )}
@@ -158,6 +167,7 @@ export function MediaPane() {
                   journalId={params.journalId}
                   selected={item.moment_id === params.momentId}
                   q={search.q ?? ""}
+                  scopeSearch={scopeSearch}
                   broken={broken[item.id] === item.signed_thumbnail_url}
                   onThumbError={onThumbError}
                 />
@@ -187,6 +197,7 @@ function MediaTile({
   journalId,
   selected,
   q,
+  scopeSearch,
   broken,
   onThumbError,
 }: {
@@ -194,6 +205,7 @@ function MediaTile({
   journalId?: string;
   selected: boolean;
   q: string;
+  scopeSearch: Record<string, string>;
   broken: boolean;
   onThumbError: (id: string, src: string) => void;
 }) {
@@ -202,12 +214,12 @@ function MediaTile({
     ? {
         to: "/journals/$journalId/$momentId" as const,
         params: { journalId, momentId: item.moment_id },
-        search: { q, view: "media" as const },
+        search: { q, ...scopeSearch, view: "media" as const },
       }
     : {
         to: "/timeline/$momentId" as const,
         params: { momentId: item.moment_id },
-        search: { q, view: "media" as const },
+        search: { q, ...scopeSearch, view: "media" as const },
       };
 
   const label =

@@ -510,6 +510,9 @@ export const createMomentApiV1MomentsPost = <ThrowOnError extends boolean = fals
 
 /**
  * Get Moment Calendar
+ *
+ * Per-day summary for the calendar, narrowed by the same journal and
+ * entity-scope filters as ``GET /moments``.
  */
 export const getMomentCalendarApiV1MomentsCalendarGet = <ThrowOnError extends boolean = false>(options?: Options<GetMomentCalendarApiV1MomentsCalendarGetData, ThrowOnError>): RequestResult<GetMomentCalendarApiV1MomentsCalendarGetResponses, GetMomentCalendarApiV1MomentsCalendarGetErrors, ThrowOnError> => (options?.client ?? client).get<GetMomentCalendarApiV1MomentsCalendarGetResponses, GetMomentCalendarApiV1MomentsCalendarGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],
@@ -1537,7 +1540,8 @@ export const getSupportedFormatsApiV1MediaFormatsGet = <ThrowOnError extends boo
 /**
  * Get Media Library
  *
- * A flat, paginated view of the user's completed media across all moments.
+ * A flat, paginated view of the user's completed media across all moments,
+ * narrowed by the same journal and entity-scope filters as ``GET /moments``.
  */
 export const getMediaLibraryApiV1MediaGet = <ThrowOnError extends boolean = false>(options?: Options<GetMediaLibraryApiV1MediaGetData, ThrowOnError>): RequestResult<GetMediaLibraryApiV1MediaGetResponses, GetMediaLibraryApiV1MediaGetErrors, ThrowOnError> => (options?.client ?? client).get<GetMediaLibraryApiV1MediaGetResponses, GetMediaLibraryApiV1MediaGetErrors, ThrowOnError>({
     security: [{ scheme: 'bearer', type: 'http' }],

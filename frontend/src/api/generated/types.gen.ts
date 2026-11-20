@@ -7009,6 +7009,30 @@ export type GetMomentCalendarApiV1MomentsCalendarGetData = {
          * Journal Id
          */
         journal_id?: string | null;
+        /**
+         * Mood Ids
+         */
+        mood_ids?: Array<string>;
+        /**
+         * Person Ids
+         */
+        person_ids?: Array<string>;
+        /**
+         * People Match
+         */
+        people_match?: PeopleMatch | null;
+        /**
+         * Tag Ids
+         */
+        tag_ids?: Array<string>;
+        /**
+         * Activity Ids
+         */
+        activity_ids?: Array<string>;
+        /**
+         * Goal Id
+         */
+        goal_id?: string | null;
     };
     url: '/api/v1/moments/calendar';
 };
@@ -10799,6 +10823,30 @@ export type GetMediaLibraryApiV1MediaGetData = {
          * Media Type
          */
         media_type?: MediaType | null;
+        /**
+         * Mood Ids
+         */
+        mood_ids?: Array<string>;
+        /**
+         * Person Ids
+         */
+        person_ids?: Array<string>;
+        /**
+         * People Match
+         */
+        people_match?: PeopleMatch | null;
+        /**
+         * Tag Ids
+         */
+        tag_ids?: Array<string>;
+        /**
+         * Activity Ids
+         */
+        activity_ids?: Array<string>;
+        /**
+         * Goal Id
+         */
+        goal_id?: string | null;
     };
     url: '/api/v1/media';
 };

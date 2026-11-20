@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
 import type {
+  ActivityResponse,
   JournalResponse,
   MomentCalendarItem,
   MomentPageResponse,
@@ -26,6 +27,7 @@ vi.mock("../../api/client/api", () => ({
     entry: vi.fn(),
     momentCalendar: vi.fn(),
     mediaLibrary: vi.fn(),
+    activities: vi.fn(),
   },
 }));
 
@@ -82,6 +84,14 @@ const calendarItems: MomentCalendarItem[] = [
   },
 ];
 const dayPage: MomentPageResponse = { items: [moment] };
+const activity = {
+  id: "act-1",
+  name: "Cycling",
+  icon: null,
+  color: null,
+  created_at: now,
+  updated_at: now,
+} as unknown as ActivityResponse;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -92,6 +102,7 @@ beforeEach(() => {
   vi.mocked(api.moods).mockResolvedValue([mood]);
   vi.mocked(api.momentCalendar).mockResolvedValue(calendarItems);
   vi.mocked(api.moments).mockResolvedValue(dayPage);
+  vi.mocked(api.activities).mockResolvedValue([activity]);
   vi.mocked(api.moment).mockResolvedValue(moment);
   vi.mocked(api.entry).mockResolvedValue({
     ...moment.entry,
@@ -171,6 +182,68 @@ describe("CalendarPane", () => {
     expect(router.state.location.search.date).toBe("2026-08-10");
     // Both panes are present: the calendar grid and the reader.
     expect(screen.getByText(/August 2026/)).toBeTruthy();
+  });
+
+  it("narrows to the list's entity scope and keeps it through every link", async () => {
+    const { router } = await renderRoute(
+      "/timeline?q=&activity=act-1&view=calendar&month=2026-08",
+    );
+
+    // Named for the scope, with the way back to everything.
+    expect(
+      await screen.findByRole("heading", { name: "Cycling" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "All moments" })).toBeTruthy();
+    await waitFor(() =>
+      expect(vi.mocked(api.momentCalendar)).toHaveBeenCalledWith(
+        expect.objectContaining({ activity_ids: ["act-1"] }),
+      ),
+    );
+
+    // The selected day's moments are the scope's, and opening one keeps it.
+    await userEvent.click(
+      await screen.findByRole("link", { name: /2 moments/ }),
+    );
+    await waitFor(() =>
+      expect(vi.mocked(api.moments)).toHaveBeenCalledWith(
+        expect.objectContaining({
+          activity_ids: ["act-1"],
+          start_date: "2026-08-10",
+          end_date: "2026-08-10",
+        }),
+      ),
+    );
+    expect(router.state.location.search.activity).toBe("act-1");
+    await userEvent.click(await screen.findByText("A clear day"));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/timeline/moment-1"),
+    );
+    expect(router.state.location.search.activity).toBe("act-1");
+
+    // Changing month keeps the scope too.
+    await userEvent.click(
+      screen.getByRole("button", { name: "Previous month" }),
+    );
+    await waitFor(() =>
+      expect(router.state.location.search.month).toBe("2026-07"),
+    );
+    expect(router.state.location.search.activity).toBe("act-1");
+    await waitFor(() =>
+      expect(vi.mocked(api.momentCalendar)).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          activity_ids: ["act-1"],
+          start_date: expect.stringMatching(/^2026-0[67]-/),
+        }),
+      ),
+    );
+
+    // Leaving the scope stays in the calendar, on the same month.
+    await userEvent.click(screen.getByRole("link", { name: "All moments" }));
+    await waitFor(() =>
+      expect(router.state.location.search.activity).toBeUndefined(),
+    );
+    expect(router.state.location.search.view).toBe("calendar");
+    expect(router.state.location.search.month).toBe("2026-07");
   });
 
   it("moves between months from the navigation control", async () => {

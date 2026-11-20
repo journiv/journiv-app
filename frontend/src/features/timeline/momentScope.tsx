@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { useParams, useSearch } from "@tanstack/react-router";
+import { Link, useParams, useSearch } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 import type { MomentFilters } from "../../api/query/keys";
 import {
@@ -82,6 +83,35 @@ export function scopeSearchFrom(search: ScopeSearch): ScopeSearch {
     if (search[key]) out[key] = search[key];
   }
   return out;
+}
+
+/** Whether the scope names an entity (person, tag, …) rather than a journal or
+ *  everything. Only the header can say so: the sidebar marks journals alone. */
+export function isEntityScope(scope: MomentScope) {
+  return scope.kind !== "all" && scope.kind !== "journal";
+}
+
+/**
+ * "← All moments": leaves the scope and keeps the list mode — the Calendar (and
+ * its month) or the Media grid stays what it was, just unscoped.
+ */
+export function ScopeClearLink({
+  view,
+  month,
+}: {
+  view?: "calendar" | "media";
+  month?: string;
+}) {
+  return (
+    <Link
+      className="jv-scope-clear"
+      to="/timeline"
+      search={{ q: "", ...(view ? { view } : {}), ...(month ? { month } : {}) }}
+    >
+      <ArrowLeft aria-hidden="true" size={14} />
+      All moments
+    </Link>
+  );
 }
 
 export function useMomentScope(): MomentScope {

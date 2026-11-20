@@ -55,6 +55,15 @@ The Timeline workspace has URL-selected list modes:
 - Media uses the media-library query, only moments with media, and keeps the
   current reader detail mounted.
 
+All three modes show the same scope: the journal, or the person / tag /
+activity / mood / goal from `useMomentScope()`. `GET /moments`,
+`GET /moments/calendar` and `GET /media` take the same scope params
+(`ScopeFilters` in `src/api/query/keys.ts`), and every link inside a mode — month
+navigation, Today, a day, a row, a tile — carries the scope's search param, so
+switching mode or opening a moment never silently widens it. An entity scope
+names itself in the mode's header with an "All moments" link that leaves the
+scope but keeps the mode.
+
 ListViewSwitch is three router links in ButtonGroup, not ToggleGroup: one
 destination is current, not pressed. Media tiles are navigational thumbnails and
 may crop; Reader media is content and follows the Reader contract.
