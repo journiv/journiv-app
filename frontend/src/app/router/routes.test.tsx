@@ -418,6 +418,46 @@ describe("Phase B routes", () => {
     expect(api.moment).toHaveBeenCalledTimes(2);
   });
 
+  it("does not reopen the delete confirmation on the next Moment after a surviving delete", async () => {
+    const quickLog: MomentResponse = { ...moment, entry: null };
+    const otherMoment: MomentResponse = {
+      ...moment,
+      id: "moment-2",
+      entry: { ...momentEntry, id: "entry-2", moment_id: "moment-2" },
+    };
+    vi.mocked(api.moment).mockImplementation(async (id: string) =>
+      id === "moment-2"
+        ? otherMoment
+        : vi.mocked(api.deleteEntry).mock.calls.length > 0
+          ? quickLog
+          : moment,
+    );
+    vi.mocked(api.entry).mockImplementation(async (id: string) => ({
+      ...entry,
+      id,
+      moment_id: id === "entry-2" ? "moment-2" : moment.id,
+    }));
+    const view = await renderRoute("/timeline/moment-1");
+
+    await openEntryDeleteMenu();
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete entry",
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "Write" })).toBeTruthy();
+
+    // The same ReaderPage instance stays mounted, as when picking another row.
+    view.router.history.push("/timeline/moment-2");
+
+    expect(view.router.state.location.pathname).toBe("/timeline/moment-2");
+    await waitFor(() => expect(api.entry).toHaveBeenCalledWith("entry-2"));
+    // A stale open dialog would also hide the page from the accessibility
+    // tree, so look for the PageBar action only once it is known to be gone.
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(await screen.findByRole("button", { name: "Edit" })).toBeTruthy();
+  });
+
   it("keeps the confirmation open and shows a human error when deletion fails", async () => {
     vi.mocked(api.deleteEntry).mockRejectedValueOnce(new Error("offline"));
     const view = await renderRoute("/timeline/moment-1");
