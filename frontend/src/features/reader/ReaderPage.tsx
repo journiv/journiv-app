@@ -263,6 +263,7 @@ export function ReaderPage() {
       }
     },
     onSuccess: (momentSurvived) => {
+      setDeleteOpen(false);
       if (!momentSurvived) goBack();
     },
   });
