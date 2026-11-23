@@ -308,6 +308,15 @@ export function ActivitiesPage() {
       updates: reordered.map((item, position) => ({ id: item.id, position })),
     });
   };
+  const reorderByDrop = (
+    siblings: ActivityResponse[],
+    draggedId: string,
+    targetId: string,
+  ) => {
+    const from = siblings.findIndex((item) => item.id === draggedId);
+    const target = siblings.findIndex((item) => item.id === targetId);
+    reorderWithinGroup(siblings, draggedId, targetId, from < target);
+  };
   const createGroup = useMutation({
     mutationFn: (body: ActivityGroupCreate) => api.createActivityGroup(body),
     onSuccess: refresh,

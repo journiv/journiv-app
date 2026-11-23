@@ -319,7 +319,7 @@ describe("Library · Activities", () => {
       ...read,
       id: "activity-journal",
       name: "Journaling",
-      position: 20,
+      position: 30,
     };
     vi.mocked(api.activities).mockResolvedValue([run, read, journal]);
     await view();
