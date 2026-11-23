@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
   Menu,
@@ -129,15 +131,58 @@ function GroupSection({
 
 function ActivityListItem({
   activity,
+  index,
+  siblingCount,
+  canReorder,
+  reordering,
+  onMove,
+  onDrop,
   onEdit,
   onDelete,
 }: {
   activity: ActivityResponse;
+  index: number;
+  siblingCount: number;
+  canReorder: boolean;
+  reordering: boolean;
+  onMove: (direction: -1 | 1) => void;
+  onDrop: (draggedId: string) => void;
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const [dragOver, setDragOver] = useState(false);
+
   return (
     <LibraryRow
+      className={cx(
+        canReorder && !reordering && "jv-lib-row--draggable",
+        dragOver && "jv-lib-row--drag-over",
+      )}
+      listItemProps={{
+        draggable: canReorder && !reordering,
+        onDragStart: (event) => {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", activity.id);
+          event.currentTarget.classList.add("jv-lib-row--dragging");
+        },
+        onDragOver: (event) => {
+          if (!canReorder || reordering) return;
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          setDragOver(true);
+        },
+        onDragLeave: () => setDragOver(false),
+        onDrop: (event) => {
+          event.preventDefault();
+          setDragOver(false);
+          const draggedId = event.dataTransfer.getData("text/plain");
+          if (draggedId && canReorder && !reordering) onDrop(draggedId);
+        },
+        onDragEnd: (event) => {
+          event.currentTarget.classList.remove("jv-lib-row--dragging");
+          setDragOver(false);
+        },
+      }}
       leading={
         <EntityGlyph color={activity.color} icon={activity.icon} size={16} />
       }
@@ -148,6 +193,22 @@ function ActivityListItem({
           align="end"
           actions={[
             viewMomentsAction({ activity: activity.id }),
+            {
+              kind: "command",
+              id: "move-up",
+              label: "Move up",
+              icon: ArrowUp,
+              disabled: !canReorder || reordering || index === 0,
+              onSelect: () => onMove(-1),
+            },
+            {
+              kind: "command",
+              id: "move-down",
+              label: "Move down",
+              icon: ArrowDown,
+              disabled: !canReorder || reordering || index === siblingCount - 1,
+              onSelect: () => onMove(1),
+            },
             {
               kind: "command",
               id: "edit",
@@ -224,6 +285,29 @@ export function ActivitiesPage() {
       await refresh();
     },
   });
+  const reorderActivity = useMutation({
+    mutationFn: (body: { updates: { id: string; position: number }[] }) =>
+      api.reorderActivities(body),
+    onSuccess: refresh,
+  });
+  const reorderWithinGroup = (
+    siblings: ActivityResponse[],
+    draggedId: string,
+    targetId: string,
+    insertAfter = false,
+  ) => {
+    if (reorderActivity.isPending || searching) return;
+    const from = siblings.findIndex((item) => item.id === draggedId);
+    if (from < 0 || draggedId === targetId) return;
+    const reordered = [...siblings];
+    const [moved] = reordered.splice(from, 1);
+    const targetIndex = reordered.findIndex((item) => item.id === targetId);
+    if (targetIndex < 0) return;
+    reordered.splice(targetIndex + (insertAfter ? 1 : 0), 0, moved);
+    reorderActivity.mutate({
+      updates: reordered.map((item, position) => ({ id: item.id, position })),
+    });
+  };
   const createGroup = useMutation({
     mutationFn: (body: ActivityGroupCreate) => api.createActivityGroup(body),
     onSuccess: refresh,
@@ -342,6 +426,11 @@ export function ActivitiesPage() {
               }
             />
           )}
+          {reorderActivity.isError && (
+            <p className="jv-library__alert" role="alert">
+              The activity order could not be saved.
+            </p>
+          )}
           {!loading && !loadError && !activities.length && !groups.length && (
             <StatusView
               icon={<Sparkles size={20} />}
@@ -418,6 +507,26 @@ export function ActivitiesPage() {
                             <ActivityListItem
                               key={activity.id}
                               activity={activity}
+                              index={members.indexOf(activity)}
+                              siblingCount={members.length}
+                              canReorder={!searching}
+                              reordering={reorderActivity.isPending}
+                              onMove={(direction) =>
+                                reorderWithinGroup(
+                                  members,
+                                  activity.id,
+                                  members[members.indexOf(activity) + direction]
+                                    ?.id ?? activity.id,
+                                  direction === 1,
+                                )
+                              }
+                              onDrop={(draggedId) =>
+                                reorderWithinGroup(
+                                  members,
+                                  draggedId,
+                                  activity.id,
+                                )
+                              }
                               onEdit={() =>
                                 setActivityForm({
                                   mode: "edit",
@@ -466,10 +575,29 @@ export function ActivitiesPage() {
                     }
                   >
                     <ul className="jv-lib-section__grid">
-                      {ungrouped.map((activity) => (
+                      {ungrouped.map((activity, index) => (
                         <ActivityListItem
                           key={activity.id}
                           activity={activity}
+                          index={index}
+                          siblingCount={ungrouped.length}
+                          canReorder={!searching}
+                          reordering={reorderActivity.isPending}
+                          onMove={(direction) =>
+                            reorderWithinGroup(
+                              ungrouped,
+                              activity.id,
+                              ungrouped[index + direction]?.id ?? activity.id,
+                              direction === 1,
+                            )
+                          }
+                          onDrop={(draggedId) =>
+                            reorderWithinGroup(
+                              ungrouped,
+                              draggedId,
+                              activity.id,
+                            )
+                          }
                           onEdit={() =>
                             setActivityForm({ mode: "edit", activity })
                           }

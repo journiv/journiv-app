@@ -220,6 +220,24 @@
   box-shadow: var(--shadow-xs);
 }
 
+.jv-lib-row--draggable {
+  cursor: grab;
+}
+
+.jv-lib-row--draggable:active {
+  cursor: grabbing;
+}
+
+.jv-lib-row--dragging {
+  opacity: 0.55;
+}
+
+.jv-lib-row--drag-over {
+  background: var(--muted);
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
 /* Goal rows carry cadence, direction, progress and an optional linked activity;
    one row per line keeps that API metadata readable instead of truncating it in
    the denser People / Activities grid. */

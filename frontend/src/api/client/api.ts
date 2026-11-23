@@ -98,6 +98,7 @@ import {
   registerLicenseApiV1InstanceLicenseRegisterPost,
   removePersonProfileImageApiV1PeoplePersonIdProfileImageDelete,
   removeTagFromMomentApiV1MomentsMomentIdTagsTagIdDelete,
+  reorderActivitiesApiV1ActivitiesReorderPut,
   reorderJournalsApiV1JournalsReorderPut,
   replaceMomentPeopleApiV1MomentsMomentIdPeoplePut,
   reverseGeocodeApiV1LocationReversePost,
@@ -130,6 +131,7 @@ import type {
   ActivityCreate,
   ActivityGroupCreate,
   ActivityGroupUpdate,
+  ActivityReorderRequest,
   ActivityUpdate,
   AdminUserCreate,
   AdminUserListResponse,
@@ -329,6 +331,9 @@ export const api = {
   /** Persists new positions for a set of journals. Responds 204. */
   reorderJournals: (body: JournalReorderRequest) =>
     data(reorderJournalsApiV1JournalsReorderPut({ ...options(), body })),
+  /** Persists new positions for activities. Responds 204. */
+  reorderActivities: (body: ActivityReorderRequest) =>
+    data(reorderActivitiesApiV1ActivitiesReorderPut({ ...options(), body })),
   /**
    * Hard-deletes a journal. The backend cascade-deletes every Entry written in
    * it; the parent Moments survive as quick logs. Irreversible — the UI guards

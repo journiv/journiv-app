@@ -22,6 +22,30 @@
   gap: var(--space-1);
 }
 
+.jv-details__options--activities {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+
+.jv-details__activity-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.jv-details__activity-group > .jv-caption {
+  width: 100%;
+  margin: 0;
+  font-weight: 600;
+}
+
 .jv-details__option {
   display: inline-flex;
   align-items: center;

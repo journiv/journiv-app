@@ -1,4 +1,9 @@
-import { cloneElement, type ReactElement, type ReactNode } from "react";
+import {
+  cloneElement,
+  type LiHTMLAttributes,
+  type ReactElement,
+  type ReactNode,
+} from "react";
 import {
   Item,
   ItemActions,
@@ -28,6 +33,7 @@ export function LibraryRow({
   actions,
   className,
   rowLink,
+  listItemProps,
 }: {
   leading?: ReactNode;
   title: ReactNode;
@@ -35,6 +41,7 @@ export function LibraryRow({
   actions?: ReactNode;
   className?: string;
   rowLink?: ReactElement<{ className?: string }>;
+  listItemProps?: LiHTMLAttributes<HTMLLIElement>;
 }) {
   const body = (
     <>
@@ -53,7 +60,10 @@ export function LibraryRow({
 
   if (rowLink) {
     return (
-      <li className={cx("jv-lib-row jv-lib-row--link", className)}>
+      <li
+        {...listItemProps}
+        className={cx("jv-lib-row jv-lib-row--link", className, listItemProps?.className)}
+      >
         {cloneElement(
           rowLink,
           { className: cx("jv-lib-row__hit", rowLink.props.className) },
@@ -69,7 +79,11 @@ export function LibraryRow({
   }
 
   return (
-    <Item size="sm" className={cx("jv-lib-row", className)} render={<li />}>
+    <Item
+      size="sm"
+      className={cx("jv-lib-row", className, listItemProps?.className)}
+      render={<li {...listItemProps} />}
+    >
       {body}
       {actions != null && (
         <ItemActions className="jv-lib-row__actions">{actions}</ItemActions>
