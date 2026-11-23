@@ -46,8 +46,11 @@ toggle.
 
 Activities follow the People directory, but have zero-or-one group membership.
 Group deletion moves activities to the ungrouped section; definition deletion
-preserves existing moment links. Use actual create/update/delete operations;
-generated reorder endpoints are not an instruction to add UI reorder controls.
+preserves existing moment links. Their picker and moment chips follow group
+membership, with activities ordered by their saved position inside each group.
+The activity actions menu moves an activity up or down within its current
+group, including the ungrouped section. Reordering is disabled while filtering
+so hidden activities cannot be moved accidentally.
 
 Goals use the existing Goal contract and history dialog. Moods are identity
 colours/names rather than a presumed emotional scale. Tags use their existing

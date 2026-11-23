@@ -1,6 +1,12 @@
 import { QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../../api/auth/session";
@@ -25,6 +31,7 @@ vi.mock("../../api/client/api", () => ({
     createActivityGroup: vi.fn(),
     updateActivityGroup: vi.fn(),
     deleteActivityGroup: vi.fn(),
+    reorderActivities: vi.fn(),
   },
 }));
 
@@ -84,6 +91,7 @@ beforeEach(() => {
   vi.mocked(api.createActivityGroup).mockResolvedValue(wellness);
   vi.mocked(api.updateActivityGroup).mockResolvedValue(wellness);
   vi.mocked(api.deleteActivityGroup).mockResolvedValue(undefined);
+  vi.mocked(api.reorderActivities).mockResolvedValue(undefined);
 });
 
 async function view(path = "/settings/journaling/activities?q=ignored") {
@@ -274,5 +282,96 @@ describe("Library · Activities", () => {
     await waitFor(() =>
       expect(vi.mocked(api.activities).mock.calls.length).toBeGreaterThan(1),
     );
+  });
+
+  it("moves an activity down within its group and saves the new positions", async () => {
+    const walk: ActivityResponse = {
+      ...run,
+      id: "activity-walk",
+      name: "Walking",
+      position: 20,
+    };
+    vi.mocked(api.activities).mockResolvedValue([run, walk, read]);
+    vi.mocked(api.activityGroups).mockResolvedValue([
+      { ...wellness, activities: [run, walk] },
+    ]);
+    await view();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Running actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Move down" }),
+    );
+
+    await waitFor(() =>
+      expect(api.reorderActivities).toHaveBeenCalledWith({
+        updates: [
+          { id: walk.id, position: 0 },
+          { id: run.id, position: 1 },
+        ],
+      }),
+    );
+  });
+
+  it("persists a drag-and-drop reorder within the ungrouped section", async () => {
+    const journal: ActivityResponse = {
+      ...read,
+      id: "activity-journal",
+      name: "Journaling",
+      position: 30,
+    };
+    vi.mocked(api.activities).mockResolvedValue([run, read, journal]);
+    await view();
+    await userEvent.click(
+      screen.getByRole("button", { name: /without a group/i }),
+    );
+
+    const readRow = screen.getByText("Reading").closest("li");
+    const journalRow = screen.getByText("Journaling").closest("li");
+    expect(readRow).not.toBeNull();
+    expect(journalRow).not.toBeNull();
+    const dataTransfer = {
+      effectAllowed: "",
+      dropEffect: "",
+      setData: vi.fn(),
+      getData: vi.fn(() => journal.id),
+    };
+    fireEvent.dragStart(journalRow!, { dataTransfer });
+    fireEvent.dragOver(readRow!, { dataTransfer });
+    fireEvent.drop(readRow!, { dataTransfer });
+
+    await waitFor(() =>
+      expect(api.reorderActivities).toHaveBeenCalledWith({
+        updates: [
+          { id: journal.id, position: 0 },
+          { id: read.id, position: 1 },
+        ],
+      }),
+    );
+  });
+
+  it("disables reordering while activities are filtered", async () => {
+    const walk: ActivityResponse = {
+      ...run,
+      id: "activity-walk",
+      name: "Walking",
+      position: 20,
+    };
+    vi.mocked(api.activities).mockResolvedValue([run, walk]);
+    vi.mocked(api.activityGroups).mockResolvedValue([
+      { ...wellness, activities: [run, walk] },
+    ]);
+    await view();
+    await userEvent.type(screen.getByLabelText("Search activities"), "run");
+
+    const row = screen.getByText("Running").closest("li");
+    expect(row?.getAttribute("draggable")).toBe("false");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Running actions" }),
+    );
+    const moveDown = await screen.findByRole("menuitem", { name: "Move down" });
+    expect(moveDown.getAttribute("aria-disabled")).toBe("true");
+    expect(api.reorderActivities).not.toHaveBeenCalled();
   });
 });

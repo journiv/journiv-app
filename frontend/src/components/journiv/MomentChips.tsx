@@ -43,7 +43,11 @@ export function MomentChips({
         .filter((activity): activity is ActivityResponse => Boolean(activity))
         .map((activity) => [activity.id, activity] as const),
     ).values(),
-  );
+  ).sort((a, b) => {
+    const group = (a.group_id ?? "\uffff").localeCompare(b.group_id ?? "\uffff");
+    const position = (a.position ?? 0) - (b.position ?? 0);
+    return group || position || a.name.localeCompare(b.name);
+  });
   if (!people.length && !activities.length && !tags.length) return null;
 
   return (

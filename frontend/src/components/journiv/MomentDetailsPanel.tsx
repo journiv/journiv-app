@@ -13,6 +13,7 @@ import type {
 import { queryKeys } from "../../api/query/keys";
 import {
   activitiesQuery,
+  activityGroupsQuery,
   moodsQuery,
   peopleQuery,
   tagSearchQuery,
@@ -365,6 +366,7 @@ function ActivitiesSection({ moment, disabled, runWithMoment }: SectionProps) {
   const [filter, setFilter] = useState("");
   const queryClient = useQueryClient();
   const activities = useQuery(activitiesQuery());
+  const activityGroups = useQuery(activityGroupsQuery());
 
   // `mood_activity` is a full-replace set that can also hold Daylio-import
   // mood pairings this UI never creates; toggling one activity must leave
@@ -453,11 +455,36 @@ function ActivitiesSection({ moment, disabled, runWithMoment }: SectionProps) {
   };
 
   const term = filter.trim().toLowerCase();
-  const shown = term
-    ? (activities.data ?? []).filter((activity) =>
-        activity.name.toLowerCase().includes(term),
-      )
-    : (activities.data ?? []);
+  const matches = (activity: ActivityResponse) =>
+    !term || activity.name.toLowerCase().includes(term);
+  const available = activities.data ?? [];
+  const groupedActivities = (activityGroups.data ?? []).map((group) => ({
+    id: group.id,
+    name: group.name,
+    activities: available
+      .filter((activity) => activity.group_id === group.id && matches(activity))
+      .sort(compareActivityPosition),
+  }));
+  const knownGroupIds = new Set(groupedActivities.map((group) => group.id));
+  const unlistedActivities = available
+    .filter(
+      (activity) =>
+        activity.group_id &&
+        !knownGroupIds.has(activity.group_id) &&
+        matches(activity),
+    )
+    .sort(
+      (a, b) =>
+        (a.group_id ?? "").localeCompare(b.group_id ?? "") ||
+        compareActivityPosition(a, b),
+    );
+  const ungroupedActivities = available
+    .filter((activity) => !activity.group_id && matches(activity))
+    .sort(compareActivityPosition);
+  const shownCount =
+    groupedActivities.reduce((count, group) => count + group.activities.length, 0) +
+    unlistedActivities.length +
+    ungroupedActivities.length;
 
   return (
     <section className="jv-details__section">
@@ -496,25 +523,62 @@ function ActivitiesSection({ moment, disabled, runWithMoment }: SectionProps) {
               onChange={(event) => setFilter(event.target.value)}
             />
           )}
-          <div className="jv-details__options">
-            {shown.map((activity: ActivityResponse) => (
-              <button
-                key={activity.id}
-                type="button"
-                className="jv-details__option"
-                aria-pressed={selected.has(activity.id)}
-                disabled={busy}
-                onClick={() => toggle(activity.id, !selected.has(activity.id))}
+          <div className="jv-details__options jv-details__options--activities">
+            {groupedActivities.map(
+              (group) =>
+                group.activities.length > 0 && (
+                  <fieldset
+                    className="jv-details__activity-group"
+                    key={group.id}
+                  >
+                    <legend className="jv-caption">{group.name}</legend>
+                    {group.activities.map((activity) => (
+                      <ActivityOption
+                        key={activity.id}
+                        activity={activity}
+                        selected={selected.has(activity.id)}
+                        disabled={busy}
+                        onToggle={toggle}
+                      />
+                    ))}
+                  </fieldset>
+                ),
+            )}
+            {unlistedActivities.length > 0 && (
+              <fieldset
+                className="jv-details__activity-group"
               >
-                <EntityGlyph
-                  icon={activity.icon}
-                  color={activity.color}
-                  size={12}
-                />
-                {activity.name}
-              </button>
-            ))}
-            {shown.length === 0 && (
+                <legend className="jv-caption">
+                  {activityGroups.isError ? "Grouped activities" : "Other activities"}
+                </legend>
+                {unlistedActivities.map((activity) => (
+                  <ActivityOption
+                    key={activity.id}
+                    activity={activity}
+                    selected={selected.has(activity.id)}
+                    disabled={busy}
+                    onToggle={toggle}
+                  />
+                ))}
+              </fieldset>
+            )}
+            {ungroupedActivities.length > 0 && (
+              <fieldset
+                className="jv-details__activity-group"
+              >
+                <legend className="jv-caption">Without a group</legend>
+                {ungroupedActivities.map((activity) => (
+                  <ActivityOption
+                    key={activity.id}
+                    activity={activity}
+                    selected={selected.has(activity.id)}
+                    disabled={busy}
+                    onToggle={toggle}
+                  />
+                ))}
+              </fieldset>
+            )}
+            {shownCount === 0 && (
               <p className="jv-caption">
                 No activities matched "{filter.trim()}".
               </p>
@@ -528,6 +592,37 @@ function ActivitiesSection({ moment, disabled, runWithMoment }: SectionProps) {
         </p>
       )}
     </section>
+  );
+}
+
+function compareActivityPosition(a: ActivityResponse, b: ActivityResponse) {
+  return (
+    (a.position ?? 0) - (b.position ?? 0) || a.name.localeCompare(b.name)
+  );
+}
+
+function ActivityOption({
+  activity,
+  selected,
+  disabled,
+  onToggle,
+}: {
+  activity: ActivityResponse;
+  selected: boolean;
+  disabled: boolean;
+  onToggle: (id: string, checked: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="jv-details__option"
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={() => onToggle(activity.id, !selected)}
+    >
+      <EntityGlyph icon={activity.icon} color={activity.color} size={12} />
+      {activity.name}
+    </button>
   );
 }
 
