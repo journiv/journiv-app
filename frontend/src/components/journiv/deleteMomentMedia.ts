@@ -17,20 +17,22 @@ export async function deleteMomentMedia(
   }
   // The caller reports success only once the Moment and its media list show
   // the clip gone, so a confirmation never closes on a surface that still
-  // offers it. The lists, calendars and media libraries only carry per-moment
-  // counts and thumbnails; nothing waits on them.
+  // offers it. A failed refetch fails the delete; the retry meets the 404
+  // above and refetches again. The lists, calendars and media libraries only
+  // carry per-moment counts and thumbnails; nothing waits on them.
   void queryClient.invalidateQueries({ queryKey: queryKeys.allMoments });
   void queryClient.invalidateQueries({
     queryKey: queryKeys.allMomentCalendars,
   });
   void queryClient.invalidateQueries({ queryKey: queryKeys.allMediaLibraries });
   await Promise.all([
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.moment(momentId),
-      exact: true,
-    }),
-    queryClient.invalidateQueries({
-      queryKey: queryKeys.momentMedia(momentId),
-    }),
+    queryClient.invalidateQueries(
+      { queryKey: queryKeys.moment(momentId), exact: true },
+      { throwOnError: true },
+    ),
+    queryClient.invalidateQueries(
+      { queryKey: queryKeys.momentMedia(momentId) },
+      { throwOnError: true },
+    ),
   ]);
 }

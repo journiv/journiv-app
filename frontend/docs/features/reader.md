@@ -86,8 +86,10 @@ The command confirms through `AppConfirmDialog` and calls
 A 404 counts as success, because another surface already deleted the clip.
 Success invalidates the Moment, its media list, the moment lists, Calendar,
 and the media library. The confirmation closes only after the Moment and its
-media list refetch, so the clip is gone when the dialog goes. The other caches
-refresh in the background. Once the Moment reports no media, no clip is offered
+media list refetch, so the clip is gone when the dialog goes. A failed refetch
+keeps the confirmation open with the connection reason; the retry meets the
+404 and refetches again. The other caches refresh in the background. Moving to
+another Moment closes an open confirmation. Once the Moment reports no media, no clip is offered
 (see "Media" above). There is no Undo, because the API has no restore contract.
 
 Deleting media never prunes its Moment. The reader stays where it is and loses

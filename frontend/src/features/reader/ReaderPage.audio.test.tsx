@@ -348,6 +348,66 @@ describe("reader audio actions", () => {
     ).toBeNull();
   });
 
+  it("keeps the confirmation open when the media refresh fails after the delete", async () => {
+    let listFails = false;
+    vi.mocked(api.deleteMedia).mockImplementation(async () => {
+      listFails = true;
+      return undefined as never;
+    });
+    vi.mocked(api.momentMedia).mockImplementation(async () => {
+      if (listFails) throw new Error("network");
+      return deleted ? [] : [recording()];
+    });
+    await openReader();
+    await screen.findByRole("slider", { name: "Seek audio" });
+
+    await chooseDelete();
+
+    expect(
+      await screen.findByText(
+        "The audio clip couldn’t be deleted. Check your connection and try again.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Delete this audio clip?")).toBeTruthy();
+
+    listFails = false;
+    vi.mocked(api.deleteMedia).mockImplementation(async () => {
+      deleted = true;
+      throw new ApiError("Media not found", { status: 404 });
+    });
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete audio clip" }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByText("Delete this audio clip?")).toBeNull(),
+    );
+    expect(screen.queryByRole("slider", { name: "Seek audio" })).toBeNull();
+  });
+
+  it("drops an open confirmation when the reader moves to another Moment", async () => {
+    const { router } = await openReader();
+    await screen.findByRole("slider", { name: "Seek audio" });
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Moment actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Delete audio clip…" }),
+    );
+    expect(await screen.findByText("Delete this audio clip?")).toBeTruthy();
+
+    await router.navigate({
+      to: "/timeline/$momentId",
+      params: { momentId: "moment-2" },
+      search: { q: "" },
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByText("Delete this audio clip?")).toBeNull(),
+    );
+    expect(api.deleteMedia).not.toHaveBeenCalled();
+  });
+
   it("treats a clip already gone as deleted", async () => {
     vi.mocked(api.deleteMedia).mockImplementation(async () => {
       deleted = true;

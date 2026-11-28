@@ -167,10 +167,13 @@ export function ReaderPage() {
   // Reader detail routes reuse this component when their path parameters
   // change. A history entry pushed for one Moment must never affect a
   // deep-linked viewer for the next Moment (or for the same Moment in a
-  // different journal). Search-only updates deliberately keep this ref.
+  // different journal), and an audio confirmation opened for one Moment must
+  // never submit against the next. Search-only updates deliberately keep both.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the route params intentionally trigger this reset without being read in its body.
   useEffect(() => {
     viewerPushed.current = false;
+    setDeleteAudioOpen(false);
+    setAudioToDelete({ id: "", title: "" });
   }, [momentId, journalId]);
 
   const setMediaParam = useCallback(
