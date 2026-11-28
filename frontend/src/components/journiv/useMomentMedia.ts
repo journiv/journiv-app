@@ -30,7 +30,7 @@ export function useMomentMedia(momentId: string, enabled: boolean) {
       reSignMomentId.current = momentId;
       reSignAttempted.current = false;
     }
-    if (!data?.length || isFetching) return;
+    if (!enabled || !data?.length || isFetching) return;
     const expired = data.some(
       (item) =>
         typeof item.signed_url_expires_at === "number" &&
@@ -43,7 +43,7 @@ export function useMomentMedia(momentId: string, enabled: boolean) {
     if (reSignAttempted.current) return;
     reSignAttempted.current = true;
     void refetch();
-  }, [data, isFetching, momentId, refetch]);
+  }, [data, enabled, isFetching, momentId, refetch]);
 
   // A URL can also expire between the response and the image load. The first
   // failure per item forces a fresh signature; a second is treated as broken.
@@ -68,16 +68,29 @@ export function useMomentMedia(momentId: string, enabled: boolean) {
     void refetch();
   }, [refetch]);
 
+  // A disabled query keeps its last result. Once the Moment reports no media,
+  // consumers get no items and no loading, error or success state from the
+  // list fetched before the last delete.
+  let items: MomentMediaResponse[] | undefined;
+  let isLoading = false;
+  let isError = false;
+  let isSuccess = false;
+  if (enabled) {
+    items = data;
+    isLoading = query.isLoading;
+    isError = query.isError;
+    isSuccess = query.isSuccess;
+  }
   const byId = new Map<string, MomentMediaResponse>(
-    (data ?? []).map((item) => [item.id, item]),
+    (items ?? []).map((item) => [item.id, item]),
   );
 
   return {
-    items: data,
+    items,
     byId,
-    isLoading: query.isLoading,
-    isError: query.isError,
-    isSuccess: query.isSuccess,
+    isLoading,
+    isError,
+    isSuccess,
     /** Epoch ms the current list was fetched; 0 before the first success. */
     fetchedAt: query.dataUpdatedAt,
     isFetching,

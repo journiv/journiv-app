@@ -14,12 +14,14 @@ import { Alert, AlertDescription } from "../../components/ui/alert";
  */
 export function DeleteAudioDialog({
   open,
+  title,
   onOpenChange,
   deleting,
   failed,
   onConfirm,
 }: {
   open: boolean;
+  title: string;
   onOpenChange: (open: boolean) => void;
   deleting: boolean;
   failed: boolean;
@@ -28,12 +30,8 @@ export function DeleteAudioDialog({
   return (
     <AppConfirmDialog
       open={open}
-      onOpenChange={(next) => {
-        // Never strand the user mid-delete with the surface gone.
-        if (deleting) return;
-        onOpenChange(next);
-      }}
-      title="Delete this audio clip?"
+      onOpenChange={onOpenChange}
+      title={title}
       description="The recording is removed from this moment and permanently deleted. The writing and everything else logged here stay as they are. This cannot be undone."
       confirmLabel={deleting ? "Deleting…" : "Delete audio clip"}
       cancelLabel="Keep audio clip"

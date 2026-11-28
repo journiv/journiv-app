@@ -18,6 +18,7 @@ import {
 import { api } from "../../api/client/api";
 import { entryQuery, momentQuery, promptQuery } from "../../api/query/options";
 import { queryKeys } from "../../api/query/keys";
+import type { MomentMediaResponse } from "../../api/generated/types.gen";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import {
   AppAdaptiveMenu,
@@ -30,16 +31,19 @@ import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toast } from "../../components/ui/toast";
+import { deleteMomentMedia } from "../../components/journiv/deleteMomentMedia";
 import { MomentMediaGallery } from "../../components/journiv/MomentMediaGallery";
 import {
   MediaViewer,
   momentMediaToViewerItems,
 } from "../../components/journiv/media/MediaViewer";
 import { shouldClearMediaParam } from "../../components/journiv/media/mediaViewerNav";
+import { formatClock } from "../../components/journiv/media/waveformPeaks";
 import { StatusView } from "../../components/journiv/StatusView";
 import { useMomentMedia } from "../../components/journiv/useMomentMedia";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { mediaPath } from "../../lib/mediaUrl";
+import { isUploadBusy } from "../../lib/uploadStatus";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
 import { planReaderContent, QuillReader } from "../editor/QuillReader";
@@ -92,7 +96,9 @@ export function ReaderPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteAudioId, setDeleteAudioId] = useState<string | null>(null);
+  const [deleteAudioOpen, setDeleteAudioOpen] = useState(false);
+  // Kept after close so the dialog keeps its title while it animates out.
+  const [audioToDelete, setAudioToDelete] = useState({ id: "", title: "" });
   const isPdfRetryInFlight = useRef(false);
   // Carry the list-pane mode back so Back returns to the calendar or grid the
   // reader was opened from, not the plain list.
@@ -285,23 +291,11 @@ export function ReaderPage() {
     },
   });
   // Deleting one attachment never prunes its Moment, so the reader stays where
-  // it is and simply loses the item: `moment(momentId)` covers the media list by
-  // prefix, and the lists carry per-moment media counts and thumbnails.
+  // it is and simply loses the item.
   const removeAudio = useMutation({
-    mutationFn: async (mediaId: string) => {
-      await api.deleteMedia(mediaId);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.moment(momentId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.allMoments }),
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.allMomentCalendars,
-        }),
-        queryClient.invalidateQueries({
-          queryKey: queryKeys.allMediaLibraries,
-        }),
-      ]);
-    },
-    onSuccess: () => setDeleteAudioId(null),
+    mutationFn: (mediaId: string) =>
+      deleteMomentMedia(queryClient, momentId, mediaId),
+    onSuccess: () => setDeleteAudioOpen(false),
   });
   const download = useMutation({
     mutationFn: async (entryId: string) => {
@@ -417,31 +411,47 @@ export function ReaderPage() {
   // to plain text without saying what it embeds.
   const inlineMediaKnown =
     !hasWriting || (entry.isSuccess && readerContent?.renderable === true);
-  const deletableAudio = !inlineMediaKnown
-    ? []
-    : (media.items ?? []).filter((item) => {
-        const status = item.upload_status ?? "completed";
-        if (item.media_type !== "audio") return false;
-        if (status === "pending" || status === "processing") return false;
-        return !inlinePaths?.has(mediaPath(item.signed_url ?? ""));
-      });
-  // Numbered only when there is more than one to tell apart; the order matches
-  // the gallery below.
-  const audioActions: AppMenuAction[] = deletableAudio.map((item, index) => ({
-    kind: "command",
-    id: `delete-audio-${item.id}`,
-    label:
-      deletableAudio.length === 1
-        ? "Delete audio clip…"
-        : `Delete audio clip ${index + 1}…`,
-    icon: Trash2,
-    destructive: true,
-    separatorBefore: index === 0 && entryActions.length > 0,
-    onSelect: () => {
-      removeAudio.reset();
-      setDeleteAudioId(item.id);
-    },
-  }));
+  let galleryAudio: MomentMediaResponse[] = [];
+  if (inlineMediaKnown) {
+    galleryAudio = (media.items ?? []).filter(
+      (item) =>
+        item.media_type === "audio" &&
+        !inlinePaths?.has(mediaPath(item.signed_url ?? "")),
+    );
+  }
+  // A clip is numbered by its row among the audio rows the gallery shows, so a
+  // recording still processing above it counts even though it is not on offer.
+  const firstReadyRow = galleryAudio.findIndex(
+    (item) => !isUploadBusy(item.upload_status),
+  );
+  const audioActions: AppMenuAction[] = galleryAudio.flatMap((item, row) => {
+    if (isUploadBusy(item.upload_status)) return [];
+    let label = "Delete audio clip…";
+    let dialogTitle = "Delete this audio clip?";
+    if (galleryAudio.length > 1) {
+      const altText = item.alt_text?.trim();
+      let name = `audio clip ${row + 1}`;
+      if (altText) name += ` (${altText})`;
+      else if (item.duration) name += ` (${formatClock(item.duration)})`;
+      label = `Delete ${name}…`;
+      dialogTitle = `Delete ${name}?`;
+    }
+    return [
+      {
+        kind: "command",
+        id: `delete-audio-${item.id}`,
+        label,
+        icon: Trash2,
+        destructive: true,
+        separatorBefore: row === firstReadyRow && entryActions.length > 0,
+        onSelect: () => {
+          removeAudio.reset();
+          setAudioToDelete({ id: item.id, title: dialogTitle });
+          setDeleteAudioOpen(true);
+        },
+      },
+    ];
+  });
   const momentActions = [...entryActions, ...audioActions];
 
   return (
@@ -490,15 +500,12 @@ export function ReaderPage() {
       )}
 
       <DeleteAudioDialog
-        open={deleteAudioId !== null}
-        onOpenChange={(open) => {
-          if (!open) setDeleteAudioId(null);
-        }}
+        open={deleteAudioOpen}
+        title={audioToDelete.title}
+        onOpenChange={setDeleteAudioOpen}
         deleting={removeAudio.isPending}
         failed={removeAudio.isError}
-        onConfirm={() => {
-          if (deleteAudioId) removeAudio.mutate(deleteAudioId);
-        }}
+        onConfirm={() => removeAudio.mutate(audioToDelete.id)}
       />
 
       <div className="jv-reader__scroll">
@@ -517,7 +524,6 @@ export function ReaderPage() {
           {prompt.data && <PromptBanner text={prompt.data.text} readOnly />}
 
           <MomentMediaGallery
-            moment={data}
             media={media}
             excludePaths={inlinePaths}
             onOpenItem={openViewer}

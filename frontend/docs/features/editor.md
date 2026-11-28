@@ -453,9 +453,13 @@ entry whose only media is inline photos keeps no tray, as before.
 `delete_orphaned_media_for_delta` (old sources minus new) never sees it. Deleting
 prose must never delete a recording; removal is an explicit action. An audio
 attachment still in the tray has a confirmed "Delete voice note" action. It
-deletes the server media directly, then refreshes the Moment and media list;
-an audio item already placed inline is removed through the existing prose-save
-orphan path so the document cannot retain a broken embed. The reader offers the
+deletes the server media through `deleteMomentMedia`, shared with the reader.
+Both surfaces treat a 404 as done. Both wait for the Moment and its media list
+to refetch before the confirmation closes, so the tile is gone when the dialog
+goes. Moment lists, Calendar and the media library refresh in the background.
+The tray loads nothing for a Moment whose `media_count` is zero. An audio item
+already placed inline is removed through the existing prose-save orphan path so
+the document cannot retain a broken embed. The reader offers the
 same deletion from its PageBar menu, under the same rule
 ([reader.md](reader.md), "Audio clips"), so a writer does not have to open the
 editor to be rid of a recording.

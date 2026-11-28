@@ -66,7 +66,6 @@ function Harness({
   const media = useMomentMedia(node.id, (node.media_count ?? 0) > 0);
   return (
     <MomentMediaGallery
-      moment={node}
       media={media}
       variant={variant}
       excludePaths={excludePaths}
@@ -206,6 +205,26 @@ describe("MomentMediaGallery", () => {
     vi.mocked(api.momentMedia).mockResolvedValue([image()]);
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(await screen.findByAltText("Torii gates in the rain")).toBeTruthy();
+  });
+
+  it("drops a failed list, not just its items, once the Moment reports no media", async () => {
+    vi.mocked(api.momentMedia).mockRejectedValue(new Error("network"));
+    const client = createAppQueryClient();
+    client.setDefaultOptions({ queries: { retry: false } });
+    const { container, rerender } = render(
+      <QueryClientProvider client={client}>
+        <Harness moment={moment(1)} />
+      </QueryClientProvider>,
+    );
+    expect(await screen.findByText("Media couldn’t be loaded")).toBeTruthy();
+
+    rerender(
+      <QueryClientProvider client={client}>
+        <Harness moment={moment(0)} />
+      </QueryClientProvider>,
+    );
+
+    expect(container.innerHTML).toBe("");
   });
 
   it("renders nothing when the authoritative list is empty despite a stale count", async () => {

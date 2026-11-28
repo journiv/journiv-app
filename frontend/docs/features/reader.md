@@ -37,9 +37,12 @@ renders nothing. It holds:
   existing `AppConfirmDialog` confirmation (open state owned by the reader); the
   dialog stays open with a human error on failure.
 - **Delete audio clip…** — one destructive item per deletable audio attachment,
-  in gallery order, separated below the entry items. Several clips are numbered
-  (`Delete audio clip 2…`) because a recording has no name to tell it apart by;
-  a single clip is not. See "Audio clips" below.
+  in gallery order, separated below the entry items. When the gallery shows
+  more than one audio row, each item carries its row number among them. The
+  name adds the alt text, else the length: `Delete audio clip 2 (0:42)…`. A
+  recording still processing takes a row but is not on offer. The confirmation
+  title repeats that name. A lone audio row is not numbered. See "Audio clips"
+  below.
 
 DELETE /entries/{entry_id} deletes writing, not Moment context. Refetch the
 Moment after success; it becomes the matching quick-log kind. If the backend
@@ -55,9 +58,11 @@ Inline media stays in prose. The gallery — `components/journiv/MomentMediaGall
 media not referenced by prose. The same component in `variant="tray"` is the
 Editor's attachment tray (docs/features/editor.md); the Reader never uses that.
 The moment response supplies thumbnails and media_count; the gallery fetches the
-detailed moment-media endpoint only when media_count is positive. The list wins
-if its result disagrees with the denormalized count. Reader passes no
-`renderItemAction`, so the gallery is display-only there.
+detailed moment-media endpoint only when media_count is positive. When the two
+disagree, a fetched list beats a positive count. A zero count beats the list
+fetched before it: `useMomentMedia` reports no items and no loading, error or
+success state while disabled. The Editor tray follows the same gate.
+Reader passes no `renderItemAction`, so the gallery is display-only there.
 
 The backend hydrates stored media ids to signed relative URLs for inline Delta
 content. Render that URL, but never write it back in place of the durable id.
@@ -78,9 +83,12 @@ gallery row is one control-height line with no room for another control.
 
 The command confirms through `AppConfirmDialog` and calls
 `DELETE /media/{media_id}`. A failure keeps the confirmation open with a reason.
-Success invalidates the Moment, the moment lists, Calendar, and the media
-library; the Moment key covers its media list by prefix. There is no Undo,
-because the API has no restore contract.
+A 404 counts as success, because another surface already deleted the clip.
+Success invalidates the Moment, its media list, the moment lists, Calendar,
+and the media library. The confirmation closes only after the Moment and its
+media list refetch, so the clip is gone when the dialog goes. The other caches
+refresh in the background. Once the Moment reports no media, no clip is offered
+(see "Media" above). There is no Undo, because the API has no restore contract.
 
 Deleting media never prunes its Moment. The reader stays where it is and loses
 the clip. A Moment whose only media was that recording becomes marker-only and

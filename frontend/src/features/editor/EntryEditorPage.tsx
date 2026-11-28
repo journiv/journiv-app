@@ -38,9 +38,11 @@ import { browserTimeZone } from "../../lib/datetime";
 import { defaultJournalId } from "../../lib/journalOrder";
 import { useCompactViewport } from "../../lib/useCompactViewport";
 import { mediaPath } from "../../lib/mediaUrl";
+import { isUploadBusy } from "../../lib/uploadStatus";
 import { uuid } from "../../lib/uuid";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import { AppConfirmDialog } from "../../components/journiv/AppConfirmDialog";
+import { deleteMomentMedia } from "../../components/journiv/deleteMomentMedia";
 import { MomentChips } from "../../components/journiv/MomentChips";
 import { MomentMediaGallery } from "../../components/journiv/MomentMediaGallery";
 import { PageBar } from "../../components/journiv/PageBar";
@@ -572,7 +574,7 @@ function EntryEditorForm({
   // prose when writing about an existing Moment (docs/features/editor.md).
   const momentMedia = useMomentMedia(
     momentForDisplay?.id ?? "",
-    Boolean(momentForDisplay?.id),
+    (momentForDisplay?.media_count ?? 0) > 0,
   );
   useAnchorPruning({
     momentId: momentForDisplay?.id,
@@ -852,15 +854,11 @@ function EntryEditorForm({
     setDeletingVoiceNote(true);
     setVoiceNoteDeleteError("");
     try {
-      await api.deleteMedia(mediaId);
+      await deleteMomentMedia(queryClient, ownerId, mediaId);
       sessionMediaRef.current = sessionMediaRef.current.filter(
         (id) => id !== mediaId,
       );
       setDeleteVoiceNoteId(null);
-      await Promise.allSettled([
-        queryClient.invalidateQueries({ queryKey: queryKeys.moment(ownerId) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.allMoments }),
-      ]);
     } catch {
       setVoiceNoteDeleteError("Couldn’t delete the voice note. Try again.");
     } finally {
@@ -1448,15 +1446,13 @@ function EntryEditorForm({
           {trayMoment && (
             <MomentMediaGallery
               variant="tray"
-              moment={trayMoment}
               media={momentMedia}
               excludePaths={inlineMediaPathSet}
               renderItemAction={(item) => {
                 const canAdd = canAddToEntry(item);
                 const canDelete =
                   item.media_type === "audio" &&
-                  item.upload_status !== "pending" &&
-                  item.upload_status !== "processing";
+                  !isUploadBusy(item.upload_status);
                 if (!canAdd && !canDelete) return null;
                 return (
                   <>

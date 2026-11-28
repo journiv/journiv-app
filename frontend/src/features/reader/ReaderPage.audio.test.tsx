@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sessionStore } from "../../api/auth/session";
 import { api } from "../../api/client/api";
+import { ApiError } from "../../api/client/errors";
 import type {
   JournalResponse,
   MomentMediaResponse,
@@ -206,10 +207,10 @@ describe("reader audio actions", () => {
     ]);
   });
 
-  it("numbers the clips when a moment carries more than one", async () => {
+  it("names each clip by its alt text or its length", async () => {
     vi.mocked(api.moment).mockResolvedValue({ ...moment, media_count: 2 });
     vi.mocked(api.momentMedia).mockResolvedValue([
-      recording(),
+      recording({ alt_text: "Ferry horn" }),
       recording({
         id: "audio-2",
         signed_url: "/api/v1/media/audio-2/signed?sig=abc",
@@ -220,17 +221,154 @@ describe("reader audio actions", () => {
       await screen.findByRole("button", { name: "Moment actions" }),
     );
 
-    await screen.findByRole("menuitem", { name: "Delete audio clip 1…" });
+    await screen.findByRole("menuitem", {
+      name: "Delete audio clip 1 (Ferry horn)…",
+    });
     await userEvent.click(
-      screen.getByRole("menuitem", { name: "Delete audio clip 2…" }),
+      screen.getByRole("menuitem", { name: "Delete audio clip 2 (0:42)…" }),
     );
+    expect(await screen.findByText("Delete audio clip 2 (0:42)?")).toBeTruthy();
     await userEvent.click(
-      await screen.findByRole("button", { name: "Delete audio clip" }),
+      screen.getByRole("button", { name: "Delete audio clip" }),
     );
 
     await waitFor(() =>
       expect(api.deleteMedia).toHaveBeenCalledWith("audio-2"),
     );
+  });
+
+  it("numbers clips by their audio row in the gallery", async () => {
+    vi.mocked(api.moment).mockResolvedValue({ ...moment, media_count: 5 });
+    vi.mocked(api.momentMedia).mockResolvedValue([
+      recording({
+        id: "photo-1",
+        media_type: "image",
+        mime_type: "image/jpeg",
+        signed_url: "/api/v1/media/photo-1/signed?sig=abc",
+      }),
+      recording(),
+      recording({
+        id: "audio-2",
+        upload_status: "pending",
+        signed_url: "/api/v1/media/audio-2/signed?sig=abc",
+      }),
+      recording({
+        id: "audio-3",
+        upload_status: "processing",
+        signed_url: "/api/v1/media/audio-3/signed?sig=abc",
+      }),
+      recording({
+        id: "audio-4",
+        signed_url: "/api/v1/media/audio-4/signed?sig=abc",
+      }),
+    ]);
+    await openReader();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Moment actions" }),
+    );
+
+    const items = await screen.findAllByRole("menuitem");
+    expect(items.map((item) => item.textContent)).toEqual([
+      "Download PDF",
+      "Delete entry…",
+      "Delete audio clip 1 (0:42)…",
+      "Delete audio clip 4 (0:42)…",
+    ]);
+  });
+
+  it("numbers a lone deletable clip shown beside a pending one", async () => {
+    vi.mocked(api.moment).mockResolvedValue({ ...moment, media_count: 2 });
+    vi.mocked(api.momentMedia).mockResolvedValue([
+      recording(),
+      recording({
+        id: "audio-2",
+        upload_status: "pending",
+        signed_url: "/api/v1/media/audio-2/signed?sig=abc",
+      }),
+    ]);
+    await openReader();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Moment actions" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", {
+        name: "Delete audio clip 1 (0:42)…",
+      }),
+    );
+
+    expect(await screen.findByText("Delete audio clip 1 (0:42)?")).toBeTruthy();
+  });
+
+  it("keeps the confirmation open while the delete runs", async () => {
+    vi.mocked(api.deleteMedia).mockImplementation(() => new Promise(() => {}));
+    await openReader();
+    await screen.findByRole("slider", { name: "Seek audio" });
+
+    await chooseDelete();
+    await screen.findByRole("button", { name: "Deleting…" });
+    await userEvent.keyboard("{Escape}");
+
+    expect(screen.getByText("Delete this audio clip?")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Deleting…" })).toBeTruthy();
+  });
+
+  it("closes the confirmation only once the Moment shows the clip gone", async () => {
+    let momentRefetched = () => {};
+    vi.mocked(api.deleteMedia).mockImplementation(async () => {
+      deleted = true;
+      vi.mocked(api.moment).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            momentRefetched = () => resolve({ ...moment, media_count: 0 });
+          }),
+      );
+      return undefined as never;
+    });
+    await openReader();
+    await screen.findByRole("slider", { name: "Seek audio" });
+
+    await chooseDelete();
+    await waitFor(() =>
+      expect(api.deleteMedia).toHaveBeenCalledWith("audio-1"),
+    );
+    await waitFor(() => expect(api.moment).toHaveBeenCalled());
+
+    expect(screen.getByRole("button", { name: "Deleting…" })).toBeTruthy();
+    momentRefetched();
+
+    await waitFor(() =>
+      expect(screen.queryByText("Delete this audio clip?")).toBeNull(),
+    );
+    expect(screen.queryByRole("slider", { name: "Seek audio" })).toBeNull();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Moment actions" }),
+    );
+    expect(
+      screen.queryByRole("menuitem", { name: "Delete audio clip…" }),
+    ).toBeNull();
+  });
+
+  it("treats a clip already gone as deleted", async () => {
+    vi.mocked(api.deleteMedia).mockImplementation(async () => {
+      deleted = true;
+      throw new ApiError("Media not found", { status: 404 });
+    });
+    await openReader();
+    await screen.findByRole("slider", { name: "Seek audio" });
+
+    await chooseDelete();
+
+    await waitFor(() =>
+      expect(screen.queryByText("Delete this audio clip?")).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("slider", { name: "Seek audio" })).toBeNull(),
+    );
+    expect(
+      screen.queryByText(
+        "The audio clip couldn’t be deleted. Check your connection and try again.",
+      ),
+    ).toBeNull();
   });
 
   it("offers the delete for a clip that cannot be played", async () => {
