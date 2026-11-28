@@ -13,6 +13,7 @@ import {
   type MediaFilters,
   type MomentFilters,
 } from "./keys";
+import { isUploadBusy } from "../../lib/uploadStatus";
 
 export const currentUserQuery = () =>
   queryOptions({
@@ -433,11 +434,7 @@ export const momentMediaQuery = (id: string) =>
     // reader that is already showing Processing frames live until every item
     // reaches a terminal state; otherwise its viewer collection stays stale.
     refetchInterval: (query) =>
-      query.state.data?.some(
-        (item) =>
-          item.upload_status === "pending" ||
-          item.upload_status === "processing",
-      )
+      query.state.data?.some((item) => isUploadBusy(item.upload_status))
         ? 1500
         : false,
     // Signed URLs expire. Keeping this short means an ordinary revisit

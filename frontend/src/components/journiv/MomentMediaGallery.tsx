@@ -7,12 +7,10 @@ import {
   TriangleAlert,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
-import type {
-  MomentMediaResponse,
-  MomentResponse,
-} from "../../api/generated/types.gen";
+import type { MomentMediaResponse } from "../../api/generated/types.gen";
 import { cx } from "../../lib/cx";
 import { mediaPath } from "../../lib/mediaUrl";
+import { isUploadBusy } from "../../lib/uploadStatus";
 import { Button } from "../ui/button";
 import { Skeleton } from "../ui/skeleton";
 import { WaveformPlayer } from "./media/WaveformPlayer";
@@ -37,7 +35,6 @@ import type { MomentMediaState } from "./useMomentMedia";
  * `renderItemAction` for the per-item "Add to entry" control.
  */
 type MomentMediaGalleryProps = {
-  moment: MomentResponse;
   media: MomentMediaState;
   /**
    * Paths of media already rendered inline in the prose. Matched on path
@@ -68,7 +65,6 @@ const audioLabel = (item: MomentMediaResponse) =>
   item.alt_text?.trim() || "audio";
 
 export function MomentMediaGallery(props: MomentMediaGalleryProps) {
-  if ((props.moment.media_count ?? 0) === 0) return null;
   return props.variant === "tray" ? (
     <MediaTray {...props} />
   ) : (
@@ -164,7 +160,7 @@ function MediaItem({
       body
     );
 
-  if (status === "pending" || status === "processing") {
+  if (isUploadBusy(item.upload_status)) {
     return (
       <div {...frame} role="status">
         <span className="jv-media__note">
@@ -396,7 +392,7 @@ function TrayTile({
 }) {
   const status = item.upload_status ?? "completed";
   const unavailable = status === "failed" || broken || !item.signed_url;
-  const busy = status === "pending" || status === "processing";
+  const busy = isUploadBusy(item.upload_status);
   const label = item.alt_text?.trim() || undefined;
 
   // A recording is playable, not a thumbnail: it takes a full-width row so its

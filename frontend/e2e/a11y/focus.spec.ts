@@ -10,7 +10,7 @@ test.describe("accessibility behaviours", () => {
     const moment = await data.moment({ journalId: journal.id, title });
     await page.goto(`/timeline/${moment.id}`);
 
-    const trigger = page.getByRole("button", { name: "Entry actions" });
+    const trigger = page.getByRole("button", { name: "Moment actions" });
     await trigger.focus();
     await expect(trigger).toBeFocused();
 

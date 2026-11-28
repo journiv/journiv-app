@@ -116,7 +116,7 @@ test.describe("entry journeys", () => {
     const moment = await data.moment({ journalId: journal.id, title });
 
     await page.goto(`/timeline/${moment.id}`);
-    await page.getByRole("button", { name: "Entry actions" }).click();
+    await page.getByRole("button", { name: "Moment actions" }).click();
     await page.getByRole("menuitem", { name: "Delete entry…" }).click();
     const dialog = page.getByRole("alertdialog");
     await expect(
@@ -150,7 +150,7 @@ test.describe("entry journeys", () => {
     await data.tags(moment.id, [tag]);
 
     await page.goto(`/timeline/${moment.id}`);
-    await page.getByRole("button", { name: "Entry actions" }).click();
+    await page.getByRole("button", { name: "Moment actions" }).click();
     await page.getByRole("menuitem", { name: "Delete entry…" }).click();
     const deleted = page.waitForResponse(
       (response) =>

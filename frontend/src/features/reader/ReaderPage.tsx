@@ -18,6 +18,7 @@ import {
 import { api } from "../../api/client/api";
 import { entryQuery, momentQuery, promptQuery } from "../../api/query/options";
 import { queryKeys } from "../../api/query/keys";
+import type { MomentMediaResponse } from "../../api/generated/types.gen";
 import { EntryHeader } from "../../components/journiv/EntryHeader";
 import {
   AppAdaptiveMenu,
@@ -30,22 +31,26 @@ import { Button } from "../../components/ui/button";
 import { IconButton } from "../../components/ui/icon-button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { toast } from "../../components/ui/toast";
+import { deleteMomentMedia } from "../../components/journiv/deleteMomentMedia";
 import { MomentMediaGallery } from "../../components/journiv/MomentMediaGallery";
 import {
   MediaViewer,
   momentMediaToViewerItems,
 } from "../../components/journiv/media/MediaViewer";
 import { shouldClearMediaParam } from "../../components/journiv/media/mediaViewerNav";
+import { formatClock } from "../../components/journiv/media/waveformPeaks";
 import { StatusView } from "../../components/journiv/StatusView";
 import { useMomentMedia } from "../../components/journiv/useMomentMedia";
 import { useJournalLookup } from "../../lib/useJournalLookup";
 import { mediaPath } from "../../lib/mediaUrl";
+import { isUploadBusy } from "../../lib/uploadStatus";
 import { momentKind, momentKindLabel, momentTitle } from "../../lib/moment";
 import { EMPTY_DELTA } from "../editor/deltaProfile";
 import { planReaderContent, QuillReader } from "../editor/QuillReader";
 import { useAnchorPruning } from "../editor/useAnchorPruning";
 import { PromptBanner } from "../prompts/PromptBanner";
 import { scopeSearchFrom } from "../timeline/momentScope";
+import { DeleteAudioDialog } from "./DeleteAudioDialog";
 import { DeleteEntryDialog } from "./DeleteEntryDialog";
 import "./reader.css";
 
@@ -53,6 +58,22 @@ import "./reader.css";
 // than lingering next to the outcome.
 const PDF_TOAST_ID = "reader-entry-pdf";
 
+/**
+ * One Moment, read-only (docs/features/reader.md).
+ *
+ * It resolves the Moment, its Entry, its prompt attribution and its media as
+ * four independent queries, so supplementary context can fail without taking
+ * the Moment down with it. The media query is shared: the prose resolves its
+ * inline embeds from it, and the gallery renders whatever is left over.
+ *
+ * The PageBar carries Edit (or Write) and one `Moment actions` menu. That menu
+ * is not entry-scoped — it also deletes audio clips, so it appears on a Moment
+ * with no writing at all.
+ *
+ * The full-screen viewer's open item lives in the URL as `?media=<id>`, so it
+ * survives a reload and is linkable; this component owns the history rules
+ * around it.
+ */
 export function ReaderPage() {
   const { momentId, journalId } = useParams({ strict: false }) as {
     momentId: string;
@@ -75,6 +96,9 @@ export function ReaderPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteAudioOpen, setDeleteAudioOpen] = useState(false);
+  // Kept after close so the dialog keeps its title while it animates out.
+  const [audioToDelete, setAudioToDelete] = useState({ id: "", title: "" });
   const isPdfRetryInFlight = useRef(false);
   // Carry the list-pane mode back so Back returns to the calendar or grid the
   // reader was opened from, not the plain list.
@@ -143,10 +167,13 @@ export function ReaderPage() {
   // Reader detail routes reuse this component when their path parameters
   // change. A history entry pushed for one Moment must never affect a
   // deep-linked viewer for the next Moment (or for the same Moment in a
-  // different journal). Search-only updates deliberately keep this ref.
+  // different journal), and an audio confirmation opened for one Moment must
+  // never submit against the next. Search-only updates deliberately keep both.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the route params intentionally trigger this reset without being read in its body.
   useEffect(() => {
     viewerPushed.current = false;
+    setDeleteAudioOpen(false);
+    setAudioToDelete({ id: "", title: "" });
   }, [momentId, journalId]);
 
   const setMediaParam = useCallback(
@@ -266,6 +293,13 @@ export function ReaderPage() {
       if (!momentSurvived) goBack();
     },
   });
+  // Deleting one attachment never prunes its Moment, so the reader stays where
+  // it is and simply loses the item.
+  const removeAudio = useMutation({
+    mutationFn: (mediaId: string) =>
+      deleteMomentMedia(queryClient, momentId, mediaId),
+    onSuccess: () => setDeleteAudioOpen(false),
+  });
   const download = useMutation({
     mutationFn: async (entryId: string) => {
       const { blob, filename } = await api.downloadEntryPdf(entryId);
@@ -371,9 +405,57 @@ export function ReaderPage() {
       ]
     : [];
   // Media shown inside the prose must not be repeated in the gallery.
-  const inlinePaths = hasWriting
-    ? planReaderContent(content).inlinePaths
-    : undefined;
+  const readerContent = hasWriting ? planReaderContent(content) : null;
+  const inlinePaths = readerContent?.inlinePaths;
+  // A clip the prose embeds belongs to the document, and the delete endpoint
+  // does not read the Delta — deleting one from here would leave a broken
+  // embed. Knowing which they are needs the entry in hand and readable: a
+  // pending entry has reported nothing yet, and an unreadable one falls back
+  // to plain text without saying what it embeds.
+  const inlineMediaKnown =
+    !hasWriting || (entry.isSuccess && readerContent?.renderable === true);
+  let galleryAudio: MomentMediaResponse[] = [];
+  if (inlineMediaKnown) {
+    galleryAudio = (media.items ?? []).filter(
+      (item) =>
+        item.media_type === "audio" &&
+        !inlinePaths?.has(mediaPath(item.signed_url ?? "")),
+    );
+  }
+  // A clip is numbered by its row among the audio rows the gallery shows, so a
+  // recording still processing above it counts even though it is not on offer.
+  const firstReadyRow = galleryAudio.findIndex(
+    (item) => !isUploadBusy(item.upload_status),
+  );
+  const audioActions: AppMenuAction[] = galleryAudio.flatMap((item, row) => {
+    if (isUploadBusy(item.upload_status)) return [];
+    let label = "Delete audio clip…";
+    let dialogTitle = "Delete this audio clip?";
+    if (galleryAudio.length > 1) {
+      const altText = item.alt_text?.trim();
+      let name = `audio clip ${row + 1}`;
+      if (altText) name += ` (${altText})`;
+      else if (item.duration) name += ` (${formatClock(item.duration)})`;
+      label = `Delete ${name}…`;
+      dialogTitle = `Delete ${name}?`;
+    }
+    return [
+      {
+        kind: "command",
+        id: `delete-audio-${item.id}`,
+        label,
+        icon: Trash2,
+        destructive: true,
+        separatorBefore: row === firstReadyRow && entryActions.length > 0,
+        onSelect: () => {
+          removeAudio.reset();
+          setAudioToDelete({ id: item.id, title: dialogTitle });
+          setDeleteAudioOpen(true);
+        },
+      },
+    ];
+  });
+  const momentActions = [...entryActions, ...audioActions];
 
   return (
     <article className="jv-reader">
@@ -402,8 +484,8 @@ export function ReaderPage() {
                 </>
               )}
             </Button>
-            {entryId && (
-              <AppAdaptiveMenu label="Entry actions" actions={entryActions} />
+            {momentActions.length > 0 && (
+              <AppAdaptiveMenu label="Moment actions" actions={momentActions} />
             )}
           </>
         }
@@ -419,6 +501,15 @@ export function ReaderPage() {
           onConfirm={() => remove.mutate(entryId)}
         />
       )}
+
+      <DeleteAudioDialog
+        open={deleteAudioOpen}
+        title={audioToDelete.title}
+        onOpenChange={setDeleteAudioOpen}
+        deleting={removeAudio.isPending}
+        failed={removeAudio.isError}
+        onConfirm={() => removeAudio.mutate(audioToDelete.id)}
+      />
 
       <div className="jv-reader__scroll">
         <div className="jv-reader__column">
@@ -436,7 +527,6 @@ export function ReaderPage() {
           {prompt.data && <PromptBanner text={prompt.data.text} readOnly />}
 
           <MomentMediaGallery
-            moment={data}
             media={media}
             excludePaths={inlinePaths}
             onOpenItem={openViewer}

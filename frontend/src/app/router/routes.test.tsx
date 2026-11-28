@@ -234,9 +234,14 @@ async function renderRoute(path: string) {
   return { ...view, router };
 }
 
+/**
+ * Opens the reader's PageBar menu and picks Delete entry. The menu is named for
+ * the Moment, not the Entry, because it also carries the Moment's media actions
+ * (docs/features/reader.md).
+ */
 async function openEntryDeleteMenu() {
   await userEvent.click(
-    await screen.findByRole("button", { name: "Entry actions" }),
+    await screen.findByRole("button", { name: "Moment actions" }),
   );
   await userEvent.click(await screen.findByText("Delete entry…"));
 }
@@ -414,7 +419,7 @@ describe("Phase B routes", () => {
 
     expect(await screen.findByRole("button", { name: "Write" })).toBeTruthy();
     expect(view.router.state.location.pathname).toBe("/timeline/moment-1");
-    expect(screen.queryByRole("button", { name: "Entry actions" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Moment actions" })).toBeNull();
     expect(api.moment).toHaveBeenCalledTimes(2);
   });
 
@@ -442,7 +447,7 @@ describe("Phase B routes", () => {
 
     await renderRoute("/timeline/moment-1");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Entry actions" }),
+      await screen.findByRole("button", { name: "Moment actions" }),
     );
     expect(
       await screen.findByRole("menuitem", { name: "Download PDF" }),
@@ -466,7 +471,7 @@ describe("Phase B routes", () => {
     await renderRoute("/timeline/moment-1");
 
     await userEvent.click(
-      await screen.findByRole("button", { name: "Entry actions" }),
+      await screen.findByRole("button", { name: "Moment actions" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Download PDF" }),
@@ -500,7 +505,7 @@ describe("Phase B routes", () => {
 
     await renderRoute("/timeline/moment-1");
     await userEvent.click(
-      await screen.findByRole("button", { name: "Entry actions" }),
+      await screen.findByRole("button", { name: "Moment actions" }),
     );
     await userEvent.click(
       await screen.findByRole("menuitem", { name: "Download PDF" }),

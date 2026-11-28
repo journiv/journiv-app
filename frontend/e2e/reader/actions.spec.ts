@@ -21,9 +21,9 @@ for (const theme of ["light", "dark"] as const) {
         });
         await page.goto(`/timeline/${moment.id}`);
 
-        await page.getByRole("button", { name: "Entry actions" }).click();
+        await page.getByRole("button", { name: "Moment actions" }).click();
         const surface = page.getByRole(compact ? "dialog" : "menu", {
-          name: compact ? "Entry actions" : undefined,
+          name: compact ? "Moment actions" : undefined,
         });
         await expect(surface).toBeVisible();
         await expect(
@@ -70,14 +70,14 @@ test.describe("reader PDF feedback · dark mobile", () => {
     });
     await page.goto(`/timeline/${moment.id}`);
 
-    await page.getByRole("button", { name: "Entry actions" }).click();
+    await page.getByRole("button", { name: "Moment actions" }).click();
     await page.getByRole("button", { name: "Download PDF" }).click();
 
     // The action sheet closes on select, so the in-flight state lives in a
     // pending toast rather than the (now unmounted) menu item.
     await expect(page.getByText("Preparing your PDF…")).toBeVisible();
 
-    await page.getByRole("button", { name: "Entry actions" }).click();
+    await page.getByRole("button", { name: "Moment actions" }).click();
     const pending = page.getByRole("button", { name: "Downloading PDF…" });
     await expect(pending).toBeDisabled();
 

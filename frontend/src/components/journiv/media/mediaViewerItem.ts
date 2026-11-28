@@ -2,6 +2,7 @@ import type {
   MediaLibraryItem,
   MomentMediaResponse,
 } from "../../../api/generated/types.gen";
+import { isUploadBusy } from "../../../lib/uploadStatus";
 
 /**
  * Journiv's own model for one slide in the full-screen media viewer.
@@ -41,12 +42,7 @@ export type MediaViewerItem = {
 
 function isReady(uploadStatus: string | null | undefined, hasUrl: boolean) {
   // `completed`, or an older row with no status, both count as ready.
-  return (
-    hasUrl &&
-    uploadStatus !== "pending" &&
-    uploadStatus !== "processing" &&
-    uploadStatus !== "failed"
-  );
+  return hasUrl && !isUploadBusy(uploadStatus) && uploadStatus !== "failed";
 }
 
 function toViewerItem(source: {

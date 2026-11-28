@@ -319,6 +319,53 @@ describe("EntryEditorPage · dictation", () => {
     );
   });
 
+  it("loads no media list and shows no tray for a Moment without media", async () => {
+    await openEditor();
+    expect(await screen.findByText("Walked the coast path")).toBeTruthy();
+
+    expect(api.momentMedia).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status", { name: "Loading media" })).toBeNull();
+    expect(
+      screen.queryByRole("region", { name: "Attached to this moment" }),
+    ).toBeNull();
+  });
+
+  it("keeps the confirmation open until the Moment shows the voice note gone", async () => {
+    uploaded = true;
+    let momentRefetched = () => {};
+    vi.mocked(api.deleteMedia).mockImplementation(async () => {
+      uploaded = false;
+      vi.mocked(api.moment).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            momentRefetched = () => resolve(emptyMoment);
+          }),
+      );
+      return undefined as never;
+    });
+    await openEditor();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Delete voice note" }),
+    );
+    await userEvent.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Delete voice note",
+      }),
+    );
+    await waitFor(() =>
+      expect(api.deleteMedia).toHaveBeenCalledWith(recording.id),
+    );
+    await waitFor(() => expect(api.moment).toHaveBeenCalled());
+
+    expect(screen.getByRole("alertdialog")).toBeTruthy();
+    momentRefetched();
+
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(
+      screen.queryByRole("button", { name: "Delete voice note" }),
+    ).toBeNull();
+  });
+
   it("confirms deletion of an attached voice note and refreshes the tray", async () => {
     uploaded = true;
     vi.mocked(api.deleteMedia).mockImplementation(async () => {
